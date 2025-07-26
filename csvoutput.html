@@ -94,6 +94,7 @@ let files = [];
 let allData = [];
 let partRateResults = [];
 let typeAnalysisResults = [];
+let dailyResults = [];
 let allNGColumns = new Set();
 let summaryData = {};
 
@@ -303,6 +304,7 @@ function detectNGColumns(sampleRow) {
 function analyzeData() {
     const partMap = new Map();
     const typeMap = new Map();
+    const dailyMap = new Map();
     const inspectionTypes = new Set();
     
     allData.forEach(fileData => {
@@ -325,6 +327,22 @@ function analyzeData() {
                 const ngValue = parseFloat(row[ngCol]) || 0;
                 ngBreakdown[ngCol] = ngValue;
                 totalNG += ngValue;
+            });
+            
+            const defectRate = inspectionCount > 0 ? (totalNG / inspectionCount * 100).toFixed(2) : '0.00';
+            
+            // 検査日別データ（個別レコード）
+            const dailyKey = `${partNumber}_${inspectionType}_${inspectionDate}_${fileData.fileName}`;
+            dailyMap.set(dailyKey, {
+                品番: partNumber,
+                検査種類: inspectionType,
+                検査日: inspectionDate,
+                検査数: inspectionCount,
+                総NG数: totalNG,
+                不良率: defectRate,
+                備考: remarks,
+                ファイル名: fileData.fileName,
+                ngBreakdown: { ...ngBreakdown }
             });
             
             // 品番別集計
@@ -422,6 +440,14 @@ function analyzeData() {
         return item;
     }).sort((a, b) => parseFloat(b.不良率) - parseFloat(a.不良率));
     
+    // 検査日別データ（日付順でソート）
+    dailyResults = Array.from(dailyMap.values()).sort((a, b) => {
+        // 日付でソート、次に品番、検査種類
+        if (a.検査日 !== b.検査日) return b.検査日.localeCompare(a.検査日);
+        if (a.品番 !== b.品番) return a.品番.localeCompare(b.品番);
+        return a.検査種類.localeCompare(b.検査種類);
+    });
+    
     // サマリーデータ作成
     const totalInspections = partRateResults.reduce((sum, item) => sum + item.総検査数, 0);
     const totalNG = partRateResults.reduce((sum, item) => sum + item.総NG数, 0);
@@ -432,6 +458,7 @@ function analyzeData() {
         処理ファイル数: files.length,
         品番数: partRateResults.length,
         検査種類数: inspectionTypes.size,
+        検査日別レコード数: dailyResults.length,
         総検査数: totalInspections,
         総NG数: totalNG,
         総合不良率: overallRate + '%'
@@ -457,6 +484,11 @@ function exportCSV(type) {
             filename = '検査種類別詳細分析';
             headers = ['品番', '検査種類', '不良率', '総検査数', '総NG数', '最新検査日', '備考', ...Array.from(allNGColumns).sort()];
             break;
+        case 'daily':
+            data = dailyResults;
+            filename = '検査日別詳細データ';
+            headers = ['品番', '検査種類', '検査日', '検査数', '総NG数', '不良率', '備考', 'ファイル名', ...Array.from(allNGColumns).sort()];
+            break;
         case 'summary':
             data = [summaryData];
             filename = '統合サマリー';
@@ -479,6 +511,18 @@ function exportCSV(type) {
         csvContent = [
             headers.join(','),
             headers.map(h => `"${data[0][h] || ''}"`).join(',')
+        ].join('\n');
+    } else if (type === 'daily') {
+        // 検査日別は個別レコードなのでngBreakdownの構造が違う
+        csvContent = [
+            headers.join(','),
+            ...data.map(row => {
+                const baseHeaders = headers.filter(h => !allNGColumns.has(h));
+                const ngHeaders = Array.from(allNGColumns).sort();
+                const baseValues = baseHeaders.map(h => `"${row[h] || ''}"`);
+                const ngValues = ngHeaders.map(col => `"${row.ngBreakdown ? row.ngBreakdown[col] || 0 : 0}"`);
+                return [...baseValues, ...ngValues].join(',');
+            })
         ].join('\n');
     } else {
         const baseHeaders = headers.filter(h => !allNGColumns.has(h));
@@ -516,6 +560,7 @@ function reset() {
         allData = [];
         partRateResults = [];
         typeAnalysisResults = [];
+        dailyResults = [];
         allNGColumns.clear();
         summaryData = {};
         document.getElementById('fileInput').value = '';
