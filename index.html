@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -327,10 +328,20 @@ function exp(){
 if(data.length===0){status('エクスポートするデータがありません');return}
 const h=['生産日付','整理No','検査数','検査時間（分）','ロットNo','検査開始時間','検査終了時間','検査種類','検査員名'];
 const nc=Array.from(cols.keys()).sort();
-const ah=[...h,...nc,'備考'];
+// データが存在するNG項目のみを抽出
+const usedNgCodes=new Set();
+data.forEach(row=>{
+if(row.ngMap){
+row.ngMap.forEach((value,code)=>{
+if(value&&value!=='0')usedNgCodes.add(code);
+});
+}
+});
+const filteredNc=nc.filter(code=>usedNgCodes.has(code));
+const ah=[...h,...filteredNc,'備考'];
 const r=data.map(row=>{
 const bd=[row.pd||'',row.on||'',row.ic||'0',row.it||'0',row.ln||'',row.st||'',row.et||'',row.it2||'',row.in||''];
-const nd=nc.map(c=>row.ngMap?.get(c)||'0');
+const nd=filteredNc.map(c=>row.ngMap?.get(c)||'0');
 return[...bd,...nd,row.rm||''];
 });
 const csv=[ah.join(','),...r.map(row=>row.map(c=>`"${c}"`).join(','))].join('\n');
@@ -338,7 +349,10 @@ const b=new Blob([new Uint8Array([0xEF,0xBB,0xBF]),csv],{type:'text/csv;charset=
 const l=document.createElement('a');
 l.href=URL.createObjectURL(b);
 l.download=`inspection_data_${new Date().toISOString().replace(/[:.]/g,'-').slice(0,-5)}.csv`;
-l.click();status('CSVファイルをエクスポートしました');
+l.click();
+const totalNg=nc.length;
+const exportedNg=filteredNc.length;
+status(`CSVファイルをエクスポートしました（NG項目: ${exportedNg}/${totalNg}列）`);
 }
 function imp(e){
 const f=e.target.files[0];
