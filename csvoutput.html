@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>検査データCSV出力ツール</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#667eea;min-height:100vh;padding:20px}
+.container{max-width:800px;margin:0 auto;background:#fff;border-radius:12px;padding:30px;box-shadow:0 4px 6px rgba(0,0,0,0.1)}
+.header{text-align:center;margin-bottom:30px;padding:20px;background:#007bff;color:#fff;border-radius:8px}
+.section{margin-bottom:25px;padding:20px;border:1px solid #ddd;border-radius:8px;background:#f9f9f9}
+.file-area{border:2px dashed #007bff;padding:30px;text-align:center;border-radius:8px;margin-bottom:15px;transition:all 0.3s ease}
+.file-area:hover{background:#f0f8ff}
+.file-list{margin-top:15px}
+.file-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#fff;margin:5px 0;border-radius:6px;border-left:4px solid #007bff}
+.btn{padding:10px 20px;background:#007bff;color:#fff;border:none;border-radius:6px;cursor:pointer;margin:5px;font-size:14px;transition:all 0.3s ease}
+.btn:hover{background:#0056b3;transform:translateY(-1px)}
+.btn:disabled{background:#ccc;cursor:not-allowed;transform:none}
+.btn-danger{background:#dc3545}
+.btn-danger:hover{background:#c82333}
+.btn-success{background:#28a745}
+.btn-success:hover{background:#218838}
+.btn-warning{background:#ffc107;color:#212529}
+.btn-warning:hover{background:#e0a800}
+.progress-bar{width:100%;height:20px;background:#e9ecef;border-radius:10px;overflow:hidden;margin:15px 0}
+.progress-fill{height:100%;background:linear-gradient(90deg,#007bff,#0056b3);transition:width 0.3s ease;border-radius:10px}
+.status{padding:15px;margin:10px 0;border-radius:6px;font-weight:bold}
+.status.processing{background:#fff3cd;color:#856404;border-left:4px solid #ffc107}
+.status.success{background:#d4edda;color:#155724;border-left:4px solid #28a745}
+.status.error{background:#f8d7da;color:#721c24;border-left:4px solid #dc3545}
+.hidden{display:none}
+.summary{background:#e7f3ff;padding:20px;margin:15px 0;border-radius:8px;text-align:center}
+.summary-value{font-size:24px;font-weight:bold;color:#007bff;margin:5px 0}
+.summary-label{font-size:14px;color:#666}
+.export-section{background:#f8f9fa;padding:20px;border-radius:8px;margin-top:20px}
+.export-buttons{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+<h1>📊 検査データCSV出力ツール</h1>
+<p>CSVファイルを読み込み、品番別・検査種類別の統合データをCSV形式で出力</p>
+</div>
+
+<div class="section">
+<h3>📁 CSVファイル読み込み</h3>
+<div class="file-area" ondrop="dropHandler(event)" ondragover="dragOverHandler(event)">
+<p>📥 CSVファイルを選択またはドラッグ&ドロップ</p>
+<input type="file" id="fileInput" accept=".csv" multiple style="margin-top:15px">
+</div>
+<div id="fileList" class="file-list"></div>
+<div id="status" class="status hidden"></div>
+<div class="progress-bar hidden" id="progressContainer">
+<div class="progress-fill" id="progressBar" style="width:0%"></div>
+</div>
+<button id="processBtn" class="btn btn-success" onclick="processFiles()" disabled>⚡ データを処理してCSV出力</button>
+</div>
+
+<div id="resultsSection" class="section hidden">
+<h3>📈 処理結果</h3>
+<div class="summary">
+<div class="summary-value" id="totalParts">0</div>
+<div class="summary-label">処理された品番数</div>
+</div>
+<div class="summary">
+<div class="summary-value" id="totalInspections">0</div>
+<div class="summary-label">総検査数</div>
+</div>
+<div class="summary">
+<div class="summary-value" id="overallRate">0.00%</div>
+<div class="summary-label">総合不良率</div>
+</div>
+
+<div class="export-section">
+<h4>📤 CSV出力</h4>
+<div class="export-buttons">
+<button class="btn" onclick="exportCSV('partRate')">📋 品番別不良率・NG内訳</button>
+<button class="btn btn-warning" onclick="exportCSV('typeAnalysis')">🔍 検査種類別詳細分析</button>
+<button class="btn btn-success" onclick="exportCSV('summary')">📊 統合サマリー</button>
+</div>
+</div>
+
+<div style="margin-top:20px;text-align:center">
+<button class="btn btn-danger" onclick="reset()">🔄 リセット</button>
+</div>
+</div>
+</div>
+
+<script>
+let files = [];
+let allData = [];
+let partRateResults = [];
+let typeAnalysisResults = [];
+let allNGColumns = new Set();
+let summaryData = {};
+
+// ドラッグ&ドロップ
+function dragOverHandler(ev) {
+    ev.preventDefault();
+}
+
+function dropHandler(ev) {
+    ev.preventDefault();
+    handleFiles(ev.dataTransfer.files);
+}
+
+// ステータス表示
+function showStatus(message, type = 'processing') {
+    const status = document.getElementById('status');
+    status.className = `status ${type}`;
+    status.textContent = message;
+    status.classList.remove('hidden');
+}
+
+function hideStatus() {
+    document.getElementById('status').classList.add('hidden');
+}
+
+// プログレスバー
+function showProgress() {
+    document.getElementById('progressContainer').classList.remove('hidden');
+}
+
+function updateProgress(percent) {
+    document.getElementById('progressBar').style.width = percent + '%';
+}
+
+function hideProgress() {
+    document.getElementById('progressContainer').classList.add('hidden');
+    updateProgress(0);
+}
+
+// ファイル選択
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    handleFiles(e.target.files);
+});
+
+function handleFiles(selectedFiles) {
+    showStatus(`${selectedFiles.length}個のファイルを確認中...`);
+    
+    for (let file of selectedFiles) {
+        if (file.name.toLowerCase().endsWith('.csv')) {
+            if (!files.find(f => f.name === file.name && f.size === file.size)) {
+                files.push(file);
+            }
+        }
+    }
+    
+    updateFileList();
+    showStatus(`${files.length}個のCSVファイルが準備完了`, 'success');
+}
+
+function updateFileList() {
+    const fileList = document.getElementById('fileList');
+    fileList.innerHTML = '';
+    
+    files.forEach((file, index) => {
+        const div = document.createElement('div');
+        div.className = 'file-item';
+        div.innerHTML = `
+            <span>📄 ${file.name} (${(file.size/1024).toFixed(1)}KB)</span>
+            <button class="btn btn-danger" onclick="removeFile(${index})">❌ 削除</button>
+        `;
+        fileList.appendChild(div);
+    });
+    
+    document.getElementById('processBtn').disabled = files.length === 0;
+}
+
+function removeFile(index) {
+    files.splice(index, 1);
+    updateFileList();
+    if (files.length === 0) {
+        hideStatus();
+    }
+}
+
+async function processFiles() {
+    if (files.length === 0) return;
+    
+    showStatus('ファイル処理を開始します...', 'processing');
+    showProgress();
+    
+    allData = [];
+    allNGColumns.clear();
+    
+    try {
+        for (let i = 0; i < files.length; i++) {
+            updateProgress((i / files.length) * 50);
+            showStatus(`処理中: ${files[i].name} (${i+1}/${files.length})`);
+            
+            const data = await readCSV(files[i]);
+            if (data && data.length > 0) {
+                const ngColumns = detectNGColumns(data[0]);
+                ngColumns.forEach(col => allNGColumns.add(col));
+                
+                allData.push({
+                    fileName: files[i].name,
+                    data: data,
+                    headers: Object.keys(data[0]),
+                    ngColumns: ngColumns
+                });
+            }
+        }
+        
+        updateProgress(75);
+        showStatus('データを分析中...');
+        
+        if (allData.length > 0) {
+            await new Promise(resolve => setTimeout(resolve, 500)); // UI更新のための短い待機
+            
+            analyzeData();
+            updateProgress(100);
+            
+            showStatus('処理完了！CSVファイルの出力が可能です', 'success');
+            document.getElementById('resultsSection').classList.remove('hidden');
+            
+            setTimeout(() => {
+                hideProgress();
+            }, 1000);
+        } else {
+            throw new Error('有効なデータが見つかりませんでした');
+        }
+        
+    } catch (error) {
+        hideProgress();
+        showStatus(`エラー: ${error.message}`, 'error');
+    }
+}
+
+function readCSV(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                let text = e.target.result;
+                
+                // BOM除去
+                if (text.charCodeAt(0) === 0xFEFF) {
+                    text = text.substring(1);
+                }
+                
+                // 行分割
+                const lines = text.split(/\r?\n/).filter(line => line.trim());
+                
+                if (lines.length < 2) {
+                    resolve([]);
+                    return;
+                }
+                
+                // ヘッダー行
+                const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+                
+                // データ行
+                const data = [];
+                for (let i = 1; i < lines.length; i++) {
+                    if (!lines[i].trim()) continue;
+                    
+                    const values = lines[i].split(',').map(v => v.replace(/^"|"$/g, '').trim());
+                    if (values.length >= headers.length) {
+                        const row = {};
+                        headers.forEach((header, index) => {
+                            row[header] = values[index] || '';
+                        });
+                        data.push(row);
+                    }
+                }
+                
+                resolve(data);
+                
+            } catch (error) {
+                reject(error);
+            }
+        };
+        
+        reader.onerror = () => reject(new Error('ファイル読み込みエラー'));
+        reader.readAsText(file, 'UTF-8');
+    });
+}
+
+function detectNGColumns(sampleRow) {
+    const ngColumns = [];
+    const excludeColumns = ['検査数', '検査時間', '生産日付', '整理No', '品番', '製品番号', '検査種類', 
+                           'type', '検査日', '日付', 'count', '検査員名', '備考', 'ロットNo', 
+                           '検査開始時間', '検査終了時間'];
+    
+    Object.entries(sampleRow).forEach(([key, value]) => {
+        if (!excludeColumns.includes(key) && 
+            !key.includes('時間') && 
+            !key.includes('日付') && 
+            !key.includes('員') &&
+            !isNaN(parseFloat(value))) {
+            ngColumns.push(key);
+        }
+    });
+    
+    return ngColumns.sort();
+}
+
+function analyzeData() {
+    const partMap = new Map();
+    const typeMap = new Map();
+    const inspectionTypes = new Set();
+    
+    allData.forEach(fileData => {
+        fileData.data.forEach(row => {
+            const partNumber = row['整理No'] || row['品番'] || row['製品番号'] || '';
+            const inspectionType = row['検査種類'] || row['type'] || 'Unknown';
+            const inspectionDate = row['生産日付'] || row['検査日'] || row['日付'] || '';
+            const inspectionCount = parseInt(row['検査数'] || row['count'] || '0') || 0;
+            
+            if (!partNumber) return;
+            
+            inspectionTypes.add(inspectionType);
+            
+            // NG項目別の集計
+            const ngBreakdown = {};
+            let totalNG = 0;
+            
+            Array.from(allNGColumns).forEach(ngCol => {
+                const ngValue = parseFloat(row[ngCol]) || 0;
+                ngBreakdown[ngCol] = ngValue;
+                totalNG += ngValue;
+            });
+            
+            // 品番別集計
+            if (!partMap.has(partNumber)) {
+                partMap.set(partNumber, {
+                    品番: partNumber,
+                    検査種類数: new Set(),
+                    ファイル数: 0,
+                    最新検査日: '',
+                    総検査数: 0,
+                    総NG数: 0,
+                    不良率: 0,
+                    ファイル名: [],
+                    ngBreakdown: {}
+                });
+                
+                Array.from(allNGColumns).forEach(col => {
+                    partMap.get(partNumber).ngBreakdown[col] = 0;
+                });
+            }
+            
+            const partData = partMap.get(partNumber);
+            partData.検査種類数.add(inspectionType);
+            partData.総検査数 += inspectionCount;
+            partData.総NG数 += totalNG;
+            
+            Array.from(allNGColumns).forEach(col => {
+                partData.ngBreakdown[col] += ngBreakdown[col];
+            });
+            
+            if (!partData.ファイル名.includes(fileData.fileName)) {
+                partData.ファイル名.push(fileData.fileName);
+                partData.ファイル数++;
+            }
+            
+            if (inspectionDate && (!partData.最新検査日 || inspectionDate > partData.最新検査日)) {
+                partData.最新検査日 = inspectionDate;
+            }
+            
+            // 検査種類別分析
+            const typeKey = `${partNumber}_${inspectionType}`;
+            if (!typeMap.has(typeKey)) {
+                typeMap.set(typeKey, {
+                    品番: partNumber,
+                    検査種類: inspectionType,
+                    検査回数: 0,
+                    総検査数: 0,
+                    総NG数: 0,
+                    不良率: 0,
+                    最新検査日: '',
+                    ngBreakdown: {}
+                });
+                
+                Array.from(allNGColumns).forEach(col => {
+                    typeMap.get(typeKey).ngBreakdown[col] = 0;
+                });
+            }
+            
+            const typeData = typeMap.get(typeKey);
+            typeData.検査回数++;
+            typeData.総検査数 += inspectionCount;
+            typeData.総NG数 += totalNG;
+            
+            Array.from(allNGColumns).forEach(col => {
+                typeData.ngBreakdown[col] += ngBreakdown[col];
+            });
+            
+            if (inspectionDate && (!typeData.最新検査日 || inspectionDate > typeData.最新検査日)) {
+                typeData.最新検査日 = inspectionDate;
+            }
+        });
+    });
+    
+    // 結果計算
+    partRateResults = Array.from(partMap.values()).map(item => {
+        item.不良率 = item.総検査数 > 0 ? (item.総NG数 / item.総検査数 * 100).toFixed(2) : '0.00';
+        item.検査種類数 = item.検査種類数.size;
+        item.主要NG項目 = Object.entries(item.ngBreakdown)
+            .filter(([k, v]) => v > 0)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([k, v]) => `${k}:${v}`)
+            .join(', ');
+        return item;
+    }).sort((a, b) => parseFloat(b.不良率) - parseFloat(a.不良率));
+    
+    typeAnalysisResults = Array.from(typeMap.values()).map(item => {
+        item.不良率 = item.総検査数 > 0 ? (item.総NG数 / item.総検査数 * 100).toFixed(2) : '0.00';
+        item.主要NG項目 = Object.entries(item.ngBreakdown)
+            .filter(([k, v]) => v > 0)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([k, v]) => `${k}:${v}`)
+            .join(', ');
+        return item;
+    }).sort((a, b) => parseFloat(b.不良率) - parseFloat(a.不良率));
+    
+    // サマリーデータ作成
+    const totalInspections = partRateResults.reduce((sum, item) => sum + item.総検査数, 0);
+    const totalNG = partRateResults.reduce((sum, item) => sum + item.総NG数, 0);
+    const overallRate = totalInspections > 0 ? (totalNG / totalInspections * 100).toFixed(2) : '0.00';
+    
+    summaryData = {
+        処理日時: new Date().toLocaleString('ja-JP'),
+        処理ファイル数: files.length,
+        品番数: partRateResults.length,
+        検査種類数: inspectionTypes.size,
+        総検査数: totalInspections,
+        総NG数: totalNG,
+        総合不良率: overallRate + '%'
+    };
+    
+    // 画面更新
+    document.getElementById('totalParts').textContent = partRateResults.length;
+    document.getElementById('totalInspections').textContent = totalInspections.toLocaleString();
+    document.getElementById('overallRate').textContent = overallRate + '%';
+}
+
+function exportCSV(type) {
+    let data, filename, headers;
+    
+    switch(type) {
+        case 'partRate':
+            data = partRateResults;
+            filename = '品番別不良率_NG内訳';
+            headers = ['品番', '不良率', '総検査数', '総NG数', '検査種類数', 'ファイル数', '最新検査日', '主要NG項目', ...Array.from(allNGColumns).sort()];
+            break;
+        case 'typeAnalysis':
+            data = typeAnalysisResults;
+            filename = '検査種類別詳細分析';
+            headers = ['品番', '検査種類', '不良率', '検査回数', '総検査数', '総NG数', '最新検査日', '主要NG項目', ...Array.from(allNGColumns).sort()];
+            break;
+        case 'summary':
+            data = [summaryData];
+            filename = '統合サマリー';
+            headers = Object.keys(summaryData);
+            break;
+        default:
+            return;
+    }
+    
+    if (data.length === 0) {
+        showStatus('エクスポートするデータがありません', 'error');
+        return;
+    }
+    
+    showStatus('CSV出力中...', 'processing');
+    
+    let csvContent;
+    
+    if (type === 'summary') {
+        csvContent = [
+            headers.join(','),
+            headers.map(h => `"${data[0][h] || ''}"`).join(',')
+        ].join('\n');
+    } else {
+        const baseHeaders = headers.filter(h => !allNGColumns.has(h));
+        const ngHeaders = Array.from(allNGColumns).sort();
+        
+        csvContent = [
+            headers.join(','),
+            ...data.map(row => {
+                const baseValues = baseHeaders.map(h => `"${row[h] || ''}"`);
+                const ngValues = ngHeaders.map(col => `"${row.ngBreakdown ? row.ngBreakdown[col] || 0 : 0}"`);
+                return [...baseValues, ...ngValues].join(',');
+            })
+        ].join('\n');
+    }
+    
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], {
+        type: 'text/csv;charset=utf-8'
+    });
+    
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    
+    showStatus(`CSV出力完了: ${filename}`, 'success');
+    
+    setTimeout(() => {
+        hideStatus();
+    }, 3000);
+}
+
+function reset() {
+    if (confirm('すべてのデータをリセットしますか？')) {
+        files = [];
+        allData = [];
+        partRateResults = [];
+        typeAnalysisResults = [];
+        allNGColumns.clear();
+        summaryData = {};
+        document.getElementById('fileInput').value = '';
+        document.getElementById('resultsSection').classList.add('hidden');
+        hideStatus();
+        hideProgress();
+        updateFileList();
+        showStatus('リセット完了', 'success');
+        setTimeout(() => {
+            hideStatus();
+        }, 2000);
+    }
+}
+</script>
+
+</body>
+</html>
