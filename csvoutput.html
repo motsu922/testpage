@@ -308,9 +308,10 @@ function analyzeData() {
     allData.forEach(fileData => {
         fileData.data.forEach(row => {
             const partNumber = row['整理No'] || row['品番'] || row['製品番号'] || '';
-            const inspectionType = row['検査種類'] || row['type'] || 'Unknown';
+            const inspectionType = row['検査種類'] || row['type'] || '';
             const inspectionDate = row['生産日付'] || row['検査日'] || row['日付'] || '';
             const inspectionCount = parseInt(row['検査数'] || row['count'] || '0') || 0;
+            const remarks = row['備考'] || '';
             
             if (!partNumber) return;
             
@@ -337,6 +338,7 @@ function analyzeData() {
                     総NG数: 0,
                     不良率: 0,
                     ファイル名: [],
+                    備考統合: [],
                     ngBreakdown: {}
                 });
                 
@@ -349,6 +351,11 @@ function analyzeData() {
             partData.検査種類数.add(inspectionType);
             partData.総検査数 += inspectionCount;
             partData.総NG数 += totalNG;
+            
+            // 備考の統合
+            if (remarks && remarks.trim() && !partData.備考統合.includes(remarks.trim())) {
+                partData.備考統合.push(remarks.trim());
+            }
             
             Array.from(allNGColumns).forEach(col => {
                 partData.ngBreakdown[col] += ngBreakdown[col];
@@ -369,11 +376,11 @@ function analyzeData() {
                 typeMap.set(typeKey, {
                     品番: partNumber,
                     検査種類: inspectionType,
-                    検査回数: 0,
                     総検査数: 0,
                     総NG数: 0,
                     不良率: 0,
                     最新検査日: '',
+                    備考統合: [],
                     ngBreakdown: {}
                 });
                 
@@ -383,9 +390,13 @@ function analyzeData() {
             }
             
             const typeData = typeMap.get(typeKey);
-            typeData.検査回数++;
             typeData.総検査数 += inspectionCount;
             typeData.総NG数 += totalNG;
+            
+            // 備考の統合
+            if (remarks && remarks.trim() && !typeData.備考統合.includes(remarks.trim())) {
+                typeData.備考統合.push(remarks.trim());
+            }
             
             Array.from(allNGColumns).forEach(col => {
                 typeData.ngBreakdown[col] += ngBreakdown[col];
@@ -401,23 +412,13 @@ function analyzeData() {
     partRateResults = Array.from(partMap.values()).map(item => {
         item.不良率 = item.総検査数 > 0 ? (item.総NG数 / item.総検査数 * 100).toFixed(2) : '0.00';
         item.検査種類数 = item.検査種類数.size;
-        item.主要NG項目 = Object.entries(item.ngBreakdown)
-            .filter(([k, v]) => v > 0)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([k, v]) => `${k}:${v}`)
-            .join(', ');
+        item.備考 = item.備考統合.join(' | ');
         return item;
     }).sort((a, b) => parseFloat(b.不良率) - parseFloat(a.不良率));
     
     typeAnalysisResults = Array.from(typeMap.values()).map(item => {
         item.不良率 = item.総検査数 > 0 ? (item.総NG数 / item.総検査数 * 100).toFixed(2) : '0.00';
-        item.主要NG項目 = Object.entries(item.ngBreakdown)
-            .filter(([k, v]) => v > 0)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([k, v]) => `${k}:${v}`)
-            .join(', ');
+        item.備考 = item.備考統合.join(' | ');
         return item;
     }).sort((a, b) => parseFloat(b.不良率) - parseFloat(a.不良率));
     
@@ -449,12 +450,12 @@ function exportCSV(type) {
         case 'partRate':
             data = partRateResults;
             filename = '品番別不良率_NG内訳';
-            headers = ['品番', '不良率', '総検査数', '総NG数', '検査種類数', 'ファイル数', '最新検査日', '主要NG項目', ...Array.from(allNGColumns).sort()];
+            headers = ['品番', '不良率', '総検査数', '総NG数', '検査種類数', 'ファイル数', '最新検査日', '備考', ...Array.from(allNGColumns).sort()];
             break;
         case 'typeAnalysis':
             data = typeAnalysisResults;
             filename = '検査種類別詳細分析';
-            headers = ['品番', '検査種類', '不良率', '検査回数', '総検査数', '総NG数', '最新検査日', '主要NG項目', ...Array.from(allNGColumns).sort()];
+            headers = ['品番', '検査種類', '不良率', '総検査数', '総NG数', '最新検査日', '備考', ...Array.from(allNGColumns).sort()];
             break;
         case 'summary':
             data = [summaryData];
