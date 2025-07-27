@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 
 <html lang="ja">
@@ -6,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ヒストグラム生成ツール</title>
 <style>
+
 :root {
   --primary: #2563eb;
   --accent: #10b981;
@@ -277,10 +279,11 @@ canvas {
 </div>
 <div class="mb-4">
 <label class="text-sm">閾値</label>
-<div class="threshold-group">
-<input type="number" id="threshold" placeholder="閾値" step="any" onchange="draw()">
-<button id="thresholdToggle" class="toggle-btn btn-secondary" onclick="toggleThreshold()">表示</button>
+<div class="threshold-group mb-2">
+<input type="number" id="thresholdInput" placeholder="閾値を入力" step="any">
+<button class="btn-primary" style="width:auto;padding:8px 16px" onclick="addThreshold()">追加</button>
 </div>
+<div id="thresholdList"></div>
 </div>
 </div>
 
@@ -316,7 +319,7 @@ canvas {
 
 <script>
 let datasets = [];
-let showThreshold = false;
+let thresholds = [];
 
 function round(n, d=12) {
   return Math.round(n * Math.pow(10, d)) / Math.pow(10, d);
@@ -541,11 +544,11 @@ function draw() {
     ctx.stroke();
   }
   
-  // ヒストグラム
+  // ヒストグラム（透過設定を強化）
   histData.forEach(d => {
-    ctx.fillStyle = d.color + '80';
+    ctx.fillStyle = d.color + '60'; // 透過度を40%に
     ctx.strokeStyle = d.color;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     
     d.bins.forEach(b => {
       if (b.count > 0) {
@@ -586,7 +589,7 @@ function draw() {
             if (Math.abs(cx - p.x) < 60 && Math.abs(ly - p.y) < 20) ly += 20;
           });
           
-          const label = `${d.name} ${i === 0 ? '-' : '+'}${sigma}σ`;
+          const label = `${d.name} ${i === 0 ? '-' : '+'}${sigma}σ (${x.toFixed(3)})`;
           ctx.font = '11px Arial';
           const tw = ctx.measureText(label).width + 6;
           
@@ -606,13 +609,13 @@ function draw() {
     });
   });
   
-  // 閾値
-  if (showThreshold) {
-    const t = parseFloat(document.getElementById('threshold').value);
-    if (!isNaN(t) && t >= adjustedMinX && t <= adjustedMaxX) {
+  // 閾値（複数対応）
+  thresholds.filter(t => t.visible).forEach(threshold => {
+    const t = threshold.value;
+    if (t >= adjustedMinX && t <= adjustedMaxX) {
       const cx = margin.left + (t - adjustedMinX) * xScale;
       
-      ctx.strokeStyle = '#ff0000';
+      ctx.strokeStyle = threshold.color;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(cx, margin.top);
@@ -621,24 +624,26 @@ function draw() {
       
       let ly = margin.top + 15;
       labelPos.forEach(p => {
-        if (Math.abs(cx - p.x) < 60 && Math.abs(ly - p.y) < 20) ly += 20;
+        if (Math.abs(cx - p.x) < 80 && Math.abs(ly - p.y) < 20) ly += 20;
       });
       
       const label = `閾値: ${formatNum(t, bw)}`;
       ctx.font = '11px Arial';
       const tw = ctx.measureText(label).width + 6;
       
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.fillRect(cx - tw/2, ly - 12, tw, 16);
-      ctx.strokeStyle = '#ff0000';
+      ctx.strokeStyle = threshold.color;
       ctx.lineWidth = 1;
       ctx.strokeRect(cx - tw/2, ly - 12, tw, 16);
       
-      ctx.fillStyle = '#ff0000';
+      ctx.fillStyle = threshold.color;
       ctx.textAlign = 'center';
       ctx.fillText(label, cx, ly - 2);
+      
+      labelPos.push({ x: cx, y: ly });
     }
-  }
+  });
   
   // 軸
   ctx.strokeStyle = '#000';
@@ -726,4 +731,3 @@ function exportImage() {
 
 </body>
 </html>
-
