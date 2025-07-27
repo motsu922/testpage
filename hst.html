@@ -153,6 +153,17 @@
     
     <div id="chartSection" class="section" style="display:none;">
         <h2>📊 ヒストグラム</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="display:flex;gap:8px;">
+                <button class="btn" onclick="copyChartToClipboard()" title="グラフを画像としてクリップボードにコピー">
+                    📋 グラフをコピー
+                </button>
+                <button class="btn" onclick="downloadChart()" title="グラフを画像ファイルとしてダウンロード">
+                    💾 画像保存
+                </button>
+            </div>
+            <div id="copyStatus" style="font-size:12px;color:#666;"></div>
+        </div>
         <div class="chart-container">
             <canvas id="histogramChart"></canvas>
         </div>
@@ -688,6 +699,110 @@
             updateDatasetList();
             updateChart();
         }
+    }
+
+    async function copyChartToClipboard() {
+        if (!chart) {
+            showCopyStatus('グラフが生成されていません', 'error');
+            return;
+        }
+
+        try {
+            showCopyStatus('コピー中...', 'info');
+            
+            // Canvasを高解像度で取得
+            const canvas = chart.canvas;
+            const ctx = canvas.getContext('2d');
+            
+            // 一時的に背景を白に設定してクリアな画像を生成
+            const originalComposite = ctx.globalCompositeOperation;
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = originalComposite;
+            
+            // Canvas を Blob に変換
+            const blob = await new Promise(resolve => {
+                canvas.toBlob(resolve, 'image/png', 1.0);
+            });
+            
+            // クリップボードに書き込み
+            if (navigator.clipboard && window.ClipboardItem) {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'image/png': blob
+                    })
+                ]);
+                showCopyStatus('✅ グラフをクリップボードにコピーしました', 'success');
+            } else {
+                // フォールバック: データURLを生成してテキストとしてコピー
+                const dataUrl = canvas.toDataURL('image/png');
+                await navigator.clipboard.writeText(dataUrl);
+                showCopyStatus('⚠️ データURLをコピーしました（画像として貼り付けできない場合があります）', 'warning');
+            }
+            
+            // チャートを再描画して背景をリセット
+            chart.update('none');
+            
+        } catch (error) {
+            console.error('コピーエラー:', error);
+            showCopyStatus('❌ コピーに失敗しました', 'error');
+        }
+    }
+
+    function downloadChart() {
+        if (!chart) {
+            showCopyStatus('グラフが生成されていません', 'error');
+            return;
+        }
+
+        try {
+            showCopyStatus('ダウンロード準備中...', 'info');
+            
+            const canvas = chart.canvas;
+            const ctx = canvas.getContext('2d');
+            
+            // 一時的に背景を白に設定
+            const originalComposite = ctx.globalCompositeOperation;
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = originalComposite;
+            
+            // ダウンロード用のリンクを作成
+            const link = document.createElement('a');
+            link.download = `histogram_${new Date().toISOString().slice(0,19).replace(/[T:]/g, '_')}.png`;
+            link.href = canvas.toDataURL('image/png', 1.0);
+            
+            // ダウンロード実行
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showCopyStatus('✅ グラフを画像ファイルとして保存しました', 'success');
+            
+            // チャートを再描画して背景をリセット
+            chart.update('none');
+            
+        } catch (error) {
+            console.error('ダウンロードエラー:', error);
+            showCopyStatus('❌ ダウンロードに失敗しました', 'error');
+        }
+    }
+
+    function showCopyStatus(message, type) {
+        const statusEl = document.getElementById('copyStatus');
+        statusEl.textContent = message;
+        
+        // スタイルを適用
+        statusEl.style.color = type === 'success' ? '#27ae60' : 
+                             type === 'error' ? '#e74c3c' : 
+                             type === 'warning' ? '#f39c12' : '#666';
+        
+        // 3秒後にメッセージをクリア
+        setTimeout(() => {
+            statusEl.textContent = '';
+        }, 3000);
     }
 </script>
 ```
