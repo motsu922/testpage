@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Excel ヒストグラム生成ツール</title>
+    <title>ヒストグラム生成ツール</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/2.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.4.0/chartjs-plugin-annotation.min.js"></script>
@@ -52,7 +52,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>📊 Excel ヒストグラム生成ツール</h1>
+        <h1>📊ヒストグラム生成ツール</h1>
 
 ```
     <div class="section">
@@ -119,6 +119,26 @@
             <label>透明度: <span id="opacityValue">80%</span></label>
             <input type="range" id="opacity" min="10" max="100" value="80" oninput="updateOpacity()">
         </div>
+        
+        <div style="margin:15px 0;padding:12px;background:#f8f9fa;border-radius:8px;">
+            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📏 最小測定単位</h3>
+            <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;">
+                <input type="number" id="measurementUnit" placeholder="例: 0.01" step="any" min="0" 
+                       style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <button class="btn" onclick="setMeasurementUnit()">設定</button>
+                <button class="btn btn-danger" onclick="clearMeasurementUnit()" style="padding:4px 8px;">クリア</button>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
+                    <input type="checkbox" id="applyMeasurementUnit" onchange="updateMeasurementUnitApplication()">
+                    ビン幅に適用
+                </label>
+            </div>
+            <div id="measurementUnitInfo" style="font-size:12px;color:#666;margin-top:6px;"></div>
+            <div style="font-size:11px;color:#999;margin-top:4px;">
+                ※ 設定した単位の倍数でビン幅が調整されます
+            </div>
+        </div>
     </div>
     
     <div id="thresholdSection" class="section" style="display:none;">
@@ -161,6 +181,9 @@
                 <button class="btn" onclick="downloadChart()" title="グラフを画像ファイルとしてダウンロード">
                     💾 画像保存
                 </button>
+                <button class="btn" onclick="exportHistogramCSV()" title="ヒストグラムデータをCSVファイルとして出力">
+                    📊 CSV出力
+                </button>
             </div>
             <div id="copyStatus" style="font-size:12px;color:#666;"></div>
         </div>
@@ -179,6 +202,7 @@
 <script>
     let datasets=[], thresholds=[], chart=null, rangeMode='auto', binCount=20, opacity=0.8;
     let specLimits = {lower: null, upper: null, show: false};
+    let measurementUnit = {value: null, apply: false};
 
     document.getElementById('fileInput').addEventListener('change', handleFileUpload);
 
@@ -380,6 +404,57 @@
         }
     }
 
+    function setMeasurementUnit() {
+        const value = parseFloat(document.getElementById('measurementUnit').value);
+        
+        if (isNaN(value) || value <= 0) {
+            alert('正の数値を入力してください');
+            return;
+        }
+        
+        measurementUnit.value = value;
+        measurementUnit.apply = true;
+        document.getElementById('applyMeasurementUnit').checked = true;
+        
+        updateMeasurementUnitInfo();
+        updateChart();
+    }
+
+    function clearMeasurementUnit() {
+        measurementUnit = {value: null, apply: false};
+        document.getElementById('measurementUnit').value = '';
+        document.getElementById('applyMeasurementUnit').checked = false;
+        updateMeasurementUnitInfo();
+        updateChart();
+    }
+
+    function updateMeasurementUnitApplication() {
+        measurementUnit.apply = document.getElementById('applyMeasurementUnit').checked;
+        updateChart();
+    }
+
+    function updateMeasurementUnitInfo() {
+        const info = document.getElementById('measurementUnitInfo');
+        if (measurementUnit.value !== null) {
+            info.textContent = `設定済み測定単位: ${measurementUnit.value} ${measurementUnit.apply ? '(ビン幅に適用中)' : '(適用なし)'}`;
+        } else {
+            info.textContent = '';
+        }
+    }
+
+    function adjustBinWidthToMeasurementUnit(binWidth) {
+        if (!measurementUnit.apply || measurementUnit.value === null) {
+            return binWidth;
+        }
+        
+        // 測定単位の倍数に調整
+        const unit = measurementUnit.value;
+        const ratio = binWidth / unit;
+        const adjustedRatio = Math.max(1, Math.round(ratio)); // 最小1倍
+        
+        return adjustedRatio * unit;
+    }
+
     function generateHistogramData() {
         const visibleDatasets = datasets.filter(d => d.visible);
         if (visibleDatasets.length === 0) return {data: [], range: {min: 0, max: 0}};
@@ -398,8 +473,18 @@
             binWidth = (max - min) / binCount;
         }
 
+        // 最小測定単位を適用
+        binWidth = adjustBinWidthToMeasurementUnit(binWidth);
+
         const actualBinCount = rangeMode === 'custom' && document.getElementById('customBinWidth').value
-            ? Math.ceil((max - min) / binWidth) : binCount;
+            ? Math.ceil((max - min) / binWidth) : Math.ceil((max - min) / binWidth);
+
+        // 最小測定単位を考慮してビン境界を調整
+        if (measurementUnit.apply && measurementUnit.value !== null) {
+            const unit = measurementUnit.value;
+            min = Math.floor(min / unit) * unit;
+            max = Math.ceil(max / unit) * unit;
+        }
 
         const bins = Array(actualBinCount).fill(0).map((_, i) => {
             const binStart = min + i * binWidth;
@@ -414,7 +499,7 @@
             return bin;
         });
 
-        return {data: bins, range: {min, max}};
+        return {data: bins, range: {min, max}, binWidth: binWidth};
     }
 
     function updateChart() {
@@ -647,11 +732,18 @@
             
             specAnalysis = ` <strong>| 規格外:</strong> ${analysisResults.join(', ')}`;
         }
+
+        // 測定単位情報
+        let unitInfo = '';
+        if (measurementUnit.apply && measurementUnit.value !== null) {
+            unitInfo = ` <strong>| 測定単位:</strong> ${measurementUnit.value}`;
+        }
         
         document.getElementById('chartInfo').innerHTML = `
             <strong>範囲:</strong> ${rangeMode === 'auto' ? 'データ全範囲' : 
                 `${histogramData.range.min.toFixed(2)} ～ ${histogramData.range.max.toFixed(2)}`}
-            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}${specAnalysis}
+            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}
+            <strong> | 実際のビン幅:</strong> ${histogramData.binWidth.toFixed(4)}${unitInfo}${specAnalysis}
         `;
     }
 
@@ -803,6 +895,154 @@
         setTimeout(() => {
             statusEl.textContent = '';
         }, 3000);
+    }
+
+    function exportHistogramCSV() {
+        const visibleDatasets = datasets.filter(d => d.visible);
+        if (visibleDatasets.length === 0) {
+            showCopyStatus('表示可能なデータセットがありません', 'error');
+            return;
+        }
+
+        try {
+            showCopyStatus('CSV生成中...', 'info');
+            
+            const histogramData = generateHistogramData();
+            if (histogramData.data.length === 0) {
+                showCopyStatus('ヒストグラムデータが生成されていません', 'error');
+                return;
+            }
+
+            // CSVヘッダーを作成
+            const headers = ['ビン中央値', 'ビン範囲開始', 'ビン範囲終了'];
+            visibleDatasets.forEach(dataset => {
+                headers.push(`${dataset.name}_出現回数`);
+                headers.push(`${dataset.name}_相対頻度(%)`);
+            });
+
+            // 統計情報を追加
+            headers.push('合計出現回数', '全体相対頻度(%)');
+
+            // CSVデータを生成
+            const csvRows = [headers];
+            
+            // ビン幅を計算
+            const binWidth = histogramData.binWidth || (histogramData.data.length > 1 ? 
+                histogramData.data[1].x - histogramData.data[0].x : 1);
+            
+            histogramData.data.forEach(bin => {
+                const binStart = bin.x - binWidth / 2;
+                const binEnd = bin.x + binWidth / 2;
+                
+                const row = [
+                    bin.x.toFixed(4),
+                    binStart.toFixed(4),
+                    binEnd.toFixed(4)
+                ];
+
+                let totalCount = 0;
+                
+                // 各データセットの出現回数と相対頻度
+                visibleDatasets.forEach(dataset => {
+                    const count = bin[dataset.name] || 0;
+                    const totalDataPoints = dataset.data.length;
+                    const relativeFreq = totalDataPoints > 0 ? (count / totalDataPoints * 100) : 0;
+                    
+                    row.push(count);
+                    row.push(relativeFreq.toFixed(2));
+                    totalCount += count;
+                });
+
+                // 全体の出現回数と相対頻度
+                const allDataPoints = visibleDatasets.reduce((sum, ds) => sum + ds.data.length, 0);
+                const totalRelativeFreq = allDataPoints > 0 ? (totalCount / allDataPoints * 100) : 0;
+                
+                row.push(totalCount);
+                row.push(totalRelativeFreq.toFixed(2));
+                
+                csvRows.push(row);
+            });
+
+            // 統計サマリーを追加
+            csvRows.push([]); // 空行
+            csvRows.push(['統計サマリー']);
+            csvRows.push(['データセット名', 'データ数', '平均', '標準偏差', '最小値', '最大値', '規格外数', '規格外率(%)']);
+            
+            visibleDatasets.forEach(dataset => {
+                const stats = calculateStats(dataset.data);
+                const min = Math.min(...dataset.data);
+                const max = Math.max(...dataset.data);
+                
+                // 規格外データの計算
+                let outOfSpecCount = 0;
+                if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
+                    dataset.data.forEach(value => {
+                        if (specLimits.lower !== null && value < specLimits.lower) outOfSpecCount++;
+                        if (specLimits.upper !== null && value > specLimits.upper) outOfSpecCount++;
+                    });
+                }
+                const outOfSpecRate = dataset.data.length > 0 ? (outOfSpecCount / dataset.data.length * 100) : 0;
+                
+                csvRows.push([
+                    dataset.name,
+                    dataset.data.length,
+                    stats.mean.toFixed(4),
+                    stats.stdDev.toFixed(4),
+                    min.toFixed(4),
+                    max.toFixed(4),
+                    outOfSpecCount,
+                    outOfSpecRate.toFixed(2)
+                ]);
+            });
+
+            // 設定情報を追加
+            csvRows.push([]); // 空行
+            csvRows.push(['設定情報']);
+            csvRows.push(['項目', '値']);
+            csvRows.push(['範囲モード', rangeMode === 'auto' ? '自動範囲' : 'カスタム範囲']);
+            csvRows.push(['ビン数', binCount]);
+            csvRows.push(['データ範囲', `${histogramData.range.min.toFixed(4)} ～ ${histogramData.range.max.toFixed(4)}`]);
+            csvRows.push(['実際のビン幅', binWidth.toFixed(4)]);
+            
+            if (measurementUnit.value !== null) {
+                csvRows.push(['最小測定単位', measurementUnit.value]);
+                csvRows.push(['測定単位適用', measurementUnit.apply ? 'はい' : 'いいえ']);
+            }
+            
+            if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
+                csvRows.push(['規格下限', specLimits.lower !== null ? specLimits.lower : 'なし']);
+                csvRows.push(['規格上限', specLimits.upper !== null ? specLimits.upper : 'なし']);
+            }
+
+            // CSVテキストを生成
+            const csvContent = csvRows.map(row => 
+                row.map(cell => 
+                    typeof cell === 'string' && (cell.includes(',') || cell.includes('"') || cell.includes('\n')) 
+                        ? `"${cell.replace(/"/g, '""')}"` 
+                        : cell
+                ).join(',')
+            ).join('\n');
+
+            // BOM付きUTF-8でダウンロード
+            const bom = '\uFEFF';
+            const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+            
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `histogram_data_${new Date().toISOString().slice(0,19).replace(/[T:]/g, '_')}.csv`);
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showCopyStatus('✅ ヒストグラムデータをCSVファイルで出力しました', 'success');
+            
+        } catch (error) {
+            console.error('CSV出力エラー:', error);
+            showCopyStatus('❌ CSV出力に失敗しました', 'error');
+        }
     }
 </script>
 ```
