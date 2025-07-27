@@ -1,3 +1,5 @@
+y軸は整数固定で
+
 <!DOCTYPE html>
 
 <html lang="ja">
@@ -119,26 +121,6 @@
             <label>透明度: <span id="opacityValue">80%</span></label>
             <input type="range" id="opacity" min="10" max="100" value="80" oninput="updateOpacity()">
         </div>
-        
-        <div style="margin:15px 0;padding:12px;background:#f8f9fa;border-radius:8px;">
-            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📏 最小測定単位</h3>
-            <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;">
-                <input type="number" id="measurementUnit" placeholder="例: 0.01" step="any" min="0" 
-                       style="padding:6px;border:1px solid #ddd;border-radius:4px;">
-                <button class="btn" onclick="setMeasurementUnit()">設定</button>
-                <button class="btn btn-danger" onclick="clearMeasurementUnit()" style="padding:4px 8px;">クリア</button>
-            </div>
-            <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
-                    <input type="checkbox" id="applyMeasurementUnit" onchange="updateMeasurementUnitApplication()">
-                    ビン幅に適用
-                </label>
-            </div>
-            <div id="measurementUnitInfo" style="font-size:12px;color:#666;margin-top:6px;"></div>
-            <div style="font-size:11px;color:#999;margin-top:4px;">
-                ※ 設定した単位の倍数でビン幅が調整されます
-            </div>
-        </div>
     </div>
     
     <div id="thresholdSection" class="section" style="display:none;">
@@ -197,17 +179,11 @@
         <h3>📊 データを追加してください</h3>
         <p>Excelファイルまたは直接入力でデータを追加</p>
     </div>
-    
-    <footer style="text-align:center;margin-top:40px;padding:20px;border-top:1px solid #ddd;color:#666;font-size:12px;">
-        <p>📊 Excel ヒストグラム生成ツール</p>
-        <p style="margin-top:5px;">Developed by <strong>y.sugimoto</strong> | 2025</p>
-    </footer>
 </div>
 
 <script>
     let datasets=[], thresholds=[], chart=null, rangeMode='auto', binCount=20, opacity=0.8;
     let specLimits = {lower: null, upper: null, show: false};
-    let measurementUnit = {value: null, apply: false};
 
     document.getElementById('fileInput').addEventListener('change', handleFileUpload);
 
@@ -409,65 +385,6 @@
         }
     }
 
-    function setMeasurementUnit() {
-        const value = parseFloat(document.getElementById('measurementUnit').value);
-        
-        if (isNaN(value) || value <= 0) {
-            alert('正の数値を入力してください');
-            return;
-        }
-        
-        measurementUnit.value = value;
-        measurementUnit.apply = true;
-        document.getElementById('applyMeasurementUnit').checked = true;
-        
-        updateMeasurementUnitInfo();
-        updateChart();
-    }
-
-    function clearMeasurementUnit() {
-        measurementUnit = {value: null, apply: false};
-        document.getElementById('measurementUnit').value = '';
-        document.getElementById('applyMeasurementUnit').checked = false;
-        updateMeasurementUnitInfo();
-        updateChart();
-    }
-
-    function updateMeasurementUnitApplication() {
-        measurementUnit.apply = document.getElementById('applyMeasurementUnit').checked;
-        updateChart();
-    }
-
-    function updateMeasurementUnitInfo() {
-        const info = document.getElementById('measurementUnitInfo');
-        if (measurementUnit.value !== null) {
-            info.textContent = `設定済み測定単位: ${measurementUnit.value} ${measurementUnit.apply ? '(ビン幅に適用中)' : '(適用なし)'}`;
-        } else {
-            info.textContent = '';
-        }
-    }
-
-    function adjustBinWidthToMeasurementUnit(binWidth) {
-        if (!measurementUnit.apply || measurementUnit.value === null || measurementUnit.value <= 0) {
-            return binWidth;
-        }
-        
-        // 測定単位の倍数に調整
-        const unit = measurementUnit.value;
-        const ratio = binWidth / unit;
-        
-        // 1倍未満の場合は1倍、それ以外は最も近い整数倍に調整
-        let adjustedRatio;
-        if (ratio < 1) {
-            adjustedRatio = 1;
-        } else {
-            adjustedRatio = Math.round(ratio);
-            if (adjustedRatio === 0) adjustedRatio = 1;
-        }
-        
-        return adjustedRatio * unit;
-    }
-
     function generateHistogramData() {
         const visibleDatasets = datasets.filter(d => d.visible);
         if (visibleDatasets.length === 0) return {data: [], range: {min: 0, max: 0}};
@@ -486,51 +403,23 @@
             binWidth = (max - min) / binCount;
         }
 
-        // 最小測定単位を適用してビン幅を調整
-        const originalBinWidth = binWidth;
-        binWidth = adjustBinWidthToMeasurementUnit(binWidth);
+        const actualBinCount = rangeMode === 'custom' && document.getElementById('customBinWidth').value
+            ? Math.ceil((max - min) / binWidth) : binCount;
 
-        // 最小測定単位適用時のビン数再計算
-        let actualBinCount;
-        if (measurementUnit.apply && measurementUnit.value !== null) {
-            // 測定単位に合わせてビン境界を調整
-            const unit = measurementUnit.value;
-            min = Math.floor(min / unit) * unit;
-            max = Math.ceil(max / unit) * unit;
-            actualBinCount = Math.round((max - min) / binWidth);
-            
-            // 最大値がカバーされるように調整
-            if (min + actualBinCount * binWidth < Math.max(...allData)) {
-                actualBinCount += 1;
-            }
-        } else {
-            actualBinCount = rangeMode === 'custom' && document.getElementById('customBinWidth').value
-                ? Math.ceil((max - min) / binWidth) : binCount;
-        }
-
-        const bins = [];
-        for (let i = 0; i < actualBinCount; i++) {
+        const bins = Array(actualBinCount).fill(0).map((_, i) => {
             const binStart = min + i * binWidth;
             const binEnd = min + (i + 1) * binWidth;
             const binCenter = binStart + binWidth / 2;
-            const bin = {x: binCenter, binStart: binStart, binEnd: binEnd};
+            const bin = {x: binCenter};
             
             visibleDatasets.forEach(dataset => {
-                // 最後のビンは上限を含む（binEnd以下）、それ以外は未満（binEnd未満）
-                const count = dataset.data.filter(value => {
-                    if (i === actualBinCount - 1) {
-                        return value >= binStart && value <= binEnd;
-                    } else {
-                        return value >= binStart && value < binEnd;
-                    }
-                }).length;
-                bin[dataset.name] = count;
+                bin[dataset.name] = dataset.data.filter(value => value >= binStart && value < binEnd).length;
             });
             
-            bins.push(bin);
-        }
+            return bin;
+        });
 
-        return {data: bins, range: {min: min, max: min + actualBinCount * binWidth}, binWidth: binWidth};
+        return {data: bins, range: {min, max}};
     }
 
     function updateChart() {
@@ -617,22 +506,6 @@
             });
         });
         
-        // カテゴリ軸用にビンインデックスに変換
-        const getXPositionForValue = (value) => {
-            // 値に最も近いビンのインデックスを見つける
-            let closestIndex = 0;
-            let minDistance = Math.abs(histogramData.data[0].x - value);
-            
-            for (let i = 1; i < histogramData.data.length; i++) {
-                const distance = Math.abs(histogramData.data[i].x - value);
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    closestIndex = i;
-                }
-            }
-            return closestIndex;
-        };
-        
         // 値でソートして重複を除去
         const uniqueLines = [];
         allLines.sort((a, b) => a.value - b.value).forEach(line => {
@@ -655,13 +528,11 @@
             const position = labelPositions[positionIndex];
             positionIndex = (positionIndex + 1) % labelPositions.length;
             
-            const xPosition = getXPositionForValue(line.value);
-            
             if (line.type === 'spec') {
                 annotations[line.id] = {
                     type: 'line',
-                    xMin: xPosition,
-                    xMax: xPosition,
+                    xMin: line.value,
+                    xMax: line.value,
                     borderColor: line.color,
                     borderWidth: 4,
                     borderDash: [10, 5],
@@ -677,8 +548,8 @@
             } else if (line.type === 'threshold') {
                 annotations[line.id] = {
                     type: 'line',
-                    xMin: xPosition,
-                    xMax: xPosition,
+                    xMin: line.value,
+                    xMax: line.value,
                     borderColor: line.color,
                     borderWidth: 3,
                     label: {
@@ -693,8 +564,8 @@
             } else if (line.type === 'sigma') {
                 annotations[line.id] = {
                     type: 'line',
-                    xMin: xPosition,
-                    xMax: xPosition,
+                    xMin: line.value,
+                    xMax: line.value,
                     borderColor: line.color,
                     borderWidth: line.label === '平均' ? 3 : 2,
                     borderDash: line.label === '平均' ? [] : [8, 4],
@@ -731,11 +602,10 @@
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        type: 'category',
-                        title: {display: true, text: '値'},
-                        grid: {
-                            display: true
-                        }
+                        type: 'linear',
+                        min: histogramData.range.min,
+                        max: histogramData.range.max,
+                        title: {display: true, text: '値'}
                     },
                     y: {
                         beginAtZero: true,
@@ -745,10 +615,7 @@
                 plugins: {
                     tooltip: {
                         callbacks: {
-                            title: ctx => {
-                                const binData = histogramData.data[ctx[0].dataIndex];
-                                return `範囲: ${binData.binStart.toFixed(3)} ～ ${binData.binEnd.toFixed(3)}`;
-                            },
+                            title: ctx => `値: ${parseFloat(ctx[0].label).toFixed(3)}`,
                             label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}回`
                         }
                     },
@@ -785,18 +652,11 @@
             
             specAnalysis = ` <strong>| 規格外:</strong> ${analysisResults.join(', ')}`;
         }
-
-        // 測定単位情報
-        let unitInfo = '';
-        if (measurementUnit.apply && measurementUnit.value !== null) {
-            unitInfo = ` <strong>| 測定単位:</strong> ${measurementUnit.value}`;
-        }
         
         document.getElementById('chartInfo').innerHTML = `
             <strong>範囲:</strong> ${rangeMode === 'auto' ? 'データ全範囲' : 
                 `${histogramData.range.min.toFixed(2)} ～ ${histogramData.range.max.toFixed(2)}`}
-            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}
-            <strong> | 実際のビン幅:</strong> ${histogramData.binWidth.toFixed(4)}${unitInfo}${specAnalysis}
+            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}${specAnalysis}
         `;
     }
 
@@ -980,8 +840,8 @@
             const csvRows = [headers];
             
             // ビン幅を計算
-            const binWidth = histogramData.binWidth || (histogramData.data.length > 1 ? 
-                histogramData.data[1].x - histogramData.data[0].x : 1);
+            const binWidth = histogramData.data.length > 1 ? 
+                histogramData.data[1].x - histogramData.data[0].x : 1;
             
             histogramData.data.forEach(bin => {
                 const binStart = bin.x - binWidth / 2;
@@ -1055,24 +915,12 @@
             csvRows.push(['範囲モード', rangeMode === 'auto' ? '自動範囲' : 'カスタム範囲']);
             csvRows.push(['ビン数', binCount]);
             csvRows.push(['データ範囲', `${histogramData.range.min.toFixed(4)} ～ ${histogramData.range.max.toFixed(4)}`]);
-            csvRows.push(['実際のビン幅', binWidth.toFixed(4)]);
-            
-            if (measurementUnit.value !== null) {
-                csvRows.push(['最小測定単位', measurementUnit.value]);
-                csvRows.push(['測定単位適用', measurementUnit.apply ? 'はい' : 'いいえ']);
-            }
+            csvRows.push(['ビン幅', binWidth.toFixed(4)]);
             
             if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
                 csvRows.push(['規格下限', specLimits.lower !== null ? specLimits.lower : 'なし']);
                 csvRows.push(['規格上限', specLimits.upper !== null ? specLimits.upper : 'なし']);
             }
-
-            // クレジット情報を追加
-            csvRows.push([]); // 空行
-            csvRows.push(['生成情報']);
-            csvRows.push(['ツール名', 'Excel ヒストグラム生成ツール']);
-            csvRows.push(['開発者', 'y.sugimoto']);
-            csvRows.push(['生成日時', new Date().toLocaleString('ja-JP')]);
 
             // CSVテキストを生成
             const csvContent = csvRows.map(row => 
