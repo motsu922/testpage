@@ -1,681 +1,545 @@
+<!DOCTYPE html>
 
-import React, { useState, useRef, useCallback } from ‘react’;
-import { Download, Upload, Plus, Trash2, Eye, EyeOff } from ‘lucide-react’;
-import * as XLSX from ‘xlsx’;
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ヒストグラム生成ツール</title>
+<style>
+body{margin:0;font-family:Arial,sans-serif;background:#fafbfd}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+h1{text-align:center;color:#1e40af;margin-bottom:30px}
+.grid{display:grid;grid-template-columns:1fr 2fr;gap:20px}
+.panel{background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(59,130,246,0.08);border:1px solid #e0e7ff}
+.section{margin-bottom:20px}
+.section h2{font-size:18px;margin-bottom:15px;color:#3730a3}
+input[type="text"],input[type="number"],textarea{width:100%;padding:8px;border:1px solid #c7d2fe;border-radius:6px;box-sizing:border-box;background:#f9fafb}
+input[type="text"]:focus,input[type="number"]:focus,textarea:focus{outline:none;border-color:#60a5fa;background:white}
+textarea{resize:vertical;min-height:100px}
+button{width:100%;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;transition:all 0.3s}
+.btn-primary{background:#60a5fa;color:white}
+.btn-primary:hover{background:#3b82f6;transform:translateY(-1px)}
+.btn-success{background:#34d399;color:white}
+.btn-success:hover{background:#10b981;transform:translateY(-1px)}
+.btn-danger{background:#f87171;color:white}
+.btn-danger:hover{background:#ef4444;transform:translateY(-1px)}
+.btn-secondary{background:#93c5fd;color:white}
+.btn-secondary:hover{background:#60a5fa;transform:translateY(-1px)}
+.dataset-item{display:flex;align-items:center;gap:10px;padding:10px;background:#eff6ff;border-radius:6px;margin-bottom:8px;border:1px solid #dbeafe}
+.color-box{width:20px;height:20px;border-radius:4px}
+.dataset-name{flex:1;font-size:14px;color:#1e40af}
+.icon-btn{width:30px;height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;background:transparent;color:#60a5fa}
+.icon-btn:hover{background:#dbeafe;border-radius:4px}
+.checkbox-group{display:flex;flex-direction:column;gap:8px}
+.checkbox-label{display:flex;align-items:center;gap:8px;color:#3730a3}
+canvas{width:100%;height:auto;border:1px solid #c7d2fe;border-radius:8px}
+.stats{margin-top:20px;padding:15px;background:#eff6ff;border-radius:8px;border:1px solid #dbeafe}
+.stat-item{margin-bottom:8px;padding:10px;background:white;border-radius:6px;border:1px solid #e0e7ff}
+.threshold-group{display:flex;gap:10px}
+.threshold-group input{flex:1}
+.toggle-btn{width:auto;padding:8px 16px}
+.toggle-btn.active{background:#f87171}
+.mb-2{margin-bottom:8px}
+.mb-4{margin-bottom:16px}
+.text-sm{font-size:14px;color:#4c1d95}
+.text-xs{font-size:12px;color:#6366f1}
+@media(max-width:768px){.grid{grid-template-columns:1fr}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="container">
+<h1>ヒストグラム生成ツール</h1>
+<div class="grid">
+<div>
+<!-- データ入力 -->
+<div class="panel section">
+<h2>データ入力</h2>
+<input type="text" id="datasetName" placeholder="データセット名" class="mb-2">
+<textarea id="inputData" placeholder="数値データ（スペース、カンマ、改行区切り）" class="mb-2"></textarea>
+<button class="btn-primary" onclick="addDataset()">➕ データセット追加</button>
+</div>
 
-const HistogramGenerator = () => {
-const [datasets, setDatasets] = useState([]);
-const [inputData, setInputData] = useState(’’);
-const [datasetName, setDatasetName] = useState(’’);
-const [binWidth, setBinWidth] = useState(1);
-const [showSigmaLines, setShowSigmaLines] = useState({ sigma1: false, sigma2: false, sigma3: false });
-const [thresholdValue, setThresholdValue] = useState(’’);
-const [showThreshold, setShowThreshold] = useState(false);
-const fileInputRef = useRef(null);
-const canvasRef = useRef(null);
+<!-- ファイル読み込み -->
 
-// 浮動小数点誤差を避けるための丸め処理（精度を高める）
-const roundToDecimal = (num, decimals = 12) => {
-return Math.round(num * Math.pow(10, decimals)) / Math.pow(10, decimals);
-};
+<div class="panel section">
+<h2>エクセルファイル読み込み</h2>
+<input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none" onchange="handleFile(event)">
+<button class="btn-success" onclick="document.getElementById('fileInput').click()">📁 ファイル選択</button>
+</div>
 
-// 数値を適切な桁数で表示するためのフォーマット関数
-const formatNumber = (num, binWidth) => {
-// 自動的に適切な桁数を決定
-if (binWidth >= 10) {
-return num.toString();
-} else if (binWidth >= 1) {
-return num.toFixed(1);
-} else if (binWidth >= 0.1) {
-return num.toFixed(1);
-} else if (binWidth >= 0.01) {
-return num.toFixed(2);
-} else if (binWidth >= 0.001) {
-return num.toFixed(3);
-} else {
-return num.toFixed(4);
+<!-- 設定 -->
+
+<div class="panel section">
+<h2>ヒストグラム設定</h2>
+<div class="mb-4">
+<label class="text-sm">ビン幅</label>
+<input type="number" id="binWidth" value="1" step="any" onchange="draw()">
+<div class="text-xs">任意の正の数値を入力（例: 0.1, 1, 10）</div>
+</div>
+<div class="mb-4">
+<label class="text-sm">シグマライン</label>
+<div class="checkbox-group">
+<label class="checkbox-label">
+<input type="checkbox" id="sigma1" onchange="draw()"> 1σライン
+</label>
+<label class="checkbox-label">
+<input type="checkbox" id="sigma2" onchange="draw()"> 2σライン
+</label>
+<label class="checkbox-label">
+<input type="checkbox" id="sigma3" onchange="draw()"> 3σライン
+</label>
+</div>
+</div>
+<div class="mb-4">
+<label class="text-sm">閾値</label>
+<div class="threshold-group">
+<input type="number" id="threshold" placeholder="閾値" step="any" onchange="draw()">
+<button id="thresholdToggle" class="toggle-btn btn-secondary" onclick="toggleThreshold()">表示</button>
+</div>
+</div>
+</div>
+
+<!-- データセット管理 -->
+
+<div class="panel section">
+<h2>データセット管理</h2>
+<div id="datasetList"></div>
+</div>
+</div>
+
+<div>
+<!-- ヒストグラム -->
+<div class="panel">
+<h2>ヒストグラム</h2>
+<canvas id="canvas" width="800" height="500"></canvas>
+<div id="stats" class="stats" style="display:none"></div>
+</div>
+</div>
+</div>
+
+<!-- エクスポート -->
+
+<div class="panel section" style="margin:20px auto 0;max-width:1200px">
+<h2>エクスポート</h2>
+<div style="display:flex;gap:20px;justify-content:center">
+<button class="btn-secondary" style="width:300px" onclick="exportCSV()">💾 CSV出力</button>
+<button class="btn-secondary" style="width:300px" onclick="exportImage()">🖼️ 画像出力</button>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+let datasets = [];
+let showThreshold = false;
+
+function round(n, d=12) {
+  return Math.round(n * Math.pow(10, d)) / Math.pow(10, d);
 }
-};
 
-// 統計計算
-const calculateStats = (data) => {
-const n = data.length;
-const mean = data.reduce((sum, val) => sum + val, 0) / n;
-const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / n;
-const stdDev = Math.sqrt(variance);
-return { mean: roundToDecimal(mean), stdDev: roundToDecimal(stdDev) };
-};
-
-// ヒストグラムデータの生成（改良版）
-const generateHistogramData = (data, binWidth) => {
-if (data.length === 0) return { bins: [], max: 0 };
-
-```
-const min = Math.min(...data);
-const max = Math.max(...data);
-
-// ビンの範囲を計算（浮動小数点誤差を考慮）
-const minBin = roundToDecimal(Math.floor(min / binWidth) * binWidth);
-const maxBin = roundToDecimal(Math.ceil(max / binWidth) * binWidth);
-
-const bins = [];
-let currentBin = minBin;
-while (currentBin <= maxBin + binWidth / 2) { // 小さな余裕を持たせる
-  bins.push({ x: roundToDecimal(currentBin), count: 0 });
-  currentBin = roundToDecimal(currentBin + binWidth);
+function formatNum(n, bw) {
+  if (bw >= 10) return n.toString();
+  if (bw >= 1) return n.toFixed(1);
+  if (bw >= 0.1) return n.toFixed(1);
+  if (bw >= 0.01) return n.toFixed(2);
+  if (bw >= 0.001) return n.toFixed(3);
+  return n.toFixed(4);
 }
 
-// データをビンに分類（改良版）
-data.forEach(value => {
-  const binIndex = Math.round((value - minBin) / binWidth);
-  if (binIndex >= 0 && binIndex < bins.length) {
-    bins[binIndex].count++;
-  }
-});
+function calcStats(data) {
+  const n = data.length;
+  const mean = data.reduce((s, v) => s + v, 0) / n;
+  const variance = data.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / n;
+  return { mean: round(mean), stdDev: round(Math.sqrt(variance)) };
+}
 
-const maxCount = Math.max(...bins.map(bin => bin.count));
-return { bins, max: maxCount };
-```
-
-};
-
-// データセット追加
-const addDataset = () => {
-if (!inputData.trim() || !datasetName.trim()) return;
-
-```
-const values = inputData.split(/[\s,\n]+/)
-  .map(val => val.trim())
-  .filter(val => val !== '')
-  .map(val => parseFloat(val))
-  .filter(val => !isNaN(val));
-
-if (values.length === 0) return;
-
-const newDataset = {
-  id: Date.now(),
-  name: datasetName,
-  data: values,
-  color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-  visible: true
-};
-
-setDatasets([...datasets, newDataset]);
-setInputData('');
-setDatasetName('');
-```
-
-};
-
-// エクセルファイル読み込み
-const handleFileUpload = async (event) => {
-const file = event.target.files[0];
-if (!file) return;
-
-```
-try {
-  const data = await file.arrayBuffer();
-  const workbook = XLSX.read(data);
-  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-  const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+function generateHist(data, bw) {
+  if (!data.length) return { bins: [], max: 0 };
   
-  // 数値データのみを抽出
-  const values = [];
-  jsonData.forEach(row => {
-    row.forEach(cell => {
-      const num = parseFloat(cell);
-      if (!isNaN(num)) {
-        values.push(num);
-      }
-    });
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const minBin = round(Math.floor(min / bw) * bw);
+  const maxBin = round(Math.ceil(max / bw) * bw);
+  
+  const bins = [];
+  let curr = minBin;
+  while (curr <= maxBin + bw / 2) {
+    bins.push({ x: round(curr), count: 0 });
+    curr = round(curr + bw);
+  }
+  
+  data.forEach(v => {
+    const idx = Math.round((v - minBin) / bw);
+    if (idx >= 0 && idx < bins.length) bins[idx].count++;
   });
   
-  if (values.length === 0) {
-    alert('数値データが見つかりませんでした');
-    return;
-  }
+  return { bins, max: Math.max(...bins.map(b => b.count)) };
+}
+
+function addDataset() {
+  const name = document.getElementById('datasetName').value.trim();
+  const input = document.getElementById('inputData').value.trim();
   
-  const newDataset = {
+  if (!name || !input) return;
+  
+  const values = input.split(/[\s,\n]+/)
+    .map(v => parseFloat(v))
+    .filter(v => !isNaN(v));
+  
+  if (!values.length) return;
+  
+  datasets.push({
     id: Date.now(),
-    name: file.name.replace(/\.[^/.]+$/, ''),
+    name,
     data: values,
     color: `hsl(${Math.random() * 360}, 70%, 50%)`,
     visible: true
-  };
+  });
   
-  setDatasets([...datasets, newDataset]);
-} catch (error) {
-  alert('ファイルの読み込みに失敗しました: ' + error.message);
+  document.getElementById('datasetName').value = '';
+  document.getElementById('inputData').value = '';
+  
+  updateDatasetList();
+  draw();
 }
 
-event.target.value = '';
-```
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'binary' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      
+      const values = [];
+      json.forEach(row => {
+        row.forEach(cell => {
+          const n = parseFloat(cell);
+          if (!isNaN(n)) values.push(n);
+        });
+      });
+      
+      if (!values.length) {
+        alert('数値データが見つかりませんでした');
+        return;
+      }
+      
+      datasets.push({
+        id: Date.now(),
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        data: values,
+        color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+        visible: true
+      });
+      
+      updateDatasetList();
+      draw();
+    } catch (err) {
+      alert('ファイル読み込みエラー: ' + err.message);
+    }
+  };
+  reader.readAsBinaryString(file);
+  e.target.value = '';
+}
 
-};
-
-// データセット削除
-const removeDataset = (id) => {
-setDatasets(datasets.filter(dataset => dataset.id !== id));
-};
-
-// データセット表示切り替え
-const toggleDatasetVisibility = (id) => {
-setDatasets(datasets.map(dataset =>
-dataset.id === id ? { …dataset, visible: !dataset.visible } : dataset
-));
-};
-
-// CSV出力
-const exportToCSV = () => {
-if (datasets.length === 0) return;
-
-```
-let csvContent = 'Dataset,Value\n';
-datasets.forEach(dataset => {
-  dataset.data.forEach(value => {
-    csvContent += `"${dataset.name}",${value}\n`;
-  });
-});
-
-const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-const link = document.createElement('a');
-const url = URL.createObjectURL(blob);
-link.setAttribute('href', url);
-link.setAttribute('download', 'histogram_data.csv');
-link.click();
-URL.revokeObjectURL(url);
-```
-
-};
-
-// 画像出力
-const exportToImage = () => {
-if (!canvasRef.current) return;
-
-```
-const link = document.createElement('a');
-link.download = 'histogram.png';
-link.href = canvasRef.current.toDataURL();
-link.click();
-```
-
-};
-
-// ヒストグラム描画
-const drawHistogram = useCallback(() => {
-const canvas = canvasRef.current;
-if (!canvas) return;
-
-```
-const ctx = canvas.getContext('2d');
-const width = canvas.width;
-const height = canvas.height;
-
-// キャンバスクリア
-ctx.fillStyle = 'white';
-ctx.fillRect(0, 0, width, height);
-
-const visibleDatasets = datasets.filter(dataset => dataset.visible);
-if (visibleDatasets.length === 0) return;
-
-// 全データから範囲と最大カウントを計算
-let allData = [];
-visibleDatasets.forEach(dataset => {
-  allData = allData.concat(dataset.data);
-});
-
-if (allData.length === 0) return;
-
-const { bins: allBins } = generateHistogramData(allData, binWidth);
-let maxCount = 0;
-
-const histogramDatasets = visibleDatasets.map(dataset => {
-  const { bins, max } = generateHistogramData(dataset.data, binWidth);
-  maxCount = Math.max(maxCount, max);
-  return { ...dataset, bins };
-});
-
-// 描画領域設定
-const margin = { top: 40, right: 40, bottom: 60, left: 60 };
-const chartWidth = width - margin.left - margin.right;
-const chartHeight = height - margin.top - margin.bottom;
-
-if (allBins.length === 0) return;
-
-const dataMinX = Math.min(...allBins.map(bin => bin.x));
-const dataMaxX = Math.max(...allBins.map(bin => bin.x)) + binWidth;
-const dataRange = dataMaxX - dataMinX;
-
-// X軸範囲を拡張（データ範囲の30%ずつ両端に追加）
-const extension = dataRange * 0.3;
-const minX = dataMinX - extension;
-const maxX = dataMaxX + extension;
-const xScale = chartWidth / (maxX - minX);
-const yScale = chartHeight / Math.ceil(maxCount);
-
-// グリッド描画（改良版）
-ctx.strokeStyle = '#e0e0e0';
-ctx.lineWidth = 1;
-
-// 縦線（X軸グリッド）- より細かい制御
-const gridStepX = binWidth >= 1 ? binWidth : 
-                 binWidth >= 0.1 ? roundToDecimal(binWidth * Math.ceil(1 / binWidth)) :
-                 roundToDecimal(binWidth * Math.ceil(10 / binWidth));
-
-for (let x = roundToDecimal(Math.ceil(minX / gridStepX) * gridStepX); x <= maxX; x = roundToDecimal(x + gridStepX)) {
-  const canvasX = margin.left + (x - minX) * xScale;
-  if (canvasX >= margin.left && canvasX <= margin.left + chartWidth) {
-    ctx.beginPath();
-    ctx.moveTo(canvasX, margin.top);
-    ctx.lineTo(canvasX, margin.top + chartHeight);
-    ctx.stroke();
+function toggleVisibility(id) {
+  const ds = datasets.find(d => d.id === id);
+  if (ds) {
+    ds.visible = !ds.visible;
+    updateDatasetList();
+    draw();
   }
 }
 
-// 横線（Y軸グリッド）- 整数のみ
-for (let y = 0; y <= Math.ceil(maxCount); y++) {
-  const canvasY = margin.top + chartHeight - y * yScale;
-  ctx.beginPath();
-  ctx.moveTo(margin.left, canvasY);
-  ctx.lineTo(margin.left + chartWidth, canvasY);
-  ctx.stroke();
+function removeDataset(id) {
+  datasets = datasets.filter(d => d.id !== id);
+  updateDatasetList();
+  draw();
 }
 
-// ヒストグラム描画
-histogramDatasets.forEach((dataset, datasetIndex) => {
-  ctx.fillStyle = dataset.color + '80'; // 透明度を追加
-  ctx.strokeStyle = dataset.color;
+function updateDatasetList() {
+  const list = document.getElementById('datasetList');
+  list.innerHTML = datasets.map(d => `
+    <div class="dataset-item">
+      <div class="color-box" style="background:${d.color}"></div>
+      <span class="dataset-name">${d.name} (${d.data.length}点)</span>
+      <button class="icon-btn" onclick="toggleVisibility(${d.id})">${d.visible ? '👁️' : '🚫'}</button>
+      <button class="icon-btn" onclick="removeDataset(${d.id})">🗑️</button>
+    </div>
+  `).join('');
+}
+
+function toggleThreshold() {
+  showThreshold = !showThreshold;
+  document.getElementById('thresholdToggle').classList.toggle('active', showThreshold);
+  document.getElementById('thresholdToggle').classList.toggle('btn-danger', showThreshold);
+  draw();
+}
+
+function draw() {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  
+  // 背景を明るい色で塗る
+  const gradient = ctx.createLinearGradient(0, 0, w, h);
+  gradient.addColorStop(0, '#fafbfd');
+  gradient.addColorStop(1, '#f0f4ff');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+  
+  const visible = datasets.filter(d => d.visible);
+  if (!visible.length) {
+    document.getElementById('stats').style.display = 'none';
+    return;
+  }
+  
+  const bw = parseFloat(document.getElementById('binWidth').value) || 1;
+  const allData = visible.flatMap(d => d.data);
+  
+  if (!allData.length) return;
+  
+  const { bins: allBins } = generateHist(allData, bw);
+  let maxCount = 0;
+  
+  const histData = visible.map(d => {
+    const { bins, max } = generateHist(d.data, bw);
+    maxCount = Math.max(maxCount, max);
+    return { ...d, bins };
+  });
+  
+  const margin = { top: 40, right: 40, bottom: 60, left: 60 };
+  const cw = w - margin.left - margin.right;
+  const ch = h - margin.top - margin.bottom;
+  
+  if (!allBins.length) return;
+  
+  const minX = Math.min(...allBins.map(b => b.x));
+  const maxX = Math.max(...allBins.map(b => b.x)) + bw;
+  
+  // X軸とY軸の範囲を10%広げる
+  const xRange = maxX - minX;
+  const xPadding = xRange * 0.1;
+  const adjustedMinX = minX - xPadding;
+  const adjustedMaxX = maxX + xPadding;
+  
+  const yPadding = maxCount * 0.1;
+  const adjustedMaxY = Math.ceil(maxCount + yPadding);
+  
+  const xScale = cw / (adjustedMaxX - adjustedMinX);
+  const yScale = ch / adjustedMaxY;
+  
+  // グリッド
+  ctx.strokeStyle = '#dbeafe';
   ctx.lineWidth = 1;
   
-  dataset.bins.forEach(bin => {
-    if (bin.count > 0) {
-      const x = margin.left + (bin.x - minX) * xScale;
-      const y = margin.top + chartHeight - bin.count * yScale;
-      const barWidth = binWidth * xScale;
-      const barHeight = bin.count * yScale;
-      
-      ctx.fillRect(x, y, barWidth, barHeight);
-      ctx.strokeRect(x, y, barWidth, barHeight);
+  const gridStepX = bw >= 1 ? bw : round(bw * Math.ceil(1 / bw));
+  for (let x = round(Math.ceil(adjustedMinX / gridStepX) * gridStepX); x <= adjustedMaxX; x = round(x + gridStepX)) {
+    const cx = margin.left + (x - adjustedMinX) * xScale;
+    if (cx >= margin.left && cx <= margin.left + cw) {
+      ctx.beginPath();
+      ctx.moveTo(cx, margin.top);
+      ctx.lineTo(cx, margin.top + ch);
+      ctx.stroke();
     }
-  });
-});
-
-// ラベル位置管理（重複防止）
-const labelPositions = [];
-const labelHeight = 15;
-const minLabelGap = 5;
-
-// シグマライン描画とラベル配置
-visibleDatasets.forEach((dataset, datasetIndex) => {
-  const stats = calculateStats(dataset.data);
+  }
   
-  Object.entries(showSigmaLines).forEach(([key, show]) => {
-    if (!show) return;
+  for (let y = 0; y <= adjustedMaxY; y++) {
+    const cy = margin.top + ch - y * yScale;
+    ctx.beginPath();
+    ctx.moveTo(margin.left, cy);
+    ctx.lineTo(margin.left + cw, cy);
+    ctx.stroke();
+  }
+  
+  // ヒストグラム
+  histData.forEach(d => {
+    ctx.fillStyle = d.color + '80';
+    ctx.strokeStyle = d.color;
+    ctx.lineWidth = 1;
     
-    const sigma = parseInt(key.replace('sigma', ''));
-    const lines = [
-      { x: stats.mean - sigma * stats.stdDev, label: `-${sigma}σ` },
-      { x: stats.mean + sigma * stats.stdDev, label: `+${sigma}σ` }
-    ];
-    
-    ctx.strokeStyle = dataset.color;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    
-    lines.forEach(({ x: lineX, label }) => {
-      if (lineX >= minX && lineX <= maxX) {
-        const canvasX = margin.left + (lineX - minX) * xScale;
+    d.bins.forEach(b => {
+      if (b.count > 0) {
+        const x = margin.left + (b.x - adjustedMinX) * xScale;
+        const y = margin.top + ch - b.count * yScale;
+        const bw2 = bw * xScale;
+        const bh = b.count * yScale;
         
-        // ライン描画
-        ctx.beginPath();
-        ctx.moveTo(canvasX, margin.top);
-        ctx.lineTo(canvasX, margin.top + chartHeight);
-        ctx.stroke();
-        
-        // ラベルの位置を決定（重複回避）
-        let labelY = margin.top + 15 + datasetIndex * 40;
-        
-        // 既存のラベルと重複しないよう調整
-        let adjusted = true;
-        while (adjusted) {
-          adjusted = false;
-          for (const pos of labelPositions) {
-            if (Math.abs(canvasX - pos.x) < 60 && Math.abs(labelY - pos.y) < labelHeight + minLabelGap) {
-              labelY += labelHeight + minLabelGap;
-              adjusted = true;
-              break;
-            }
-          }
-        }
-        
-        // ラベル描画（背景付き）
-        ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        const labelText = `${dataset.name} ${label}`;
-        const textWidth = ctx.measureText(labelText).width + 6;
-        ctx.fillRect(canvasX - textWidth/2, labelY - 12, textWidth, 16);
-        
-        ctx.strokeStyle = dataset.color;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(canvasX - textWidth/2, labelY - 12, textWidth, 16);
-        
-        ctx.fillStyle = dataset.color;
-        ctx.font = '11px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(labelText, canvasX, labelY - 2);
-        
-        // 位置を記録
-        labelPositions.push({ x: canvasX, y: labelY });
-        
-        ctx.setLineDash([5, 5]);
+        ctx.fillRect(x, y, bw2, bh);
+        ctx.strokeRect(x, y, bw2, bh);
       }
     });
-    
-    ctx.setLineDash([]);
   });
-});
-
-// 閾値ライン描画とラベル
-if (showThreshold && thresholdValue) {
-  const threshold = parseFloat(thresholdValue);
-  if (!isNaN(threshold) && threshold >= minX && threshold <= maxX) {
-    const canvasX = margin.left + (threshold - minX) * xScale;
+  
+  // シグマライン
+  const labelPos = [];
+  visible.forEach((d, di) => {
+    const stats = calcStats(d.data);
     
-    // ライン描画
-    ctx.strokeStyle = '#ff0000';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(canvasX, margin.top);
-    ctx.lineTo(canvasX, margin.top + chartHeight);
-    ctx.stroke();
-    
-    // ラベルの位置を決定（重複回避）
-    let labelY = margin.top + 15;
-    let adjusted = true;
-    while (adjusted) {
-      adjusted = false;
-      for (const pos of labelPositions) {
-        if (Math.abs(canvasX - pos.x) < 60 && Math.abs(labelY - pos.y) < labelHeight + minLabelGap) {
-          labelY += labelHeight + minLabelGap;
-          adjusted = true;
-          break;
+    [1, 2, 3].forEach(sigma => {
+      if (!document.getElementById(`sigma${sigma}`).checked) return;
+      
+      [stats.mean - sigma * stats.stdDev, stats.mean + sigma * stats.stdDev].forEach((x, i) => {
+        if (x >= adjustedMinX && x <= adjustedMaxX) {
+          const cx = margin.left + (x - adjustedMinX) * xScale;
+          
+          ctx.strokeStyle = d.color;
+          ctx.lineWidth = 2;
+          ctx.setLineDash([5, 5]);
+          ctx.beginPath();
+          ctx.moveTo(cx, margin.top);
+          ctx.lineTo(cx, margin.top + ch);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          
+          let ly = margin.top + 15 + di * 40;
+          labelPos.forEach(p => {
+            if (Math.abs(cx - p.x) < 60 && Math.abs(ly - p.y) < 20) ly += 20;
+          });
+          
+          const label = `${d.name} ${i === 0 ? '-' : '+'}${sigma}σ`;
+          ctx.font = '11px Arial';
+          const tw = ctx.measureText(label).width + 6;
+          
+          ctx.fillStyle = 'rgba(255,255,255,0.95)';
+          ctx.fillRect(cx - tw/2, ly - 12, tw, 16);
+          ctx.strokeStyle = d.color;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(cx - tw/2, ly - 12, tw, 16);
+          
+          ctx.fillStyle = d.color;
+          ctx.textAlign = 'center';
+          ctx.fillText(label, cx, ly - 2);
+          
+          labelPos.push({ x: cx, y: ly });
         }
-      }
+      });
+    });
+  });
+  
+  // 閾値
+  if (showThreshold) {
+    const t = parseFloat(document.getElementById('threshold').value);
+    if (!isNaN(t) && t >= adjustedMinX && t <= adjustedMaxX) {
+      const cx = margin.left + (t - adjustedMinX) * xScale;
+      
+      ctx.strokeStyle = '#ff0000';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx, margin.top);
+      ctx.lineTo(cx, margin.top + ch);
+      ctx.stroke();
+      
+      let ly = margin.top + 15;
+      labelPos.forEach(p => {
+        if (Math.abs(cx - p.x) < 60 && Math.abs(ly - p.y) < 20) ly += 20;
+      });
+      
+      const label = `閾値: ${formatNum(t, bw)}`;
+      ctx.font = '11px Arial';
+      const tw = ctx.measureText(label).width + 6;
+      
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(cx - tw/2, ly - 12, tw, 16);
+      ctx.strokeStyle = '#ff0000';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cx - tw/2, ly - 12, tw, 16);
+      
+      ctx.fillStyle = '#ff0000';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, cx, ly - 2);
     }
-    
-    // ラベル描画（背景付き）
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    const labelText = `閾値: ${formatNumber(threshold, binWidth)}`;
-    const textWidth = ctx.measureText(labelText).width + 6;
-    ctx.fillRect(canvasX - textWidth/2, labelY - 12, textWidth, 16);
-    
-    ctx.strokeStyle = '#ff0000';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(canvasX - textWidth/2, labelY - 12, textWidth, 16);
-    
-    ctx.fillStyle = '#ff0000';
-    ctx.font = '11px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(labelText, canvasX, labelY - 2);
   }
-}
-
-// 軸描画
-ctx.strokeStyle = '#000';
-ctx.lineWidth = 2;
-ctx.beginPath();
-ctx.moveTo(margin.left, margin.top);
-ctx.lineTo(margin.left, margin.top + chartHeight);
-ctx.lineTo(margin.left + chartWidth, margin.top + chartHeight);
-ctx.stroke();
-
-// X軸ラベル（改良版）
-ctx.fillStyle = '#000';
-ctx.font = '12px Arial';
-ctx.textAlign = 'center';
-
-// ラベル間の最小間隔を計算（ビン幅に応じて調整）
-const labelMinWidth = 50; // ラベル間の最小間隔（ピクセル）
-const labelStepMultiplier = Math.max(1, Math.ceil(labelMinWidth / (binWidth * xScale)));
-const labelStep = roundToDecimal(binWidth * labelStepMultiplier);
-
-for (let x = roundToDecimal(Math.ceil(minX / labelStep) * labelStep); x <= maxX; x = roundToDecimal(x + labelStep)) {
-  const canvasX = margin.left + (x - minX) * xScale;
-  if (canvasX >= margin.left && canvasX <= margin.left + chartWidth) {
-    ctx.fillText(formatNumber(x, binWidth), canvasX, margin.top + chartHeight + 20);
-  }
-}
-
-// Y軸ラベル（整数のみ）
-ctx.textAlign = 'right';
-for (let y = 0; y <= Math.ceil(maxCount); y++) {
-  const canvasY = margin.top + chartHeight - y * yScale;
-  ctx.fillText(y.toString(), margin.left - 10, canvasY + 4);
-}
-
-// 凡例
-ctx.textAlign = 'left';
-visibleDatasets.forEach((dataset, index) => {
-  const legendY = margin.top + index * 20;
-  ctx.fillStyle = dataset.color;
-  ctx.fillRect(margin.left + chartWidth + 10, legendY - 10, 15, 15);
+  
+  // 軸
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(margin.left, margin.top);
+  ctx.lineTo(margin.left, margin.top + ch);
+  ctx.lineTo(margin.left + cw, margin.top + ch);
+  ctx.stroke();
+  
+  // ラベル
   ctx.fillStyle = '#000';
-  ctx.fillText(dataset.name, margin.left + chartWidth + 30, legendY);
-});
-```
-
-}, [datasets, binWidth, showSigmaLines, thresholdValue, showThreshold]);
-
-React.useEffect(() => {
-drawHistogram();
-}, [drawHistogram]);
-
-return (
-
-<div className="p-6 max-w-7xl mx-auto bg-white">
-<h1 className="text-3xl font-bold mb-6 text-center text-gray-800">ヒストグラム生成ツール</h1>
-
-```
-  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    {/* 左側：データ入力・設定 */}
-    <div className="space-y-6">
-      {/* データ入力 */}
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold mb-3">データ入力</h2>
-        <input
-          type="text"
-          placeholder="データセット名"
-          value={datasetName}
-          onChange={(e) => setDatasetName(e.target.value)}
-          className="w-full p-2 border rounded mb-2"
-        />
-        <textarea
-          placeholder="数値データ（スペース、カンマ、改行区切り）"
-          value={inputData}
-          onChange={(e) => setInputData(e.target.value)}
-          className="w-full p-2 border rounded h-32 mb-2"
-        />
-        <button
-          onClick={addDataset}
-          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          データセット追加
-        </button>
-      </div>
-
-      {/* ファイル読み込み */}
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold mb-3">エクセルファイル読み込み</h2>
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileUpload}
-          accept=".xlsx,.xls"
-          className="hidden"
-        />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600 flex items-center justify-center gap-2"
-        >
-          <Upload className="w-4 h-4" />
-          エクセルファイル選択
-        </button>
-      </div>
-
-      {/* 設定 */}
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold mb-3">ヒストグラム設定</h2>
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">ビン幅</label>
-          <input
-            type="number"
-            value={binWidth}
-            onChange={(e) => {
-              const value = parseFloat(e.target.value);
-              if (!isNaN(value) && value > 0) {
-                setBinWidth(value);
-              }
-            }}
-            step="any"
-            placeholder="例: 0.1, 1, 2.5"
-            className="w-full p-2 border rounded"
-          />
-          <div className="text-xs text-gray-500 mt-1">
-            任意の正の数値を入力できます（例: 0.001, 0.1, 1, 10）
+  ctx.font = '12px Arial';
+  ctx.textAlign = 'center';
+  
+  const labelStep = round(bw * Math.max(1, Math.ceil(50 / (bw * xScale))));
+  for (let x = round(Math.ceil(minX / labelStep) * labelStep); x <= maxX; x = round(x + labelStep)) {
+    const cx = margin.left + (x - adjustedMinX) * xScale;
+    if (cx >= margin.left && cx <= margin.left + cw) {
+      ctx.fillText(formatNum(x, bw), cx, margin.top + ch + 20);
+    }
+  }
+  
+  ctx.textAlign = 'right';
+  for (let y = 0; y <= adjustedMaxY; y += Math.ceil(adjustedMaxY / 10)) {
+    const cy = margin.top + ch - y * yScale;
+    ctx.fillText(y.toString(), margin.left - 10, cy + 4);
+  }
+  
+  // 凡例
+  ctx.textAlign = 'left';
+  visible.forEach((d, i) => {
+    const ly = margin.top + i * 20;
+    ctx.fillStyle = d.color;
+    ctx.fillRect(margin.left + cw + 10, ly - 10, 15, 15);
+    ctx.fillStyle = '#000';
+    ctx.fillText(d.name, margin.left + cw + 30, ly);
+  });
+  
+  // 統計情報
+  const statsDiv = document.getElementById('stats');
+  if (visible.length > 0) {
+    statsDiv.style.display = 'block';
+    statsDiv.innerHTML = '<h3>統計情報</h3>' + 
+      visible.map(d => {
+        const s = calcStats(d.data);
+        return `<div class="stat-item">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:12px;height:12px;background:${d.color};border-radius:3px"></div>
+            <strong>${d.name}</strong>
           </div>
-        </div>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">シグマライン</label>
-          {[1, 2, 3].map(sigma => (
-            <label key={sigma} className="flex items-center mb-1">
-              <input
-                type="checkbox"
-                checked={showSigmaLines[`sigma${sigma}`]}
-                onChange={(e) => setShowSigmaLines({
-                  ...showSigmaLines,
-                  [`sigma${sigma}`]: e.target.checked
-                })}
-                className="mr-2"
-              />
-              {sigma}σライン
-            </label>
-          ))}
-        </div>
-        
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-1">閾値</label>
-          <div className="flex gap-2">
-            <input
-              type="number"
-              value={thresholdValue}
-              onChange={(e) => setThresholdValue(e.target.value)}
-              placeholder="閾値"
-              step="any"
-              className="flex-1 p-2 border rounded"
-            />
-            <button
-              onClick={() => setShowThreshold(!showThreshold)}
-              className={`px-3 py-2 rounded ${showThreshold ? 'bg-red-500 text-white' : 'bg-gray-200'}`}
-            >
-              表示
-            </button>
+          <div style="margin-left:20px;color:#666;font-size:13px">
+            平均: ${s.mean.toFixed(3)}, 標準偏差: ${s.stdDev.toFixed(3)}, データ数: ${d.data.length}
           </div>
-        </div>
-      </div>
+        </div>`;
+      }).join('');
+  }
+}
 
-      {/* データセット管理 */}
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold mb-3">データセット管理</h2>
-        {datasets.map(dataset => (
-          <div key={dataset.id} className="flex items-center gap-2 mb-2 p-2 bg-white rounded">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: dataset.color }}
-            />
-            <span className="flex-1 text-sm">{dataset.name} ({dataset.data.length}点)</span>
-            <button
-              onClick={() => toggleDatasetVisibility(dataset.id)}
-              className="p-1 hover:bg-gray-100 rounded"
-            >
-              {dataset.visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-            </button>
-            <button
-              onClick={() => removeDataset(dataset.id)}
-              className="p-1 hover:bg-gray-100 rounded text-red-500"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
-      </div>
+function exportCSV() {
+  if (!datasets.length) return;
+  
+  let csv = 'Dataset,Value\n';
+  datasets.forEach(d => {
+    d.data.forEach(v => {
+      csv += `"${d.name}",${v}\n`;
+    });
+  });
+  
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'histogram_data.csv';
+  link.click();
+}
 
-      {/* エクスポート */}
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold mb-3">エクスポート</h2>
-        <div className="space-y-2">
-          <button
-            onClick={exportToCSV}
-            disabled={datasets.length === 0}
-            className="w-full bg-purple-500 text-white p-2 rounded hover:bg-purple-600 disabled:bg-gray-300 flex items-center justify-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            CSV出力
-          </button>
-          <button
-            onClick={exportToImage}
-            disabled={datasets.length === 0}
-            className="w-full bg-orange-500 text-white p-2 rounded hover:bg-orange-600 disabled:bg-gray-300 flex items-center justify-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            画像出力
-          </button>
-        </div>
-      </div>
-    </div>
+function exportImage() {
+  const canvas = document.getElementById('canvas');
+  const link = document.createElement('a');
+  link.download = 'histogram.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+</script>
 
-    {/* 右側：ヒストグラム表示 */}
-    <div className="lg:col-span-2">
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h2 className="text-lg font-semibold mb-3">ヒストグラム</h2>
-        <canvas
-          ref={canvasRef}
-          width={800}
-          height={500}
-          className="border bg-white w-full max-w-full h-auto"
-        />
-        
-        {/* 統計情報 */}
-        {datasets.filter(d => d.visible).length > 0 && (
-          <div className="mt-4 space-y-2">
-            <h3 className="font-medium">統計情報</h3>
-            {datasets.filter(d => d.visible).map(dataset => {
-              const stats = calculateStats(dataset.data);
-              return (
-                <div key={dataset.id} className="text-sm p-2 bg-white rounded">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div
-                      className="w-3 h-3 rounded"
-                      style={{ backgroundColor: dataset.color }}
-                    />
-                    <span className="font-medium">{dataset.name}</span>
-                  </div>
-                  <div className="ml-5 text-gray-600">
-                    平均: {stats.mean.toFixed(3)}, 標準偏差: {stats.stdDev.toFixed(3)}, データ数: {dataset.data.length}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-</div>
-```
+</body>
+</html>
 
-);
-};
-
-export default HistogramGenerator;
