@@ -1,7 +1,4 @@
-y軸は整数固定で
-
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -56,130 +53,129 @@ y軸は整数固定で
     <div class="container">
         <h1>📊 Excel ヒストグラム生成ツール</h1>
 
-```
-    <div class="section">
-        <h2>📁 データ入力</h2>
-        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
-            <p>📂 Excelファイルをアップロード</p>
-            <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
+        <div class="section">
+            <h2>📁 データ入力</h2>
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <p>📂 Excelファイルをアップロード</p>
+                <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
+            </div>
+            <button class="btn btn-success" onclick="toggleDirectInput()">✏️ 直接入力</button>
+            
+            <div id="directInput" class="direct-input">
+                <div class="input-group">
+                    <label>データセット名</label>
+                    <input type="text" id="datasetName" placeholder="例: データ1">
+                </div>
+                <div class="input-group">
+                    <label>数値データ（カンマ、スペース、改行区切り）</label>
+                    <textarea id="dataValues" rows="3" placeholder="1, 2, 3, 4, 5"></textarea>
+                </div>
+                <button class="btn" onclick="addDirectData()">➕ 追加</button>
+                <button class="btn" onclick="clearDirectInput()">🗑️ クリア</button>
+            </div>
         </div>
-        <button class="btn btn-success" onclick="toggleDirectInput()">✏️ 直接入力</button>
         
-        <div id="directInput" class="direct-input">
-            <div class="input-group">
-                <label>データセット名</label>
-                <input type="text" id="datasetName" placeholder="例: データ1">
+        <div id="datasetSection" class="section" style="display:none;">
+            <h2>📋 データセット</h2>
+            <div id="datasetList" class="dataset-grid"></div>
+        </div>
+        
+        <div id="settingsSection" class="section" style="display:none;">
+            <h2>⚙️ 設定</h2>
+            
+            <div class="range-options">
+                <div class="range-option active" onclick="setRangeMode('auto')">
+                    <h4>📈 自動範囲</h4><p>最小値〜最大値</p>
+                </div>
+                <div class="range-option" onclick="setRangeMode('custom')">
+                    <h4>🎛️ カスタム</h4><p>手動指定</p>
+                </div>
             </div>
-            <div class="input-group">
-                <label>数値データ（カンマ、スペース、改行区切り）</label>
-                <textarea id="dataValues" rows="3" placeholder="1, 2, 3, 4, 5"></textarea>
+            
+            <div id="customRange" class="custom-range">
+                <div class="input-group">
+                    <label>最小値</label>
+                    <input type="number" id="customMin" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label>最大値</label>
+                    <input type="number" id="customMax" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label>ビン幅</label>
+                    <input type="number" id="customBinWidth" step="0.1" min="0.01">
+                </div>
+                <div><button class="btn" onclick="setDataRange()">自動設定</button></div>
             </div>
-            <button class="btn" onclick="addDirectData()">➕ 追加</button>
-            <button class="btn" onclick="clearDirectInput()">🗑️ クリア</button>
+            
+            <div class="slider-container">
+                <label>ビン数: <span id="binCountValue">20</span></label>
+                <input type="range" id="binCount" min="5" max="100" value="20" oninput="updateBinCount()">
+            </div>
+            
+            <div class="slider-container">
+                <label>透明度: <span id="opacityValue">80%</span></label>
+                <input type="range" id="opacity" min="10" max="100" value="80" oninput="updateOpacity()">
+            </div>
+        </div>
+        
+        <div id="thresholdSection" class="section" style="display:none;">
+            <h2>📏 閾値・規格限界</h2>
+            
+            <div style="margin-bottom:20px;">
+                <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📐 規格上下限</h3>
+                <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px;">
+                    <input type="number" id="specLower" placeholder="下限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                    <input type="number" id="specUpper" placeholder="上限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                    <button class="btn" onclick="setSpecLimits()">設定</button>
+                </div>
+                <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
+                    <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
+                        <input type="checkbox" id="showSpecLimits" onchange="updateSpecLimitsVisibility()">
+                        規格限界を表示
+                    </label>
+                    <button class="btn btn-danger" onclick="clearSpecLimits()" style="padding:4px 8px;font-size:12px;">クリア</button>
+                </div>
+                <div id="specLimitsInfo" style="font-size:12px;color:#666;"></div>
+            </div>
+            
+            <div>
+                <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📌 カスタム閾値</h3>
+                <div style="display:flex;gap:8px;margin-bottom:10px;">
+                    <input type="number" id="newThreshold" placeholder="閾値" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;">
+                    <button class="btn" onclick="addThreshold()">➕</button>
+                </div>
+                <div id="thresholdList" class="threshold-list"></div>
+            </div>
+        </div>
+        
+        <div id="chartSection" class="section" style="display:none;">
+            <h2>📊 ヒストグラム</h2>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div style="display:flex;gap:8px;">
+                    <button class="btn" onclick="copyChartToClipboard()" title="グラフを画像としてクリップボードにコピー">
+                        📋 グラフをコピー
+                    </button>
+                    <button class="btn" onclick="downloadChart()" title="グラフを画像ファイルとしてダウンロード">
+                        💾 画像保存
+                    </button>
+                    <button class="btn" onclick="exportHistogramCSV()" title="ヒストグラムデータをCSVファイルとして出力">
+                        📊 CSV出力
+                    </button>
+                </div>
+                <div id="copyStatus" style="font-size:12px;color:#666;"></div>
+            </div>
+            <div class="chart-container">
+                <canvas id="histogramChart"></canvas>
+            </div>
+            <div id="chartInfo" class="info-panel"></div>
+        </div>
+        
+        <div id="emptyState" class="empty-state">
+            <h3>📊 データを追加してください</h3>
+            <p>Excelファイルまたは直接入力でデータを追加</p>
         </div>
     </div>
-    
-    <div id="datasetSection" class="section" style="display:none;">
-        <h2>📋 データセット</h2>
-        <div id="datasetList" class="dataset-grid"></div>
-    </div>
-    
-    <div id="settingsSection" class="section" style="display:none;">
-        <h2>⚙️ 設定</h2>
-        
-        <div class="range-options">
-            <div class="range-option active" onclick="setRangeMode('auto')">
-                <h4>📈 自動範囲</h4><p>最小値〜最大値</p>
-            </div>
-            <div class="range-option" onclick="setRangeMode('custom')">
-                <h4>🎛️ カスタム</h4><p>手動指定</p>
-            </div>
-        </div>
-        
-        <div id="customRange" class="custom-range">
-            <div class="input-group">
-                <label>最小値</label>
-                <input type="number" id="customMin" step="0.1">
-            </div>
-            <div class="input-group">
-                <label>最大値</label>
-                <input type="number" id="customMax" step="0.1">
-            </div>
-            <div class="input-group">
-                <label>ビン幅</label>
-                <input type="number" id="customBinWidth" step="0.1" min="0.01">
-            </div>
-            <div><button class="btn" onclick="setDataRange()">自動設定</button></div>
-        </div>
-        
-        <div class="slider-container">
-            <label>ビン数: <span id="binCountValue">20</span></label>
-            <input type="range" id="binCount" min="5" max="100" value="20" oninput="updateBinCount()">
-        </div>
-        
-        <div class="slider-container">
-            <label>透明度: <span id="opacityValue">80%</span></label>
-            <input type="range" id="opacity" min="10" max="100" value="80" oninput="updateOpacity()">
-        </div>
-    </div>
-    
-    <div id="thresholdSection" class="section" style="display:none;">
-        <h2>📏 閾値・規格限界</h2>
-        
-        <div style="margin-bottom:20px;">
-            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📐 規格上下限</h3>
-            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px;">
-                <input type="number" id="specLower" placeholder="下限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
-                <input type="number" id="specUpper" placeholder="上限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
-                <button class="btn" onclick="setSpecLimits()">設定</button>
-            </div>
-            <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
-                    <input type="checkbox" id="showSpecLimits" onchange="updateSpecLimitsVisibility()">
-                    規格限界を表示
-                </label>
-                <button class="btn btn-danger" onclick="clearSpecLimits()" style="padding:4px 8px;font-size:12px;">クリア</button>
-            </div>
-            <div id="specLimitsInfo" style="font-size:12px;color:#666;"></div>
-        </div>
-        
-        <div>
-            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📌 カスタム閾値</h3>
-            <div style="display:flex;gap:8px;margin-bottom:10px;">
-                <input type="number" id="newThreshold" placeholder="閾値" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;">
-                <button class="btn" onclick="addThreshold()">➕</button>
-            </div>
-            <div id="thresholdList" class="threshold-list"></div>
-        </div>
-    </div>
-    
-    <div id="chartSection" class="section" style="display:none;">
-        <h2>📊 ヒストグラム</h2>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-            <div style="display:flex;gap:8px;">
-                <button class="btn" onclick="copyChartToClipboard()" title="グラフを画像としてクリップボードにコピー">
-                    📋 グラフをコピー
-                </button>
-                <button class="btn" onclick="downloadChart()" title="グラフを画像ファイルとしてダウンロード">
-                    💾 画像保存
-                </button>
-                <button class="btn" onclick="exportHistogramCSV()" title="ヒストグラムデータをCSVファイルとして出力">
-                    📊 CSV出力
-                </button>
-            </div>
-            <div id="copyStatus" style="font-size:12px;color:#666;"></div>
-        </div>
-        <div class="chart-container">
-            <canvas id="histogramChart"></canvas>
-        </div>
-        <div id="chartInfo" class="info-panel"></div>
-    </div>
-    
-    <div id="emptyState" class="empty-state">
-        <h3>📊 データを追加してください</h3>
-        <p>Excelファイルまたは直接入力でデータを追加</p>
-    </div>
-</div>
 
 <script>
     let datasets=[], thresholds=[], chart=null, rangeMode='auto', binCount=20, opacity=0.8;
@@ -385,6 +381,7 @@ y軸は整数固定で
         }
     }
 
+    // ★★★ 修正版: 小数対応のヒストグラム生成 ★★★
     function generateHistogramData() {
         const visibleDatasets = datasets.filter(d => d.visible);
         if (visibleDatasets.length === 0) return {data: [], range: {min: 0, max: 0}};
@@ -403,19 +400,26 @@ y軸は整数固定で
             binWidth = (max - min) / binCount;
         }
 
-        const actualBinCount = rangeMode === 'custom' && document.getElementById('customBinWidth').value
-            ? Math.ceil((max - min) / binWidth) : binCount;
+        // 最小限のビン幅を設定（例: 0.0001）
+        if (binWidth < 0.0001) binWidth = 0.0001;
+
+        // max値がビンに収まるように、max+epsilonまで含める
+        const epsilon = Number.EPSILON * 100;
+        const actualBinCount = Math.ceil((max - min + epsilon) / binWidth);
 
         const bins = Array(actualBinCount).fill(0).map((_, i) => {
             const binStart = min + i * binWidth;
-            const binEnd = min + (i + 1) * binWidth;
+            const binEnd = binStart + binWidth;
             const binCenter = binStart + binWidth / 2;
             const bin = {x: binCenter};
-            
             visibleDatasets.forEach(dataset => {
-                bin[dataset.name] = dataset.data.filter(value => value >= binStart && value < binEnd).length;
+                if (i === actualBinCount - 1) {
+                    // 最終ビンだけ binEnd以上も含める
+                    bin[dataset.name] = dataset.data.filter(value => value >= binStart && value <= binEnd + epsilon).length;
+                } else {
+                    bin[dataset.name] = dataset.data.filter(value => value >= binStart && value < binEnd).length;
+                }
             });
-            
             return bin;
         });
 
@@ -580,16 +584,17 @@ y軸は整数固定で
                 };
             }
         });
-        
-        // シグマライン（すでにallLinesに追加済みなので削除）
 
+        // 棒グラフ表示修正：linear軸+小数対応
         chart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: histogramData.data.map(d => d.x.toFixed(3)),
                 datasets: visibleDatasets.map(dataset => ({
                     label: dataset.name,
-                    data: histogramData.data.map(d => d[dataset.name]),
+                    data: histogramData.data.map(d => ({
+                        x: d.x,
+                        y: d[dataset.name]
+                    })),
                     backgroundColor: dataset.color.replace('50%)', `${Math.round(opacity * 50)}%)`),
                     borderColor: dataset.color,
                     borderWidth: 0,
@@ -605,17 +610,23 @@ y軸は整数固定で
                         type: 'linear',
                         min: histogramData.range.min,
                         max: histogramData.range.max,
-                        title: {display: true, text: '値'}
+                        title: {display: true, text: '値'},
+                        ticks: {
+                            callback: val => Number(val).toFixed(3)
+                        }
                     },
                     y: {
                         beginAtZero: true,
-                        title: {display: true, text: '出現回数'}
+                        title: {display: true, text: '出現回数'},
+                        ticks: {
+                            callback: val => Math.round(val)
+                        }
                     }
                 },
                 plugins: {
                     tooltip: {
                         callbacks: {
-                            title: ctx => `値: ${parseFloat(ctx[0].label).toFixed(3)}`,
+                            title: ctx => `値: ${ctx[0].parsed.x.toFixed(3)}`,
                             label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}回`
                         }
                     },
@@ -953,7 +964,5 @@ y軸は整数固定で
         }
     }
 </script>
-```
-
 </body>
 </html>
