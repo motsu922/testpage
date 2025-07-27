@@ -414,7 +414,6 @@
             const bin = {x: binCenter};
             visibleDatasets.forEach(dataset => {
                 if (i === actualBinCount - 1) {
-                    // 最終ビンだけ binEnd以上も含める
                     bin[dataset.name] = dataset.data.filter(value => value >= binStart && value <= binEnd + epsilon).length;
                 } else {
                     bin[dataset.name] = dataset.data.filter(value => value >= binStart && value < binEnd).length;
@@ -426,6 +425,7 @@
         return {data: bins, range: {min, max}};
     }
 
+    // ★★★ x軸目盛等間隔修正版 ★★★
     function updateChart() {
         if (datasets.filter(d => d.visible).length === 0) return;
 
@@ -517,9 +517,8 @@
             if (!existing) {
                 uniqueLines.push(line);
             } else {
-                // 近い値の場合、ラベルを結合
                 existing.label += ` / ${line.label}`;
-                if (line.type === 'spec') existing.color = line.color; // 規格限界を優先
+                if (line.type === 'spec') existing.color = line.color;
             }
         });
         
@@ -528,7 +527,6 @@
         let positionIndex = 0;
         
         uniqueLines.forEach((line, index) => {
-            // 近接するラインの位置を交互に配置
             const position = labelPositions[positionIndex];
             positionIndex = (positionIndex + 1) % labelPositions.length;
             
@@ -585,7 +583,17 @@
             }
         });
 
-        // 棒グラフ表示修正：linear軸+小数対応
+        // ★★★ x軸目盛等間隔修正版 ★★★
+        let tickValues = [];
+        if (histogramData.data.length > 1) {
+            const binWidth = histogramData.data[1].x - histogramData.data[0].x;
+            const minTick = histogramData.range.min;
+            const maxTick = histogramData.range.max;
+            for (let v = minTick; v <= maxTick + binWidth/2; v += binWidth) {
+                tickValues.push(Number(v.toFixed(6)));
+            }
+        }
+
         chart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -612,7 +620,9 @@
                         max: histogramData.range.max,
                         title: {display: true, text: '値'},
                         ticks: {
-                            callback: val => Number(val).toFixed(3)
+                            callback: val => Number(val).toFixed(3),
+                            autoSkip: false,
+                            values: tickValues.length > 0 ? tickValues : undefined
                         }
                     },
                     y: {
@@ -645,7 +655,6 @@
         const customWidth = document.getElementById('customBinWidth').value;
         const visibleDatasets = datasets.filter(d => d.visible);
         
-        // 規格外データの計算
         let specAnalysis = '';
         if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
             const analysisResults = visibleDatasets.map(dataset => {
@@ -726,23 +735,19 @@
         try {
             showCopyStatus('コピー中...', 'info');
             
-            // Canvasを高解像度で取得
             const canvas = chart.canvas;
             const ctx = canvas.getContext('2d');
             
-            // 一時的に背景を白に設定してクリアな画像を生成
             const originalComposite = ctx.globalCompositeOperation;
             ctx.globalCompositeOperation = 'destination-over';
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.globalCompositeOperation = originalComposite;
             
-            // Canvas を Blob に変換
             const blob = await new Promise(resolve => {
                 canvas.toBlob(resolve, 'image/png', 1.0);
             });
             
-            // クリップボードに書き込み
             if (navigator.clipboard && window.ClipboardItem) {
                 await navigator.clipboard.write([
                     new ClipboardItem({
@@ -751,13 +756,11 @@
                 ]);
                 showCopyStatus('✅ グラフをクリップボードにコピーしました', 'success');
             } else {
-                // フォールバック: データURLを生成してテキストとしてコピー
                 const dataUrl = canvas.toDataURL('image/png');
                 await navigator.clipboard.writeText(dataUrl);
                 showCopyStatus('⚠️ データURLをコピーしました（画像として貼り付けできない場合があります）', 'warning');
             }
             
-            // チャートを再描画して背景をリセット
             chart.update('none');
             
         } catch (error) {
@@ -778,26 +781,22 @@
             const canvas = chart.canvas;
             const ctx = canvas.getContext('2d');
             
-            // 一時的に背景を白に設定
             const originalComposite = ctx.globalCompositeOperation;
             ctx.globalCompositeOperation = 'destination-over';
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.globalCompositeOperation = originalComposite;
             
-            // ダウンロード用のリンクを作成
             const link = document.createElement('a');
             link.download = `histogram_${new Date().toISOString().slice(0,19).replace(/[T:]/g, '_')}.png`;
             link.href = canvas.toDataURL('image/png', 1.0);
             
-            // ダウンロード実行
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             
             showCopyStatus('✅ グラフを画像ファイルとして保存しました', 'success');
             
-            // チャートを再描画して背景をリセット
             chart.update('none');
             
         } catch (error) {
@@ -810,12 +809,10 @@
         const statusEl = document.getElementById('copyStatus');
         statusEl.textContent = message;
         
-        // スタイルを適用
         statusEl.style.color = type === 'success' ? '#27ae60' : 
                              type === 'error' ? '#e74c3c' : 
                              type === 'warning' ? '#f39c12' : '#666';
         
-        // 3秒後にメッセージをクリア
         setTimeout(() => {
             statusEl.textContent = '';
         }, 3000);
@@ -837,20 +834,16 @@
                 return;
             }
 
-            // CSVヘッダーを作成
             const headers = ['ビン中央値', 'ビン範囲開始', 'ビン範囲終了'];
             visibleDatasets.forEach(dataset => {
                 headers.push(`${dataset.name}_出現回数`);
                 headers.push(`${dataset.name}_相対頻度(%)`);
             });
 
-            // 統計情報を追加
             headers.push('合計出現回数', '全体相対頻度(%)');
 
-            // CSVデータを生成
             const csvRows = [headers];
             
-            // ビン幅を計算
             const binWidth = histogramData.data.length > 1 ? 
                 histogramData.data[1].x - histogramData.data[0].x : 1;
             
@@ -866,7 +859,6 @@
 
                 let totalCount = 0;
                 
-                // 各データセットの出現回数と相対頻度
                 visibleDatasets.forEach(dataset => {
                     const count = bin[dataset.name] || 0;
                     const totalDataPoints = dataset.data.length;
@@ -877,7 +869,6 @@
                     totalCount += count;
                 });
 
-                // 全体の出現回数と相対頻度
                 const allDataPoints = visibleDatasets.reduce((sum, ds) => sum + ds.data.length, 0);
                 const totalRelativeFreq = allDataPoints > 0 ? (totalCount / allDataPoints * 100) : 0;
                 
@@ -887,8 +878,7 @@
                 csvRows.push(row);
             });
 
-            // 統計サマリーを追加
-            csvRows.push([]); // 空行
+            csvRows.push([]);
             csvRows.push(['統計サマリー']);
             csvRows.push(['データセット名', 'データ数', '平均', '標準偏差', '最小値', '最大値', '規格外数', '規格外率(%)']);
             
@@ -897,7 +887,6 @@
                 const min = Math.min(...dataset.data);
                 const max = Math.max(...dataset.data);
                 
-                // 規格外データの計算
                 let outOfSpecCount = 0;
                 if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
                     dataset.data.forEach(value => {
@@ -919,8 +908,7 @@
                 ]);
             });
 
-            // 設定情報を追加
-            csvRows.push([]); // 空行
+            csvRows.push([]);
             csvRows.push(['設定情報']);
             csvRows.push(['項目', '値']);
             csvRows.push(['範囲モード', rangeMode === 'auto' ? '自動範囲' : 'カスタム範囲']);
@@ -933,7 +921,6 @@
                 csvRows.push(['規格上限', specLimits.upper !== null ? specLimits.upper : 'なし']);
             }
 
-            // CSVテキストを生成
             const csvContent = csvRows.map(row => 
                 row.map(cell => 
                     typeof cell === 'string' && (cell.includes(',') || cell.includes('"') || cell.includes('\n')) 
@@ -942,7 +929,6 @@
                 ).join(',')
             ).join('\n');
 
-            // BOM付きUTF-8でダウンロード
             const bom = '\uFEFF';
             const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
             
