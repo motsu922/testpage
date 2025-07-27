@@ -481,30 +481,43 @@
         // 最小測定単位を適用
         binWidth = adjustBinWidthToMeasurementUnit(binWidth);
 
-        const actualBinCount = rangeMode === 'custom' && document.getElementById('customBinWidth').value
-            ? Math.ceil((max - min) / binWidth) : Math.ceil((max - min) / binWidth);
-
-        // 最小測定単位を考慮してビン境界を調整
+        // 最小測定単位を考慮してビン境界を調整（データ範囲を拡張しない）
+        let adjustedMin = min;
+        let adjustedMax = max;
+        
         if (measurementUnit.apply && measurementUnit.value !== null) {
             const unit = measurementUnit.value;
-            min = Math.floor(min / unit) * unit;
-            max = Math.ceil(max / unit) * unit;
+            // ビン境界をデータ範囲内で単位に合わせる
+            adjustedMin = Math.floor(min / unit) * unit;
+            // 最大値を超えないよう調整
+            adjustedMax = adjustedMin + Math.ceil((max - adjustedMin) / binWidth) * binWidth;
         }
 
+        const actualBinCount = Math.ceil((adjustedMax - adjustedMin) / binWidth);
+
         const bins = Array(actualBinCount).fill(0).map((_, i) => {
-            const binStart = min + i * binWidth;
-            const binEnd = min + (i + 1) * binWidth;
+            const binStart = adjustedMin + i * binWidth;
+            const binEnd = adjustedMin + (i + 1) * binWidth;
             const binCenter = binStart + binWidth / 2;
-            const bin = {x: binCenter};
+            const bin = {x: binCenter, binStart: binStart, binEnd: binEnd};
             
             visibleDatasets.forEach(dataset => {
-                bin[dataset.name] = dataset.data.filter(value => value >= binStart && value < binEnd).length;
+                // 最後のビンは上限を含む（binEnd以下）、それ以外は未満（binEnd未満）
+                const count = dataset.data.filter(value => {
+                    if (i === actualBinCount - 1) {
+                        return value >= binStart && value <= binEnd;
+                    } else {
+                        return value >= binStart && value < binEnd;
+                    }
+                }).length;
+                bin[dataset.name] = count;
             });
             
             return bin;
         });
 
-        return {data: bins, range: {min, max}, binWidth: binWidth};
+        // 空のビンを除去せず、すべてのビンを保持
+        return {data: bins, range: {min: adjustedMin, max: adjustedMax}, binWidth: binWidth};
     }
 
     function updateChart() {
