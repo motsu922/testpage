@@ -46,6 +46,7 @@
         .empty-state{text-align:center;padding:40px 20px;color:#999}
         .checkbox-group{display:flex;flex-direction:column;gap:6px;margin-top:8px}
         .checkbox-item{display:flex;align-items:center;gap:6px}
+        .spec-limits-info{background:#fff5f0;border:1px solid #ff6b35;border-radius:4px;padding:8px;margin-top:8px;font-size:12px;color:#d97706}
         .stats-info{font-size:11px;color:#666;margin-top:6px}
     </style>
 </head>
@@ -121,12 +122,33 @@
     </div>
     
     <div id="thresholdSection" class="section" style="display:none;">
-        <h2>📏 閾値</h2>
-        <div style="display:flex;gap:8px;margin-bottom:10px;">
-            <input type="number" id="newThreshold" placeholder="閾値" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;">
-            <button class="btn" onclick="addThreshold()">➕</button>
+        <h2>📏 閾値・規格限界</h2>
+        
+        <div style="margin-bottom:20px;">
+            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📐 規格上下限</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px;">
+                <input type="number" id="specLower" placeholder="下限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <input type="number" id="specUpper" placeholder="上限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <button class="btn" onclick="setSpecLimits()">設定</button>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
+                    <input type="checkbox" id="showSpecLimits" onchange="updateSpecLimitsVisibility()">
+                    規格限界を表示
+                </label>
+                <button class="btn btn-danger" onclick="clearSpecLimits()" style="padding:4px 8px;font-size:12px;">クリア</button>
+            </div>
+            <div id="specLimitsInfo" style="font-size:12px;color:#666;"></div>
         </div>
-        <div id="thresholdList" class="threshold-list"></div>
+        
+        <div>
+            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📌 カスタム閾値</h3>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="number" id="newThreshold" placeholder="閾値" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <button class="btn" onclick="addThreshold()">➕</button>
+            </div>
+            <div id="thresholdList" class="threshold-list"></div>
+        </div>
     </div>
     
     <div id="chartSection" class="section" style="display:none;">
@@ -145,6 +167,7 @@
 
 <script>
     let datasets=[], thresholds=[], chart=null, rangeMode='auto', binCount=20, opacity=0.8;
+    let specLimits = {lower: null, upper: null, show: false};
 
     document.getElementById('fileInput').addEventListener('change', handleFileUpload);
 
@@ -297,6 +320,55 @@
         ).join('');
     }
 
+    function setSpecLimits() {
+        const lower = parseFloat(document.getElementById('specLower').value);
+        const upper = parseFloat(document.getElementById('specUpper').value);
+        
+        if (isNaN(lower) && isNaN(upper)) {
+            alert('上限値または下限値の少なくとも一方を入力してください');
+            return;
+        }
+        
+        if (!isNaN(lower) && !isNaN(upper) && lower >= upper) {
+            alert('下限値は上限値より小さい値を入力してください');
+            return;
+        }
+        
+        specLimits.lower = isNaN(lower) ? null : lower;
+        specLimits.upper = isNaN(upper) ? null : upper;
+        specLimits.show = true;
+        document.getElementById('showSpecLimits').checked = true;
+        
+        updateSpecLimitsInfo();
+        updateChart();
+    }
+
+    function clearSpecLimits() {
+        specLimits = {lower: null, upper: null, show: false};
+        document.getElementById('specLower').value = '';
+        document.getElementById('specUpper').value = '';
+        document.getElementById('showSpecLimits').checked = false;
+        updateSpecLimitsInfo();
+        updateChart();
+    }
+
+    function updateSpecLimitsVisibility() {
+        specLimits.show = document.getElementById('showSpecLimits').checked;
+        updateChart();
+    }
+
+    function updateSpecLimitsInfo() {
+        const info = document.getElementById('specLimitsInfo');
+        if (specLimits.lower !== null || specLimits.upper !== null) {
+            const lowerText = specLimits.lower !== null ? `下限: ${specLimits.lower}` : '';
+            const upperText = specLimits.upper !== null ? `上限: ${specLimits.upper}` : '';
+            const separator = (lowerText && upperText) ? ', ' : '';
+            info.textContent = `設定済み規格限界: ${lowerText}${separator}${upperText}`;
+        } else {
+            info.textContent = '';
+        }
+    }
+
     function generateHistogramData() {
         const visibleDatasets = datasets.filter(d => d.visible);
         if (visibleDatasets.length === 0) return {data: [], range: {min: 0, max: 0}};
@@ -347,20 +419,40 @@
         // アノテーションの準備
         const annotations = {};
         
+        // すべてのライン情報を収集してソート
+        const allLines = [];
+        
+        // 規格上下限線
+        if (specLimits.show) {
+            if (specLimits.lower !== null) {
+                allLines.push({
+                    value: specLimits.lower,
+                    type: 'spec',
+                    id: 'specLower',
+                    label: `下限: ${specLimits.lower}`,
+                    color: '#ff6b35'
+                });
+            }
+            if (specLimits.upper !== null) {
+                allLines.push({
+                    value: specLimits.upper,
+                    type: 'spec',
+                    id: 'specUpper',
+                    label: `上限: ${specLimits.upper}`,
+                    color: '#ff6b35'
+                });
+            }
+        }
+        
         // 閾値線
         thresholds.forEach((threshold, index) => {
-            annotations[`threshold${index}`] = {
-                type: 'line',
-                xMin: threshold.value,
-                xMax: threshold.value,
-                borderColor: '#dc2626',
-                borderWidth: 3,
-                label: {
-                    enabled: true,
-                    content: `閾値: ${threshold.value}`,
-                    position: 'start'
-                }
-            };
+            allLines.push({
+                value: threshold.value,
+                type: 'threshold',
+                id: `threshold${index}`,
+                label: `閾値: ${threshold.value}`,
+                color: '#dc2626'
+            });
         });
         
         // シグマライン
@@ -371,49 +463,109 @@
                     const upperValue = stats.mean + sigma * stats.stdDev;
                     const lowerValue = stats.mean - sigma * stats.stdDev;
                     
-                    annotations[`mean_${datasetIndex}`] = {
-                        type: 'line',
-                        xMin: stats.mean,
-                        xMax: stats.mean,
-                        borderColor: dataset.color,
-                        borderWidth: 3,
-                        label: {
-                            enabled: true,
-                            content: '平均',
-                            position: 'start'
-                        }
-                    };
+                    allLines.push({
+                        value: stats.mean,
+                        type: 'sigma',
+                        id: `mean_${datasetIndex}`,
+                        label: '平均',
+                        color: dataset.color
+                    });
                     
-                    annotations[`upper_${datasetIndex}_${sigma}`] = {
-                        type: 'line',
-                        xMin: upperValue,
-                        xMax: upperValue,
-                        borderColor: dataset.color,
-                        borderWidth: 2,
-                        borderDash: [8, 4],
-                        label: {
-                            enabled: true,
-                            content: `+${sigma}σ`,
-                            position: 'start'
-                        }
-                    };
+                    allLines.push({
+                        value: upperValue,
+                        type: 'sigma',
+                        id: `upper_${datasetIndex}_${sigma}`,
+                        label: `+${sigma}σ`,
+                        color: dataset.color
+                    });
                     
-                    annotations[`lower_${datasetIndex}_${sigma}`] = {
-                        type: 'line',
-                        xMin: lowerValue,
-                        xMax: lowerValue,
-                        borderColor: dataset.color,
-                        borderWidth: 2,
-                        borderDash: [8, 4],
-                        label: {
-                            enabled: true,
-                            content: `-${sigma}σ`,
-                            position: 'start'
-                        }
-                    };
+                    allLines.push({
+                        value: lowerValue,
+                        type: 'sigma',
+                        id: `lower_${datasetIndex}_${sigma}`,
+                        label: `-${sigma}σ`,
+                        color: dataset.color
+                    });
                 }
             });
         });
+        
+        // 値でソートして重複を除去
+        const uniqueLines = [];
+        allLines.sort((a, b) => a.value - b.value).forEach(line => {
+            const existing = uniqueLines.find(ul => Math.abs(ul.value - line.value) < 0.01);
+            if (!existing) {
+                uniqueLines.push(line);
+            } else {
+                // 近い値の場合、ラベルを結合
+                existing.label += ` / ${line.label}`;
+                if (line.type === 'spec') existing.color = line.color; // 規格限界を優先
+            }
+        });
+        
+        // ラベル位置を決定（交互配置）
+        const labelPositions = ['start', 'end'];
+        let positionIndex = 0;
+        
+        uniqueLines.forEach((line, index) => {
+            // 近接するラインの位置を交互に配置
+            const position = labelPositions[positionIndex];
+            positionIndex = (positionIndex + 1) % labelPositions.length;
+            
+            if (line.type === 'spec') {
+                annotations[line.id] = {
+                    type: 'line',
+                    xMin: line.value,
+                    xMax: line.value,
+                    borderColor: line.color,
+                    borderWidth: 4,
+                    borderDash: [10, 5],
+                    label: {
+                        enabled: true,
+                        content: line.label,
+                        position: position,
+                        backgroundColor: line.color,
+                        color: 'white',
+                        yAdjust: index % 2 === 0 ? -10 : 10
+                    }
+                };
+            } else if (line.type === 'threshold') {
+                annotations[line.id] = {
+                    type: 'line',
+                    xMin: line.value,
+                    xMax: line.value,
+                    borderColor: line.color,
+                    borderWidth: 3,
+                    label: {
+                        enabled: true,
+                        content: line.label,
+                        position: position,
+                        backgroundColor: line.color,
+                        color: 'white',
+                        yAdjust: index % 2 === 0 ? -10 : 10
+                    }
+                };
+            } else if (line.type === 'sigma') {
+                annotations[line.id] = {
+                    type: 'line',
+                    xMin: line.value,
+                    xMax: line.value,
+                    borderColor: line.color,
+                    borderWidth: line.label === '平均' ? 3 : 2,
+                    borderDash: line.label === '平均' ? [] : [8, 4],
+                    label: {
+                        enabled: true,
+                        content: line.label,
+                        position: position,
+                        backgroundColor: line.color,
+                        color: 'white',
+                        yAdjust: index % 2 === 0 ? -10 : 10
+                    }
+                };
+            }
+        });
+        
+        // シグマライン（すでにallLinesに追加済みなので削除）
 
         chart = new Chart(ctx, {
             type: 'bar',
@@ -464,10 +616,31 @@
 
     function updateChartInfo(histogramData) {
         const customWidth = document.getElementById('customBinWidth').value;
+        const visibleDatasets = datasets.filter(d => d.visible);
+        
+        // 規格外データの計算
+        let specAnalysis = '';
+        if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
+            const analysisResults = visibleDatasets.map(dataset => {
+                const totalCount = dataset.data.length;
+                let outOfSpecCount = 0;
+                
+                dataset.data.forEach(value => {
+                    if (specLimits.lower !== null && value < specLimits.lower) outOfSpecCount++;
+                    if (specLimits.upper !== null && value > specLimits.upper) outOfSpecCount++;
+                });
+                
+                const outOfSpecRate = (outOfSpecCount / totalCount * 100).toFixed(2);
+                return `${dataset.name}: ${outOfSpecCount}/${totalCount} (${outOfSpecRate}%)`;
+            });
+            
+            specAnalysis = ` <strong>| 規格外:</strong> ${analysisResults.join(', ')}`;
+        }
+        
         document.getElementById('chartInfo').innerHTML = `
             <strong>範囲:</strong> ${rangeMode === 'auto' ? 'データ全範囲' : 
                 `${histogramData.range.min.toFixed(2)} ～ ${histogramData.range.max.toFixed(2)}`}
-            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}
+            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}${specAnalysis}
         `;
     }
 
