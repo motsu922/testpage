@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -50,12 +51,423 @@
     </style>
 </head>
 <body>
-    <!-- HTML部分は変更なし（同じ） -->
-    <!-- ... -->
+    <div class="container">
+        <h1>📊 Excel ヒストグラム生成ツール</h1>
+
+```
+    <div class="section">
+        <h2>📁 データ入力</h2>
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+            <p>📂 Excelファイルをアップロード</p>
+            <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
+        </div>
+        <button class="btn btn-success" onclick="toggleDirectInput()">✏️ 直接入力</button>
+        
+        <div id="directInput" class="direct-input">
+            <div class="input-group">
+                <label>データセット名</label>
+                <input type="text" id="datasetName" placeholder="例: データ1">
+            </div>
+            <div class="input-group">
+                <label>数値データ（カンマ、スペース、改行区切り）</label>
+                <textarea id="dataValues" rows="3" placeholder="1, 2, 3, 4, 5"></textarea>
+            </div>
+            <button class="btn" onclick="addDirectData()">➕ 追加</button>
+            <button class="btn" onclick="clearDirectInput()">🗑️ クリア</button>
+        </div>
+    </div>
     
+    <div id="datasetSection" class="section" style="display:none;">
+        <h2>📋 データセット</h2>
+        <div id="datasetList" class="dataset-grid"></div>
+    </div>
+    
+    <div id="settingsSection" class="section" style="display:none;">
+        <h2>⚙️ 設定</h2>
+        
+        <div class="range-options">
+            <div class="range-option active" onclick="setRangeMode('auto')">
+                <h4>📈 自動範囲</h4><p>最小値〜最大値</p>
+            </div>
+            <div class="range-option" onclick="setRangeMode('custom')">
+                <h4>🎛️ カスタム</h4><p>手動指定</p>
+            </div>
+        </div>
+        
+        <div id="customRange" class="custom-range">
+            <div class="input-group">
+                <label>最小値</label>
+                <input type="number" id="customMin" step="0.1">
+            </div>
+            <div class="input-group">
+                <label>最大値</label>
+                <input type="number" id="customMax" step="0.1">
+            </div>
+            <div class="input-group">
+                <label>ビン幅</label>
+                <input type="number" id="customBinWidth" step="0.1" min="0.01">
+            </div>
+            <div><button class="btn" onclick="setDataRange()">自動設定</button></div>
+        </div>
+        
+        <div class="slider-container">
+            <label>ビン数: <span id="binCountValue">20</span></label>
+            <input type="range" id="binCount" min="5" max="100" value="20" oninput="updateBinCount()">
+        </div>
+        
+        <div class="slider-container">
+            <label>透明度: <span id="opacityValue">80%</span></label>
+            <input type="range" id="opacity" min="10" max="100" value="80" oninput="updateOpacity()">
+        </div>
+        
+        <div style="margin:15px 0;padding:12px;background:#f8f9fa;border-radius:8px;">
+            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📏 最小測定単位</h3>
+            <div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;">
+                <input type="number" id="measurementUnit" placeholder="例: 0.01" step="any" min="0" 
+                       style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <button class="btn" onclick="setMeasurementUnit()">設定</button>
+                <button class="btn btn-danger" onclick="clearMeasurementUnit()" style="padding:4px 8px;">クリア</button>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
+                    <input type="checkbox" id="applyMeasurementUnit" onchange="updateMeasurementUnitApplication()">
+                    ビン幅に適用
+                </label>
+            </div>
+            <div id="measurementUnitInfo" style="font-size:12px;color:#666;margin-top:6px;"></div>
+            <div style="font-size:11px;color:#999;margin-top:4px;">
+                ※ 設定した単位の倍数でビン幅が調整されます
+            </div>
+        </div>
+    </div>
+    
+    <div id="thresholdSection" class="section" style="display:none;">
+        <h2>📏 閾値・規格限界</h2>
+        
+        <div style="margin-bottom:20px;">
+            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📐 規格上下限</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px;">
+                <input type="number" id="specLower" placeholder="下限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <input type="number" id="specUpper" placeholder="上限値" style="padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <button class="btn" onclick="setSpecLimits()">設定</button>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;">
+                    <input type="checkbox" id="showSpecLimits" onchange="updateSpecLimitsVisibility()">
+                    規格限界を表示
+                </label>
+                <button class="btn btn-danger" onclick="clearSpecLimits()" style="padding:4px 8px;font-size:12px;">クリア</button>
+            </div>
+            <div id="specLimitsInfo" style="font-size:12px;color:#666;"></div>
+        </div>
+        
+        <div>
+            <h3 style="font-size:1.1em;margin-bottom:10px;color:#2c3e50;">📌 カスタム閾値</h3>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+                <input type="number" id="newThreshold" placeholder="閾値" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;">
+                <button class="btn" onclick="addThreshold()">➕</button>
+            </div>
+            <div id="thresholdList" class="threshold-list"></div>
+        </div>
+    </div>
+    
+    <div id="chartSection" class="section" style="display:none;">
+        <h2>📊 ヒストグラム</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="display:flex;gap:8px;">
+                <button class="btn" onclick="copyChartToClipboard()" title="グラフを画像としてクリップボードにコピー">
+                    📋 グラフをコピー
+                </button>
+                <button class="btn" onclick="downloadChart()" title="グラフを画像ファイルとしてダウンロード">
+                    💾 画像保存
+                </button>
+                <button class="btn" onclick="exportHistogramCSV()" title="ヒストグラムデータをCSVファイルとして出力">
+                    📊 CSV出力
+                </button>
+            </div>
+            <div id="copyStatus" style="font-size:12px;color:#666;"></div>
+        </div>
+        <div class="chart-container">
+            <canvas id="histogramChart"></canvas>
+        </div>
+        <div id="chartInfo" class="info-panel"></div>
+    </div>
+    
+    <div id="emptyState" class="empty-state">
+        <h3>📊 データを追加してください</h3>
+        <p>Excelファイルまたは直接入力でデータを追加</p>
+    </div>
+    
+    <footer style="text-align:center;margin-top:40px;padding:20px;border-top:1px solid #ddd;color:#666;font-size:12px;">
+        <p>📊 Excel ヒストグラム生成ツール</p>
+        <p style="margin-top:5px;">Developed by <strong>y.sugimoto</strong> | 2025</p>
+    </footer>
+</div>
+
 <script>
-    // 他の変数や関数は変更なし
-    
+    let datasets=[], thresholds=[], chart=null, rangeMode='auto', binCount=20, opacity=0.8;
+    let specLimits = {lower: null, upper: null, show: false};
+    let measurementUnit = {value: null, apply: false};
+
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+
+    async function handleFileUpload(event) {
+        const files = Array.from(event.target.files);
+        for (const file of files) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer);
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, {header:1});
+                
+                const numericData = [];
+                for (let row of jsonData) {
+                    for (let cell of row) {
+                        if (typeof cell === 'number' && !isNaN(cell)) {
+                            numericData.push(cell);
+                        }
+                    }
+                }
+                
+                if (numericData.length > 0) {
+                    addDataset(file.name.replace(/\.(xlsx|xls)$/i, ''), numericData);
+                }
+            } catch (error) {
+                alert('ファイル読み込み失敗: ' + file.name);
+            }
+        }
+        event.target.value = '';
+    }
+
+    function toggleDirectInput() {
+        const el = document.getElementById('directInput');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function addDirectData() {
+        const name = document.getElementById('datasetName').value.trim();
+        const values = document.getElementById('dataValues').value.trim();
+        
+        if (!name || !values) {
+            alert('名前と数値データを入力してください');
+            return;
+        }
+
+        const numbers = values.split(/[,\s\n]+/).map(str => parseFloat(str.trim())).filter(num => !isNaN(num));
+        if (numbers.length === 0) {
+            alert('有効な数値が見つかりません');
+            return;
+        }
+
+        addDataset(name, numbers);
+        clearDirectInput();
+        toggleDirectInput();
+    }
+
+    function clearDirectInput() {
+        document.getElementById('datasetName').value = '';
+        document.getElementById('dataValues').value = '';
+    }
+
+    function addDataset(name, data) {
+        datasets.push({
+            id: Date.now() + Math.random(),
+            name: name,
+            data: data,
+            color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+            visible: true,
+            sigmaSettings: {show1: false, show2: false, show3: false}
+        });
+        updateUI();
+    }
+
+    function removeDataset(id) {
+        datasets = datasets.filter(d => d.id !== id);
+        updateUI();
+    }
+
+    function toggleDatasetVisibility(id) {
+        const dataset = datasets.find(d => d.id === id);
+        if (dataset) {
+            dataset.visible = !dataset.visible;
+            updateChart();
+        }
+    }
+
+    function toggleSigma(id, sigma) {
+        const dataset = datasets.find(d => d.id === id);
+        if (dataset) {
+            dataset.sigmaSettings[`show${sigma}`] = !dataset.sigmaSettings[`show${sigma}`];
+            updateChart();
+        }
+    }
+
+    function calculateStats(data) {
+        if (data.length === 0) return {mean: 0, stdDev: 0};
+        const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
+        const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / Math.max(data.length - 1, 1);
+        return {mean, stdDev: Math.sqrt(variance)};
+    }
+
+    function setRangeMode(mode) {
+        rangeMode = mode;
+        document.querySelectorAll('.range-option').forEach(option => option.classList.remove('active'));
+        event.target.closest('.range-option').classList.add('active');
+        document.getElementById('customRange').style.display = mode === 'custom' ? 'grid' : 'none';
+        updateChart();
+    }
+
+    function setDataRange() {
+        const visibleData = datasets.filter(d => d.visible).flatMap(d => d.data);
+        if (visibleData.length > 0) {
+            document.getElementById('customMin').value = Math.min(...visibleData);
+            document.getElementById('customMax').value = Math.max(...visibleData);
+            updateChart();
+        }
+    }
+
+    function updateBinCount() {
+        binCount = parseInt(document.getElementById('binCount').value);
+        document.getElementById('binCountValue').textContent = binCount;
+        updateChart();
+    }
+
+    function updateOpacity() {
+        opacity = parseInt(document.getElementById('opacity').value) / 100;
+        document.getElementById('opacityValue').textContent = document.getElementById('opacity').value + '%';
+        updateChart();
+    }
+
+    function addThreshold() {
+        const value = parseFloat(document.getElementById('newThreshold').value);
+        if (!isNaN(value)) {
+            thresholds.push({id: Date.now(), value: value});
+            document.getElementById('newThreshold').value = '';
+            updateThresholdList();
+            updateChart();
+        }
+    }
+
+    function removeThreshold(id) {
+        thresholds = thresholds.filter(t => t.id !== id);
+        updateThresholdList();
+        updateChart();
+    }
+
+    function updateThresholdList() {
+        document.getElementById('thresholdList').innerHTML = thresholds.map(t => 
+            `<div class="threshold-item"><span>${t.value}</span><button onclick="removeThreshold(${t.id})" style="background:none;border:none;color:#e74c3c;cursor:pointer;">✕</button></div>`
+        ).join('');
+    }
+
+    function setSpecLimits() {
+        const lower = parseFloat(document.getElementById('specLower').value);
+        const upper = parseFloat(document.getElementById('specUpper').value);
+        
+        if (isNaN(lower) && isNaN(upper)) {
+            alert('上限値または下限値の少なくとも一方を入力してください');
+            return;
+        }
+        
+        if (!isNaN(lower) && !isNaN(upper) && lower >= upper) {
+            alert('下限値は上限値より小さい値を入力してください');
+            return;
+        }
+        
+        specLimits.lower = isNaN(lower) ? null : lower;
+        specLimits.upper = isNaN(upper) ? null : upper;
+        specLimits.show = true;
+        document.getElementById('showSpecLimits').checked = true;
+        
+        updateSpecLimitsInfo();
+        updateChart();
+    }
+
+    function clearSpecLimits() {
+        specLimits = {lower: null, upper: null, show: false};
+        document.getElementById('specLower').value = '';
+        document.getElementById('specUpper').value = '';
+        document.getElementById('showSpecLimits').checked = false;
+        updateSpecLimitsInfo();
+        updateChart();
+    }
+
+    function updateSpecLimitsVisibility() {
+        specLimits.show = document.getElementById('showSpecLimits').checked;
+        updateChart();
+    }
+
+    function updateSpecLimitsInfo() {
+        const info = document.getElementById('specLimitsInfo');
+        if (specLimits.lower !== null || specLimits.upper !== null) {
+            const lowerText = specLimits.lower !== null ? `下限: ${specLimits.lower}` : '';
+            const upperText = specLimits.upper !== null ? `上限: ${specLimits.upper}` : '';
+            const separator = (lowerText && upperText) ? ', ' : '';
+            info.textContent = `設定済み規格限界: ${lowerText}${separator}${upperText}`;
+        } else {
+            info.textContent = '';
+        }
+    }
+
+    function setMeasurementUnit() {
+        const value = parseFloat(document.getElementById('measurementUnit').value);
+        
+        if (isNaN(value) || value <= 0) {
+            alert('正の数値を入力してください');
+            return;
+        }
+        
+        measurementUnit.value = value;
+        measurementUnit.apply = true;
+        document.getElementById('applyMeasurementUnit').checked = true;
+        
+        updateMeasurementUnitInfo();
+        updateChart();
+    }
+
+    function clearMeasurementUnit() {
+        measurementUnit = {value: null, apply: false};
+        document.getElementById('measurementUnit').value = '';
+        document.getElementById('applyMeasurementUnit').checked = false;
+        updateMeasurementUnitInfo();
+        updateChart();
+    }
+
+    function updateMeasurementUnitApplication() {
+        measurementUnit.apply = document.getElementById('applyMeasurementUnit').checked;
+        updateChart();
+    }
+
+    function updateMeasurementUnitInfo() {
+        const info = document.getElementById('measurementUnitInfo');
+        if (measurementUnit.value !== null) {
+            info.textContent = `設定済み測定単位: ${measurementUnit.value} ${measurementUnit.apply ? '(ビン幅に適用中)' : '(適用なし)'}`;
+        } else {
+            info.textContent = '';
+        }
+    }
+
+    function adjustBinWidthToMeasurementUnit(binWidth) {
+        if (!measurementUnit.apply || measurementUnit.value === null || measurementUnit.value <= 0) {
+            return binWidth;
+        }
+        
+        // 測定単位の倍数に調整
+        const unit = measurementUnit.value;
+        const ratio = binWidth / unit;
+        
+        // 1倍未満の場合は1倍、それ以外は最も近い整数倍に調整
+        let adjustedRatio;
+        if (ratio < 1) {
+            adjustedRatio = 1;
+        } else {
+            adjustedRatio = Math.round(ratio);
+            if (adjustedRatio === 0) adjustedRatio = 1;
+        }
+        
+        return adjustedRatio * unit;
+    }
+
     function generateHistogramData() {
         const visibleDatasets = datasets.filter(d => d.visible);
         if (visibleDatasets.length === 0) return {data: [], range: {min: 0, max: 0}};
@@ -71,60 +483,54 @@
         } else {
             min = Math.min(...allData);
             max = Math.max(...allData);
-            // 最小値と最大値が同じ場合の処理を追加
-            if (min === max) {
-                if (min === 0) {
-                    min = -1;
-                    max = 1;
-                } else {
-                    const offset = Math.abs(min) * 0.1;
-                    min -= offset;
-                    max += offset;
-                }
-            }
             binWidth = (max - min) / binCount;
         }
 
-        // 最小測定単位を適用
+        // 最小測定単位を適用してビン幅を調整
+        const originalBinWidth = binWidth;
         binWidth = adjustBinWidthToMeasurementUnit(binWidth);
 
-        // ビン数を再計算（小数単位に対応）
-        const actualBinCount = Math.max(1, Math.ceil((max - min) / binWidth));
-        
-        // 最大値を調整してビン幅が均等になるように
-        max = min + actualBinCount * binWidth;
+        // 最小測定単位適用時のビン数再計算
+        let actualBinCount;
+        if (measurementUnit.apply && measurementUnit.value !== null) {
+            // 測定単位に合わせてビン境界を調整
+            const unit = measurementUnit.value;
+            min = Math.floor(min / unit) * unit;
+            max = Math.ceil(max / unit) * unit;
+            actualBinCount = Math.round((max - min) / binWidth);
+            
+            // 最大値がカバーされるように調整
+            if (min + actualBinCount * binWidth < Math.max(...allData)) {
+                actualBinCount += 1;
+            }
+        } else {
+            actualBinCount = rangeMode === 'custom' && document.getElementById('customBinWidth').value
+                ? Math.ceil((max - min) / binWidth) : binCount;
+        }
 
-        const bins = Array(actualBinCount).fill(0).map((_, i) => {
+        const bins = [];
+        for (let i = 0; i < actualBinCount; i++) {
             const binStart = min + i * binWidth;
             const binEnd = min + (i + 1) * binWidth;
             const binCenter = binStart + binWidth / 2;
-            const bin = {x: binCenter};
+            const bin = {x: binCenter, binStart: binStart, binEnd: binEnd};
             
             visibleDatasets.forEach(dataset => {
-                // 最後のビンは終端を含める
-                bin[dataset.name] = dataset.data.filter(value => 
-                    value >= binStart && (i === actualBinCount - 1 ? value <= binEnd : value < binEnd)
-                ).length;
+                // 最後のビンは上限を含む（binEnd以下）、それ以外は未満（binEnd未満）
+                const count = dataset.data.filter(value => {
+                    if (i === actualBinCount - 1) {
+                        return value >= binStart && value <= binEnd;
+                    } else {
+                        return value >= binStart && value < binEnd;
+                    }
+                }).length;
+                bin[dataset.name] = count;
             });
             
-            return bin;
-        });
-
-        return {data: bins, range: {min, max}, binWidth: binWidth};
-    }
-
-    function adjustBinWidthToMeasurementUnit(binWidth) {
-        if (!measurementUnit.apply || measurementUnit.value === null) {
-            return binWidth;
+            bins.push(bin);
         }
-        
-        const unit = measurementUnit.value;
-        if (unit <= 0) return binWidth;
-        
-        // ビン幅が測定単位の整数倍になるように調整
-        const adjustedBinWidth = Math.max(unit, Math.ceil(binWidth / unit) * unit);
-        
-        return adjustedBinWidth;
+
+        return {data: bins, range: {min: min, max: min + actualBinCount * binWidth}, binWidth: binWidth};
     }
 
     function updateChart() {
@@ -137,13 +543,179 @@
 
         const ctx = document.getElementById('histogramChart').getContext('2d');
         
-        // 小数点以下の表示桁数を決定
-        const decimals = Math.max(0, -Math.floor(Math.log10(histogramData.binWidth))) + 2;
+        // アノテーションの準備
+        const annotations = {};
         
+        // すべてのライン情報を収集してソート
+        const allLines = [];
+        
+        // 規格上下限線
+        if (specLimits.show) {
+            if (specLimits.lower !== null) {
+                allLines.push({
+                    value: specLimits.lower,
+                    type: 'spec',
+                    id: 'specLower',
+                    label: `下限: ${specLimits.lower}`,
+                    color: '#ff6b35'
+                });
+            }
+            if (specLimits.upper !== null) {
+                allLines.push({
+                    value: specLimits.upper,
+                    type: 'spec',
+                    id: 'specUpper',
+                    label: `上限: ${specLimits.upper}`,
+                    color: '#ff6b35'
+                });
+            }
+        }
+        
+        // 閾値線
+        thresholds.forEach((threshold, index) => {
+            allLines.push({
+                value: threshold.value,
+                type: 'threshold',
+                id: `threshold${index}`,
+                label: `閾値: ${threshold.value}`,
+                color: '#dc2626'
+            });
+        });
+        
+        // シグマライン
+        visibleDatasets.forEach((dataset, datasetIndex) => {
+            const stats = calculateStats(dataset.data);
+            [1, 2, 3].forEach(sigma => {
+                if (dataset.sigmaSettings[`show${sigma}`]) {
+                    const upperValue = stats.mean + sigma * stats.stdDev;
+                    const lowerValue = stats.mean - sigma * stats.stdDev;
+                    
+                    allLines.push({
+                        value: stats.mean,
+                        type: 'sigma',
+                        id: `mean_${datasetIndex}`,
+                        label: '平均',
+                        color: dataset.color
+                    });
+                    
+                    allLines.push({
+                        value: upperValue,
+                        type: 'sigma',
+                        id: `upper_${datasetIndex}_${sigma}`,
+                        label: `+${sigma}σ`,
+                        color: dataset.color
+                    });
+                    
+                    allLines.push({
+                        value: lowerValue,
+                        type: 'sigma',
+                        id: `lower_${datasetIndex}_${sigma}`,
+                        label: `-${sigma}σ`,
+                        color: dataset.color
+                    });
+                }
+            });
+        });
+        
+        // カテゴリ軸用にビンインデックスに変換
+        const getXPositionForValue = (value) => {
+            // 値に最も近いビンのインデックスを見つける
+            let closestIndex = 0;
+            let minDistance = Math.abs(histogramData.data[0].x - value);
+            
+            for (let i = 1; i < histogramData.data.length; i++) {
+                const distance = Math.abs(histogramData.data[i].x - value);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestIndex = i;
+                }
+            }
+            return closestIndex;
+        };
+        
+        // 値でソートして重複を除去
+        const uniqueLines = [];
+        allLines.sort((a, b) => a.value - b.value).forEach(line => {
+            const existing = uniqueLines.find(ul => Math.abs(ul.value - line.value) < 0.01);
+            if (!existing) {
+                uniqueLines.push(line);
+            } else {
+                // 近い値の場合、ラベルを結合
+                existing.label += ` / ${line.label}`;
+                if (line.type === 'spec') existing.color = line.color; // 規格限界を優先
+            }
+        });
+        
+        // ラベル位置を決定（交互配置）
+        const labelPositions = ['start', 'end'];
+        let positionIndex = 0;
+        
+        uniqueLines.forEach((line, index) => {
+            // 近接するラインの位置を交互に配置
+            const position = labelPositions[positionIndex];
+            positionIndex = (positionIndex + 1) % labelPositions.length;
+            
+            const xPosition = getXPositionForValue(line.value);
+            
+            if (line.type === 'spec') {
+                annotations[line.id] = {
+                    type: 'line',
+                    xMin: xPosition,
+                    xMax: xPosition,
+                    borderColor: line.color,
+                    borderWidth: 4,
+                    borderDash: [10, 5],
+                    label: {
+                        enabled: true,
+                        content: line.label,
+                        position: position,
+                        backgroundColor: line.color,
+                        color: 'white',
+                        yAdjust: index % 2 === 0 ? -10 : 10
+                    }
+                };
+            } else if (line.type === 'threshold') {
+                annotations[line.id] = {
+                    type: 'line',
+                    xMin: xPosition,
+                    xMax: xPosition,
+                    borderColor: line.color,
+                    borderWidth: 3,
+                    label: {
+                        enabled: true,
+                        content: line.label,
+                        position: position,
+                        backgroundColor: line.color,
+                        color: 'white',
+                        yAdjust: index % 2 === 0 ? -10 : 10
+                    }
+                };
+            } else if (line.type === 'sigma') {
+                annotations[line.id] = {
+                    type: 'line',
+                    xMin: xPosition,
+                    xMax: xPosition,
+                    borderColor: line.color,
+                    borderWidth: line.label === '平均' ? 3 : 2,
+                    borderDash: line.label === '平均' ? [] : [8, 4],
+                    label: {
+                        enabled: true,
+                        content: line.label,
+                        position: position,
+                        backgroundColor: line.color,
+                        color: 'white',
+                        yAdjust: index % 2 === 0 ? -10 : 10
+                    }
+                };
+            }
+        });
+        
+        // シグマライン（すでにallLinesに追加済みなので削除）
+
         chart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: histogramData.data.map(d => d.x.toFixed(decimals)),
+                labels: histogramData.data.map(d => d.x.toFixed(3)),
                 datasets: visibleDatasets.map(dataset => ({
                     label: dataset.name,
                     data: histogramData.data.map(d => d[dataset.name]),
@@ -159,14 +731,10 @@
                 maintainAspectRatio: false,
                 scales: {
                     x: {
-                        type: 'linear',
-                        min: histogramData.range.min,
-                        max: histogramData.range.max,
+                        type: 'category',
                         title: {display: true, text: '値'},
-                        ticks: {
-                            callback: function(value) {
-                                return value.toFixed(decimals);
-                            }
+                        grid: {
+                            display: true
                         }
                     },
                     y: {
@@ -178,16 +746,14 @@
                     tooltip: {
                         callbacks: {
                             title: ctx => {
-                                const index = ctx[0].dataIndex;
-                                const binStart = histogramData.range.min + index * histogramData.binWidth;
-                                const binEnd = binStart + histogramData.binWidth;
-                                return `範囲: ${binStart.toFixed(decimals)} ～ ${binEnd.toFixed(decimals)}`;
+                                const binData = histogramData.data[ctx[0].dataIndex];
+                                return `範囲: ${binData.binStart.toFixed(3)} ～ ${binData.binEnd.toFixed(3)}`;
                             },
                             label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}回`
                         }
                     },
                     annotation: {
-                        annotations: getChartAnnotations(visibleDatasets, histogramData)
+                        annotations: annotations
                     }
                 }
             },
@@ -197,8 +763,349 @@
         updateChartInfo(histogramData);
     }
 
-    // 他の関数は変更なし
-    // ...
+    function updateChartInfo(histogramData) {
+        const customWidth = document.getElementById('customBinWidth').value;
+        const visibleDatasets = datasets.filter(d => d.visible);
+        
+        // 規格外データの計算
+        let specAnalysis = '';
+        if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
+            const analysisResults = visibleDatasets.map(dataset => {
+                const totalCount = dataset.data.length;
+                let outOfSpecCount = 0;
+                
+                dataset.data.forEach(value => {
+                    if (specLimits.lower !== null && value < specLimits.lower) outOfSpecCount++;
+                    if (specLimits.upper !== null && value > specLimits.upper) outOfSpecCount++;
+                });
+                
+                const outOfSpecRate = (outOfSpecCount / totalCount * 100).toFixed(2);
+                return `${dataset.name}: ${outOfSpecCount}/${totalCount} (${outOfSpecRate}%)`;
+            });
+            
+            specAnalysis = ` <strong>| 規格外:</strong> ${analysisResults.join(', ')}`;
+        }
+
+        // 測定単位情報
+        let unitInfo = '';
+        if (measurementUnit.apply && measurementUnit.value !== null) {
+            unitInfo = ` <strong>| 測定単位:</strong> ${measurementUnit.value}`;
+        }
+        
+        document.getElementById('chartInfo').innerHTML = `
+            <strong>範囲:</strong> ${rangeMode === 'auto' ? 'データ全範囲' : 
+                `${histogramData.range.min.toFixed(2)} ～ ${histogramData.range.max.toFixed(2)}`}
+            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}
+            <strong> | 実際のビン幅:</strong> ${histogramData.binWidth.toFixed(4)}${unitInfo}${specAnalysis}
+        `;
+    }
+
+    function updateDatasetList() {
+        const list = document.getElementById('datasetList');
+        list.innerHTML = datasets.map(dataset => {
+            const stats = calculateStats(dataset.data);
+            return `
+                <div class="dataset-card">
+                    <div class="dataset-header">
+                        <span class="dataset-name" style="color:${dataset.color}">${dataset.name}</span>
+                        <div>
+                            <button onclick="toggleDatasetVisibility(${dataset.id})" class="btn" style="padding:4px 8px;">${dataset.visible ? '👁️' : '🙈'}</button>
+                            <button onclick="removeDataset(${dataset.id})" class="btn btn-danger" style="padding:4px 8px;">🗑️</button>
+                        </div>
+                    </div>
+                    <div style="font-size:13px;color:#666;margin-bottom:8px;">データ数: ${dataset.data.length}</div>
+                    <div class="checkbox-group">
+                        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">シグマライン:</div>
+                        ${[1,2,3].map(sigma => {
+                            const upper = stats.mean + sigma * stats.stdDev;
+                            const lower = stats.mean - sigma * stats.stdDev;
+                            return `<div class="checkbox-item">
+                                <input type="checkbox" ${dataset.sigmaSettings[`show${sigma}`] ? 'checked' : ''} 
+                                       onchange="toggleSigma(${dataset.id}, ${sigma})">
+                                <span style="font-size:12px;">${sigma}σ (${lower.toFixed(2)} ～ ${upper.toFixed(2)})</span>
+                            </div>`;
+                        }).join('')}
+                        <div class="stats-info">平均: ${stats.mean.toFixed(2)}, 標準偏差: ${stats.stdDev.toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function updateUI() {
+        const hasData = datasets.length > 0;
+        document.getElementById('emptyState').style.display = hasData ? 'none' : 'block';
+        document.getElementById('datasetSection').style.display = hasData ? 'block' : 'none';
+        document.getElementById('settingsSection').style.display = hasData ? 'block' : 'none';
+        document.getElementById('thresholdSection').style.display = hasData ? 'block' : 'none';
+        document.getElementById('chartSection').style.display = hasData ? 'block' : 'none';
+        
+        if (hasData) {
+            updateDatasetList();
+            updateChart();
+        }
+    }
+
+    async function copyChartToClipboard() {
+        if (!chart) {
+            showCopyStatus('グラフが生成されていません', 'error');
+            return;
+        }
+
+        try {
+            showCopyStatus('コピー中...', 'info');
+            
+            // Canvasを高解像度で取得
+            const canvas = chart.canvas;
+            const ctx = canvas.getContext('2d');
+            
+            // 一時的に背景を白に設定してクリアな画像を生成
+            const originalComposite = ctx.globalCompositeOperation;
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = originalComposite;
+            
+            // Canvas を Blob に変換
+            const blob = await new Promise(resolve => {
+                canvas.toBlob(resolve, 'image/png', 1.0);
+            });
+            
+            // クリップボードに書き込み
+            if (navigator.clipboard && window.ClipboardItem) {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'image/png': blob
+                    })
+                ]);
+                showCopyStatus('✅ グラフをクリップボードにコピーしました', 'success');
+            } else {
+                // フォールバック: データURLを生成してテキストとしてコピー
+                const dataUrl = canvas.toDataURL('image/png');
+                await navigator.clipboard.writeText(dataUrl);
+                showCopyStatus('⚠️ データURLをコピーしました（画像として貼り付けできない場合があります）', 'warning');
+            }
+            
+            // チャートを再描画して背景をリセット
+            chart.update('none');
+            
+        } catch (error) {
+            console.error('コピーエラー:', error);
+            showCopyStatus('❌ コピーに失敗しました', 'error');
+        }
+    }
+
+    function downloadChart() {
+        if (!chart) {
+            showCopyStatus('グラフが生成されていません', 'error');
+            return;
+        }
+
+        try {
+            showCopyStatus('ダウンロード準備中...', 'info');
+            
+            const canvas = chart.canvas;
+            const ctx = canvas.getContext('2d');
+            
+            // 一時的に背景を白に設定
+            const originalComposite = ctx.globalCompositeOperation;
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = originalComposite;
+            
+            // ダウンロード用のリンクを作成
+            const link = document.createElement('a');
+            link.download = `histogram_${new Date().toISOString().slice(0,19).replace(/[T:]/g, '_')}.png`;
+            link.href = canvas.toDataURL('image/png', 1.0);
+            
+            // ダウンロード実行
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showCopyStatus('✅ グラフを画像ファイルとして保存しました', 'success');
+            
+            // チャートを再描画して背景をリセット
+            chart.update('none');
+            
+        } catch (error) {
+            console.error('ダウンロードエラー:', error);
+            showCopyStatus('❌ ダウンロードに失敗しました', 'error');
+        }
+    }
+
+    function showCopyStatus(message, type) {
+        const statusEl = document.getElementById('copyStatus');
+        statusEl.textContent = message;
+        
+        // スタイルを適用
+        statusEl.style.color = type === 'success' ? '#27ae60' : 
+                             type === 'error' ? '#e74c3c' : 
+                             type === 'warning' ? '#f39c12' : '#666';
+        
+        // 3秒後にメッセージをクリア
+        setTimeout(() => {
+            statusEl.textContent = '';
+        }, 3000);
+    }
+
+    function exportHistogramCSV() {
+        const visibleDatasets = datasets.filter(d => d.visible);
+        if (visibleDatasets.length === 0) {
+            showCopyStatus('表示可能なデータセットがありません', 'error');
+            return;
+        }
+
+        try {
+            showCopyStatus('CSV生成中...', 'info');
+            
+            const histogramData = generateHistogramData();
+            if (histogramData.data.length === 0) {
+                showCopyStatus('ヒストグラムデータが生成されていません', 'error');
+                return;
+            }
+
+            // CSVヘッダーを作成
+            const headers = ['ビン中央値', 'ビン範囲開始', 'ビン範囲終了'];
+            visibleDatasets.forEach(dataset => {
+                headers.push(`${dataset.name}_出現回数`);
+                headers.push(`${dataset.name}_相対頻度(%)`);
+            });
+
+            // 統計情報を追加
+            headers.push('合計出現回数', '全体相対頻度(%)');
+
+            // CSVデータを生成
+            const csvRows = [headers];
+            
+            // ビン幅を計算
+            const binWidth = histogramData.binWidth || (histogramData.data.length > 1 ? 
+                histogramData.data[1].x - histogramData.data[0].x : 1);
+            
+            histogramData.data.forEach(bin => {
+                const binStart = bin.x - binWidth / 2;
+                const binEnd = bin.x + binWidth / 2;
+                
+                const row = [
+                    bin.x.toFixed(4),
+                    binStart.toFixed(4),
+                    binEnd.toFixed(4)
+                ];
+
+                let totalCount = 0;
+                
+                // 各データセットの出現回数と相対頻度
+                visibleDatasets.forEach(dataset => {
+                    const count = bin[dataset.name] || 0;
+                    const totalDataPoints = dataset.data.length;
+                    const relativeFreq = totalDataPoints > 0 ? (count / totalDataPoints * 100) : 0;
+                    
+                    row.push(count);
+                    row.push(relativeFreq.toFixed(2));
+                    totalCount += count;
+                });
+
+                // 全体の出現回数と相対頻度
+                const allDataPoints = visibleDatasets.reduce((sum, ds) => sum + ds.data.length, 0);
+                const totalRelativeFreq = allDataPoints > 0 ? (totalCount / allDataPoints * 100) : 0;
+                
+                row.push(totalCount);
+                row.push(totalRelativeFreq.toFixed(2));
+                
+                csvRows.push(row);
+            });
+
+            // 統計サマリーを追加
+            csvRows.push([]); // 空行
+            csvRows.push(['統計サマリー']);
+            csvRows.push(['データセット名', 'データ数', '平均', '標準偏差', '最小値', '最大値', '規格外数', '規格外率(%)']);
+            
+            visibleDatasets.forEach(dataset => {
+                const stats = calculateStats(dataset.data);
+                const min = Math.min(...dataset.data);
+                const max = Math.max(...dataset.data);
+                
+                // 規格外データの計算
+                let outOfSpecCount = 0;
+                if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
+                    dataset.data.forEach(value => {
+                        if (specLimits.lower !== null && value < specLimits.lower) outOfSpecCount++;
+                        if (specLimits.upper !== null && value > specLimits.upper) outOfSpecCount++;
+                    });
+                }
+                const outOfSpecRate = dataset.data.length > 0 ? (outOfSpecCount / dataset.data.length * 100) : 0;
+                
+                csvRows.push([
+                    dataset.name,
+                    dataset.data.length,
+                    stats.mean.toFixed(4),
+                    stats.stdDev.toFixed(4),
+                    min.toFixed(4),
+                    max.toFixed(4),
+                    outOfSpecCount,
+                    outOfSpecRate.toFixed(2)
+                ]);
+            });
+
+            // 設定情報を追加
+            csvRows.push([]); // 空行
+            csvRows.push(['設定情報']);
+            csvRows.push(['項目', '値']);
+            csvRows.push(['範囲モード', rangeMode === 'auto' ? '自動範囲' : 'カスタム範囲']);
+            csvRows.push(['ビン数', binCount]);
+            csvRows.push(['データ範囲', `${histogramData.range.min.toFixed(4)} ～ ${histogramData.range.max.toFixed(4)}`]);
+            csvRows.push(['実際のビン幅', binWidth.toFixed(4)]);
+            
+            if (measurementUnit.value !== null) {
+                csvRows.push(['最小測定単位', measurementUnit.value]);
+                csvRows.push(['測定単位適用', measurementUnit.apply ? 'はい' : 'いいえ']);
+            }
+            
+            if (specLimits.show && (specLimits.lower !== null || specLimits.upper !== null)) {
+                csvRows.push(['規格下限', specLimits.lower !== null ? specLimits.lower : 'なし']);
+                csvRows.push(['規格上限', specLimits.upper !== null ? specLimits.upper : 'なし']);
+            }
+
+            // クレジット情報を追加
+            csvRows.push([]); // 空行
+            csvRows.push(['生成情報']);
+            csvRows.push(['ツール名', 'Excel ヒストグラム生成ツール']);
+            csvRows.push(['開発者', 'y.sugimoto']);
+            csvRows.push(['生成日時', new Date().toLocaleString('ja-JP')]);
+
+            // CSVテキストを生成
+            const csvContent = csvRows.map(row => 
+                row.map(cell => 
+                    typeof cell === 'string' && (cell.includes(',') || cell.includes('"') || cell.includes('\n')) 
+                        ? `"${cell.replace(/"/g, '""')}"` 
+                        : cell
+                ).join(',')
+            ).join('\n');
+
+            // BOM付きUTF-8でダウンロード
+            const bom = '\uFEFF';
+            const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+            
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `histogram_data_${new Date().toISOString().slice(0,19).replace(/[T:]/g, '_')}.csv`);
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            showCopyStatus('✅ ヒストグラムデータをCSVファイルで出力しました', 'success');
+            
+        } catch (error) {
+            console.error('CSV出力エラー:', error);
+            showCopyStatus('❌ CSV出力に失敗しました', 'error');
+        }
+    }
 </script>
+```
+
 </body>
 </html>
