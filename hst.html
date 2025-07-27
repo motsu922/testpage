@@ -1,717 +1,523 @@
-import React, { useState, useCallback, useMemo } from ‘react’;
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from ‘recharts’;
-import { Upload, Plus, Minus, Eye, EyeOff, Edit3 } from ‘lucide-react’;
-import * as XLSX from ‘xlsx’;
+<!DOCTYPE html>
 
-const HistogramTool = () => {
-const [datasets, setDatasets] = useState([]);
-const [thresholds, setThresholds] = useState([]);
-const [newThreshold, setNewThreshold] = useState(’’);
-const [binCount, setBinCount] = useState(20);
-const [sigmaSettings, setSigmaSettings] = useState({});
-const [directInput, setDirectInput] = useState(’’);
-const [datasetName, setDatasetName] = useState(’’);
-const [showDirectInput, setShowDirectInput] = useState(false);
-const [opacity, setOpacity] = useState(0.6);
-const [rangeMode, setRangeMode] = useState(‘6sigma’); // ‘6sigma’, ‘custom’, ‘auto’
-const [customMin, setCustomMin] = useState(’’);
-const [customMax, setCustomMax] = useState(’’);
-const [customBinWidth, setCustomBinWidth] = useState(’’);
-
-// 直接入力データの追加
-const addDirectInputData = () => {
-if (!directInput.trim() || !datasetName.trim()) return;
-
-```
-const numbers = directInput
-  .split(/[,\s\n]+/)
-  .map(str => str.trim())
-  .filter(str => str.length > 0)
-  .map(str => parseFloat(str))
-  .filter(num => !isNaN(num));
-
-if (numbers.length === 0) {
-  alert('有効な数値が見つかりません');
-  return;
-}
-
-const newDataset = {
-  id: Date.now() + Math.random(),
-  name: datasetName,
-  data: numbers,
-  color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-  visible: true
-};
-
-setDatasets(prev => [...prev, newDataset]);
-setSigmaSettings(prev => ({
-  ...prev,
-  [newDataset.id]: { show1: false, show2: false, show3: false }
-}));
-
-setDirectInput('');
-setDatasetName('');
-setShowDirectInput(false);
-```
-
-};
-
-// ファイルアップロード処理
-const handleFileUpload = useCallback(async (event) => {
-const uploadedFiles = Array.from(event.target.files);
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel ヒストグラム生成ツール</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/2.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/1.4.0/chartjs-plugin-annotation.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:system-ui,sans-serif;background:#f5f5f5;color:#333;line-height:1.6}
+        .container{max-width:1200px;margin:0 auto;padding:20px;background:#fff;min-height:100vh}
+        h1{text-align:center;color:#2c3e50;margin-bottom:30px;font-size:2em}
+        .section{margin-bottom:25px;padding:15px;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+        .section h2{color:#34495e;margin-bottom:15px;font-size:1.3em;border-bottom:2px solid #3498db;padding-bottom:8px}
+        .upload-area{border:2px dashed #3498db;border-radius:8px;padding:30px;text-align:center;cursor:pointer;transition:all 0.3s;background:#f8f9fa}
+        .upload-area:hover{border-color:#2980b9;background:#e3f2fd}
+        .upload-area input{display:none}
+        .direct-input{display:none;background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px}
+        .input-group{margin-bottom:12px}
+        .input-group label{display:block;margin-bottom:5px;font-weight:600;color:#2c3e50}
+        .input-group input,.input-group textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px}
+        .input-group textarea{resize:vertical;font-family:monospace}
+        .btn{background:#3498db;color:white;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:14px;transition:background 0.3s;margin:5px}
+        .btn:hover{background:#2980b9}
+        .btn-success{background:#27ae60}.btn-success:hover{background:#219a52}
+        .btn-danger{background:#e74c3c}.btn-danger:hover{background:#c0392b}
+        .dataset-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:15px;margin-top:15px}
+        .dataset-card{border:1px solid #ddd;border-radius:8px;padding:12px;background:white}
+        .dataset-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+        .dataset-name{font-weight:600;font-size:15px}
+        .range-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:15px}
+        .range-option{border:2px solid #ddd;border-radius:8px;padding:12px;cursor:pointer;transition:all 0.3s}
+        .range-option:hover{border-color:#3498db}
+        .range-option.active{border-color:#3498db;background:#e3f2fd}
+        .custom-range{display:none;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-top:12px;padding:15px;background:#e3f2fd;border-radius:8px}
+        .chart-container{position:relative;height:400px;margin:15px 0}
+        .threshold-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+        .threshold-item{background:#fff5f5;border:1px solid #feb2b2;border-radius:4px;padding:4px 8px;display:flex;align-items:center;gap:5px}
+        .slider-container{margin:12px 0}
+        .slider-container input[type="range"]{width:100%;margin:8px 0}
+        .info-panel{background:#f8f9fa;padding:12px;border-radius:8px;margin-top:12px;font-size:13px;color:#666}
+        .empty-state{text-align:center;padding:40px 20px;color:#999}
+        .checkbox-group{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+        .checkbox-item{display:flex;align-items:center;gap:6px}
+        .stats-info{font-size:11px;color:#666;margin-top:6px}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Excel ヒストグラム生成ツール</h1>
 
 ```
-for (const file of uploadedFiles) {
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = XLSX.read(arrayBuffer);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-    
-    const numericData = [];
-    for (let row of jsonData) {
-      for (let cell of row) {
-        if (typeof cell === 'number' && !isNaN(cell)) {
-          numericData.push(cell);
-        }
-      }
-    }
-    
-    if (numericData.length > 0) {
-      const newDataset = {
-        id: Date.now() + Math.random(),
-        name: file.name.replace('.xlsx', '').replace('.xls', ''),
-        data: numericData,
-        color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-        visible: true
-      };
-      
-      setDatasets(prev => [...prev, newDataset]);
-      setSigmaSettings(prev => ({
-        ...prev,
-        [newDataset.id]: { show1: false, show2: false, show3: false }
-      }));
-    }
-  } catch (error) {
-    console.error('ファイル読み込みエラー:', error);
-  }
-}
-
-event.target.value = '';
-```
-
-}, []);
-
-// キリの良い数値を計算する関数
-const getTickInterval = (min, max) => {
-const range = max - min;
-const roughInterval = range / 10; // 大体10個の目盛りを目安
-
-```
-// キリの良い数値の候補
-const niceNumbers = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000];
-
-// 最適なキリの良い数値を選択
-let bestInterval = niceNumbers[niceNumbers.length - 1];
-for (let nice of niceNumbers) {
-  if (nice >= roughInterval) {
-    bestInterval = nice;
-    break;
-  }
-}
-
-return bestInterval;
-```
-
-};
-
-// キリの良い目盛り値を生成
-const getTickValues = (min, max) => {
-const interval = getTickInterval(min, max);
-const startTick = Math.floor(min / interval) * interval;
-const endTick = Math.ceil(max / interval) * interval;
-
-```
-const ticks = [];
-for (let tick = startTick; tick <= endTick; tick += interval) {
-  ticks.push(Math.round(tick * 1000000) / 1000000); // 小数点以下6桁で丸める
-}
-
-return ticks;
-```
-
-};
-const calculateStats = useCallback((data) => {
-const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
-const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / (data.length - 1);
-const stdDev = Math.sqrt(variance);
-return { mean, stdDev };
-}, []);
-
-// ヒストグラムデータ生成
-const histogramData = useMemo(() => {
-if (datasets.length === 0) return { data: [], range: { min: 0, max: 0 } };
-
-```
-const visibleDatasets = datasets.filter(d => d.visible);
-if (visibleDatasets.length === 0) return { data: [], range: { min: 0, max: 0 } };
-
-const allData = visibleDatasets.flatMap(d => d.data);
-let min, max, binWidth;
-
-// 表示範囲の決定
-if (rangeMode === '6sigma') {
-  const overallMean = allData.reduce((sum, val) => sum + val, 0) / allData.length;
-  const overallVariance = allData.reduce((sum, val) => sum + Math.pow(val - overallMean, 2), 0) / (allData.length - 1);
-  const overallStdDev = Math.sqrt(overallVariance);
-  min = overallMean - 6 * overallStdDev;
-  max = overallMean + 6 * overallStdDev;
-  binWidth = (max - min) / binCount;
-} else if (rangeMode === 'custom') {
-  min = parseFloat(customMin) || Math.min(...allData);
-  max = parseFloat(customMax) || Math.max(...allData);
-  if (customBinWidth) {
-    binWidth = parseFloat(customBinWidth);
-  } else {
-    binWidth = (max - min) / binCount;
-  }
-} else { // auto
-  min = Math.min(...allData);
-  max = Math.max(...allData);
-  binWidth = (max - min) / binCount;
-}
-
-// ビン数を計算（カスタム幅の場合）
-const actualBinCount = customBinWidth && rangeMode === 'custom' 
-  ? Math.ceil((max - min) / binWidth)
-  : binCount;
-
-// ビン範囲を作成
-const binRanges = Array(actualBinCount).fill(0).map((_, i) => ({
-  start: min + i * binWidth,
-  end: min + (i + 1) * binWidth,
-  center: min + (i + 0.5) * binWidth,
-}));
-
-// 各データセットのヒストグラムを計算
-const combinedData = binRanges.map((bin) => {
-  const point = { x: bin.center };
-  
-  visibleDatasets.forEach(dataset => {
-    let count = 0;
-    
-    // 実際の出現値をそのままカウント
-    dataset.data.forEach(value => {
-      if (value >= bin.start && value < bin.end) {
-        count++;
-      }
-    });
-    
-    point[dataset.name] = count;
-  });
-  
-  return point;
-});
-
-return { data: combinedData, range: { min, max } };
-```
-
-}, [datasets, binCount, rangeMode, customMin, customMax, customBinWidth]);
-
-// 閾値追加
-const addThreshold = () => {
-const value = parseFloat(newThreshold);
-if (!isNaN(value)) {
-setThresholds(prev => […prev, { id: Date.now(), value, label: `閾値 ${value}` }]);
-setNewThreshold(’’);
-}
-};
-
-// 閾値削除
-const removeThreshold = (id) => {
-setThresholds(prev => prev.filter(t => t.id !== id));
-};
-
-// データセット可視性切り替え
-const toggleDatasetVisibility = (id) => {
-setDatasets(prev => prev.map(d =>
-d.id === id ? { …d, visible: !d.visible } : d
-));
-};
-
-// データセット削除
-const removeDataset = (id) => {
-setDatasets(prev => prev.filter(d => d.id !== id));
-setSigmaSettings(prev => {
-const newSettings = { …prev };
-delete newSettings[id];
-return newSettings;
-});
-};
-
-// シグマ設定切り替え
-const toggleSigma = (datasetId, sigmaLevel) => {
-setSigmaSettings(prev => ({
-…prev,
-[datasetId]: {
-…prev[datasetId],
-[`show${sigmaLevel}`]: !prev[datasetId][`show${sigmaLevel}`]
-}
-}));
-};
-
-// シグマライン生成
-const getSigmaLines = () => {
-const lines = [];
-datasets.filter(d => d.visible).forEach(dataset => {
-const stats = calculateStats(dataset.data);
-const settings = sigmaSettings[dataset.id] || {};
-
-```
-  [1, 2, 3].forEach(sigma => {
-    if (settings[`show${sigma}`]) {
-      const upperValue = stats.mean + sigma * stats.stdDev;
-      const lowerValue = stats.mean - sigma * stats.stdDev;
-      
-      lines.push(
-        <ReferenceLine 
-          key={`${dataset.id}-mean`}
-          x={stats.mean}
-          stroke={dataset.color}
-          strokeWidth={3}
-          label={{ value: `平均 (${dataset.name})`, position: 'top' }}
-        />
-      );
-      
-      lines.push(
-        <ReferenceLine 
-          key={`${dataset.id}-${sigma}sigma-upper`}
-          x={upperValue}
-          stroke={dataset.color}
-          strokeDasharray="8 4"
-          strokeWidth={2}
-          label={{ 
-            value: `+${sigma}σ (${upperValue.toFixed(2)})`, 
-            position: 'topRight'
-          }}
-        />
-      );
-      
-      lines.push(
-        <ReferenceLine 
-          key={`${dataset.id}-${sigma}sigma-lower`}
-          x={lowerValue}
-          stroke={dataset.color}
-          strokeDasharray="8 4"
-          strokeWidth={2}
-          label={{ 
-            value: `-${sigma}σ (${lowerValue.toFixed(2)})`, 
-            position: 'topLeft'
-          }}
-        />
-      );
-    }
-  });
-});
-return lines;
-```
-
-};
-
-return (
-<div className="p-6 max-w-7xl mx-auto bg-white">
-<h1 className="text-3xl font-bold mb-6 text-gray-800">Excel ヒストグラム生成ツール</h1>
-
-```
-  {/* ファイルアップロード */}
-  <div className="mb-6 p-4 border-2 border-dashed border-gray-300 rounded-lg">
-    <div className="flex items-center justify-center">
-      <label className="flex flex-col items-center cursor-pointer">
-        <Upload className="w-8 h-8 text-gray-400 mb-2" />
-        <span className="text-sm text-gray-600">Excelファイルをアップロード</span>
-        <input
-          type="file"
-          accept=".xlsx,.xls"
-          multiple
-          onChange={handleFileUpload}
-          className="hidden"
-        />
-      </label>
-    </div>
-  </div>
-
-  {/* 直接入力セクション */}
-  <div className="mb-6">
-    <div className="flex items-center justify-between mb-3">
-      <h2 className="text-xl font-semibold">直接データ入力</h2>
-      <button
-        onClick={() => setShowDirectInput(!showDirectInput)}
-        className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 flex items-center gap-2"
-      >
-        <Edit3 className="w-4 h-4" />
-        {showDirectInput ? '入力を閉じる' : '直接入力'}
-      </button>
+    <div class="section">
+        <h2>📁 データ入力</h2>
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+            <p>📂 Excelファイルをアップロード</p>
+            <input type="file" id="fileInput" accept=".xlsx,.xls" multiple>
+        </div>
+        <button class="btn btn-success" onclick="toggleDirectInput()">✏️ 直接入力</button>
+        
+        <div id="directInput" class="direct-input">
+            <div class="input-group">
+                <label>データセット名</label>
+                <input type="text" id="datasetName" placeholder="例: データ1">
+            </div>
+            <div class="input-group">
+                <label>数値データ（カンマ、スペース、改行区切り）</label>
+                <textarea id="dataValues" rows="3" placeholder="1, 2, 3, 4, 5"></textarea>
+            </div>
+            <button class="btn" onclick="addDirectData()">➕ 追加</button>
+            <button class="btn" onclick="clearDirectInput()">🗑️ クリア</button>
+        </div>
     </div>
     
-    {showDirectInput && (
-      <div className="border rounded-lg p-4 bg-gray-50">
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">データセット名</label>
-          <input
-            type="text"
-            value={datasetName}
-            onChange={(e) => setDatasetName(e.target.value)}
-            placeholder="例: サンプルデータ1"
-            className="w-full border rounded px-3 py-2"
-          />
+    <div id="datasetSection" class="section" style="display:none;">
+        <h2>📋 データセット</h2>
+        <div id="datasetList" class="dataset-grid"></div>
+    </div>
+    
+    <div id="settingsSection" class="section" style="display:none;">
+        <h2>⚙️ 設定</h2>
+        
+        <div class="range-options">
+            <div class="range-option active" onclick="setRangeMode('auto')">
+                <h4>📈 自動範囲</h4><p>最小値〜最大値</p>
+            </div>
+            <div class="range-option" onclick="setRangeMode('custom')">
+                <h4>🎛️ カスタム</h4><p>手動指定</p>
+            </div>
         </div>
         
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">
-            数値データ（カンマ、スペース、改行で区切って入力）
-          </label>
-          <textarea
-            value={directInput}
-            onChange={(e) => setDirectInput(e.target.value)}
-            placeholder="例: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10"
-            rows={6}
-            className="w-full border rounded px-3 py-2 font-mono text-sm"
-          />
+        <div id="customRange" class="custom-range">
+            <div class="input-group">
+                <label>最小値</label>
+                <input type="number" id="customMin" step="0.1">
+            </div>
+            <div class="input-group">
+                <label>最大値</label>
+                <input type="number" id="customMax" step="0.1">
+            </div>
+            <div class="input-group">
+                <label>ビン幅</label>
+                <input type="number" id="customBinWidth" step="0.1" min="0.01">
+            </div>
+            <div><button class="btn" onclick="setDataRange()">自動設定</button></div>
         </div>
         
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={() => {
-              setDirectInput('');
-              setDatasetName('');
-            }}
-            className="px-4 py-2 border rounded hover:bg-gray-100"
-          >
-            クリア
-          </button>
-          <button
-            onClick={addDirectInputData}
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 flex items-center gap-2"
-            disabled={!directInput.trim() || !datasetName.trim()}
-          >
-            <Plus className="w-4 h-4" />
-            データセット追加
-          </button>
+        <div class="slider-container">
+            <label>ビン数: <span id="binCountValue">20</span></label>
+            <input type="range" id="binCount" min="5" max="100" value="20" oninput="updateBinCount()">
         </div>
-      </div>
-    )}
-  </div>
-
-  {/* データセット管理 */}
-  {datasets.length > 0 && (
-    <div className="mb-6">
-      <h2 className="text-xl font-semibold mb-3">データセット</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {datasets.map(dataset => (
-          <div key={dataset.id} className="border rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-medium" style={{ color: dataset.color }}>
-                {dataset.name}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => toggleDatasetVisibility(dataset.id)}
-                  className="p-1 hover:bg-gray-100 rounded"
-                >
-                  {dataset.visible ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                </button>
-                <button
-                  onClick={() => removeDataset(dataset.id)}
-                  className="p-1 hover:bg-gray-100 rounded text-red-500"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            <div className="text-sm text-gray-600 mb-2">
-              データ数: {dataset.data.length}
-            </div>
-            
-            {/* シグマ設定 */}
-            <div className="space-y-1">
-              <div className="text-sm font-medium">シグマライン:</div>
-              {[1, 2, 3].map(sigma => {
-                const stats = calculateStats(dataset.data);
-                const upperValue = stats.mean + sigma * stats.stdDev;
-                const lowerValue = stats.mean - sigma * stats.stdDev;
-                return (
-                  <label key={sigma} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={sigmaSettings[dataset.id]?.[`show${sigma}`] || false}
-                      onChange={() => toggleSigma(dataset.id, sigma)}
-                      className="rounded"
-                    />
-                    <span className="text-sm">
-                      {sigma}σ ({lowerValue.toFixed(2)} ～ {upperValue.toFixed(2)})
-                    </span>
-                  </label>
-                );
-              })}
-              <div className="text-xs text-gray-500 mt-1">
-                平均: {calculateStats(dataset.data).mean.toFixed(2)}, 
-                標準偏差: {calculateStats(dataset.data).stdDev.toFixed(2)}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )}
-
-  {/* 閾値設定 */}
-  <div className="mb-6">
-    <h2 className="text-xl font-semibold mb-3">閾値設定</h2>
-    <div className="flex gap-2 mb-3">
-      <input
-        type="number"
-        value={newThreshold}
-        onChange={(e) => setNewThreshold(e.target.value)}
-        placeholder="閾値を入力"
-        className="border rounded px-3 py-2 flex-1"
-      />
-      <button
-        onClick={addThreshold}
-        className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 flex items-center gap-2"
-      >
-        <Plus className="w-4 h-4" />
-        追加
-      </button>
+        
+        <div class="slider-container">
+            <label>透明度: <span id="opacityValue">80%</span></label>
+            <input type="range" id="opacity" min="10" max="100" value="80" oninput="updateOpacity()">
+        </div>
     </div>
     
-    {thresholds.length > 0 && (
-      <div className="flex flex-wrap gap-2">
-        {thresholds.map(threshold => (
-          <div key={threshold.id} className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded">
-            <span>{threshold.value}</span>
-            <button
-              onClick={() => removeThreshold(threshold.id)}
-              className="text-red-500 hover:text-red-700"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-
-  {/* 表示範囲設定 */}
-  <div className="mb-6">
-    <h2 className="text-xl font-semibold mb-3">表示範囲設定</h2>
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-4">
-        <label className="flex items-center space-x-2">
-          <input
-            type="radio"
-            value="auto"
-            checked={rangeMode === 'auto'}
-            onChange={(e) => setRangeMode(e.target.value)}
-            className="rounded"
-          />
-          <span>自動（データの最小値〜最大値）</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="radio"
-            value="6sigma"
-            checked={rangeMode === '6sigma'}
-            onChange={(e) => setRangeMode(e.target.value)}
-            className="rounded"
-          />
-          <span>6シグマ範囲（平均±6σ）</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="radio"
-            value="custom"
-            checked={rangeMode === 'custom'}
-            onChange={(e) => setRangeMode(e.target.value)}
-            className="rounded"
-          />
-          <span>カスタム範囲</span>
-        </label>
-      </div>
-      
-      {rangeMode === 'custom' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-          <div>
-            <label className="block text-sm font-medium mb-2">最小値</label>
-            <input
-              type="number"
-              value={customMin}
-              onChange={(e) => setCustomMin(e.target.value)}
-              placeholder="例: 0"
-              className="w-full border rounded px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">最大値</label>
-            <input
-              type="number"
-              value={customMax}
-              onChange={(e) => setCustomMax(e.target.value)}
-              placeholder="例: 100"
-              className="w-full border rounded px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">ビン幅（オプション）</label>
-            <input
-              type="number"
-              value={customBinWidth}
-              onChange={(e) => setCustomBinWidth(e.target.value)}
-              placeholder="例: 1.0"
-              step="0.1"
-              className="w-full border rounded px-3 py-2"
-            />
-            <div className="text-xs text-gray-500 mt-1">
-              未入力の場合はビン数で自動計算
-            </div>
-          </div>
+    <div id="thresholdSection" class="section" style="display:none;">
+        <h2>📏 閾値</h2>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <input type="number" id="newThreshold" placeholder="閾値" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:4px;">
+            <button class="btn" onclick="addThreshold()">➕</button>
         </div>
-      )}
+        <div id="thresholdList" class="threshold-list"></div>
     </div>
-  </div>
-
-  {/* ビン数設定 */}
-  {rangeMode !== 'custom' || !customBinWidth ? (
-    <div className="mb-6">
-      <label className="block text-sm font-medium mb-2">
-        ビン数: {binCount}
-      </label>
-      <input
-        type="range"
-        min="5"
-        max="100"
-        value={binCount}
-        onChange={(e) => setBinCount(parseInt(e.target.value))}
-        className="w-full"
-      />
+    
+    <div id="chartSection" class="section" style="display:none;">
+        <h2>📊 ヒストグラム</h2>
+        <div class="chart-container">
+            <canvas id="histogramChart"></canvas>
+        </div>
+        <div id="chartInfo" class="info-panel"></div>
     </div>
-  ) : null}
-  <div className="mb-6">
-    <label className="block text-sm font-medium mb-2">
-      ヒストグラムの透明度: {Math.round(opacity * 100)}%
-    </label>
-    <input
-      type="range"
-      min="0.1"
-      max="1"
-      step="0.1"
-      value={opacity}
-      onChange={(e) => setOpacity(parseFloat(e.target.value))}
-      className="w-full"
-    />
-  </div>
-
-  {/* ビン数設定 */}
-  <div className="mb-6">
-    <label className="block text-sm font-medium mb-2">
-      ビン数: {binCount}
-    </label>
-    <input
-      type="range"
-      min="5"
-      max="50"
-      value={binCount}
-      onChange={(e) => setBinCount(parseInt(e.target.value))}
-      className="w-full"
-    />
-  </div>
-
-  {/* ヒストグラム */}
-  {histogramData.data.length > 0 && (
-    <div className="mb-6">
-      <h2 className="text-xl font-semibold mb-3">重ね合わせヒストグラム</h2>
-      <div className="h-96 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={histogramData.data} margin={{ top: 20, right: 50, left: 50, bottom: 20 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis 
-              dataKey="x" 
-              type="number"
-              scale="linear"
-              domain={[histogramData.range.min, histogramData.range.max]}
-              ticks={getTickValues(histogramData.range.min, histogramData.range.max)}
-              tickFormatter={(value) => {
-                if (Number.isInteger(value)) {
-                  return value.toString();
-                }
-                // 小数の桁数を動的に調整
-                const absValue = Math.abs(value);
-                if (absValue >= 1000) return value.toFixed(0);
-                if (absValue >= 100) return value.toFixed(1);
-                if (absValue >= 1) return value.toFixed(2);
-                return value.toFixed(3);
-              }}
-              interval={0}
-            />
-            <YAxis label={{ value: '出現回数', angle: -90, position: 'insideLeft' }} />
-            <Tooltip 
-              labelFormatter={(value) => `値: ${value.toFixed(3)}`}
-              formatter={(value, name) => [`回数: ${value}`, name]}
-            />
-            <Legend />
-            
-            {datasets.filter(d => d.visible).map((dataset, index) => (
-              <Bar
-                key={dataset.id}
-                dataKey={dataset.name}
-                fill={dataset.color}
-                fillOpacity={opacity}
-                stroke={dataset.color}
-                strokeWidth={1}
-              />
-            ))}
-            
-            {/* 閾値線 */}
-            {thresholds.map(threshold => (
-              <ReferenceLine 
-                key={threshold.id}
-                x={threshold.value}
-                stroke="red"
-                strokeWidth={3}
-                label={{ value: threshold.label, position: 'top' }}
-              />
-            ))}
-            
-            {/* シグマライン */}
-            {getSigmaLines()}
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-      
-      <div className="mt-2 text-sm text-gray-600">
-        <strong>表示範囲:</strong> 
-        {rangeMode === '6sigma' && ' 全データの平均から±6σの範囲'}
-        {rangeMode === 'auto' && ' データの最小値から最大値まで'}
-        {rangeMode === 'custom' && ` カスタム範囲 (${histogramData.range.min.toFixed(2)} ～ ${histogramData.range.max.toFixed(2)})`}
-        で実際の出現回数を表示しています
-        {customBinWidth && rangeMode === 'custom' && ` | ビン幅: ${customBinWidth}`}
-      </div>
+    
+    <div id="emptyState" class="empty-state">
+        <h3>📊 データを追加してください</h3>
+        <p>Excelファイルまたは直接入力でデータを追加</p>
     </div>
-  )}
-
-  {datasets.length === 0 && (
-    <div className="text-center py-12 text-gray-500">
-      <div className="mb-4">
-        <Upload className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-        <Edit3 className="w-16 h-16 mx-auto text-gray-300" />
-      </div>
-      <p>Excelファイルをアップロードするか、直接データを入力してヒストグラムを生成してください</p>
-    </div>
-  )}
 </div>
+
+<script>
+    let datasets=[], thresholds=[], chart=null, rangeMode='auto', binCount=20, opacity=0.8;
+
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+
+    async function handleFileUpload(event) {
+        const files = Array.from(event.target.files);
+        for (const file of files) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer);
+                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, {header:1});
+                
+                const numericData = [];
+                for (let row of jsonData) {
+                    for (let cell of row) {
+                        if (typeof cell === 'number' && !isNaN(cell)) {
+                            numericData.push(cell);
+                        }
+                    }
+                }
+                
+                if (numericData.length > 0) {
+                    addDataset(file.name.replace(/\.(xlsx|xls)$/i, ''), numericData);
+                }
+            } catch (error) {
+                alert('ファイル読み込み失敗: ' + file.name);
+            }
+        }
+        event.target.value = '';
+    }
+
+    function toggleDirectInput() {
+        const el = document.getElementById('directInput');
+        el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function addDirectData() {
+        const name = document.getElementById('datasetName').value.trim();
+        const values = document.getElementById('dataValues').value.trim();
+        
+        if (!name || !values) {
+            alert('名前と数値データを入力してください');
+            return;
+        }
+
+        const numbers = values.split(/[,\s\n]+/).map(str => parseFloat(str.trim())).filter(num => !isNaN(num));
+        if (numbers.length === 0) {
+            alert('有効な数値が見つかりません');
+            return;
+        }
+
+        addDataset(name, numbers);
+        clearDirectInput();
+        toggleDirectInput();
+    }
+
+    function clearDirectInput() {
+        document.getElementById('datasetName').value = '';
+        document.getElementById('dataValues').value = '';
+    }
+
+    function addDataset(name, data) {
+        datasets.push({
+            id: Date.now() + Math.random(),
+            name: name,
+            data: data,
+            color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+            visible: true,
+            sigmaSettings: {show1: false, show2: false, show3: false}
+        });
+        updateUI();
+    }
+
+    function removeDataset(id) {
+        datasets = datasets.filter(d => d.id !== id);
+        updateUI();
+    }
+
+    function toggleDatasetVisibility(id) {
+        const dataset = datasets.find(d => d.id === id);
+        if (dataset) {
+            dataset.visible = !dataset.visible;
+            updateChart();
+        }
+    }
+
+    function toggleSigma(id, sigma) {
+        const dataset = datasets.find(d => d.id === id);
+        if (dataset) {
+            dataset.sigmaSettings[`show${sigma}`] = !dataset.sigmaSettings[`show${sigma}`];
+            updateChart();
+        }
+    }
+
+    function calculateStats(data) {
+        if (data.length === 0) return {mean: 0, stdDev: 0};
+        const mean = data.reduce((sum, val) => sum + val, 0) / data.length;
+        const variance = data.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / Math.max(data.length - 1, 1);
+        return {mean, stdDev: Math.sqrt(variance)};
+    }
+
+    function setRangeMode(mode) {
+        rangeMode = mode;
+        document.querySelectorAll('.range-option').forEach(option => option.classList.remove('active'));
+        event.target.closest('.range-option').classList.add('active');
+        document.getElementById('customRange').style.display = mode === 'custom' ? 'grid' : 'none';
+        updateChart();
+    }
+
+    function setDataRange() {
+        const visibleData = datasets.filter(d => d.visible).flatMap(d => d.data);
+        if (visibleData.length > 0) {
+            document.getElementById('customMin').value = Math.min(...visibleData);
+            document.getElementById('customMax').value = Math.max(...visibleData);
+            updateChart();
+        }
+    }
+
+    function updateBinCount() {
+        binCount = parseInt(document.getElementById('binCount').value);
+        document.getElementById('binCountValue').textContent = binCount;
+        updateChart();
+    }
+
+    function updateOpacity() {
+        opacity = parseInt(document.getElementById('opacity').value) / 100;
+        document.getElementById('opacityValue').textContent = document.getElementById('opacity').value + '%';
+        updateChart();
+    }
+
+    function addThreshold() {
+        const value = parseFloat(document.getElementById('newThreshold').value);
+        if (!isNaN(value)) {
+            thresholds.push({id: Date.now(), value: value});
+            document.getElementById('newThreshold').value = '';
+            updateThresholdList();
+            updateChart();
+        }
+    }
+
+    function removeThreshold(id) {
+        thresholds = thresholds.filter(t => t.id !== id);
+        updateThresholdList();
+        updateChart();
+    }
+
+    function updateThresholdList() {
+        document.getElementById('thresholdList').innerHTML = thresholds.map(t => 
+            `<div class="threshold-item"><span>${t.value}</span><button onclick="removeThreshold(${t.id})" style="background:none;border:none;color:#e74c3c;cursor:pointer;">✕</button></div>`
+        ).join('');
+    }
+
+    function generateHistogramData() {
+        const visibleDatasets = datasets.filter(d => d.visible);
+        if (visibleDatasets.length === 0) return {data: [], range: {min: 0, max: 0}};
+
+        const allData = visibleDatasets.flatMap(d => d.data);
+        let min, max, binWidth;
+
+        if (rangeMode === 'custom') {
+            min = parseFloat(document.getElementById('customMin').value) || Math.min(...allData);
+            max = parseFloat(document.getElementById('customMax').value) || Math.max(...allData);
+            const customWidth = parseFloat(document.getElementById('customBinWidth').value);
+            binWidth = customWidth > 0 ? customWidth : (max - min) / binCount;
+        } else {
+            min = Math.min(...allData);
+            max = Math.max(...allData);
+            binWidth = (max - min) / binCount;
+        }
+
+        const actualBinCount = rangeMode === 'custom' && document.getElementById('customBinWidth').value
+            ? Math.ceil((max - min) / binWidth) : binCount;
+
+        const bins = Array(actualBinCount).fill(0).map((_, i) => {
+            const binStart = min + i * binWidth;
+            const binEnd = min + (i + 1) * binWidth;
+            const binCenter = binStart + binWidth / 2;
+            const bin = {x: binCenter};
+            
+            visibleDatasets.forEach(dataset => {
+                bin[dataset.name] = dataset.data.filter(value => value >= binStart && value < binEnd).length;
+            });
+            
+            return bin;
+        });
+
+        return {data: bins, range: {min, max}};
+    }
+
+    function updateChart() {
+        if (datasets.filter(d => d.visible).length === 0) return;
+
+        const histogramData = generateHistogramData();
+        const visibleDatasets = datasets.filter(d => d.visible);
+
+        if (chart) chart.destroy();
+
+        const ctx = document.getElementById('histogramChart').getContext('2d');
+        
+        // アノテーションの準備
+        const annotations = {};
+        
+        // 閾値線
+        thresholds.forEach((threshold, index) => {
+            annotations[`threshold${index}`] = {
+                type: 'line',
+                xMin: threshold.value,
+                xMax: threshold.value,
+                borderColor: '#dc2626',
+                borderWidth: 3,
+                label: {
+                    enabled: true,
+                    content: `閾値: ${threshold.value}`,
+                    position: 'start'
+                }
+            };
+        });
+        
+        // シグマライン
+        visibleDatasets.forEach((dataset, datasetIndex) => {
+            const stats = calculateStats(dataset.data);
+            [1, 2, 3].forEach(sigma => {
+                if (dataset.sigmaSettings[`show${sigma}`]) {
+                    const upperValue = stats.mean + sigma * stats.stdDev;
+                    const lowerValue = stats.mean - sigma * stats.stdDev;
+                    
+                    annotations[`mean_${datasetIndex}`] = {
+                        type: 'line',
+                        xMin: stats.mean,
+                        xMax: stats.mean,
+                        borderColor: dataset.color,
+                        borderWidth: 3,
+                        label: {
+                            enabled: true,
+                            content: '平均',
+                            position: 'start'
+                        }
+                    };
+                    
+                    annotations[`upper_${datasetIndex}_${sigma}`] = {
+                        type: 'line',
+                        xMin: upperValue,
+                        xMax: upperValue,
+                        borderColor: dataset.color,
+                        borderWidth: 2,
+                        borderDash: [8, 4],
+                        label: {
+                            enabled: true,
+                            content: `+${sigma}σ`,
+                            position: 'start'
+                        }
+                    };
+                    
+                    annotations[`lower_${datasetIndex}_${sigma}`] = {
+                        type: 'line',
+                        xMin: lowerValue,
+                        xMax: lowerValue,
+                        borderColor: dataset.color,
+                        borderWidth: 2,
+                        borderDash: [8, 4],
+                        label: {
+                            enabled: true,
+                            content: `-${sigma}σ`,
+                            position: 'start'
+                        }
+                    };
+                }
+            });
+        });
+
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: histogramData.data.map(d => d.x.toFixed(3)),
+                datasets: visibleDatasets.map(dataset => ({
+                    label: dataset.name,
+                    data: histogramData.data.map(d => d[dataset.name]),
+                    backgroundColor: dataset.color.replace('50%)', `${Math.round(opacity * 50)}%)`),
+                    borderColor: dataset.color,
+                    borderWidth: 0,
+                    barPercentage: 1.0,
+                    categoryPercentage: 1.0
+                }))
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        min: histogramData.range.min,
+                        max: histogramData.range.max,
+                        title: {display: true, text: '値'}
+                    },
+                    y: {
+                        beginAtZero: true,
+                        title: {display: true, text: '出現回数'}
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            title: ctx => `値: ${parseFloat(ctx[0].label).toFixed(3)}`,
+                            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}回`
+                        }
+                    },
+                    annotation: {
+                        annotations: annotations
+                    }
+                }
+            },
+            plugins: [window['chartjs-plugin-annotation']]
+        });
+
+        updateChartInfo(histogramData);
+    }
+
+    function updateChartInfo(histogramData) {
+        const customWidth = document.getElementById('customBinWidth').value;
+        document.getElementById('chartInfo').innerHTML = `
+            <strong>範囲:</strong> ${rangeMode === 'auto' ? 'データ全範囲' : 
+                `${histogramData.range.min.toFixed(2)} ～ ${histogramData.range.max.toFixed(2)}`}
+            <strong> | 設定:</strong> ${customWidth ? `ビン幅: ${customWidth}` : `ビン数: ${binCount}`}
+        `;
+    }
+
+    function updateDatasetList() {
+        const list = document.getElementById('datasetList');
+        list.innerHTML = datasets.map(dataset => {
+            const stats = calculateStats(dataset.data);
+            return `
+                <div class="dataset-card">
+                    <div class="dataset-header">
+                        <span class="dataset-name" style="color:${dataset.color}">${dataset.name}</span>
+                        <div>
+                            <button onclick="toggleDatasetVisibility(${dataset.id})" class="btn" style="padding:4px 8px;">${dataset.visible ? '👁️' : '🙈'}</button>
+                            <button onclick="removeDataset(${dataset.id})" class="btn btn-danger" style="padding:4px 8px;">🗑️</button>
+                        </div>
+                    </div>
+                    <div style="font-size:13px;color:#666;margin-bottom:8px;">データ数: ${dataset.data.length}</div>
+                    <div class="checkbox-group">
+                        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">シグマライン:</div>
+                        ${[1,2,3].map(sigma => {
+                            const upper = stats.mean + sigma * stats.stdDev;
+                            const lower = stats.mean - sigma * stats.stdDev;
+                            return `<div class="checkbox-item">
+                                <input type="checkbox" ${dataset.sigmaSettings[`show${sigma}`] ? 'checked' : ''} 
+                                       onchange="toggleSigma(${dataset.id}, ${sigma})">
+                                <span style="font-size:12px;">${sigma}σ (${lower.toFixed(2)} ～ ${upper.toFixed(2)})</span>
+                            </div>`;
+                        }).join('')}
+                        <div class="stats-info">平均: ${stats.mean.toFixed(2)}, 標準偏差: ${stats.stdDev.toFixed(2)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function updateUI() {
+        const hasData = datasets.length > 0;
+        document.getElementById('emptyState').style.display = hasData ? 'none' : 'block';
+        document.getElementById('datasetSection').style.display = hasData ? 'block' : 'none';
+        document.getElementById('settingsSection').style.display = hasData ? 'block' : 'none';
+        document.getElementById('thresholdSection').style.display = hasData ? 'block' : 'none';
+        document.getElementById('chartSection').style.display = hasData ? 'block' : 'none';
+        
+        if (hasData) {
+            updateDatasetList();
+            updateChart();
+        }
+    }
+</script>
 ```
 
-);
-};
-
-export default HistogramTool;
+</body>
+</html>
