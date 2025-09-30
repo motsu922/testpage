@@ -426,15 +426,24 @@
       } else {
         // 在庫あり - 品番リスト表示
         let itemsHtml = '<div class="stack">';
-        items.forEach(item=>{
-          itemsHtml += `<div class="part-item">
+        items.forEach((item, idx)=>{
+          itemsHtml += `<div class="stack" style="background:linear-gradient(180deg,#0b1326,#0b1424);border:1px solid var(--border);padding:10px;border-radius:10px">
             <div>
               <div><b>${item.partNo}</b> × <b>${item.qty}</b>個</div>
               <div class="muted">入庫:${fmt(item.firstReceivedAt)}</div>
             </div>
             <div class="row">
-              <button type="button" class="btn small secondary" data-out="${item.partNo}">-1</button>
-              <button type="button" class="btn small warn" data-zero="${item.partNo}">全出庫</button>
+              <input type="number" inputmode="numeric" class="input" id="outQty${idx}" placeholder="出庫数" style="max-width:120px" value="0">
+            </div>
+            <div class="counter-group">
+              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="1">+1</button>
+              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="10">+10</button>
+              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="100">+100</button>
+              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="1000">+1000</button>
+            </div>
+            <div class="row">
+              <button type="button" class="btn warn" data-out="${item.partNo}" data-idx="${idx}">出庫</button>
+              <button type="button" class="btn secondary" data-zero="${item.partNo}">全出庫</button>
             </div>
           </div>`;
         });
@@ -446,10 +455,25 @@
           <button type="button" id="btnAddNew" class="btn secondary">新しい品番を入庫</button>
         </div>`;
         
+        // カウンターボタンのイベント設定
+        items.forEach((item, idx)=>{
+          $(`[data-adjust="outQty${idx}"]`).forEach(btn=>{
+            btn.addEventListener('click', ()=>{
+              adjustCounter(`outQty${idx}`, Number(btn.getAttribute('data-value')));
+            });
+          });
+        });
+        
         items.forEach(item=>{
           const btnOut = $(`[data-out="${item.partNo}"]`);
           const btnZero = $(`[data-zero="${item.partNo}"]`);
-          if(btnOut) btnOut.addEventListener('click', async ()=>{ await doOutbound(shelfId,item.partNo,1); dlg.close(); });
+          if(btnOut) btnOut.addEventListener('click', async (e)=>{ 
+            const idx = e.currentTarget.getAttribute('data-idx');
+            const qty = Math.max(0, Number($(`#outQty${idx}`).value||0));
+            if(qty<=0){ alert('出庫数を入力してください'); return; }
+            await doOutbound(shelfId,item.partNo,qty); 
+            dlg.close(); 
+          });
           if(btnZero) btnZero.addEventListener('click', async ()=>{ await setItemQty(shelfId,item.partNo,0); dlg.close(); });
         });
         
