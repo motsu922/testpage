@@ -36,7 +36,6 @@
     .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid #24406d;border-radius:999px;padding:2px 8px;font-size:12px;color:#cfe0ff;background:#0a1a34}
     .list{display:flex;flex-direction:column;gap:8px}
     .item{display:grid;grid-template-columns:120px 1fr 220px;gap:8px;align-items:center;background:linear-gradient(180deg,#0b1326,#0b1424);border:1px solid var(--border);padding:10px;border-radius:12px}
-    .part-item{background:linear-gradient(180deg,#0b1326,#0b1424);border:1px solid var(--border);padding:8px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
     .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;background:#0a1a34;border:1px solid #213a66;border-radius:8px;padding:2px 6px;font-size:12px;color:#cfe0ff}
     .hint{color:#9fb0c9;font-size:12px}
     .danger{color:#fecaca}
@@ -300,7 +299,10 @@
       }
       
       el.innerHTML = `<div class="code">${s.id}</div><div class="meta">${meta}</div>`;
-      el.addEventListener('click', ()=> openShelfDetail(s.id));
+      el.addEventListener('click', ()=> {
+        console.log('Shelf clicked:', s.id);
+        openShelfDetail(s.id);
+      });
       return el;
     }
 
@@ -339,17 +341,9 @@
         row.innerHTML = `<div><span class="pill">棚 ${s.shelfId}</span><br><span class="pill">${cat}</span></div>
           <div><div><b>${s.partNo}</b> × 数量 <b>${s.qty}</b></div>
           <div class="muted">入庫日:${fmt(s.firstReceivedAt)} × 更新:${fmt(s.lastUpdatedAt)}</div></div>
-          <div class="row" style="justify-content:flex-end"><button class="btn secondary" data-shelf="${s.shelfId}" data-part="${s.partNo}">−1 出庫</button><button class="btn warn" data-shelf2="${s.shelfId}" data-part2="${s.partNo}">全出庫</button></div>`;
-        row.querySelector('[data-shelf]').addEventListener('click', async (e)=>{ 
-          const shelfId = e.currentTarget.getAttribute('data-shelf');
-          const partNo = e.currentTarget.getAttribute('data-part');
-          await doOutbound(shelfId,partNo,1); 
-        });
-        row.querySelector('[data-shelf2]').addEventListener('click', async (e)=>{ 
-          const shelfId = e.currentTarget.getAttribute('data-shelf2');
-          const partNo = e.currentTarget.getAttribute('data-part2');
-          await setItemQty(shelfId,partNo,0); 
-        });
+          <div class="row" style="justify-content:flex-end"><button class="btn warn">全出庫</button></div>`;
+        const btnZero = row.querySelector('.btn.warn');
+        btnZero.addEventListener('click', async ()=>{ await setItemQty(s.shelfId,s.partNo,0); });
         list.appendChild(row);
       });
       if(list.innerHTML===''){ list.innerHTML='<div class="hint">在庫がありません</div>'; }
@@ -363,133 +357,24 @@
       input.value = newVal;
     }
 
-    async function openShelfDetail(shelfId){
+    function openShelfDetail(shelfId){
+      console.log('openShelfDetail called with:', shelfId);
       const items = getShelfItems(shelfId);
+      console.log('Items found:', items);
+      
       const dlg=$('#dlg'); 
       $('#dlgTitle').textContent=`棚 ${shelfId}`;
       
       if(items.length===0){
         // 空棚 - 入庫ダイアログ
-        const options = partNoCandidates().map(v=>`<option value="${v}"></option>`).join('');
-        const candidates = partNoCandidates().slice(0, 8);
-        
-        let tilesHtml = '';
-        if(candidates.length > 0) {
-          tilesHtml = '<div class="row" style="margin-top:4px">';
-          candidates.forEach(p => {
-            tilesHtml += `<button type="button" class="part-tile inbound-tile" data-partno="${p}">${p}</button>`;
-          });
-          tilesHtml += '</div>';
-        }
-        
-        $('#dlgBody').innerHTML = `<div class="stack">
-          <label class="muted">整理No</label>
-          <input id="inPart" class="input" list="partList" placeholder="例)6769" autofocus>
-          <datalist id="partList">${options}</datalist>
-          ${tilesHtml}
-          <label class="muted">数量</label>
-          <input id="inQty" class="input" type="number" inputmode="numeric" placeholder="数量" value="0">
-          <div class="counter-group">
-            <button type="button" class="btn small secondary" data-adjust="inQty" data-value="1">+1</button>
-            <button type="button" class="btn small secondary" data-adjust="inQty" data-value="10">+10</button>
-            <button type="button" class="btn small secondary" data-adjust="inQty" data-value="100">+100</button>
-            <button type="button" class="btn small secondary" data-adjust="inQty" data-value="1000">+1000</button>
-          </div>
-          <label class="muted">入庫日(省略時は本日)</label>
-          <input id="inDate" class="input" type="date" value="${new Date().toISOString().slice(0,10)}">
-        </div>`;
-        
-        $$('.inbound-tile').forEach(tile=>{
-          tile.addEventListener('click', ()=>{
-            $('#inPart').value = tile.getAttribute('data-partno');
-          });
-        });
-
-        $$('[data-adjust="inQty"]').forEach(btn=>{
-          btn.addEventListener('click', ()=>{
-            adjustCounter('inQty', Number(btn.getAttribute('data-value')));
-          });
-        });
-
-        dlg.returnValue=''; 
-        dlg.showModal();
-        
-        dlg.addEventListener('close', async ()=>{
-          if(dlg.returnValue==='ok'){
-            const partNo=$('#inPart').value.trim(); 
-            const qty=Math.max(0, Number($('#inQty').value||0));
-            const date=$('#inDate').value? new Date($('#inDate').value+'T00:00:00') : new Date();
-            if(!partNo || qty<=0) return; 
-            await doInbound(shelfId, partNo, qty, date.toISOString());
-          }
-        }, { once:true });
+        showInboundDialog(dlg, shelfId);
       } else {
         // 在庫あり - 品番リスト表示
-        let itemsHtml = '<div class="stack">';
-        items.forEach((item, idx)=>{
-          itemsHtml += `<div class="stack" style="background:linear-gradient(180deg,#0b1326,#0b1424);border:1px solid var(--border);padding:10px;border-radius:10px">
-            <div>
-              <div><b>${item.partNo}</b> × <b>${item.qty}</b>個</div>
-              <div class="muted">入庫:${fmt(item.firstReceivedAt)}</div>
-            </div>
-            <div class="row">
-              <input type="number" inputmode="numeric" class="input" id="outQty${idx}" placeholder="出庫数" style="max-width:120px" value="0">
-            </div>
-            <div class="counter-group">
-              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="1">+1</button>
-              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="10">+10</button>
-              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="100">+100</button>
-              <button type="button" class="btn small secondary" data-adjust="outQty${idx}" data-value="1000">+1000</button>
-            </div>
-            <div class="row">
-              <button type="button" class="btn warn" data-out="${item.partNo}" data-idx="${idx}">出庫</button>
-              <button type="button" class="btn secondary" data-zero="${item.partNo}">全出庫</button>
-            </div>
-          </div>`;
-        });
-        itemsHtml += '</div>';
-        
-        $('#dlgBody').innerHTML = `<div class="stack">
-          ${itemsHtml}
-          <hr style="border:0;border-top:1px solid var(--border)">
-          <button type="button" id="btnAddNew" class="btn secondary">新しい品番を入庫</button>
-        </div>`;
-        
-        // カウンターボタンのイベント設定
-        items.forEach((item, idx)=>{
-          $(`[data-adjust="outQty${idx}"]`).forEach(btn=>{
-            btn.addEventListener('click', ()=>{
-              adjustCounter(`outQty${idx}`, Number(btn.getAttribute('data-value')));
-            });
-          });
-        });
-        
-        items.forEach(item=>{
-          const btnOut = $(`[data-out="${item.partNo}"]`);
-          const btnZero = $(`[data-zero="${item.partNo}"]`);
-          if(btnOut) btnOut.addEventListener('click', async (e)=>{ 
-            const idx = e.currentTarget.getAttribute('data-idx');
-            const qty = Math.max(0, Number($(`#outQty${idx}`).value||0));
-            if(qty<=0){ alert('出庫数を入力してください'); return; }
-            await doOutbound(shelfId,item.partNo,qty); 
-            dlg.close(); 
-          });
-          if(btnZero) btnZero.addEventListener('click', async ()=>{ await setItemQty(shelfId,item.partNo,0); dlg.close(); });
-        });
-        
-        $('#btnAddNew').addEventListener('click', ()=>{
-          dlg.close();
-          setTimeout(()=> openAddItemDialog(shelfId), 100);
-        });
-
-        dlg.returnValue=''; 
-        dlg.showModal();
+        showItemsDialog(dlg, shelfId, items);
       }
     }
 
-    async function openAddItemDialog(shelfId){
-      const dlg=$('#dlg'); 
-      $('#dlgTitle').textContent=`入庫:棚 ${shelfId}`;
+    function showInboundDialog(dlg, shelfId){
       const options = partNoCandidates().map(v=>`<option value="${v}"></option>`).join('');
       const candidates = partNoCandidates().slice(0, 8);
       
@@ -534,7 +419,7 @@
       dlg.returnValue=''; 
       dlg.showModal();
       
-      dlg.addEventListener('close', async ()=>{
+      const closeHandler = async ()=>{
         if(dlg.returnValue==='ok'){
           const partNo=$('#inPart').value.trim(); 
           const qty=Math.max(0, Number($('#inQty').value||0));
@@ -542,7 +427,85 @@
           if(!partNo || qty<=0) return; 
           await doInbound(shelfId, partNo, qty, date.toISOString());
         }
-      }, { once:true });
+      };
+      dlg.removeEventListener('close', closeHandler);
+      dlg.addEventListener('close', closeHandler, { once:true });
+    }
+
+    function showItemsDialog(dlg, shelfId, items){
+      let itemsHtml = '<div class="stack">';
+      items.forEach((item, idx)=>{
+        const uniqueId = `out_${shelfId}_${idx}`;
+        itemsHtml += `<div class="stack" style="background:linear-gradient(180deg,#0b1326,#0b1424);border:1px solid var(--border);padding:10px;border-radius:10px">
+          <div>
+            <div><b>${item.partNo}</b> × <b>${item.qty}</b>個</div>
+            <div class="muted">入庫:${fmt(item.firstReceivedAt)}</div>
+          </div>
+          <div class="row">
+            <input type="number" inputmode="numeric" class="input" id="${uniqueId}" placeholder="出庫数" style="max-width:120px" value="0">
+          </div>
+          <div class="counter-group">
+            <button type="button" class="btn small secondary cnt-btn" data-target="${uniqueId}" data-value="1">+1</button>
+            <button type="button" class="btn small secondary cnt-btn" data-target="${uniqueId}" data-value="10">+10</button>
+            <button type="button" class="btn small secondary cnt-btn" data-target="${uniqueId}" data-value="100">+100</button>
+            <button type="button" class="btn small secondary cnt-btn" data-target="${uniqueId}" data-value="1000">+1000</button>
+          </div>
+          <div class="row">
+            <button type="button" class="btn warn out-action-btn" data-target="${uniqueId}" data-part="${item.partNo}">出庫</button>
+            <button type="button" class="btn secondary zero-action-btn" data-part="${item.partNo}">全出庫</button>
+          </div>
+        </div>`;
+      });
+      itemsHtml += '</div>';
+      
+      $('#dlgBody').innerHTML = `<div class="stack">
+        ${itemsHtml}
+        <hr style="border:0;border-top:1px solid var(--border)">
+        <button type="button" id="btnAddNew" class="btn secondary">新しい品番を入庫</button>
+      </div>`;
+      
+      // カウンターボタン
+      $$('.cnt-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const targetId = btn.getAttribute('data-target');
+          const value = Number(btn.getAttribute('data-value'));
+          adjustCounter(targetId, value);
+        });
+      });
+      
+      // 出庫ボタン
+      $$('.out-action-btn').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{ 
+          const targetId = btn.getAttribute('data-target');
+          const partNo = btn.getAttribute('data-part');
+          const qtyInput = document.getElementById(targetId);
+          const qty = Math.max(0, Number(qtyInput.value||0));
+          if(qty<=0){ alert('出庫数を入力してください'); return; }
+          await doOutbound(shelfId, partNo, qty); 
+          dlg.close(); 
+        });
+      });
+      
+      // 全出庫ボタン
+      $$('.zero-action-btn').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{ 
+          const partNo = btn.getAttribute('data-part');
+          await setItemQty(shelfId, partNo, 0); 
+          dlg.close(); 
+        });
+      });
+      
+      // 新規入庫ボタン
+      const btnAddNew = document.getElementById('btnAddNew');
+      if(btnAddNew){
+        btnAddNew.addEventListener('click', ()=>{
+          dlg.close();
+          setTimeout(()=> showInboundDialog($('#dlg'), shelfId), 100);
+        });
+      }
+
+      dlg.returnValue=''; 
+      dlg.showModal();
     }
 
     function openShelvesManager(){
@@ -567,6 +530,8 @@
     async function loadAll(){
       shelves = await Firebase.getShelves();
       allStocks = await Firebase.getAllStocks();
+      console.log('Loaded shelves:', shelves.length);
+      console.log('Loaded stocks:', allStocks.length);
       refreshCategoryFilter(); renderShelfGrid(); renderStockList(); renderPartTiles();
     }
     async function doInbound(shelfId, partNo, qty, iso){ await Firebase.addItem(shelfId,partNo,qty,iso); await loadAll(); }
@@ -646,6 +611,7 @@
         document.getElementById('backendLabel').textContent='Firebase Firestore(複数端末共有・匿名サインイン)';
       }catch(err){
         alert('Firebase初期化に失敗:'+err.message);
+        console.error(err);
       }
     })();
   </script>
