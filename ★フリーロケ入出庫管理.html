@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>棚入出庫管理(Firebase常時共有・匿名サインイン)</title>
+  <style>
+    :root{
+      --bg:#0b1220; --panel:#121a2b; --muted:#99a3b5; --text:#eaf1ff; --accent:#60a5fa; --ok:#22c55e; --warn:#f59e0b; --danger:#ef4444; --card:#0f172a; --border:#263043;
+    }
+    html,body{height:100%;}
+    body{margin:0;background:linear-gradient(180deg,#0a1224,#0b1326 40%,#0a0f1a);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans JP","Hiragino Kaku Gothic ProN",Meiryo,sans-serif}
+    .app{display:grid;grid-template-columns:320px 1fr 420px;gap:14px;padding:14px;min-height:100%;box-sizing:border-box}
+    header{grid-column:1/-1;display:flex;gap:12px;align-items:center}
+    .logo{font-weight:700;font-size:18px}
+    .badge{font-size:12px;color:#b9c4d8;background:#0c203f;border:1px solid #1e3358;padding:2px 8px;border-radius:999px}
+    .panel{background:linear-gradient(180deg,#0b1327,#0c152a);border:1px solid var(--border);border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+    .panel h2{margin:0 0 8px 0;font-size:14px;color:#c9d7ee}
+    .panel .head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .panel .body{padding:12px 14px}
+    .input, select{background:#0b1730;border:1px solid #223150;color:var(--text);border-radius:12px;padding:10px 12px;font-size:16px;width:100%;box-sizing:border-box;outline:none}
+    .input:focus, select:focus{border-color:#315a9a;box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+    .btn{background:linear-gradient(180deg,#1d3a6a,#1a365f);border:1px solid #2a4d84;color:#eaf1ff;padding:10px 14px;border-radius:12px;font-weight:600;cursor:pointer;touch-action:manipulation}
+    .btn:active{transform:translateY(1px)}
+    .btn.secondary{background:#0b1730;border:1px dashed #32507f;color:#c9d7ee}
+    .btn.warn{background:linear-gradient(180deg,#7a2e1e,#6a2315);border-color:#a13b26}
+    .btn.small{padding:6px 10px;font-size:13px;min-width:50px}
+    .stack{display:flex;flex-direction:column;gap:10px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    .shelf{background:linear-gradient(180deg,#0e1a31,#0c1628);border:1px solid var(--border);border-radius:14px;padding:10px;min-height:88px;display:flex;flex-direction:column;justify-content:space-between}
+    .shelf .code{font-weight:700;font-size:14px;color:#a8c1ff}
+    .shelf .meta{font-size:12px;color:#b7c3d6;line-height:1.3}
+    .shelf.empty{opacity:.75}
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid #24406d;border-radius:999px;padding:2px 8px;font-size:12px;color:#cfe0ff;background:#0a1a34}
+    .list{display:flex;flex-direction:column;gap:8px}
+    .item{display:grid;grid-template-columns:120px 1fr 220px;gap:8px;align-items:center;background:linear-gradient(180deg,#0b1326,#0b1424);border:1px solid var(--border);padding:10px;border-radius:12px}
+    .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;background:#0a1a34;border:1px solid #213a66;border-radius:8px;padding:2px 6px;font-size:12px;color:#cfe0ff}
+    .hint{color:#9fb0c9;font-size:12px}
+    .danger{color:#fecaca}
+    .ok{color:#bbf7d0}
+    .muted{color:#9fb0c9}
+    .footer{grid-column:1/-1;color:#8ea3c3;font-size:12px;opacity:.9;padding:6px 2px}
+    .counter-group{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+    .part-tile{background:linear-gradient(180deg,#1d3a6a,#1a365f);border:1px solid #2a4d84;color:#eaf1ff;padding:6px 12px;border-radius:8px;font-size:13px;cursor:pointer;touch-action:manipulation}
+    .part-tile:active{transform:translateY(1px)}
+    @media (max-width:1100px){.app{grid-template-columns:1fr}.hide-md{display:none}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">📦 棚入出庫管理</div>
+
+      <span class="badge" id="modeBadge">Firebase共有</span>
+      <span class="badge">タブレット最適化</span>
+
+      <div style="margin-left:auto" class="row">
+        <button class="btn secondary" id="btnRefresh" style="padding:8px 12px">🔄 更新</button>
+        <input id="userName" class="input" placeholder="ユーザー名(任意)" style="width:180px"/>
+      </div>
+    </header>
+
+    <!-- 出庫ナビ -->
+    <section class="panel">
+      <div class="head"><h2>出庫ナビ</h2></div>
+      <div class="body stack">
+        <div class="stack">
+          <label class="muted">整理Noで検索 → 最も古い棚を提示</label>
+          <div class="row">
+            <input id="findPart" class="input" placeholder="例)6769"/>
+            <button class="btn" id="btnFind">検索</button>
+          </div>
+          <div id="partTiles" class="row" style="margin-top:8px"></div>
+          <div id="findResult" class="stack"></div>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border)">
+        <div class="stack">
+          <label class="muted">直接出庫(棚を指定して数量を減算)</label>
+          <div class="row">
+            <input id="outShelf" class="input" placeholder="棚番 例)A-01" style="max-width:120px">
+            <input id="outQty" type="number" inputmode="numeric" class="input" placeholder="出庫数量" style="max-width:120px">
+            <button class="btn warn" id="btnOut">出庫</button>
+            <button class="btn secondary" id="btnOutAll">全出庫</button>
+          </div>
+          <div class="counter-group">
+            <button class="btn small secondary" data-adjust="outQty" data-value="1">+1</button>
+            <button class="btn small secondary" data-adjust="outQty" data-value="10">+10</button>
+            <button class="btn small secondary" data-adjust="outQty" data-value="100">+100</button>
+            <button class="btn small secondary" data-adjust="outQty" data-value="1000">+1000</button>
+          </div>
+          <div id="outMsg" class="hint"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 棚ビュー(カテゴリー対応) -->
+    <section class="panel">
+      <div class="head">
+        <h2>棚ビュー</h2>
+        <div class="row">
+          <select id="categoryFilter" class="input" style="width:180px">
+            <option value="__ALL__" selected>全カテゴリー</option>
+          </select>
+          <label class="row" style="gap:6px"><input type="checkbox" id="chkGroup" checked> <span class="muted">カテゴリーごとに区切る</span></label>
+          <button class="btn secondary" id="btnManageShelves">棚の登録/編集</button>
+        </div>
+      </div>
+      <div class="body">
+        <div id="shelfGrid" class="grid"></div>
+        <div id="groupWrap" class="stack"></div>
+        <div class="hint" style="margin-top:8px">空棚(在庫0)はタップで <span class="kbd">入庫</span>。在庫ありは <span class="kbd">詳細/出庫</span>。</div>
+      </div>
+    </section>
+
+    <!-- 在庫一覧 -->
+    <section class="panel hide-md">
+      <div class="head"><h2>在庫一覧</h2></div>
+      <div class="body stack">
+        <div class="row">
+          <input id="filterPart" class="input" placeholder="整理Noでフィルタ">
+          <button class="btn secondary" id="btnClearFilter">クリア</button>
+        </div>
+        <div id="stockList" class="list"></div>
+      </div>
+    </section>
+
+    <div class="footer">保存先:<span id="backendLabel" class="pill">Firebase Firestore(複数端末共有・匿名サインイン)</span></div>
+  </div>
+
+  <!-- 汎用ダイアログ -->
+  <dialog id="dlg" style="border:none;border-radius:16px;background:#0b1326;color:#fff;box-shadow:0 24px 64px rgba(0,0,0,.6);padding:0;">
+    <form method="dialog" style="padding:14px 14px 10px 14px;min-width:320px">
+      <h3 id="dlgTitle" style="margin:0 0 10px 0;color:#cfe0ff;font-size:16px"></h3>
+      <div id="dlgBody" class="stack"></div>
+      <div class="row" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn secondary" value="cancel">キャンセル</button>
+        <button class="btn" value="ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 棚管理ダイアログ -->
+  <dialog id="dlgShelves" style="border:none;border-radius:16px;background:#0b1326;color:#fff;box-shadow:0 24px 64px rgba(0,0,0,.6);padding:0;max-width:720px;width:96%">
+    <form method="dialog" style="padding:14px 14px 10px 14px;">
+      <h3 style="margin:0 0 10px 0;color:#cfe0ff;font-size:16px">棚の登録/編集</h3>
+      <div class="stack">
+        <div class="row">
+          <input id="newShelfId" class="input" placeholder="棚番(例 A-13)" style="max-width:160px">
+          <input id="newShelfCat" class="input" placeholder="カテゴリー(例:出荷口、2F西、金型棚など)" style="flex:1">
+          <button class="btn" id="btnAddShelf" type="button">追加</button>
+        </div>
+        <div class="hint">既存棚は一覧でカテゴリー編集・削除できます。ソート順は棚番昇順です。</div>
+        <div id="shelfTable" class="list"></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn" value="ok">閉じる</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module">
+    const $ = (s)=>document.querySelector(s);
+    const $$ = (s)=>Array.from(document.querySelectorAll(s));
+    const fmt = (d)=> new Date(d).toLocaleDateString('ja-JP');
+    const todayISO = ()=> new Date().toISOString();
+
+    // ===== Firebase backend =====
+    const Firebase = {
+      app:null, auth:null, db:null, _m:null,
+      async init(config){
+        if(!config || !config.apiKey) throw new Error('Firebase設定が空です');
+        const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+        const { getAuth, signInAnonymously, onAuthStateChanged, updateProfile } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
+        const { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, orderBy, where, getDocs, serverTimestamp, runTransaction, deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        this._m = { getAuth, signInAnonymously, onAuthStateChanged, updateProfile, getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, orderBy, where, getDocs, serverTimestamp, runTransaction, deleteDoc };
+        this.app = initializeApp(config); this.auth = getAuth(this.app); this.db = getFirestore(this.app); return true;
+      },
+      async signInAnon(displayName){
+        const { signInAnonymously, onAuthStateChanged, updateProfile } = this._m; await signInAnonymously(this.auth);
+        return new Promise(res=>{ onAuthStateChanged(this.auth, async (u)=>{ if(u){ try{ if(displayName) await updateProfile(u,{displayName}); }catch(_){} res(u);} }); });
+      },
+      async ensureShelves(){
+        const { collection, getDocs, doc, setDoc } = this._m; const db=this.db;
+        const snap = await getDocs(collection(db,'shelves')); if(snap.empty){
+          const ids = Array.from({length:12},(_,i)=>`A-${String(i+1).padStart(2,'0')}`);
+          await Promise.all(ids.map((id,idx)=> setDoc(doc(db,'shelves',id),{id,sort:idx+1,category:'未分類'}) ));
+        }
+      },
+      async getShelves(){
+        const { collection, query, orderBy, getDocs } = this._m; const db=this.db;
+        const snap = await getDocs(query(collection(db,'shelves'), orderBy('id')));
+        return snap.docs.map(d=>({ id:d.id, ...d.data() }));
+      },
+      async getStocksMap(){
+        const { collection, getDocs } = this._m; const db=this.db;
+        const snap = await getDocs(collection(db,'stocks'));
+        const map = {}; snap.forEach(d=> map[d.id]={ id:d.id, ...d.data() }); return map;
+      },
+      async addShelf(id, category='未分類'){
+        const { doc, setDoc } = this._m; await setDoc(doc(this.db,'shelves',id), { id, category, sort: Date.now() });
+      },
+      async updateShelf(id, patch){
+        const { doc, updateDoc } = this._m; await updateDoc(doc(this.db,'shelves',id), patch);
+      },
+      async deleteShelf(id){
+        const { doc, deleteDoc } = this._m; await deleteDoc(doc(this.db,'shelves',id)); await deleteDoc(doc(this.db,'stocks',id)).catch(()=>{});
+      },
+      async doInbound(shelfId, partNo, qty, iso){
+        const { db,_m } = this; const { doc, runTransaction, serverTimestamp } = _m; const ref = doc(db,'stocks',shelfId);
+        await runTransaction(db, async (tx)=>{
+          const snap = await tx.get(ref);
+          if(snap.exists()){
+            const cur = snap.data();
+            if(cur.qty>0 && cur.partNo && cur.partNo!==partNo) throw new Error(`棚 ${shelfId} は別品番(${cur.partNo})が入っています。数量0にしてから入庫してください。`);
+            const first = cur.qty===0? iso : (new Date(cur.firstReceivedAt)<=new Date(iso)? cur.firstReceivedAt: iso);
+            tx.set(ref,{ shelfId, partNo, qty:Number(cur.qty||0)+Number(qty), firstReceivedAt:first, lastUpdatedAt: serverTimestamp() });
+          }else{
+            tx.set(ref,{ shelfId, partNo, qty:Number(qty), firstReceivedAt:iso, lastUpdatedAt: serverTimestamp() });
+          }
+        });
+      },
+      async setQty(shelfId, newQty){
+        const { db,_m } = this; const { doc, setDoc, updateDoc, serverTimestamp } = _m; const ref = doc(db,'stocks',shelfId);
+        if(newQty===0){ await setDoc(ref,{ shelfId, qty:0, partNo:'', firstReceivedAt: todayISO(), lastUpdatedAt: serverTimestamp() }); }
+        else { await updateDoc(ref,{ qty:newQty, lastUpdatedAt: serverTimestamp() }); }
+      },
+      async doOutbound(shelfId, q){
+        const { db,_m } = this; const { doc, runTransaction, serverTimestamp } = _m; const ref = doc(db,'stocks',shelfId);
+        await runTransaction(db, async (tx)=>{
+          const snap = await tx.get(ref); if(!snap.exists()) throw new Error(`棚 ${shelfId} に在庫がありません`);
+          const cur = snap.data(); const newQty=Math.max(0, Number(cur.qty||0)-Number(q));
+          tx.set(ref,{ ...cur, qty:newQty, lastUpdatedAt: serverTimestamp() });
+        });
+      },
+      async findOldest(partNo){
+        const { db,_m } = this; const { collection, where, query, getDocs } = _m;
+        const snap = await getDocs(query(collection(db,'stocks'), where('partNo','==',partNo)));
+        const list = snap.docs.map(d=>d.data()).filter(s=> s.qty>0);
+        if(list.length===0) return null; list.sort((a,b)=> new Date(a.firstReceivedAt)-new Date(b.firstReceivedAt)); return list[0];
+      }
+    };
+
+    // ===== アプリ状態 =====
+    let shelves = [];
+    let stocksMap = {};
+
+    function categories(){
+      const cats = Array.from(new Set((shelves||[]).map(s=> s.category||'未分類')));
+      cats.sort((a,b)=> a.localeCompare(b,'ja')); return cats;
+    }
+    function refreshCategoryFilter(){
+      const sel = $('#categoryFilter');
+      const cur = sel.value; sel.innerHTML = '<option value="__ALL__">全カテゴリー</option>' + categories().map(c=>`<option value="${c}">${c}</option>`).join('');
+      if([...sel.options].some(o=> o.value===cur)) sel.value=cur; else sel.value='__ALL__';
+    }
+
+    // 品番候補リスト(使用頻度順)
+    function partNoCandidates(){
+      const arr = Object.values(stocksMap).map(s=> s?.partNo).filter(Boolean);
+      const freq = {};
+      arr.forEach(v=> freq[v] = (freq[v]||0)+1);
+      return Array.from(new Set(arr)).sort((a,b)=> freq[b]-freq[a] || a.localeCompare(b,'ja'));
+    }
+
+    // 整理No候補タイルを表示
+    function renderPartTiles(){
+      const tiles = $('#partTiles');
+      tiles.innerHTML = '';
+      const candidates = partNoCandidates().slice(0, 8);
+      if(candidates.length === 0) return;
+      
+      candidates.forEach(partNo => {
+        const tile = document.createElement('button');
+        tile.className = 'part-tile';
+        tile.textContent = partNo;
+        tile.addEventListener('click', () => {
+          $('#findPart').value = partNo;
+          $('#btnFind').click();
+        });
+        tiles.appendChild(tile);
+      });
+    }
+
+    function makeShelfButton(s){
+      const st = stocksMap[s.id];
+      const el = document.createElement('button'); el.className='shelf btn '+(st && st.qty>0? '' : 'empty');
+      el.innerHTML = `<div class="code">${s.id}</div><div class="meta">${st&&st.qty>0? `整理No:<b>${st.partNo}</b><br>数量:<b>${st.qty}</b><br>入庫日:${fmt(st.firstReceivedAt)}` : `空棚・タップで入庫`}</div>`;
+      el.addEventListener('click', ()=> st&&st.qty>0? openShelfDetail(s.id, st) : openInboundDialog(s.id));
+      return el;
+    }
+
+    function renderShelfGrid(){
+      const group = $('#chkGroup').checked; const filter = $('#categoryFilter').value;
+      $('#shelfGrid').style.display = group? 'none':'grid';
+      $('#groupWrap').style.display = group? 'flex':'none';
+
+      if(!group){
+        const wrap=$('#shelfGrid'); wrap.innerHTML='';
+        shelves
+          .filter(s=> filter==='__ALL__' || (s.category||'未分類')===filter)
+          .sort((a,b)=> a.id.localeCompare(b.id,'ja'))
+          .forEach(s=> wrap.appendChild(makeShelfButton(s)));
+      } else {
+        const gw=$('#groupWrap'); gw.innerHTML='';
+        categories().forEach(cat=>{
+          if(filter!=='__ALL__' && filter!==cat) return;
+          const sec=document.createElement('div'); sec.className='stack';
+          sec.innerHTML = `<div class="row" style="justify-content:space-between"><h3 style="margin:6px 0 0 0;color:#cfe0ff;font-size:14px">📁 ${cat}</h3></div>`;
+          const grid=document.createElement('div'); grid.className='grid';
+          shelves.filter(s=> (s.category||'未分類')===cat).sort((a,b)=> a.id.localeCompare(b.id,'ja')).forEach(s=> grid.appendChild(makeShelfButton(s)));
+          sec.appendChild(grid); gw.appendChild(sec);
+        });
+      }
+    }
+
+    function renderStockList(){
+      const list = $('#stockList'); list.innerHTML='';
+      const filter = $('#filterPart').value?.trim().toLowerCase();
+      const arr = Object.values(stocksMap).filter(s=> s && s.qty>0 && s.partNo);
+      arr.sort((a,b)=> a.partNo.localeCompare(b.partNo) || a.firstReceivedAt.localeCompare(b.firstReceivedAt));
+      arr.filter(s=> !filter || s.partNo.toLowerCase().includes(filter)).forEach(s=>{
+        const row=document.createElement('div'); row.className='item';
+        const cat = (shelves.find(x=> x.id===s.shelfId)?.category)||'未分類';
+        row.innerHTML = `<div><span class="pill">棚 ${s.shelfId}</span><br><span class="pill">${cat}</span></div>
+          <div><div><b>${s.partNo}</b> × 数量 <b>${s.qty}</b></div>
+          <div class="muted">入庫日:${fmt(s.firstReceivedAt)} × 更新:${fmt(s.lastUpdatedAt)}</div></div>
+          <div class="row" style="justify-content:flex-end"><button class="btn secondary" data-shelf="${s.shelfId}">−1 出庫</button><button class="btn warn" data-all="${s.shelfId}">全出庫</button></div>`;
+        row.querySelector('[data-shelf]').addEventListener('click', async (e)=>{ const shelfId = e.currentTarget.getAttribute('data-shelf'); await doOutbound(shelfId,1); });
+        row.querySelector('[data-all]').addEventListener('click', async (e)=>{ const shelfId = e.currentTarget.getAttribute('data-all'); await setStockQty(shelfId,0); });
+        list.appendChild(row);
+      });
+      if(list.innerHTML===''){ list.innerHTML='<div class="hint">在庫がありません</div>'; }
+    }
+
+    // カウンター調整関数
+    function adjustCounter(inputId, delta){
+      const input = document.getElementById(inputId);
+      if(!input) return;
+      const current = Number(input.value) || 0;
+      const newVal = Math.max(0, current + delta);
+      input.value = newVal;
+    }
+
+    function openInboundDialog(shelfId){
+      const dlg=$('#dlg'); 
+      $('#dlgTitle').textContent=`入庫:棚 ${shelfId}`;
+      const options = partNoCandidates().map(v=>`<option value="${v}"></option>`).join('');
+      const candidates = partNoCandidates().slice(0, 8);
+      
+      let tilesHtml = '';
+      if(candidates.length > 0) {
+        tilesHtml = '<div class="row" style="margin-top:4px">';
+        candidates.forEach(p => {
+          tilesHtml += `<button type="button" class="part-tile inbound-tile" data-partno="${p}">${p}</button>`;
+        });
+        tilesHtml += '</div>';
+      }
+      
+      $('#dlgBody').innerHTML = `<div class="stack">
+        <label class="muted">🔍 整理No</label>
+        <input id="inPart" class="input" list="partList" placeholder="例)6769" autofocus>
+        <datalist id="partList">${options}</datalist>
+        ${tilesHtml}
+        <label class="muted">数量</label>
+        <input id="inQty" class="input" type="number" inputmode="numeric" placeholder="数量" value="0">
+        <div class="counter-group">
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="-1000">-1000</button>
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="-100">-100</button>
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="-10">-10</button>
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="-1">-1</button>
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="1">+1</button>
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="10">+10</button>
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="100">+100</button>
+          <button type="button" class="btn small secondary" data-adjust="inQty" data-value="1000">+1000</button>
+        </div>
+        <label class="muted">入庫日(省略時は本日)</label>
+        <input id="inDate" class="input" type="date" value="${new Date().toISOString().slice(0,10)}">
+      </div>`;
+      
+      // 候補タイルのイベント設定
+      $$('.inbound-tile').forEach(tile=>{
+        tile.addEventListener('click', ()=>{
+          $('#inPart').value = tile.getAttribute('data-partno');
+        });
+      });
+
+      // カウンターボタンのイベント設定
+      $$('[data-adjust="inQty"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          adjustCounter('inQty', Number(btn.getAttribute('data-value')));
+        });
+      });
+
+      dlg.returnValue=''; 
+      dlg.showModal();
+      
+      dlg.addEventListener('close', async ()=>{
+        if(dlg.returnValue==='ok'){
+          const partNo=$('#inPart').value.trim(); 
+          const qty=Math.max(0, Number($('#inQty').value||0));
+          const date=$('#inDate').value? new Date($('#inDate').value+'T00:00:00') : new Date();
+          if(!partNo || qty<=0) return; 
+          await doInbound(shelfId, partNo, qty, date.toISOString());
+        }
+      }, { once:true });
+    }
+
+    async function openShelfDetail(shelfId, st){
+      const dlg=$('#dlg'); $('#dlgTitle').textContent=`棚 ${shelfId}:詳細`;
+      $('#dlgBody').innerHTML = `<div class="stack">
+        <div class="muted">整理No</div><div class="kbd">${st.partNo}</div>
+        <div class="muted">数量</div>
+        <div class="row"><input id="adjQty" class="input" type="number" inputmode="numeric" value="${st.qty}" style="max-width:140px">
+        <button type="button" id="btnDec1" class="btn secondary">−1 出庫</button>
+        <button type="button" id="btnAllOut" class="btn warn">全出庫</button></div>
+        <div class="counter-group">
+          <button type="button" class="btn small secondary" data-adjust="adjQty" data-value="-1000">-1000</button>
+          <button type="button" class="btn small secondary" data-adjust="adjQty" data-value="-100">-100</button>
+          <button type="button" class="btn small secondary" data-adjust="adjQty" data-value="-10">-10</button>
+          <button type="button" class="btn small secondary" data-adjust="adjQty" data-value="-1">-1</button>
+        </div>
+        <div class="muted">入庫日</div><div class="kbd">${fmt(st.firstReceivedAt)}</div>
+        <div class="hint">数量を0にすると空棚になります(タップで入庫)。</div>
+      </div>`;
+
+      // カウンターボタンのイベント設定
+      $$('[data-adjust="adjQty"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          adjustCounter('adjQty', Number(btn.getAttribute('data-value')));
+        });
+      });
+
+      $('#btnDec1').onclick = async ()=>{ await doOutbound(shelfId,1); dlg.close('cancel'); };
+      $('#btnAllOut').onclick = async ()=>{ 
+        await setStockQty(shelfId, 0); 
+        dlg.close('cancel'); 
+      };
+      dlg.returnValue=''; dlg.showModal();
+      dlg.addEventListener('close', async ()=>{ if(dlg.returnValue==='ok'){ const newQty = Math.max(0, Number($('#adjQty').value||0)); await setStockQty(shelfId, newQty);} }, { once:true });
+    }
+
+    function openShelvesManager(){
+      const dlg=$('#dlgShelves'); const tbl=$('#shelfTable');
+      function render(){
+        tbl.innerHTML='';
+        const sorted = [...shelves].sort((a,b)=> a.id.localeCompare(b.id,'ja'));
+        sorted.forEach(s=>{
+          const row=document.createElement('div'); row.className='item';
+          row.innerHTML = `<div><span class="pill">${s.id}</span></div>
+            <div><div class="muted">カテゴリー</div><input class="input catInput" data-id="${s.id}" value="${s.category||'未分類'}"></div>
+            <div class="row" style="justify-content:flex-end"><button class="btn secondary" data-del="${s.id}">削除</button></div>`;
+          row.querySelector('[data-del]').addEventListener('click', async (e)=>{ const id=e.currentTarget.getAttribute('data-del'); if(!confirm(`棚 ${id} を削除しますか?在庫も消去されます。`)) return; await Firebase.deleteShelf(id); await loadAll(); render(); });
+          row.querySelector('.catInput').addEventListener('change', async (e)=>{ const id=e.target.getAttribute('data-id'); const val=e.target.value||'未分類'; await Firebase.updateShelf(id,{category:val}); await loadAll(); refreshCategoryFilter(); });
+          tbl.appendChild(row);
+        });
+      }
+      render(); dlg.showModal();
+    }
+
+    async function ensureShelves(){ await Firebase.ensureShelves(); }
+    async function loadAll(){
+      shelves = await Firebase.getShelves();
+      stocksMap = await Firebase.getStocksMap();
+      refreshCategoryFilter(); renderShelfGrid(); renderStockList(); renderPartTiles();
+    }
+    async function doInbound(shelfId, partNo, qty, iso){ await Firebase.doInbound(shelfId,partNo,qty,iso); await loadAll(); }
+    async function setStockQty(shelfId, q){ await Firebase.setQty(shelfId,q); await loadAll(); }
+    async function doOutbound(shelfId, q){ await Firebase.doOutbound(shelfId,q); $('#outMsg').textContent=`棚 ${shelfId} から ${q} 個を出庫しました。`; setTimeout(()=> $('#outMsg').textContent='', 2500); await loadAll(); }
+    async function findOldestShelf(partNo){ return await Firebase.findOldest(partNo); }
+
+    // ===== イベント =====
+    $('#btnFind').addEventListener('click', async ()=>{
+      const part=$('#findPart').value.trim(); const box=$('#findResult'); box.innerHTML=''; if(!part){ box.innerHTML='<div class="hint">整理Noを入力してください</div>'; return; }
+      const oldest = await findOldestShelf(part); if(!oldest){ box.innerHTML='<div class="danger">該当在庫が見つかりませんでした</div>'; return; }
+      const card=document.createElement('div'); card.className='stack';
+      card.innerHTML = `<div class="item">
+        <div><span class="pill">推奨棚</span></div>
+        <div>
+          <div><b>${oldest.partNo}</b> は <b>棚 ${oldest.shelfId}</b> が最古(入庫日:${fmt(oldest.firstReceivedAt)})。</div>
+          <div class="muted">現在数量:${oldest.qty}</div>
+        </div>
+        <div></div>
+      </div>
+      <div class="row">
+        <input id="outQtySug" class="input" type="number" inputmode="numeric" placeholder="出庫数量" style="max-width:120px" value="0">
+      </div>
+      <div class="counter-group">
+        <button type="button" class="btn small secondary" data-adjust="outQtySug" data-value="1">+1</button>
+        <button type="button" class="btn small secondary" data-adjust="outQtySug" data-value="10">+10</button>
+        <button type="button" class="btn small secondary" data-adjust="outQtySug" data-value="100">+100</button>
+        <button type="button" class="btn small secondary" data-adjust="outQtySug" data-value="1000">+1000</button>
+      </div>
+      <div class="row">
+        <button type="button" class="btn warn" id="btnSugOut">この棚から出庫</button>
+        <button type="button" class="btn secondary" id="btnSugAllOut">全出庫</button>
+      </div>`;
+      box.appendChild(card);
+
+      // カウンターボタンのイベント設定
+      $$('[data-adjust="outQtySug"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          adjustCounter('outQtySug', Number(btn.getAttribute('data-value')));
+        });
+      });
+
+      $('#btnSugOut').onclick = async ()=>{ const q=Math.max(0, Number($('#outQtySug').value||0)); if(q<=0){ alert('出庫数量を入力してください'); return; } await doOutbound(oldest.shelfId, q); $('#outQtySug').value=''; $('#findResult').innerHTML=''; };
+      $('#btnSugAllOut').onclick = async ()=>{ 
+        await setStockQty(oldest.shelfId, 0); 
+        $('#findResult').innerHTML=''; 
+      };
+    });
+
+    $('#btnOut').addEventListener('click', async ()=>{ 
+      const shelf=$('#outShelf').value.trim(); 
+      const q=Math.max(0, Number($('#outQty').value||0)); 
+      if(!shelf || q<=0) return; 
+      try{ 
+        await doOutbound(shelf,q); 
+        $('#outShelf').value=''; 
+        $('#outQty').value=''; 
+      }catch(err){ 
+        alert(err.message); 
+      }
+    });
+
+    $('#btnOutAll').addEventListener('click', async ()=>{ 
+      const shelf=$('#outShelf').value.trim(); 
+      if(!shelf){ alert('棚番を入力してください'); return; }
+      const st = stocksMap[shelf];
+      if(!st || st.qty<=0){ alert('該当棚に在庫がありません'); return; }
+      await setStockQty(shelf, 0);
+      $('#outShelf').value=''; 
+      $('#outQty').value='';
+    });
+
+    // 直接出庫のカウンターボタン
+    $$('[data-adjust="outQty"]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        adjustCounter('outQty', Number(btn.getAttribute('data-value')));
+      });
+    });
+
+    $('#btnManageShelves').addEventListener('click', openShelvesManager);
+    $('#btnRefresh').addEventListener('click', async ()=> await loadAll());
+    $('#filterPart').addEventListener('input', renderStockList);
+    $('#btnClearFilter').addEventListener('click', ()=>{ $('#filterPart').value=''; renderStockList(); });
+    $('#categoryFilter').addEventListener('change', renderShelfGrid);
+    $('#chkGroup').addEventListener('change', renderShelfGrid);
+
+    $('#btnAddShelf').addEventListener('click', async ()=>{
+      const id = $('#newShelfId').value.trim();
+      const cat = $('#newShelfCat').value.trim() || '未分類';
+      if(!id){ alert('棚番を入力してください'); return; }
+      if(shelves.some(s=>s.id===id)){ alert('その棚番は既に存在します'); return; }
+      await Firebase.addShelf(id, cat);
+      await loadAll();
+      $('#newShelfId').value=''; $('#newShelfCat').value='';
+      openShelvesManager();
+    });
+
+    // ===== 起動(常にFirebase・匿名サインイン) =====
+    (async function start(){
+      try{
+        const config = {"apiKey":"AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY","authDomain":"miyamaunitec-fb87a.firebaseapp.com","projectId":"miyamaunitec-fb87a","storageBucket":"miyamaunitec-fb87a.firebasestorage.app","messagingSenderId":"495316649507","appId":"1:495316649507:web:fa195645f46e41b1a39396"};
+        await Firebase.init(config);
+        const displayName = (document.getElementById('userName')?.value)||'';
+        await Firebase.signInAnon(displayName);
+        await ensureShelves();
+        await loadAll();
+        document.getElementById('modeBadge').textContent='Firebase共有';
+        document.getElementById('backendLabel').textContent='Firebase Firestore(複数端末共有・匿名サインイン)';
+      }catch(err){
+        alert('Firebase初期化に失敗:'+err.message);
+      }
+    })();
+  </script>
+</body>
+</html>
