@@ -99,7 +99,13 @@
 
     <!-- 在庫一覧 -->
     <section class="panel hide-md">
-      <div class="head"><h2>在庫一覧</h2></div>
+      <div class="head">
+        <h2>在庫一覧</h2>
+        <div class="row">
+          <button class="btn small" id="btnViewShelf" style="padding:6px 10px">棚別</button>
+          <button class="btn small secondary" id="btnViewPart" style="padding:6px 10px">整理No別</button>
+        </div>
+      </div>
       <div class="body stack">
         <div class="row">
           <input id="filterPart" class="input" placeholder="整理Noでフィルタ">
@@ -243,6 +249,7 @@
     // ===== アプリ状態 =====
     let shelves = [];
     let allStocks = [];
+    let stockViewMode = 'shelf'; // 'shelf' or 'part'
 
     function categories(){
       const cats = Array.from(new Set((shelves||[]).map(s=> s.category||'未分類')));
@@ -333,20 +340,78 @@
     function renderStockList(){
       const list = $('#stockList'); list.innerHTML='';
       const filter = $('#filterPart').value?.trim().toLowerCase();
-      const arr = allStocks.filter(s=> s && s.qty>0 && s.partNo);
-      arr.sort((a,b)=> a.partNo.localeCompare(b.partNo) || a.firstReceivedAt.localeCompare(b.firstReceivedAt));
-      arr.filter(s=> !filter || s.partNo.toLowerCase().includes(filter)).forEach(s=>{
-        const row=document.createElement('div'); row.className='item';
-        const cat = (shelves.find(x=> x.id===s.shelfId)?.category)||'未分類';
-        row.innerHTML = `<div><span class="pill">棚 ${s.shelfId}</span><br><span class="pill">${cat}</span></div>
-          <div><div><b>${s.partNo}</b> × 数量 <b>${s.qty}</b></div>
-          <div class="muted">入庫日:${fmt(s.firstReceivedAt)} × 更新:${fmt(s.lastUpdatedAt)}</div></div>
-          <div class="row" style="justify-content:flex-end"><button class="btn warn">全出庫</button></div>`;
-        const btnZero = row.querySelector('.btn.warn');
-        btnZero.addEventListener('click', async ()=>{ await setItemQty(s.shelfId,s.partNo,0); });
-        list.appendChild(row);
-      });
-      if(list.innerHTML===''){ list.innerHTML='<div class="hint">在庫がありません</div>'; }
+      
+      if(stockViewMode === 'shelf'){
+        // 棚別表示
+        const arr = allStocks.filter(s=> s && s.qty>0 && s.partNo);
+        arr.sort((a,b)=> a.partNo.localeCompare(b.partNo) || a.firstReceivedAt.localeCompare(b.firstReceivedAt));
+        arr.filter(s=> !filter || s.partNo.toLowerCase().includes(filter)).forEach(s=>{
+          const row=document.createElement('div'); row.className='item';
+          const cat = (shelves.find(x=> x.id===s.shelfId)?.category)||'未分類';
+          row.innerHTML = `<div><span class="pill">棚 ${s.shelfId}</span><br><span class="pill">${cat}</span></div>
+            <div><div><b>${s.partNo}</b> × 数量 <b>${s.qty}</b></div>
+            <div class="muted">入庫日:${fmt(s.firstReceivedAt)} × 更新:${fmt(s.lastUpdatedAt)}</div></div>
+            <div class="row" style="justify-content:flex-end"><button class="btn warn">全出庫</button></div>`;
+          const btnZero = row.querySelector('.btn.warn');
+          btnZero.addEventListener('click', async ()=>{ await setItemQty(s.shelfId,s.partNo,0); });
+          list.appendChild(row);
+        });
+        if(list.innerHTML===''){ list.innerHTML='<div class="hint">在庫がありません</div>'; }
+      } else {
+        // 整理No別表示
+        const grouped = {};
+        allStocks.filter(s=> s && s.qty>0 && s.partNo).forEach(s=>{
+          if(!grouped[s.partNo]) grouped[s.partNo] = [];
+          grouped[s.partNo].push(s);
+        });
+        
+        const partNos = Object.keys(grouped).sort((a,b)=> a.localeCompare(b,'ja'));
+        const filtered = partNos.filter(p=> !filter || p.toLowerCase().includes(filter));
+        
+        filtered.forEach(partNo=>{
+          const items = grouped[partNo];
+          const totalQty = items.reduce((sum, it)=> sum + it.qty, 0);
+          const oldestDate = items.map(it=> new Date(it.firstReceivedAt)).sort((a,b)=> a-b)[0];
+          
+          const row=document.createElement('div');
+          row.style.cssText = 'background:linear-gradient(180deg,#0b1326,#0b1424);border:1px solid var(--border);padding:12px;border-radius:12px;margin-bottom:8px';
+          
+          let detailsHtml = '<div class="stack" style="gap:4px;margin-top:8px">';
+          items.sort((a,b)=> a.shelfId.localeCompare(b.shelfId,'ja')).forEach(it=>{
+            const cat = (shelves.find(x=> x.id===it.shelfId)?.category)||'未分類';
+            detailsHtml += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px;background:#0a1220;border-radius:8px">
+              <div class="muted" style="font-size:12px">棚 ${it.shelfId} (${cat}): ${it.qty}個 - 入庫${fmt(it.firstReceivedAt)}</div>
+              <button class="btn small warn zero-part-btn" data-shelf="${it.shelfId}" data-part="${it.partNo}" style="padding:4px 8px;font-size:11px">出庫</button>
+            </div>`;
+          });
+          detailsHtml += '</div>';
+          
+          row.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <div style="font-size:18px;font-weight:700;color:#a8c1ff">${partNo}</div>
+                <div class="muted">合計: <b style="color:#eaf1ff">${totalQty}</b>個 × ${items.length}棚 × 最古入庫: ${fmt(oldestDate)}</div>
+              </div>
+            </div>
+            ${detailsHtml}
+          `;
+          
+          list.appendChild(row);
+          
+          // 各出庫ボタンにイベント設定
+          row.querySelectorAll('.zero-part-btn').forEach(btn=>{
+            btn.addEventListener('click', async (e)=>{
+              const shelfId = e.currentTarget.getAttribute('data-shelf');
+              const partNo = e.currentTarget.getAttribute('data-part');
+              if(confirm(`棚 ${shelfId} の ${partNo} を全出庫しますか?`)){
+                await setItemQty(shelfId, partNo, 0);
+              }
+            });
+          });
+        });
+        
+        if(list.innerHTML===''){ list.innerHTML='<div class="hint">在庫がありません</div>'; }
+      }
     }
 
     function adjustCounter(inputId, delta){
@@ -586,6 +651,20 @@
     $('#btnClearFilter').addEventListener('click', ()=>{ $('#filterPart').value=''; renderStockList(); });
     $('#categoryFilter').addEventListener('change', renderShelfGrid);
     $('#chkGroup').addEventListener('change', renderShelfGrid);
+
+    // 在庫表示モード切り替え
+    $('#btnViewShelf').addEventListener('click', ()=>{
+      stockViewMode = 'shelf';
+      $('#btnViewShelf').className = 'btn small';
+      $('#btnViewPart').className = 'btn small secondary';
+      renderStockList();
+    });
+    $('#btnViewPart').addEventListener('click', ()=>{
+      stockViewMode = 'part';
+      $('#btnViewShelf').className = 'btn small secondary';
+      $('#btnViewPart').className = 'btn small';
+      renderStockList();
+    });
 
     $('#btnAddShelf').addEventListener('click', async ()=>{
       const id = $('#newShelfId').value.trim();
