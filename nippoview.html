@@ -662,6 +662,7 @@ function renderProductDefects() {
     const unusualDefects = [];
     let cardAlertClass = '';
     
+    // 過去データとの比較
     if (historicalData[productCode] && historicalData[productCode].inspection > 0) {
       const historical = historicalData[productCode];
       const historicalRate = historical.inspection > 0 
@@ -697,6 +698,59 @@ function renderProductDefects() {
         alerts.push({
           level: 'medium',
           message: `いつもと違うNGが${unusualDefects.length}件発生`
+        });
+        if (!cardAlertClass) cardAlertClass = 'alert-medium';
+      }
+    }
+    
+    // 増加傾向の検出（表示期間が7日以上の場合）
+    const periodDays = Math.floor((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) + 1;
+    if (periodDays >= 7 && !alerts.some(a => a.level === 'high')) {
+      // 期間を前半と後半に分けて不良率を比較
+      const midPoint = new Date(displayStart.getTime() + (displayEnd.getTime() - displayStart.getTime()) / 2);
+      
+      const firstHalf = { inspection: 0, defects: 0 };
+      const secondHalf = { inspection: 0, defects: 0 };
+      
+      filteredData.forEach(item => {
+        if (item.on !== productCode) return;
+        
+        const itemDateStr = item.pd.replace(/\//g, '-');
+        const itemDate = new Date(itemDateStr);
+        
+        const inspection = parseInt(item.ic || 0);
+        let itemDefects = 0;
+        if (item.ngMap) {
+          item.ngMap.forEach(value => {
+            itemDefects += parseInt(value || 0);
+          });
+        }
+        
+        if (itemDate < midPoint) {
+          firstHalf.inspection += inspection;
+          firstHalf.defects += itemDefects;
+        } else {
+          secondHalf.inspection += inspection;
+          secondHalf.defects += itemDefects;
+        }
+      });
+      
+      const firstRate = firstHalf.inspection > 0 ? (firstHalf.defects / firstHalf.inspection * 100) : 0;
+      const secondRate = secondHalf.inspection > 0 ? (secondHalf.defects / secondHalf.inspection * 100) : 0;
+      
+      // 後半の不良率が前半より1.3倍以上増加
+      if (firstRate > 0 && secondRate > firstRate * 1.3) {
+        alerts.push({
+          level: 'medium',
+          message: `不良率が増加傾向 (前半: ${firstRate.toFixed(2)}% → 後半: ${secondRate.toFixed(2)}%)`
+        });
+        if (!cardAlertClass) cardAlertClass = 'alert-medium';
+      }
+      // 後半の不良率が前半より1.15倍以上増加（軽度の増加）
+      else if (firstRate > 0 && secondRate > firstRate * 1.15 && firstRate >= 0.5) {
+        alerts.push({
+          level: 'medium',
+          message: `不良率やや増加 (前半: ${firstRate.toFixed(2)}% → 後半: ${secondRate.toFixed(2)}%)`
         });
         if (!cardAlertClass) cardAlertClass = 'alert-medium';
       }
