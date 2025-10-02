@@ -2,18 +2,18 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<title>1対N QR照合システム（タブレット対策版）</title>
+<title>1対N QR照合システム（ライン対応）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root { --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666; --border:#e5e7eb; --primary:#0b3b75; }
   * { box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; color:var(--fg); margin:0; background:#f7f7f8; }
-  header { background:#fff; border-bottom:1px solid var(--border); padding:16px 20px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  h1 { margin:0; font-size:22px;}
+  header { background:#fff; border-bottom:1px solid var(--border); padding:12px 16px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  h1 { margin:0; font-size:20px;}
   .sub { color:var(--muted); font-size:13px; }
-  main { max-width: 1100px; margin: 20px auto; padding: 0 16px 40px; }
-  .card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:18px; }
-  .bigLabel { font-size:20px; color:#111; margin-bottom:8px; font-weight:700; }
+  main { max-width: 1100px; margin: 16px auto; padding: 0 16px 40px; }
+  .card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; }
+  .bigLabel { font-size:18px; color:#111; margin-bottom:8px; font-weight:700; }
   .baseWrap { display:grid; grid-template-columns: 1.2fr .8fr; gap:16px; align-items:stretch; }
   @media (max-width: 900px){ .baseWrap { grid-template-columns: 1fr; } }
   .baseBox { border:2px dashed #cbd5e1; border-radius:16px; background:#fbfdff; padding:16px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
@@ -35,17 +35,18 @@
   .btn.big.primary { background:#0b3b75; color:#fff; border-color:#0b3b75; }
   .btn:disabled { opacity:.5; cursor:not-allowed; }
   .status { font-size:15px; color:var(--muted); margin-top:12px; }
-  .rightTools { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .rightTools { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .small { font-size:12px; color:#6b7280; }
   footer { text-align:center; color:#9ca3af; font-size:12px; padding: 16px 0; }
   input[type="file"]{ display:none; }
   .toolBtn { padding:6px 10px; border-radius:10px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:13px; }
   .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #d1d5db; }
-  /* 隠しスキャン入力（タブレットでのキーボード/オートフィル抑止） */
-  #scanInput { 
-    position:absolute; left:-9999px; width:1px; height:1px; opacity:0;
-    caret-color: transparent; user-select: none;
-  }
+  #scanInput { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+  /* ライン入力UI */
+  .lineWrap { display:flex; gap:8px; align-items:center; border:1px solid var(--border); border-radius:10px; padding:6px 8px; background:#fff; }
+  #lineInput { border:none; outline:none; font-size:14px; min-width:140px; }
+  #lineSave { border:1px solid var(--border); border-radius:8px; padding:6px 10px; background:#0b3b75; color:#fff; }
+  #lineBadge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #cbd5e1; background:#eff6ff; color:#0b3b75; }
 </style>
 </head>
 <body>
@@ -53,19 +54,21 @@
   <h1>QR照合システム（1対N）</h1>
   <div class="sub">スキャナはキーボード入力（末尾Enter/Tab）</div>
   <div class="rightTools">
+    <div class="lineWrap">
+      <span class="small">生産ライン</span>
+      <input id="lineInput" type="text" placeholder="例：A1 / 第1ライン" autocomplete="off" />
+      <button id="lineSave" tabindex="-1" title="保存して以降も維持">保存</button>
+      <span id="lineBadge" title="現在のライン">未設定</span>
+    </div>
     <span id="firebaseStatus" class="badge" style="color:#9ca3af;">Firebase: 未接続</span>
-    <button id="pickDirBtn" class="toolBtn" tabindex="-1">画像フォルダを選択</button>
-    <label class="toolBtn" for="folderInput" tabindex="-1">画像を一括読み込み</label>
+    <button id="pickDirBtn" class="toolBtn" tabindex="-1">画像フォルダ</button>
+    <label class="toolBtn" for="folderInput" tabindex="-1">画像一括</label>
     <input id="folderInput" type="file" webkitdirectory multiple />
   </div>
 </header>
 
-<!-- タブレット対策：readonly + inputmode=none + すべての補助機能OFF。値は使わずkeydownで受ける -->
-<input id="scanInput" type="text" 
-  readonly
-  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-  inputmode="none" enterkeyhint="done" aria-hidden="true"
-/>
+<!-- 常時フォーカス対象 -->
+<input id="scanInput" type="text" autocomplete="off" aria-hidden="true" />
 
 <main>
   <section class="card">
@@ -73,6 +76,7 @@
 
     <div class="baseWrap">
       <div class="baseBox">
+        <!-- ステータスはチップのみ（重複回避） -->
         <div class="baseHeading"><span id="prodState" class="statusChip">未開始</span></div>
         <div id="baseDisplay" class="baseValue placeholder">未設定</div>
       </div>
@@ -107,13 +111,15 @@
 const CUT_START = 3;
 const CUT_LENGTH = 5;
 const ADMIN_QR = "ADMIN123";
+const LINE_KEY = "qr_line_name";
 
 /* ------------------ 状態 ------------------ */
 let baseQR = null;
 let isLocked = false;
-let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像ファイル"]];
+let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像ファイル","ライン"]];
 let imageDirHandle = null;
 const imageMap = new Map();
+let lineName = localStorage.getItem(LINE_KEY) || "";
 
 /* ------------------ 要素参照 ------------------ */
 const $mode = document.getElementById("mode");
@@ -126,19 +132,49 @@ const $imgHint = document.getElementById("imgHint");
 const $prodState = document.getElementById("prodState");
 const $scanInput = document.getElementById("scanInput");
 const $resetBtn = document.getElementById("resetBtn");
+const $lineInput = document.getElementById("lineInput");
+const $lineSave = document.getElementById("lineSave");
+const $lineBadge = document.getElementById("lineBadge");
 
-/* ------------------ フォーカス（常時維持。readonlyのまま） ------------------ */
+/* ------------------ フォーカス（常時維持。値は消さない） ------------------ */
 function focusScanField(){
   if (document.activeElement !== $scanInput){
     $scanInput.focus({ preventScroll: true });
   }
 }
-window.addEventListener("load", focusScanField);
+window.addEventListener("load", () => {
+  // 初期ライン表示
+  if (lineName) {
+    $lineInput.value = lineName;
+    $lineBadge.textContent = lineName;
+  } else {
+    $lineBadge.textContent = "未設定";
+  }
+  focusScanField();
+});
 window.addEventListener("focus", focusScanField);
 document.addEventListener("visibilitychange", () => setTimeout(focusScanField, 50));
-document.addEventListener("click", () => setTimeout(focusScanField, 0), true);
+document.addEventListener("click", (e) => {
+  // ライン入力と保存ボタン以外のクリックはスキャンに戻す
+  if (!e.target.closest(".lineWrap")) {
+    setTimeout(focusScanField, 0);
+  }
+}, true);
 document.addEventListener("touchend", () => setTimeout(focusScanField, 0), true);
 setInterval(focusScanField, 1000);
+
+/* ------------------ ライン保存 ------------------ */
+function saveLine(){
+  lineName = ($lineInput.value || "").trim();
+  localStorage.setItem(LINE_KEY, lineName);
+  $lineBadge.textContent = lineName || "未設定";
+  // すぐスキャンへ戻す
+  focusScanField();
+}
+$lineSave.addEventListener("click", saveLine);
+$lineInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); saveLine(); }
+});
 
 /* ------------------ ユーティリティ ------------------ */
 function nowString(){
@@ -153,7 +189,7 @@ function clearMarks(){ $ok.style.display="none"; $ng.style.display="none"; }
 function setLock(state){
   isLocked=state;
   $lockMsg.style.display=state?"block":"none";
-  $resetBtn.disabled = state; // NGロック中は切替不可
+  $resetBtn.disabled = state;              // NGロック中は「製品切替え」不可
   if(!state) clearMarks();
 }
 function updateBaseDisplay(val){ if(val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent=val; } else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent="未設定"; } }
@@ -189,37 +225,33 @@ async function findImageURLByBase(base){
 }
 function showImage(url){ if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; } }
 
-/* ------------------ スキャナ入力（keydownバッファ・Enter/Tab・Idle確定） ------------------ */
-let buffer = "";
+/* ------------------ スキャン文字列構築（Enter/Tab or Idleで確定） ------------------ */
 let idleTimer = null;
-const IDLE_MS = 120;
+const IDLE_MS = 120; // スキャナは高速入力なので短めの無入力で確定
 
-// 文字キーは蓄積、Enter/Tabで確定。readonlyなので OS 側UIが出ない。 
-$scanInput.addEventListener("keydown", (e) => {
-  const k = e.key;
-  // すべてのキーで既定動作は止める（タブレットのUI起動抑止）
-  e.preventDefault();
-  if (k === "Enter" || k === "Tab") {
-    flushBuffer();
-    return;
-  }
-  if (k.length === 1) {
-    buffer += k;
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => flushBuffer(), IDLE_MS);
-  } else if (k === "Backspace") {
-    buffer = buffer.slice(0, -1);
+$scanInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === "Tab"){
+    e.preventDefault();
+    let raw = $scanInput.value;
+    raw = raw.replace(/\r/g,"");
+    const parts = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+    const qr = parts.length ? parts[parts.length-1] : raw.trim();
+    $scanInput.value = "";
+    if (qr.length > 0) processQR(qr);
   }
 });
 
-function flushBuffer(){
-  if (!buffer) return;
-  const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
-  buffer = "";
-  if (qr.length > 0) processQR(qr);
-}
+$scanInput.addEventListener("input", () => {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    const s = $scanInput.value.trim();
+    if (s.length > 0) {
+      $scanInput.value = "";
+      processQR(s);
+    }
+  }, IDLE_MS);
+});
 
-/* ------------------ 照合フロー ------------------ */
 async function processQR(qrRaw){
   const now=nowString();
   const sliced=cutQR(qrRaw);
@@ -237,7 +269,7 @@ async function processQR(qrRaw){
       else { $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.textContent=`画像未検出：${baseQR}.*`; }
     }catch(e){ console.warn(e); }
 
-    logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imgName]);
+    logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imgName, lineName]);
     focusScanField();
     return;
   }
@@ -246,24 +278,24 @@ async function processQR(qrRaw){
     if (qrRaw===ADMIN_QR){
       setLock(false); showOK();
       $mode.textContent="解除されました。照合を再開します。";
-      logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", ""]);
+      logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", "", lineName]);
     } else {
-      showNGPersistent(); logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", ""]);
+      showNGPersistent(); logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", "", lineName]);
     }
     focusScanField(); return;
   }
 
   const judgedOK = (sliced===baseQR);
-  if (judgedOK){ showOK(); logRow([now, qrRaw, sliced, "OK", "UNLOCK", ""]); }
-  else { showNGPersistent(); setLock(true); $mode.textContent="NG！管理者QRを読み込んでください"; logRow([now, qrRaw, sliced, "NG", "LOCKED", ""]); }
+  if (judgedOK){ showOK(); logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName]); }
+  else { showNGPersistent(); setLock(true); $mode.textContent="NG！管理者QRを読み込んでください"; logRow([now, qrRaw, sliced, "NG", "LOCKED", "", lineName]); }
   focusScanField();
 }
 
 /* ------------------ ボタン ------------------ */
-$resetBtn.addEventListener("click", () => {
+document.getElementById("resetBtn").addEventListener("click", () => {
   if (isLocked){
     $mode.textContent = "NGロック中は切替できません。管理者QRで解除してください。";
-    logRow([nowString(), "-", "-", "RESET_DENIED_WHEN_LOCKED", "LOCKED", ""]);
+    logRow([nowString(), "-", "-", "RESET_DENIED_WHEN_LOCKED", "LOCKED", "", lineName]);
     focusScanField();
     return;
   }
@@ -271,7 +303,7 @@ $resetBtn.addEventListener("click", () => {
   setProdStateSetup();
   $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.textContent="画像フォルダを選択すると表示されます";
   $mode.textContent="基準QRを読み込んでください";
-  logRow([nowString(), "-", "-", "RESET", "UNLOCK", ""]);
+  logRow([nowString(), "-", "-", "RESET", "UNLOCK", "", lineName]);
   focusScanField();
 });
 document.getElementById("saveBtn").addEventListener("click", () => { downloadCSV(logData); focusScanField(); });
@@ -311,13 +343,13 @@ document.getElementById("folderInput").addEventListener("change", e => {
   try { await signInAnonymously(auth); setStatus("接続済み", "#16a34a"); }
   catch(e){ console.warn("匿名認証に失敗:", e); setStatus("未接続（認証エラー）", "#dc2626"); }
 
-  // Firestore へログを保存（CSV互換 + 集計用の明示フィールド）
+  // Firestore へログを保存（CSV互換 + 集計用の明示フィールド + ライン）
   window.logRow = async function(row){
     try {
       logData.push(row);
-      const [ts, raw, sliced, judge, lockState, imageFile] = row;
+      const [ts, raw, sliced, judge, lockState, imageFile, line] = row;
       await addDoc(collection(db, "qrLogs"), {
-        ts, raw, sliced, judge, lockState, imageFile,
+        ts, raw, sliced, judge, lockState, imageFile, line,
         readAt: serverTimestamp(),
         uid: (auth.currentUser && auth.currentUser.uid) || null,
         pageUrl: location.href,
