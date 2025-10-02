@@ -2,10 +2,11 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<title>1対N QR照合システム</title>
+<title>1対N QR照合システム（タブレット対策版）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root { --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666; --border:#e5e7eb; --primary:#0b3b75; }
+  * { box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; color:var(--fg); margin:0; background:#f7f7f8; }
   header { background:#fff; border-bottom:1px solid var(--border); padding:16px 20px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
   h1 { margin:0; font-size:22px;}
@@ -28,11 +29,11 @@
   .ok { color: var(--ok); }
   .ng { color: var(--ng); }
   .lock { display:none; margin-top:10px; color: var(--ng); font-weight:700; }
-  .btn { padding:10px 14px; border-radius:12px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:14px; margin:5px; transition:opacity .15s ease; }
+  .btn { padding:10px 14px; border-radius:12px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:14px; transition:opacity .15s ease; }
   .btn.warn { background:#fef3f2; color:#b42318; border-color:#fecdcf; }
   .btn.big { font-size:18px; padding:16px 22px; border-width:2px; }
   .btn.big.primary { background:#0b3b75; color:#fff; border-color:#0b3b75; }
-  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
   .status { font-size:15px; color:var(--muted); margin-top:12px; }
   .rightTools { margin-left:auto; display:flex; gap:8px; align-items:center; }
   .small { font-size:12px; color:#6b7280; }
@@ -40,8 +41,11 @@
   input[type="file"]{ display:none; }
   .toolBtn { padding:6px 10px; border-radius:10px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:13px; }
   .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #d1d5db; }
-  /* 隠しスキャン入力（常時フォーカス） */
-  #scanInput { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
+  /* 隠しスキャン入力（タブレットでのキーボード/オートフィル抑止） */
+  #scanInput { 
+    position:absolute; left:-9999px; width:1px; height:1px; opacity:0;
+    caret-color: transparent; user-select: none;
+  }
 </style>
 </head>
 <body>
@@ -56,8 +60,12 @@
   </div>
 </header>
 
-<!-- 常時フォーカス対象 -->
-<input id="scanInput" type="text" autocomplete="off" aria-hidden="true" />
+<!-- タブレット対策：readonly + inputmode=none + すべての補助機能OFF。値は使わずkeydownで受ける -->
+<input id="scanInput" type="text" 
+  readonly
+  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+  inputmode="none" enterkeyhint="done" aria-hidden="true"
+/>
 
 <main>
   <section class="card">
@@ -65,7 +73,6 @@
 
     <div class="baseWrap">
       <div class="baseBox">
-        <!-- ステータスはチップのみ（重複回避） -->
         <div class="baseHeading"><span id="prodState" class="statusChip">未開始</span></div>
         <div id="baseDisplay" class="baseValue placeholder">未設定</div>
       </div>
@@ -120,7 +127,7 @@ const $prodState = document.getElementById("prodState");
 const $scanInput = document.getElementById("scanInput");
 const $resetBtn = document.getElementById("resetBtn");
 
-/* ------------------ フォーカス（常時維持。値は消さない） ------------------ */
+/* ------------------ フォーカス（常時維持。readonlyのまま） ------------------ */
 function focusScanField(){
   if (document.activeElement !== $scanInput){
     $scanInput.focus({ preventScroll: true });
@@ -146,7 +153,7 @@ function clearMarks(){ $ok.style.display="none"; $ng.style.display="none"; }
 function setLock(state){
   isLocked=state;
   $lockMsg.style.display=state?"block":"none";
-  $resetBtn.disabled = state;              // NGロック中は「製品切替え」不可
+  $resetBtn.disabled = state; // NGロック中は切替不可
   if(!state) clearMarks();
 }
 function updateBaseDisplay(val){ if(val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent=val; } else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent="未設定"; } }
@@ -182,36 +189,37 @@ async function findImageURLByBase(base){
 }
 function showImage(url){ if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; } }
 
-/* ------------------ スキャン文字列構築（Enter/Tab or Idleで確定） ------------------ */
+/* ------------------ スキャナ入力（keydownバッファ・Enter/Tab・Idle確定） ------------------ */
+let buffer = "";
 let idleTimer = null;
-const IDLE_MS = 120; // スキャナは高速入力なので短めの無入力で確定
+const IDLE_MS = 120;
 
-$scanInput.addEventListener("keydown", e => {
-  if (e.key === "Enter" || e.key === "Tab"){
-    e.preventDefault();
-    let raw = $scanInput.value;
-    // スキャナによっては \r\n が含まれる
-    raw = raw.replace(/\r/g,"");
-    // 複数行混入時は最後の非空行を採用
-    const parts = raw.split("\n").map(s=>s.trim()).filter(Boolean);
-    const qr = parts.length ? parts[parts.length-1] : raw.trim();
-    $scanInput.value = "";
-    if (qr.length > 0) processQR(qr);
+// 文字キーは蓄積、Enter/Tabで確定。readonlyなので OS 側UIが出ない。 
+$scanInput.addEventListener("keydown", (e) => {
+  const k = e.key;
+  // すべてのキーで既定動作は止める（タブレットのUI起動抑止）
+  e.preventDefault();
+  if (k === "Enter" || k === "Tab") {
+    flushBuffer();
+    return;
+  }
+  if (k.length === 1) {
+    buffer += k;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => flushBuffer(), IDLE_MS);
+  } else if (k === "Backspace") {
+    buffer = buffer.slice(0, -1);
   }
 });
 
-$scanInput.addEventListener("input", () => {
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(() => {
-    // Enterが付いてこないタイプのスキャナ対策（最終手段）
-    const s = $scanInput.value.trim();
-    if (s.length > 0) {
-      $scanInput.value = "";
-      processQR(s);
-    }
-  }, IDLE_MS);
-});
+function flushBuffer(){
+  if (!buffer) return;
+  const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
+  buffer = "";
+  if (qr.length > 0) processQR(qr);
+}
 
+/* ------------------ 照合フロー ------------------ */
 async function processQR(qrRaw){
   const now=nowString();
   const sliced=cutQR(qrRaw);
@@ -252,7 +260,7 @@ async function processQR(qrRaw){
 }
 
 /* ------------------ ボタン ------------------ */
-document.getElementById("resetBtn").addEventListener("click", () => {
+$resetBtn.addEventListener("click", () => {
   if (isLocked){
     $mode.textContent = "NGロック中は切替できません。管理者QRで解除してください。";
     logRow([nowString(), "-", "-", "RESET_DENIED_WHEN_LOCKED", "LOCKED", ""]);
