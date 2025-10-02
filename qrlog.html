@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<title>QRログ閲覧（ライン・切出フィルタ対応）</title>
+<title>QRログ閲覧（ページング 2000件/頁・最大10頁）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root{ --fg:#111; --muted:#6b7280; --border:#e5e7eb; --bg:#f8fafc; --accent:#0b3b75; }
@@ -13,8 +13,8 @@
   .badge{ font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:#94a3b8; }
   main{ padding:16px; }
   .panel{ background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:16px; }
-  .row{ display:grid; gap:10px; grid-template-columns: repeat(6, minmax(140px,1fr)); align-items:end; }
-  @media (max-width: 1000px){ .row{ grid-template-columns: 1fr 1fr; } }
+  .row{ display:grid; gap:10px; grid-template-columns: repeat(6, minmax(160px,1fr)); align-items:end; }
+  @media (max-width: 1100px){ .row{ grid-template-columns: 1fr 1fr; } }
   label{ font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
   input, select{ border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:14px; background:#fff; width:100%; }
   button{ border:1px solid var(--border); background:#fff; border-radius:10px; padding:8px 12px; cursor:pointer; font-size:14px; }
@@ -25,27 +25,25 @@
   th{ font-size:12px; color:var(--muted); position:sticky; top:0; background:#fff; z-index:5; }
   tbody tr:hover{ background:#fafafa; }
   .controls{ display:flex; gap:8px; align-items:center; margin-left:auto; }
-  .status{ font-size:12px; color:var(--muted); }
   .pill{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); }
   .ok{ background:#ebfbee; color:#1a7f37; border-color:#b7f0c0; }
   .ng{ background:#fff5f5; color:#d1242f; border-color:#ffd0d5; }
   .warn{ background:#fffbeb; color:#a16207; border-color:#fde68a; }
   .error{ color:#d1242f; font-size:13px; }
   .nowrap{ white-space:nowrap; }
-  .widen{ width: 100%; }
-  .grow{ grid-column: 1 / -1; }
-  .tableWrap{ max-height: 60vh; overflow:auto; border:1px solid var(--border); border-radius:10px; }
+  .tableWrap{ max-height: 62vh; overflow:auto; border:1px solid var(--border); border-radius:10px; }
   .small{ font-size:12px; color:var(--muted); }
-  .hint{ font-size:12px; color:#64748b; margin-top:6px; }
+  .right{ text-align:right; }
+  .pager{ display:flex; gap:10px; align-items:center; }
 </style>
 </head>
 <body>
 <header>
-  <h1>QRログ閲覧（ライン・切出フィルタ対応）</h1>
+  <h1>QRログ閲覧（ページング）</h1>
   <span id="fbStatus" class="badge">Firebase: 未接続</span>
   <div class="controls">
     <button id="btnExport">CSVエクスポート</button>
-    <button id="btnRefresh" class="primary">最新を再読込</button>
+    <button id="btnReload" class="primary">1ページ目を再取得</button>
   </div>
 </header>
 
@@ -61,16 +59,16 @@
         <input id="dateTo" type="date" />
       </div>
       <div>
-        <label for="lineInput">生産ライン（完全一致）</label>
-        <input id="lineInput" type="text" placeholder="例：A1 / 第1ライン" />
+        <label for="lineSel">生産ライン</label>
+        <select id="lineSel"><option value="">すべて</option></select>
       </div>
       <div>
-        <label for="slicedInput">切り出し（完全一致）</label>
-        <input id="slicedInput" type="text" placeholder="例：12345" />
+        <label for="slicedSel">切り出し</label>
+        <select id="slicedSel"><option value="">すべて</option></select>
       </div>
       <div>
-        <label for="resultSel">結果</label>
-        <select id="resultSel">
+        <label for="judgeSel">結果</label>
+        <select id="judgeSel">
           <option value="">すべて</option>
           <option value="OK">OK</option>
           <option value="NG">NG</option>
@@ -81,34 +79,26 @@
         </select>
       </div>
       <div>
-        <label>&nbsp;</label>
-        <button id="btnApply">フィルター適用</button>
+        <label for="lockSel">ロック状態</label>
+        <select id="lockSel">
+          <option value="">すべて</option>
+          <option value="LOCKED">LOCKED</option>
+          <option value="UNLOCK">UNLOCK</option>
+        </select>
       </div>
-      <div class="grow">
-        <label for="kw">キーワード（ゆるく横断検索／任意）</label>
-        <input id="kw" type="text" placeholder="例：NG / 12345 / A1 など" />
-      </div>
-      <div>
-        <label>&nbsp;</label>
-        <label class="small">
-          <input id="liveToggle" type="checkbox" />
-          リアルタイム更新
-        </label>
-      </div>
+    </div>
+    <div class="right" style="margin-top:8px;">
+      <button id="btnApply">フィルター適用</button>
+      <span id="count" class="small"></span>
     </div>
     <div id="err" class="error" style="display:none; margin-top:6px;"></div>
-    <div id="idxHint" class="hint" style="display:none;">
-      フィルターによりインデックスが必要になる場合があります。エラーに表示されるURLから作成できます。作成後は数分で有効になります。
-    </div>
   </section>
 
   <section class="panel">
-    <div class="row">
-      <div class="status">最大 50件 / ページ</div>
-      <div class="controls">
-        <button id="btnPrev" disabled>前へ</button>
-        <button id="btnNext" disabled>次へ</button>
-      </div>
+    <div class="pager" style="margin: 0 0 8px 0;">
+      <button id="btnPrev" disabled>前へ</button>
+      <span id="pageInfo" class="small">ページ 1 / 10</span>
+      <button id="btnNext" disabled>次へ</button>
     </div>
     <div class="tableWrap">
       <table id="tbl">
@@ -131,24 +121,25 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-  import { getFirestore, collection, query, orderBy, limit, startAfter, onSnapshot, getDocs, where, Timestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+  import { getFirestore, collection, query, orderBy, limit, getDocs, startAfter } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
   const fbStatus = document.getElementById("fbStatus");
   const tbody = document.getElementById("tbody");
-  const btnNext = document.getElementById("btnNext");
-  const btnPrev = document.getElementById("btnPrev");
-  const btnRefresh = document.getElementById("btnRefresh");
-  const btnApply = document.getElementById("btnApply");
   const btnExport = document.getElementById("btnExport");
+  const btnReload = document.getElementById("btnReload");
+  const btnApply = document.getElementById("btnApply");
+  const btnPrev = document.getElementById("btnPrev");
+  const btnNext = document.getElementById("btnNext");
+  const pageInfo = document.getElementById("pageInfo");
+  const errEl = document.getElementById("err");
+  const countEl = document.getElementById("count");
+
+  const lineSel = document.getElementById("lineSel");
+  const slicedSel = document.getElementById("slicedSel");
+  const judgeSel = document.getElementById("judgeSel");
+  const lockSel = document.getElementById("lockSel");
   const dateFrom = document.getElementById("dateFrom");
   const dateTo = document.getElementById("dateTo");
-  const lineInput = document.getElementById("lineInput");
-  const slicedInput = document.getElementById("slicedInput");
-  const kw = document.getElementById("kw");
-  const resultSel = document.getElementById("resultSel");
-  const liveToggle = document.getElementById("liveToggle");
-  const errEl = document.getElementById("err");
-  const idxHint = document.getElementById("idxHint");
 
   const app = initializeApp({
     apiKey: "AIzaSyDb62GTdYU_zksCYiQyr9-WERZLFrztJ1U",
@@ -159,118 +150,149 @@
   const db = getFirestore(app);
 
   function setFbStatus(t, c){ fbStatus.textContent = "Firebase: " + t; fbStatus.style.color = c; }
+  try{ await signInAnonymously(auth); setFbStatus("接続済み", "#16a34a"); }catch(e){ console.warn(e); setFbStatus("未接続", "#d1242f"); }
 
-  try{ await signInAnonymously(auth); setFbStatus("接続済み", "#16a34a"); }
-  catch(e){ console.warn(e); setFbStatus("未接続", "#d1242f"); }
+  const PER_PAGE = 2000;
+  const MAX_PAGES = 10;
 
-  let pageStack = []; let lastDoc = null; let unsub = null;
-  function clearTable(){ tbody.innerHTML = ""; }
+  let currentPage = 1;
+  let pageCursors = [null]; // pageCursors[i] = lastDoc of page i (i starting at 0 for page1 preceding cursor)
+  let currentDocs = [];     // docs of current page (raw, unfiltered)
+
   function pill(j){ const s=document.createElement("span"); s.className="pill "+(j==="OK"?"ok":j==="NG"?"ng":"warn"); s.textContent=j; return s; }
-  function addRow(d){
-    const tr=document.createElement("tr");
-    tr.innerHTML=`
-      <td class="nowrap">${(d.ts||"")}</td>
-      <td>${(d.line||"")}</td>
-      <td>${(d.raw||d.qrData||"")}</td>
-      <td class="nowrap">${(d.sliced||"")}</td>
-      <td class="nowrap"></td>
-      <td class="nowrap">${(d.lockState||"")}</td>
-    `;
-    tr.children[4].appendChild(pill(d.judge||d.result||""));
-    tbody.appendChild(tr);
+  function clearTable(){ tbody.innerHTML=""; }
+
+  function parseClientDate(tsStr){
+    if (!tsStr) return null;
+    const m = tsStr.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    const [_, y, mo, d, h, mi, s] = m.map(Number);
+    return new Date(y, mo-1, d, h, mi, s);
   }
 
-  function buildQuery({cursor=null}={}){
-    const col = collection(db, "qrLogs");
-    let qRef = query(col, orderBy("readAt","desc"), limit(50));
-
-    const fromVal = dateFrom.value ? Timestamp.fromDate(new Date(dateFrom.value + "T00:00:00")) : null;
-    const toVal = dateTo.value ? Timestamp.fromDate(new Date(dateTo.value + "T23:59:59")) : null;
-    if (fromVal) qRef = query(qRef, where("readAt", ">=", fromVal));
-    if (toVal) qRef = query(qRef, where("readAt", "<=", toVal));
-
-    const lineVal = lineInput.value.trim();
-    if (lineVal) qRef = query(qRef, where("line", "==", lineVal));
-
-    const slicedVal = slicedInput.value.trim();
-    if (slicedVal) qRef = query(qRef, where("sliced", "==", slicedVal));
-
-    if (cursor) qRef = query(qRef, startAfter(cursor));
-    return qRef;
+  function uniqueSorted(values){
+    return Array.from(new Set(values.filter(v => v != null && v !== ""))).sort((a, b) => {
+      const sa=String(a), sb=String(b);
+      return sa.localeCompare(sb, "ja");
+    });
   }
 
-  async function fetchPage({cursor=null, live=false}={}){
-    errEl.style.display = "none"; idxHint.style.display = "none";
-    if (unsub){ unsub(); unsub=null; }
+  function populateSelectors(data){
+    const lines = uniqueSorted(data.map(r => r.line || ""));
+    const sliced = uniqueSorted(data.map(r => r.sliced || ""));
+
+    const fill = (sel, arr) => {
+      const cur = sel.value;
+      sel.innerHTML = "<option value=''>すべて</option>" + arr.map(v => `<option value="${String(v).replace(/"/g, '&quot;')}">${v}</option>`).join("");
+      if (cur && arr.includes(cur)){ sel.value = cur; }
+    };
+    fill(lineSel, lines);
+    fill(slicedSel, sliced);
+  }
+
+  function applyFilters(){
+    errEl.style.display="none";
+    const fLine = lineSel.value.trim();
+    const fSliced = slicedSel.value.trim();
+    const fJudge = judgeSel.value.trim();
+    const fLock  = lockSel.value.trim();
+
+    let fromDate = null, toDate = null;
+    if (dateFrom.value){ fromDate = new Date(dateFrom.value + "T00:00:00"); }
+    if (dateTo.value){ toDate = new Date(dateTo.value + "T23:59:59"); }
+
+    const filtered = currentDocs.filter(r => {
+      if (fLine && r.line !== fLine) return false;
+      if (fSliced && r.sliced !== fSliced) return false;
+      const judge = r.judge || r.result || "";
+      if (fJudge && judge !== fJudge) return false;
+      const lockState = r.lockState || "";
+      if (fLock && lockState !== fLock) return false;
+
+      let dt = null;
+      if (r.ts){ dt = parseClientDate(r.ts); }
+      if (!dt && r.readAt && r.readAt.seconds){ dt = new Date(r.readAt.seconds*1000); }
+      if (fromDate && dt && dt < fromDate) return false;
+      if (toDate && dt && dt > toDate) return false;
+      return true;
+    });
+
+    renderTable(filtered);
+  }
+
+  function renderTable(rows){
     clearTable();
-
-    let qRef;
-    try {
-      qRef = buildQuery({cursor});
-    } catch(e){
-      showIndexHelp(e); // unlikely here
-      return;
+    for (const d of rows){
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
+        <td class="nowrap">${d.ts||""}</td>
+        <td>${d.line||""}</td>
+        <td>${d.raw||d.qrData||""}</td>
+        <td class="nowrap">${d.sliced||""}</td>
+        <td class="nowrap"></td>
+        <td class="nowrap">${d.lockState||""}</td>
+      `;
+      tr.children[4].appendChild(pill(d.judge||d.result||""));
+      tbody.appendChild(tr);
     }
+    document.getElementById("count").textContent = `表示件数：${rows.length}（このページ全体：${currentDocs.length}）`;
+  }
 
-    const applyClientFilter = (rows)=>{
-      const kwVal = kw.value.trim().toLowerCase();
-      const resVal = resultSel.value;
-      return rows.filter(r => {
-        const hitKw = !kwVal || JSON.stringify(r).toLowerCase().includes(kwVal);
-        const hitRes = !resVal || (r.judge===resVal || r.result===resVal);
-        return hitKw && hitRes;
-      });
-    };
+  async function fetchPage(pageNum){
+    errEl.style.display="none";
+    clearTable();
+    document.getElementById("count").textContent = "読み込み中…";
+    pageInfo.textContent = `ページ ${pageNum} / ${MAX_PAGES}`;
 
-    const handleSnapshot = (snap) => {
-      clearTable();
-      if (snap.empty){
-        lastDoc = null; btnNext.disabled = true; btnPrev.disabled = pageStack.length===0; return;
-      }
-      const rows = []; snap.forEach(doc => rows.push({id:doc.id, ...doc.data()}));
-      applyClientFilter(rows).forEach(addRow);
-      lastDoc = snap.docs[snap.docs.length-1];
-      btnNext.disabled = snap.size < 50;
-      btnPrev.disabled = pageStack.length === 0;
-    };
+    try{
+      const col = collection(db, "qrLogs");
+      let qRef = query(col, orderBy("readAt","desc"), limit(PER_PAGE));
 
-    if (live){
-      try { unsub = onSnapshot(qRef, handleSnapshot, err => showIndexHelp(err)); }
-      catch(e){ showIndexHelp(e); }
-    } else {
-      try { const snap = await getDocs(qRef); handleSnapshot(snap); }
-      catch(e){ showIndexHelp(e); }
+      // startAfterは「前のページの最終ドキュメント」を使う
+      const cursor = pageCursors[pageNum-1] || null;
+      if (cursor) qRef = query(qRef, startAfter(cursor));
+
+      const snap = await getDocs(qRef);
+      currentDocs = [];
+      snap.forEach(doc => currentDocs.push({ id: doc.id, ...doc.data() }));
+
+      // 次ページに進むためのカーソルを保存（このページの最後のDoc）
+      const lastDoc = snap.docs[snap.docs.length-1] || null;
+      pageCursors[pageNum] = lastDoc; // pageNumの終端
+
+      // UI制御
+      btnPrev.disabled = (pageNum === 1);
+      // 次ページは「lastDocが存在 かつ pageNum < MAX_PAGES」なら有効
+      btnNext.disabled = !(lastDoc && pageNum < MAX_PAGES);
+
+      // セレクタ候補はこのページのデータから生成
+      populateSelectors(currentDocs);
+      applyFilters();
+    }catch(e){
+      console.warn(e);
+      errEl.style.display="block";
+      errEl.textContent = "読み込みに失敗しました。インデックス（readAt desc）が必要な場合は作成してください。";
+      document.getElementById("count").textContent = "";
     }
   }
 
-  function showIndexHelp(e){
-    console.warn("Query error:", e);
-    errEl.style.display = "block";
-    errEl.textContent = "クエリに失敗しました。インデックスが必要な可能性があります。日付/ライン/切出の組合せで発生します。";
-    idxHint.style.display = "block";
-  }
-
-  btnNext.addEventListener("click", async () => {
-    if (!lastDoc) return;
-    pageStack.push(lastDoc);
-    await fetchPage({cursor:lastDoc, live: liveToggle.checked});
+  // イベント
+  btnApply.addEventListener("click", applyFilters);
+  btnReload.addEventListener("click", async () => {
+    currentPage = 1;
+    pageCursors = [null];
+    await fetchPage(currentPage);
   });
   btnPrev.addEventListener("click", async () => {
-    if (pageStack.length === 0) return;
-    pageStack.pop();
-    const prevCursor = pageStack[pageStack.length-1] || null;
-    await fetchPage({cursor:prevCursor, live: liveToggle.checked});
+    if (currentPage <= 1) return;
+    currentPage -= 1;
+    await fetchPage(currentPage);
   });
-  btnRefresh.addEventListener("click", async () => {
-    pageStack = [];
-    await fetchPage({cursor:null, live: liveToggle.checked});
-  });
-  btnApply.addEventListener("click", async () => {
-    pageStack = [];
-    await fetchPage({cursor:null, live: liveToggle.checked});
-  });
-  liveToggle.addEventListener("change", async () => {
-    await fetchPage({cursor: pageStack[pageStack.length-1] || null, live: liveToggle.checked});
+  btnNext.addEventListener("click", async () => {
+    if (currentPage >= MAX_PAGES) return;
+    // 次ページ用カーソルが用意されていない場合でも、fetchPage内でpageCursors[currentPage]を更新済み
+    currentPage += 1;
+    await fetchPage(currentPage);
   });
 
   btnExport.addEventListener("click", () => {
@@ -286,11 +308,12 @@
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "qrLogs_export_line_sliced.csv"; a.click();
+    a.href = url; a.download = `qrLogs_p${currentPage}_filtered.csv`; a.click();
     URL.revokeObjectURL(url);
   });
 
-  fetchPage({live:false});
+  // 初回ロード（1ページ目）
+  fetchPage(currentPage);
 </script>
 
 </body>
