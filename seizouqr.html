@@ -28,10 +28,11 @@
   .ok { color: var(--ok); }
   .ng { color: var(--ng); }
   .lock { display:none; margin-top:10px; color: var(--ng); font-weight:700; }
-  .btn { padding:10px 14px; border-radius:12px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:14px; margin:5px; }
+  .btn { padding:10px 14px; border-radius:12px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:14px; margin:5px; transition:opacity .15s ease; }
   .btn.warn { background:#fef3f2; color:#b42318; border-color:#fecdcf; }
   .btn.big { font-size:18px; padding:16px 22px; border-width:2px; }
   .btn.big.primary { background:#0b3b75; color:#fff; border-color:#0b3b75; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
   .status { font-size:15px; color:var(--muted); margin-top:12px; }
   .rightTools { margin-left:auto; display:flex; gap:8px; align-items:center; }
   .small { font-size:12px; color:#6b7280; }
@@ -46,7 +47,7 @@
 <body>
 <header>
   <h1>QR照合システム（1対N）</h1>
-  <div class="sub">スキャナはキーボード入力（末尾Enter）</div>
+  <div class="sub">スキャナはキーボード入力（末尾Enter/Tab）</div>
   <div class="rightTools">
     <span id="firebaseStatus" class="badge" style="color:#9ca3af;">Firebase: 未接続</span>
     <button id="pickDirBtn" class="toolBtn" tabindex="-1">画像フォルダを選択</button>
@@ -117,11 +118,11 @@ const $productImage = document.getElementById("productImage");
 const $imgHint = document.getElementById("imgHint");
 const $prodState = document.getElementById("prodState");
 const $scanInput = document.getElementById("scanInput");
+const $resetBtn = document.getElementById("resetBtn");
 
-/* ------------------ フォーカス（常時維持） ------------------ */
+/* ------------------ フォーカス（常時維持。値は消さない） ------------------ */
 function focusScanField(){
   if (document.activeElement !== $scanInput){
-    $scanInput.value = "";
     $scanInput.focus({ preventScroll: true });
   }
 }
@@ -142,7 +143,12 @@ function cutQR(qr){ return qr.substr(CUT_START, CUT_LENGTH).replace(/\s+/g,""); 
 function showOK(){ $ok.style.display="block"; $ng.style.display="none"; setTimeout(()=>{$ok.style.display="none";},1500); }
 function showNGPersistent(){ $ok.style.display="none"; $ng.style.display="block"; }
 function clearMarks(){ $ok.style.display="none"; $ng.style.display="none"; }
-function setLock(state){ isLocked=state; $lockMsg.style.display=state?"block":"none"; if(!state) clearMarks(); }
+function setLock(state){
+  isLocked=state;
+  $lockMsg.style.display=state?"block":"none";
+  $resetBtn.disabled = state;              // NGロック中は「製品切替え」不可
+  if(!state) clearMarks();
+}
 function updateBaseDisplay(val){ if(val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent=val; } else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent="未設定"; } }
 function setProdStateRunning(){ $prodState.textContent="生産中"; $prodState.style.background="#e6ffed"; $prodState.style.borderColor="#abdfb6"; }
 function setProdStateSetup(){ $prodState.textContent="未開始"; $prodState.style.background="#f1f5f9"; $prodState.style.borderColor="#cbd5e1"; }
@@ -176,13 +182,34 @@ async function findImageURLByBase(base){
 }
 function showImage(url){ if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; } }
 
-/* ------------------ QR入力（Enter終端） ------------------ */
+/* ------------------ スキャン文字列構築（Enter/Tab or Idleで確定） ------------------ */
+let idleTimer = null;
+const IDLE_MS = 120; // スキャナは高速入力なので短めの無入力で確定
+
 $scanInput.addEventListener("keydown", e => {
-  if (e.key === "Enter"){
-    const qr = $scanInput.value.trim();
+  if (e.key === "Enter" || e.key === "Tab"){
+    e.preventDefault();
+    let raw = $scanInput.value;
+    // スキャナによっては \r\n が含まれる
+    raw = raw.replace(/\r/g,"");
+    // 複数行混入時は最後の非空行を採用
+    const parts = raw.split("\n").map(s=>s.trim()).filter(Boolean);
+    const qr = parts.length ? parts[parts.length-1] : raw.trim();
     $scanInput.value = "";
     if (qr.length > 0) processQR(qr);
   }
+});
+
+$scanInput.addEventListener("input", () => {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    // Enterが付いてこないタイプのスキャナ対策（最終手段）
+    const s = $scanInput.value.trim();
+    if (s.length > 0) {
+      $scanInput.value = "";
+      processQR(s);
+    }
+  }, IDLE_MS);
 });
 
 async function processQR(qrRaw){
@@ -226,6 +253,12 @@ async function processQR(qrRaw){
 
 /* ------------------ ボタン ------------------ */
 document.getElementById("resetBtn").addEventListener("click", () => {
+  if (isLocked){
+    $mode.textContent = "NGロック中は切替できません。管理者QRで解除してください。";
+    logRow([nowString(), "-", "-", "RESET_DENIED_WHEN_LOCKED", "LOCKED", ""]);
+    focusScanField();
+    return;
+  }
   baseQR=null; setLock(false); clearMarks(); updateBaseDisplay(null);
   setProdStateSetup();
   $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.textContent="画像フォルダを選択すると表示されます";
