@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>1対N QR照合システム</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666; --border:#e5e7eb; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; color:var(--fg); margin:0; background:#f7f7f8; }
+  header { background:#fff; border-bottom:1px solid var(--border); padding:16px 20px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  h1 { margin:0; font-size:22px;}
+  .sub { color:var(--muted); font-size:13px; }
+  main { max-width: 1100px; margin: 20px auto; padding: 0 16px 40px; }
+  .card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:18px; }
+  .bigLabel { font-size:20px; color:#111; margin-bottom:8px; font-weight:700; }
+  .baseWrap { display:grid; grid-template-columns: 1.2fr .8fr; gap:16px; align-items:stretch; }
+  @media (max-width: 900px){ .baseWrap { grid-template-columns: 1fr; } }
+  .baseBox { border:2px dashed #cbd5e1; border-radius:16px; background:#fbfdff; padding:16px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
+  .baseHeading { font-size:20px; color:#0f172a; margin-bottom:6px; }
+  .baseValue { font-weight:800; font-size: clamp(70px, 10vw, 140px); color:#0b3b75; word-break: break-all; }
+  .placeholder { color:#94a3b8; }
+  .imgBox { border:2px dashed #e5e7eb; border-radius:16px; background:#fff; padding:10px; display:flex; align-items:center; justify-content:center; min-height:220px; }
+  #productImage { max-width:100%; max-height:320px; object-fit:contain; display:none; }
+  .imgHint { color:#9ca3af; font-size:13px; text-align:center; }
+  .resultArea { text-align:center; padding: 12px 10px 0; }
+  .resultMark { font-size:300px; line-height:1; display:none; }
+  .ok { color: var(--ok); }
+  .ng { color: var(--ng); }
+  .lock { display:none; margin-top:10px; color: var(--ng); font-weight:700; }
+  .btn { padding:10px 14px; border-radius:12px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:14px; margin:5px; }
+  .btn.warn { background:#fef3f2; color:#b42318; border-color:#fecdcf; }
+  .status { font-size:15px; color:var(--muted); margin-top:12px; }
+  .rightTools { margin-left:auto; display:flex; gap:8px; align-items:center; }
+  .small { font-size:12px; color:#6b7280; }
+  footer { text-align:center; color:#9ca3af; font-size:12px; padding: 16px 0; }
+  input[type="file"]{ display:none; }
+  .toolBtn { padding:6px 10px; border-radius:10px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:13px; }
+  .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #d1d5db; }
+</style>
+</head>
+<body>
+<header>
+  <h1>QR照合システム（1対N）</h1>
+  <div class="sub">スキャナはキーボード入力（末尾Enter）</div>
+  <div class="rightTools">
+    <span id="firebaseStatus" class="badge" style="color:#9ca3af;">Firebase: 未接続</span>
+    <button id="pickDirBtn" class="toolBtn">画像フォルダを選択</button>
+    <label class="toolBtn" for="folderInput">画像を一括読み込み</label>
+    <input id="folderInput" type="file" webkitdirectory multiple />
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <div class="bigLabel">生産中品番</div>
+
+    <div class="baseWrap">
+      <div class="baseBox">
+        <div class="baseHeading">（段替え中）</div>
+        <div id="baseDisplay" class="baseValue placeholder">未設定</div>
+      </div>
+
+      <div class="imgBox">
+        <img id="productImage" alt="基準品番の画像" />
+        <div id="imgHint" class="imgHint">画像フォルダを選択すると、基準QRに対応した画像を表示します（ファイル名＝切り出し値）</div>
+      </div>
+    </div>
+
+    <div class="resultArea">
+      <div id="ok" class="resultMark ok">○</div>
+      <div id="ng" class="resultMark ng">×</div>
+      <div id="lockMsg" class="lock">NG！ 管理者QRを読み込むまでロック中</div>
+    </div>
+
+    <div>
+      <button id="resetBtn" class="btn">製品切替え</button>
+      <button id="saveBtn" class="btn">ログ保存（CSV）</button>
+      <button id="exitBtn" class="btn warn">システム終了（自動保存）</button>
+    </div>
+
+    <div id="mode" class="status">基準QRを読み込んでください</div>
+    <div class="small">切り出し固定：開始=3、長さ=5（画像検索時は空白を除去）</div>
+  </section>
+</main>
+
+<footer>© QR Verify</footer>
+
+<script>
+/* ------------------ 固定設定 ------------------ */
+const CUT_START = 3;
+const CUT_LENGTH = 5;
+const ADMIN_QR = "ADMIN123"; // 管理者コード（非表示／固定）
+
+/* ------------------ 状態 ------------------ */
+let baseQR = null;
+let isLocked = false;
+let buffer = "";
+let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像ファイル"]];
+let imageDirHandle = null;
+const imageMap = new Map();
+
+/* ------------------ 要素参照 ------------------ */
+const $mode = document.getElementById("mode");
+const $ok = document.getElementById("ok");
+const $ng = document.getElementById("ng");
+const $lockMsg = document.getElementById("lockMsg");
+const $baseDisplay = document.getElementById("baseDisplay");
+const $productImage = document.getElementById("productImage");
+const $imgHint = document.getElementById("imgHint");
+
+/* ------------------ ユーティリティ ------------------ */
+function nowString(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+// ★切り出し値からスペースを除去
+function cutQR(qr){ 
+  return qr.substr(CUT_START, CUT_LENGTH).replace(/\s+/g,"");
+}
+
+function showOK(){
+  $ok.style.display = "block";
+  $ng.style.display = "none";
+  setTimeout(()=>{ $ok.style.display="none"; }, 1500);
+}
+function showNGPersistent(){
+  $ok.style.display = "none";
+  $ng.style.display = "block"; // 解除まで表示
+}
+function clearMarks(){ $ok.style.display="none"; $ng.style.display="none"; }
+
+function setLock(state){
+  isLocked = state;
+  $lockMsg.style.display = state ? "block" : "none";
+  if (!state) clearMarks();
+}
+function updateBaseDisplay(val){
+  if (val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent = val; }
+  else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent = "未設定"; }
+}
+function csvEscape(field){
+  const s = String(field ?? "");
+  if (/[\",\n]/.test(s)) return `"${s.replace(/\"/g,'\"\"')}"`;
+  return s;
+}
+function buildCSV(rows){ return rows.map(r=>r.map(csvEscape).join(",")).join("\n"); }
+function downloadCSV(rows, baseName="qr_log"){
+  const ts=new Date(); const pad=n=>String(n).padStart(2,"0");
+  const name=`${baseName}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.csv`;
+  const csv=buildCSV(rows);
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download=name; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ------------------ 画像処理 ------------------ */
+async function pickImageDirectory(){
+  if (!window.showDirectoryPicker){ alert("このブラウザはフォルダ選択APIに未対応です。"); return; }
+  try{
+    imageDirHandle = await window.showDirectoryPicker({id:"qr-image-dir", mode:"read"});
+    $imgHint.textContent = "フォルダ選択済み：基準値と同名の画像を表示します";
+  }catch(e){ console.warn(e); }
+}
+async function findImageURLByBase(base){
+  if (imageDirHandle){
+    const exts = [".png",".jpg",".jpeg",".webp",".bmp",".gif"];
+    for await (const entry of imageDirHandle.values()){
+      if (entry.kind==="file"){
+        const nameLower = entry.name.toLowerCase();
+        if (exts.some(ext => nameLower === (base.toLowerCase()+ext))){
+          const file = await entry.getFile();
+          return { url: URL.createObjectURL(file), name: entry.name };
+        }
+      }
+    }
+  }
+  for (const [name,url] of imageMap.entries()){
+    const lower=name.toLowerCase();
+    if (lower.startsWith(base.toLowerCase()+".")) return { url, name };
+  }
+  return null;
+}
+function showImage(url){
+  if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; }
+}
+
+/* ------------------ QR入力処理 ------------------ */
+document.addEventListener("keydown", e => {
+  if (e.key==="Enter"){
+    const qr=buffer.trim(); buffer="";
+    if (qr.length>0) processQR(qr);
+  } else if (e.key.length===1){ buffer+=e.key; }
+});
+
+async function processQR(qrRaw){
+  const now=nowString();
+  const sliced=cutQR(qrRaw);
+
+  if (!baseQR){
+    baseQR=sliced;
+    updateBaseDisplay(baseQR);
+    $mode.textContent=`照合モード（基準QR: ${baseQR}）`;
+
+    let imgName="";
+    try{
+      const found=await findImageURLByBase(baseQR);
+      if (found){ showImage(found.url); imgName=found.name; }
+      else { $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.textContent=`画像未検出：${baseQR}.*`; }
+    }catch(e){ console.warn(e); }
+
+    logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imgName]);
+    return;
+  }
+
+  if (isLocked){
+    if (qrRaw===ADMIN_QR){
+      setLock(false);
+      showOK();
+      $mode.textContent="解除されました。照合を再開します。";
+      logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", ""]);
+    } else {
+      showNGPersistent();
+      logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", ""]);
+    }
+    return;
+  }
+
+  const judgedOK=(sliced===baseQR);
+  if (judgedOK){
+    showOK();
+    logRow([now, qrRaw, sliced, "OK", "UNLOCK", ""]);
+  } else {
+    showNGPersistent();
+    setLock(true);
+    $mode.textContent="NG！管理者QRを読み込んでください";
+    logRow([now, qrRaw, sliced, "NG", "LOCKED", ""]);
+  }
+}
+
+/* ------------------ ボタン ------------------ */
+document.getElementById("resetBtn").addEventListener("click", () => {
+  baseQR=null; setLock(false); clearMarks(); updateBaseDisplay(null);
+  $productImage.style.display="none"; $imgHint.style.display="block";
+  $imgHint.textContent="画像フォルダを選択すると表示されます";
+  $mode.textContent="基準QRを読み込んでください";
+  logRow([nowString(), "-", "-", "RESET", "UNLOCK", ""]);
+});
+document.getElementById("saveBtn").addEventListener("click", () => { downloadCSV(logData); });
+document.getElementById("exitBtn").addEventListener("click", () => { downloadCSV(logData,"qr_log"); window.close(); });
+
+document.getElementById("pickDirBtn").addEventListener("click", pickImageDirectory);
+document.getElementById("folderInput").addEventListener("change", e => {
+  imageMap.clear();
+  const files=Array.from(e.target.files||[]);
+  for (const f of files){ imageMap.set(f.name, URL.createObjectURL(f)); }
+  $imgHint.textContent="画像を読み込み済み：基準値と同名の画像を表示します";
+});
+
+/* ------------------ Firestore 連携（UIは変更せず裏で記録） ------------------ */
+</script>
+
+<!-- Firebase SDK を最後に読み込み。UIは元のまま。接続ステータスを更新 -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  // プロジェクト（miyama-seizo）
+  const firebaseConfig = {
+    apiKey: "AIzaSyDb62GTdYU_zksCYiQyr9-WERZLFrztJ1U",
+    authDomain: "miyama-seizo.firebaseapp.com",
+    projectId: "miyama-seizo",
+    storageBucket: "miyama-seizo.firebasestorage.app",
+    messagingSenderId: "629270415183"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const statusEl = document.getElementById("firebaseStatus");
+  function setStatus(text, color){ statusEl.textContent = `Firebase: ${text}`; statusEl.style.color = color; }
+
+  try {
+    await signInAnonymously(auth);
+    setStatus("接続済み", "#16a34a"); // 緑
+  } catch(e){
+    console.warn("匿名認証に失敗:", e);
+    setStatus("未接続（認証エラー）", "#dc2626"); // 赤
+  }
+
+  // 既存のログ追加関数を拡張（CSV保存 + Firestore書き込み + エラーハンドリング）
+  window.logRow = async function(row){
+    try {
+      // CSV配列へ追加（元仕様維持）
+      logData.push(row);
+
+      // Firestoreへ保存
+      const [ts, raw, sliced, judge, lockState, imageFile] = row;
+      await addDoc(collection(db, "qrLogs"), {
+        ts, raw, sliced, judge, lockState, imageFile,
+        readAt: serverTimestamp(),
+        uid: (auth.currentUser && auth.currentUser.uid) || null,
+        pageUrl: location.href,
+        userAgent: navigator.userAgent
+      });
+    } catch(e){
+      console.warn("Firestore書き込み失敗:", e);
+      setStatus("エラー発生（保存失敗）", "#dc2626"); // 赤
+    }
+  };
+</script>
+</body>
+</html>
