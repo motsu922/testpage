@@ -5,7 +5,7 @@
 <title>1対N QR照合システム</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  :root { --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666; --border:#e5e7eb; }
+  :root { --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666; --border:#e5e7eb; --primary:#0b3b75; }
   body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; color:var(--fg); margin:0; background:#f7f7f8; }
   header { background:#fff; border-bottom:1px solid var(--border); padding:16px 20px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
   h1 { margin:0; font-size:22px;}
@@ -17,7 +17,8 @@
   @media (max-width: 900px){ .baseWrap { grid-template-columns: 1fr; } }
   .baseBox { border:2px dashed #cbd5e1; border-radius:16px; background:#fbfdff; padding:16px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
   .baseHeading { font-size:20px; color:#0f172a; margin-bottom:6px; }
-  .baseValue { font-weight:800; font-size: clamp(70px, 10vw, 140px); color:#0b3b75; word-break: break-all; }
+  .baseHeading .statusChip { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; border:1px solid #cbd5e1; background:#f1f5f9; margin-left:6px; }
+  .baseValue { font-weight:800; font-size: clamp(70px, 10vw, 140px); color:var(--primary); word-break: break-all; }
   .placeholder { color:#94a3b8; }
   .imgBox { border:2px dashed #e5e7eb; border-radius:16px; background:#fff; padding:10px; display:flex; align-items:center; justify-content:center; min-height:220px; }
   #productImage { max-width:100%; max-height:320px; object-fit:contain; display:none; }
@@ -29,6 +30,8 @@
   .lock { display:none; margin-top:10px; color: var(--ng); font-weight:700; }
   .btn { padding:10px 14px; border-radius:12px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:14px; margin:5px; }
   .btn.warn { background:#fef3f2; color:#b42318; border-color:#fecdcf; }
+  .btn.big { font-size:18px; padding:16px 22px; border-width:2px; }
+  .btn.big.primary { background:#0b3b75; color:#fff; border-color:#0b3b75; }
   .status { font-size:15px; color:var(--muted); margin-top:12px; }
   .rightTools { margin-left:auto; display:flex; gap:8px; align-items:center; }
   .small { font-size:12px; color:#6b7280; }
@@ -36,6 +39,8 @@
   input[type="file"]{ display:none; }
   .toolBtn { padding:6px 10px; border-radius:10px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:13px; }
   .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #d1d5db; }
+  /* 隠しスキャン入力 */
+  #scanInput { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
 </style>
 </head>
 <body>
@@ -50,13 +55,16 @@
   </div>
 </header>
 
+<!-- 隠しのスキャン入力（フォーカス対象） -->
+<input id="scanInput" type="text" autocomplete="off" />
+
 <main>
   <section class="card">
     <div class="bigLabel">生産中品番</div>
 
     <div class="baseWrap">
       <div class="baseBox">
-        <div class="baseHeading">（段替え中）</div>
+        <div class="baseHeading">（段替え中）<span id="prodState" class="statusChip">未開始</span></div>
         <div id="baseDisplay" class="baseValue placeholder">未設定</div>
       </div>
 
@@ -73,7 +81,7 @@
     </div>
 
     <div>
-      <button id="resetBtn" class="btn">製品切替え</button>
+      <button id="resetBtn" class="btn big primary">製品切替え</button>
       <button id="saveBtn" class="btn">ログ保存（CSV）</button>
       <button id="exitBtn" class="btn warn">システム終了（自動保存）</button>
     </div>
@@ -107,6 +115,15 @@ const $lockMsg = document.getElementById("lockMsg");
 const $baseDisplay = document.getElementById("baseDisplay");
 const $productImage = document.getElementById("productImage");
 const $imgHint = document.getElementById("imgHint");
+const $baseHeading = document.querySelector(".baseHeading");
+const $prodState = document.getElementById("prodState");
+const $scanInput = document.getElementById("scanInput");
+
+/* ------------------ フォーカス操作 ------------------ */
+function focusScanField(){
+  $scanInput.value = "";
+  $scanInput.focus({ preventScroll: true });
+}
 
 /* ------------------ ユーティリティ ------------------ */
 function nowString(){
@@ -139,6 +156,18 @@ function setLock(state){
 function updateBaseDisplay(val){
   if (val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent = val; }
   else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent = "未設定"; }
+}
+function setProdStateRunning(){
+  $baseHeading.firstChild.textContent = "生産中";
+  $prodState.textContent = "生産中";
+  $prodState.style.background = "#e6ffed";
+  $prodState.style.borderColor = "#abdfb6";
+}
+function setProdStateSetup(){
+  $baseHeading.firstChild.textContent = "（段替え中）";
+  $prodState.textContent = "未開始";
+  $prodState.style.background = "#f1f5f9";
+  $prodState.style.borderColor = "#cbd5e1";
 }
 function csvEscape(field){
   const s = String(field ?? "");
@@ -187,12 +216,25 @@ function showImage(url){
   if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; }
 }
 
-/* ------------------ QR入力処理 ------------------ */
+/* ------------------ QR入力（スキャナ） ------------------ */
+// 1) 隠し入力にフォーカスし、そこでKeydownを拾ってバッファに貯める
+$scanInput.addEventListener("keydown", e => {
+  if (e.key === "Enter"){
+    const qr = $scanInput.value.trim();
+    $scanInput.value = "";
+    if (qr.length > 0) processQR(qr);
+  } else if (e.key.length === 1){
+    // バッファ併用（安全策）
+    buffer += e.key;
+  }
+});
+// 2) ドキュメント側にも保険でリスナーを入れておく（scanInputにフォーカス時のみ有効）
 document.addEventListener("keydown", e => {
+  if (document.activeElement !== $scanInput) return;
   if (e.key==="Enter"){
     const qr=buffer.trim(); buffer="";
     if (qr.length>0) processQR(qr);
-  } else if (e.key.length===1){ buffer+=e.key; }
+  }
 });
 
 async function processQR(qrRaw){
@@ -202,6 +244,7 @@ async function processQR(qrRaw){
   if (!baseQR){
     baseQR=sliced;
     updateBaseDisplay(baseQR);
+    setProdStateRunning();                 // ★ 生産中表示に切替
     $mode.textContent=`照合モード（基準QR: ${baseQR}）`;
 
     let imgName="";
@@ -212,6 +255,7 @@ async function processQR(qrRaw){
     }catch(e){ console.warn(e); }
 
     logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imgName]);
+    focusScanField(); // ★ 次の照合に備えてフォーカス維持
     return;
   }
 
@@ -225,6 +269,7 @@ async function processQR(qrRaw){
       showNGPersistent();
       logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", ""]);
     }
+    focusScanField();
     return;
   }
 
@@ -238,15 +283,18 @@ async function processQR(qrRaw){
     $mode.textContent="NG！管理者QRを読み込んでください";
     logRow([now, qrRaw, sliced, "NG", "LOCKED", ""]);
   }
+  focusScanField();
 }
 
 /* ------------------ ボタン ------------------ */
 document.getElementById("resetBtn").addEventListener("click", () => {
   baseQR=null; setLock(false); clearMarks(); updateBaseDisplay(null);
+  setProdStateSetup();                     // ★ 段替え中に戻す
   $productImage.style.display="none"; $imgHint.style.display="block";
   $imgHint.textContent="画像フォルダを選択すると表示されます";
   $mode.textContent="基準QRを読み込んでください";
   logRow([nowString(), "-", "-", "RESET", "UNLOCK", ""]);
+  focusScanField();                        // ★ クリック後にフォーカスをスキャン入力へ
 });
 document.getElementById("saveBtn").addEventListener("click", () => { downloadCSV(logData); });
 document.getElementById("exitBtn").addEventListener("click", () => { downloadCSV(logData,"qr_log"); window.close(); });
@@ -259,10 +307,13 @@ document.getElementById("folderInput").addEventListener("change", e => {
   $imgHint.textContent="画像を読み込み済み：基準値と同名の画像を表示します";
 });
 
+/* ------------------ 初期フォーカス ------------------ */
+window.addEventListener("load", focusScanField);
+
 /* ------------------ Firestore 連携（UIは変更せず裏で記録） ------------------ */
 </script>
 
-<!-- Firebase SDK を最後に読み込み。UIは元のまま。接続ステータスを更新 -->
+<!-- Firebase SDK を最後に読み込み。接続ステータスを更新 -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
