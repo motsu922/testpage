@@ -49,14 +49,14 @@
   <div class="sub">スキャナはキーボード入力（末尾Enter）</div>
   <div class="rightTools">
     <span id="firebaseStatus" class="badge" style="color:#9ca3af;">Firebase: 未接続</span>
-    <button id="pickDirBtn" class="toolBtn">画像フォルダを選択</button>
-    <label class="toolBtn" for="folderInput">画像を一括読み込み</label>
+    <button id="pickDirBtn" class="toolBtn" tabindex="-1">画像フォルダを選択</button>
+    <label class="toolBtn" for="folderInput" tabindex="-1">画像を一括読み込み</label>
     <input id="folderInput" type="file" webkitdirectory multiple />
   </div>
 </header>
 
-<!-- 隠しのスキャン入力（フォーカス対象） -->
-<input id="scanInput" type="text" autocomplete="off" />
+<!-- 隠しのスキャン入力（常時フォーカス対象） -->
+<input id="scanInput" type="text" autocomplete="off" aria-hidden="true" />
 
 <main>
   <section class="card">
@@ -81,9 +81,9 @@
     </div>
 
     <div>
-      <button id="resetBtn" class="btn big primary">製品切替え</button>
-      <button id="saveBtn" class="btn">ログ保存（CSV）</button>
-      <button id="exitBtn" class="btn warn">システム終了（自動保存）</button>
+      <button id="resetBtn" class="btn big primary" tabindex="-1">製品切替え</button>
+      <button id="saveBtn" class="btn" tabindex="-1">ログ保存（CSV）</button>
+      <button id="exitBtn" class="btn warn" tabindex="-1">システム終了（自動保存）</button>
     </div>
 
     <div id="mode" class="status">基準QRを読み込んでください</div>
@@ -119,11 +119,21 @@ const $baseHeading = document.querySelector(".baseHeading");
 const $prodState = document.getElementById("prodState");
 const $scanInput = document.getElementById("scanInput");
 
-/* ------------------ フォーカス操作 ------------------ */
+/* ------------------ フォーカス（常時維持） ------------------ */
 function focusScanField(){
-  $scanInput.value = "";
-  $scanInput.focus({ preventScroll: true });
+  if (document.activeElement !== $scanInput){
+    $scanInput.value = "";
+    $scanInput.focus({ preventScroll: true });
+  }
 }
+window.addEventListener("load", focusScanField);
+window.addEventListener("focus", focusScanField);
+window.addEventListener("blur", () => setTimeout(focusScanField, 50));
+document.addEventListener("visibilitychange", () => setTimeout(focusScanField, 50));
+document.addEventListener("click", () => setTimeout(focusScanField, 0), true);
+document.addEventListener("touchend", () => setTimeout(focusScanField, 0), true);
+// 監視タイマー（最後の砦）
+setInterval(focusScanField, 800);
 
 /* ------------------ ユーティリティ ------------------ */
 function nowString(){
@@ -217,23 +227,11 @@ function showImage(url){
 }
 
 /* ------------------ QR入力（スキャナ） ------------------ */
-// 1) 隠し入力にフォーカスし、そこでKeydownを拾ってバッファに貯める
 $scanInput.addEventListener("keydown", e => {
   if (e.key === "Enter"){
     const qr = $scanInput.value.trim();
     $scanInput.value = "";
     if (qr.length > 0) processQR(qr);
-  } else if (e.key.length === 1){
-    // バッファ併用（安全策）
-    buffer += e.key;
-  }
-});
-// 2) ドキュメント側にも保険でリスナーを入れておく（scanInputにフォーカス時のみ有効）
-document.addEventListener("keydown", e => {
-  if (document.activeElement !== $scanInput) return;
-  if (e.key==="Enter"){
-    const qr=buffer.trim(); buffer="";
-    if (qr.length>0) processQR(qr);
   }
 });
 
@@ -244,7 +242,7 @@ async function processQR(qrRaw){
   if (!baseQR){
     baseQR=sliced;
     updateBaseDisplay(baseQR);
-    setProdStateRunning();                 // ★ 生産中表示に切替
+    setProdStateRunning();                 // 生産中表示に切替
     $mode.textContent=`照合モード（基準QR: ${baseQR}）`;
 
     let imgName="";
@@ -255,7 +253,7 @@ async function processQR(qrRaw){
     }catch(e){ console.warn(e); }
 
     logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imgName]);
-    focusScanField(); // ★ 次の照合に備えてフォーカス維持
+    focusScanField();
     return;
   }
 
@@ -289,31 +287,28 @@ async function processQR(qrRaw){
 /* ------------------ ボタン ------------------ */
 document.getElementById("resetBtn").addEventListener("click", () => {
   baseQR=null; setLock(false); clearMarks(); updateBaseDisplay(null);
-  setProdStateSetup();                     // ★ 段替え中に戻す
+  setProdStateSetup();                      // 段替え中に戻す
   $productImage.style.display="none"; $imgHint.style.display="block";
   $imgHint.textContent="画像フォルダを選択すると表示されます";
   $mode.textContent="基準QRを読み込んでください";
   logRow([nowString(), "-", "-", "RESET", "UNLOCK", ""]);
-  focusScanField();                        // ★ クリック後にフォーカスをスキャン入力へ
+  focusScanField();                         // クリック後にスキャン入力へ
 });
-document.getElementById("saveBtn").addEventListener("click", () => { downloadCSV(logData); });
+document.getElementById("saveBtn").addEventListener("click", () => { downloadCSV(logData); focusScanField(); });
 document.getElementById("exitBtn").addEventListener("click", () => { downloadCSV(logData,"qr_log"); window.close(); });
 
-document.getElementById("pickDirBtn").addEventListener("click", pickImageDirectory);
+document.getElementById("pickDirBtn").addEventListener("click", () => { pickImageDirectory(); setTimeout(focusScanField, 100); });
 document.getElementById("folderInput").addEventListener("change", e => {
   imageMap.clear();
   const files=Array.from(e.target.files||[]);
   for (const f of files){ imageMap.set(f.name, URL.createObjectURL(f)); }
   $imgHint.textContent="画像を読み込み済み：基準値と同名の画像を表示します";
+  setTimeout(focusScanField, 50);
 });
 
-/* ------------------ 初期フォーカス ------------------ */
-window.addEventListener("load", focusScanField);
-
-/* ------------------ Firestore 連携（UIは変更せず裏で記録） ------------------ */
 </script>
 
-<!-- Firebase SDK を最後に読み込み。接続ステータスを更新 -->
+<!-- Firebase SDK を最後に読み込み。接続ステータスを更新し、DBにアップロード -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
@@ -349,14 +344,19 @@ window.addEventListener("load", focusScanField);
       // CSV配列へ追加（元仕様維持）
       logData.push(row);
 
-      // Firestoreへ保存
+      // Firestoreへ保存（要求仕様：読み取ったQR、生日時刻、照合結果）
       const [ts, raw, sliced, judge, lockState, imageFile] = row;
       await addDoc(collection(db, "qrLogs"), {
+        // 既存構造（互換）
         ts, raw, sliced, judge, lockState, imageFile,
         readAt: serverTimestamp(),
         uid: (auth.currentUser && auth.currentUser.uid) || null,
         pageUrl: location.href,
-        userAgent: navigator.userAgent
+        userAgent: navigator.userAgent,
+        // 明示的に必要な三要素（ダブり保存で集計しやすく）
+        qrData: raw,
+        readAtText: ts,
+        result: judge
       });
     } catch(e){
       console.warn("Firestore書き込み失敗:", e);
