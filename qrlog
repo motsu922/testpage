@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>QRログ閲覧（ライン・切出フィルタ対応）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{ --fg:#111; --muted:#6b7280; --border:#e5e7eb; --bg:#f8fafc; --accent:#0b3b75; }
+  *{ box-sizing:border-box; }
+  body{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; margin:0; color:var(--fg); background:var(--bg); }
+  header{ background:#fff; border-bottom:1px solid var(--border); padding:12px 16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:10; }
+  h1{ font-size:20px; margin:0; }
+  .badge{ font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:#94a3b8; }
+  main{ padding:16px; }
+  .panel{ background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:16px; }
+  .row{ display:grid; gap:10px; grid-template-columns: repeat(6, minmax(140px,1fr)); align-items:end; }
+  @media (max-width: 1000px){ .row{ grid-template-columns: 1fr 1fr; } }
+  label{ font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
+  input, select{ border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:14px; background:#fff; width:100%; }
+  button{ border:1px solid var(--border); background:#fff; border-radius:10px; padding:8px 12px; cursor:pointer; font-size:14px; }
+  button.primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  table{ width:100%; border-collapse: collapse; }
+  th, td{ border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
+  th{ font-size:12px; color:var(--muted); position:sticky; top:0; background:#fff; z-index:5; }
+  tbody tr:hover{ background:#fafafa; }
+  .controls{ display:flex; gap:8px; align-items:center; margin-left:auto; }
+  .status{ font-size:12px; color:var(--muted); }
+  .pill{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); }
+  .ok{ background:#ebfbee; color:#1a7f37; border-color:#b7f0c0; }
+  .ng{ background:#fff5f5; color:#d1242f; border-color:#ffd0d5; }
+  .warn{ background:#fffbeb; color:#a16207; border-color:#fde68a; }
+  .error{ color:#d1242f; font-size:13px; }
+  .nowrap{ white-space:nowrap; }
+  .widen{ width: 100%; }
+  .grow{ grid-column: 1 / -1; }
+  .tableWrap{ max-height: 60vh; overflow:auto; border:1px solid var(--border); border-radius:10px; }
+  .small{ font-size:12px; color:var(--muted); }
+  .hint{ font-size:12px; color:#64748b; margin-top:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>QRログ閲覧（ライン・切出フィルタ対応）</h1>
+  <span id="fbStatus" class="badge">Firebase: 未接続</span>
+  <div class="controls">
+    <button id="btnExport">CSVエクスポート</button>
+    <button id="btnRefresh" class="primary">最新を再読込</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="row">
+      <div>
+        <label for="dateFrom">開始日</label>
+        <input id="dateFrom" type="date" />
+      </div>
+      <div>
+        <label for="dateTo">終了日</label>
+        <input id="dateTo" type="date" />
+      </div>
+      <div>
+        <label for="lineInput">生産ライン（完全一致）</label>
+        <input id="lineInput" type="text" placeholder="例：A1 / 第1ライン" />
+      </div>
+      <div>
+        <label for="slicedInput">切り出し（完全一致）</label>
+        <input id="slicedInput" type="text" placeholder="例：12345" />
+      </div>
+      <div>
+        <label for="resultSel">結果</label>
+        <select id="resultSel">
+          <option value="">すべて</option>
+          <option value="OK">OK</option>
+          <option value="NG">NG</option>
+          <option value="SET_BASE">SET_BASE</option>
+          <option value="RESET">RESET</option>
+          <option value="UNLOCK_BY_ADMIN">UNLOCK_BY_ADMIN</option>
+          <option value="LOCK_REJECT">LOCK_REJECT</option>
+        </select>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnApply">フィルター適用</button>
+      </div>
+      <div class="grow">
+        <label for="kw">キーワード（ゆるく横断検索／任意）</label>
+        <input id="kw" type="text" placeholder="例：NG / 12345 / A1 など" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <label class="small">
+          <input id="liveToggle" type="checkbox" />
+          リアルタイム更新
+        </label>
+      </div>
+    </div>
+    <div id="err" class="error" style="display:none; margin-top:6px;"></div>
+    <div id="idxHint" class="hint" style="display:none;">
+      フィルターによりインデックスが必要になる場合があります。エラーに表示されるURLから作成できます。作成後は数分で有効になります。
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row">
+      <div class="status">最大 50件 / ページ</div>
+      <div class="controls">
+        <button id="btnPrev" disabled>前へ</button>
+        <button id="btnNext" disabled>次へ</button>
+      </div>
+    </div>
+    <div class="tableWrap">
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th class="nowrap">端末時刻</th>
+            <th>生産ライン</th>
+            <th>QR(raw)</th>
+            <th class="nowrap">切出</th>
+            <th class="nowrap">結果</th>
+            <th class="nowrap">ロック</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import { getFirestore, collection, query, orderBy, limit, startAfter, onSnapshot, getDocs, where, Timestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  const fbStatus = document.getElementById("fbStatus");
+  const tbody = document.getElementById("tbody");
+  const btnNext = document.getElementById("btnNext");
+  const btnPrev = document.getElementById("btnPrev");
+  const btnRefresh = document.getElementById("btnRefresh");
+  const btnApply = document.getElementById("btnApply");
+  const btnExport = document.getElementById("btnExport");
+  const dateFrom = document.getElementById("dateFrom");
+  const dateTo = document.getElementById("dateTo");
+  const lineInput = document.getElementById("lineInput");
+  const slicedInput = document.getElementById("slicedInput");
+  const kw = document.getElementById("kw");
+  const resultSel = document.getElementById("resultSel");
+  const liveToggle = document.getElementById("liveToggle");
+  const errEl = document.getElementById("err");
+  const idxHint = document.getElementById("idxHint");
+
+  const app = initializeApp({
+    apiKey: "AIzaSyDb62GTdYU_zksCYiQyr9-WERZLFrztJ1U",
+    authDomain: "miyama-seizo.firebaseapp.com",
+    projectId: "miyama-seizo",
+  });
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  function setFbStatus(t, c){ fbStatus.textContent = "Firebase: " + t; fbStatus.style.color = c; }
+
+  try{ await signInAnonymously(auth); setFbStatus("接続済み", "#16a34a"); }
+  catch(e){ console.warn(e); setFbStatus("未接続", "#d1242f"); }
+
+  let pageStack = []; let lastDoc = null; let unsub = null;
+  function clearTable(){ tbody.innerHTML = ""; }
+  function pill(j){ const s=document.createElement("span"); s.className="pill "+(j==="OK"?"ok":j==="NG"?"ng":"warn"); s.textContent=j; return s; }
+  function addRow(d){
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td class="nowrap">${(d.ts||"")}</td>
+      <td>${(d.line||"")}</td>
+      <td>${(d.raw||d.qrData||"")}</td>
+      <td class="nowrap">${(d.sliced||"")}</td>
+      <td class="nowrap"></td>
+      <td class="nowrap">${(d.lockState||"")}</td>
+    `;
+    tr.children[4].appendChild(pill(d.judge||d.result||""));
+    tbody.appendChild(tr);
+  }
+
+  function buildQuery({cursor=null}={}){
+    const col = collection(db, "qrLogs");
+    let qRef = query(col, orderBy("readAt","desc"), limit(50));
+
+    const fromVal = dateFrom.value ? Timestamp.fromDate(new Date(dateFrom.value + "T00:00:00")) : null;
+    const toVal = dateTo.value ? Timestamp.fromDate(new Date(dateTo.value + "T23:59:59")) : null;
+    if (fromVal) qRef = query(qRef, where("readAt", ">=", fromVal));
+    if (toVal) qRef = query(qRef, where("readAt", "<=", toVal));
+
+    const lineVal = lineInput.value.trim();
+    if (lineVal) qRef = query(qRef, where("line", "==", lineVal));
+
+    const slicedVal = slicedInput.value.trim();
+    if (slicedVal) qRef = query(qRef, where("sliced", "==", slicedVal));
+
+    if (cursor) qRef = query(qRef, startAfter(cursor));
+    return qRef;
+  }
+
+  async function fetchPage({cursor=null, live=false}={}){
+    errEl.style.display = "none"; idxHint.style.display = "none";
+    if (unsub){ unsub(); unsub=null; }
+    clearTable();
+
+    let qRef;
+    try {
+      qRef = buildQuery({cursor});
+    } catch(e){
+      showIndexHelp(e); // unlikely here
+      return;
+    }
+
+    const applyClientFilter = (rows)=>{
+      const kwVal = kw.value.trim().toLowerCase();
+      const resVal = resultSel.value;
+      return rows.filter(r => {
+        const hitKw = !kwVal || JSON.stringify(r).toLowerCase().includes(kwVal);
+        const hitRes = !resVal || (r.judge===resVal || r.result===resVal);
+        return hitKw && hitRes;
+      });
+    };
+
+    const handleSnapshot = (snap) => {
+      clearTable();
+      if (snap.empty){
+        lastDoc = null; btnNext.disabled = true; btnPrev.disabled = pageStack.length===0; return;
+      }
+      const rows = []; snap.forEach(doc => rows.push({id:doc.id, ...doc.data()}));
+      applyClientFilter(rows).forEach(addRow);
+      lastDoc = snap.docs[snap.docs.length-1];
+      btnNext.disabled = snap.size < 50;
+      btnPrev.disabled = pageStack.length === 0;
+    };
+
+    if (live){
+      try { unsub = onSnapshot(qRef, handleSnapshot, err => showIndexHelp(err)); }
+      catch(e){ showIndexHelp(e); }
+    } else {
+      try { const snap = await getDocs(qRef); handleSnapshot(snap); }
+      catch(e){ showIndexHelp(e); }
+    }
+  }
+
+  function showIndexHelp(e){
+    console.warn("Query error:", e);
+    errEl.style.display = "block";
+    errEl.textContent = "クエリに失敗しました。インデックスが必要な可能性があります。日付/ライン/切出の組合せで発生します。";
+    idxHint.style.display = "block";
+  }
+
+  btnNext.addEventListener("click", async () => {
+    if (!lastDoc) return;
+    pageStack.push(lastDoc);
+    await fetchPage({cursor:lastDoc, live: liveToggle.checked});
+  });
+  btnPrev.addEventListener("click", async () => {
+    if (pageStack.length === 0) return;
+    pageStack.pop();
+    const prevCursor = pageStack[pageStack.length-1] || null;
+    await fetchPage({cursor:prevCursor, live: liveToggle.checked});
+  });
+  btnRefresh.addEventListener("click", async () => {
+    pageStack = [];
+    await fetchPage({cursor:null, live: liveToggle.checked});
+  });
+  btnApply.addEventListener("click", async () => {
+    pageStack = [];
+    await fetchPage({cursor:null, live: liveToggle.checked});
+  });
+  liveToggle.addEventListener("change", async () => {
+    await fetchPage({cursor: pageStack[pageStack.length-1] || null, live: liveToggle.checked});
+  });
+
+  btnExport.addEventListener("click", () => {
+    const rows = [["clientTime","line","qrRaw","sliced","result","lockState"]];
+    Array.from(tbody.children).forEach(tr => {
+      const tds = Array.from(tr.children).map(td => td.textContent.trim());
+      rows.push(tds);
+    });
+    const csv = rows.map(r => r.map(f => {
+      const s = String(f ?? ""); 
+      return /[\",\n]/.test(s) ? `"${s.replace(/\"/g,'\"\"')}"` : s;
+    }).join(",")).join("\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "qrLogs_export_line_sliced.csv"; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  fetchPage({live:false});
+</script>
+
+</body>
+</html>
