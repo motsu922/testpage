@@ -16,8 +16,8 @@
   .baseWrap { display:grid; grid-template-columns: 1.2fr .8fr; gap:16px; align-items:stretch; }
   @media (max-width: 900px){ .baseWrap { grid-template-columns: 1fr; } }
   .baseBox { border:2px dashed #cbd5e1; border-radius:16px; background:#fbfdff; padding:16px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
-  .baseHeading { font-size:20px; color:#0f172a; margin-bottom:6px; }
-  .baseHeading .statusChip { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; border:1px solid #cbd5e1; background:#f1f5f9; margin-left:6px; }
+  .baseHeading { font-size:18px; color:#0f172a; margin-bottom:6px; }
+  .statusChip { display:inline-block; padding:4px 10px; border-radius:999px; font-size:14px; border:1px solid #cbd5e1; background:#f1f5f9; }
   .baseValue { font-weight:800; font-size: clamp(70px, 10vw, 140px); color:var(--primary); word-break: break-all; }
   .placeholder { color:#94a3b8; }
   .imgBox { border:2px dashed #e5e7eb; border-radius:16px; background:#fff; padding:10px; display:flex; align-items:center; justify-content:center; min-height:220px; }
@@ -39,7 +39,7 @@
   input[type="file"]{ display:none; }
   .toolBtn { padding:6px 10px; border-radius:10px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:13px; }
   .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #d1d5db; }
-  /* 隠しスキャン入力 */
+  /* 隠しスキャン入力（常時フォーカス） */
   #scanInput { position:absolute; left:-9999px; width:1px; height:1px; opacity:0; }
 </style>
 </head>
@@ -55,7 +55,7 @@
   </div>
 </header>
 
-<!-- 隠しのスキャン入力（常時フォーカス対象） -->
+<!-- 常時フォーカス対象 -->
 <input id="scanInput" type="text" autocomplete="off" aria-hidden="true" />
 
 <main>
@@ -64,7 +64,8 @@
 
     <div class="baseWrap">
       <div class="baseBox">
-        <div class="baseHeading">（段替え中）<span id="prodState" class="statusChip">未開始</span></div>
+        <!-- ステータスはチップのみ（重複回避） -->
+        <div class="baseHeading"><span id="prodState" class="statusChip">未開始</span></div>
         <div id="baseDisplay" class="baseValue placeholder">未設定</div>
       </div>
 
@@ -97,12 +98,11 @@
 /* ------------------ 固定設定 ------------------ */
 const CUT_START = 3;
 const CUT_LENGTH = 5;
-const ADMIN_QR = "ADMIN123"; // 管理者コード（非表示／固定）
+const ADMIN_QR = "ADMIN123";
 
 /* ------------------ 状態 ------------------ */
 let baseQR = null;
 let isLocked = false;
-let buffer = "";
 let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像ファイル"]];
 let imageDirHandle = null;
 const imageMap = new Map();
@@ -115,7 +115,6 @@ const $lockMsg = document.getElementById("lockMsg");
 const $baseDisplay = document.getElementById("baseDisplay");
 const $productImage = document.getElementById("productImage");
 const $imgHint = document.getElementById("imgHint");
-const $baseHeading = document.querySelector(".baseHeading");
 const $prodState = document.getElementById("prodState");
 const $scanInput = document.getElementById("scanInput");
 
@@ -128,12 +127,10 @@ function focusScanField(){
 }
 window.addEventListener("load", focusScanField);
 window.addEventListener("focus", focusScanField);
-window.addEventListener("blur", () => setTimeout(focusScanField, 50));
 document.addEventListener("visibilitychange", () => setTimeout(focusScanField, 50));
 document.addEventListener("click", () => setTimeout(focusScanField, 0), true);
 document.addEventListener("touchend", () => setTimeout(focusScanField, 0), true);
-// 監視タイマー（最後の砦）
-setInterval(focusScanField, 800);
+setInterval(focusScanField, 1000);
 
 /* ------------------ ユーティリティ ------------------ */
 function nowString(){
@@ -141,67 +138,22 @@ function nowString(){
   const pad = n => String(n).padStart(2,"0");
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-
-// ★切り出し値からスペースを除去
-function cutQR(qr){ 
-  return qr.substr(CUT_START, CUT_LENGTH).replace(/\s+/g,"");
-}
-
-function showOK(){
-  $ok.style.display = "block";
-  $ng.style.display = "none";
-  setTimeout(()=>{ $ok.style.display="none"; }, 1500);
-}
-function showNGPersistent(){
-  $ok.style.display = "none";
-  $ng.style.display = "block"; // 解除まで表示
-}
+function cutQR(qr){ return qr.substr(CUT_START, CUT_LENGTH).replace(/\s+/g,""); }
+function showOK(){ $ok.style.display="block"; $ng.style.display="none"; setTimeout(()=>{$ok.style.display="none";},1500); }
+function showNGPersistent(){ $ok.style.display="none"; $ng.style.display="block"; }
 function clearMarks(){ $ok.style.display="none"; $ng.style.display="none"; }
-
-function setLock(state){
-  isLocked = state;
-  $lockMsg.style.display = state ? "block" : "none";
-  if (!state) clearMarks();
-}
-function updateBaseDisplay(val){
-  if (val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent = val; }
-  else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent = "未設定"; }
-}
-function setProdStateRunning(){
-  $baseHeading.firstChild.textContent = "生産中";
-  $prodState.textContent = "生産中";
-  $prodState.style.background = "#e6ffed";
-  $prodState.style.borderColor = "#abdfb6";
-}
-function setProdStateSetup(){
-  $baseHeading.firstChild.textContent = "（段替え中）";
-  $prodState.textContent = "未開始";
-  $prodState.style.background = "#f1f5f9";
-  $prodState.style.borderColor = "#cbd5e1";
-}
-function csvEscape(field){
-  const s = String(field ?? "");
-  if (/[\",\n]/.test(s)) return `"${s.replace(/\"/g,'\"\"')}"`;
-  return s;
-}
+function setLock(state){ isLocked=state; $lockMsg.style.display=state?"block":"none"; if(!state) clearMarks(); }
+function updateBaseDisplay(val){ if(val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent=val; } else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent="未設定"; } }
+function setProdStateRunning(){ $prodState.textContent="生産中"; $prodState.style.background="#e6ffed"; $prodState.style.borderColor="#abdfb6"; }
+function setProdStateSetup(){ $prodState.textContent="未開始"; $prodState.style.background="#f1f5f9"; $prodState.style.borderColor="#cbd5e1"; }
+function csvEscape(field){ const s=String(field??""); return /[\",\n]/.test(s)?`"${s.replace(/\"/g,'\"\"')}"`:s; }
 function buildCSV(rows){ return rows.map(r=>r.map(csvEscape).join(",")).join("\n"); }
-function downloadCSV(rows, baseName="qr_log"){
-  const ts=new Date(); const pad=n=>String(n).padStart(2,"0");
-  const name=`${baseName}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.csv`;
-  const csv=buildCSV(rows);
-  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download=name; a.click();
-  URL.revokeObjectURL(url);
-}
+function downloadCSV(rows, baseName="qr_log"){ const ts=new Date(); const pad=n=>String(n).padStart(2,"0"); const name=`${baseName}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.csv`; const csv=buildCSV(rows); const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url); }
 
 /* ------------------ 画像処理 ------------------ */
 async function pickImageDirectory(){
   if (!window.showDirectoryPicker){ alert("このブラウザはフォルダ選択APIに未対応です。"); return; }
-  try{
-    imageDirHandle = await window.showDirectoryPicker({id:"qr-image-dir", mode:"read"});
-    $imgHint.textContent = "フォルダ選択済み：基準値と同名の画像を表示します";
-  }catch(e){ console.warn(e); }
+  try{ imageDirHandle = await window.showDirectoryPicker({id:"qr-image-dir", mode:"read"}); $imgHint.textContent = "フォルダ選択済み：基準値と同名の画像を表示します"; }catch(e){ console.warn(e); }
 }
 async function findImageURLByBase(base){
   if (imageDirHandle){
@@ -222,11 +174,9 @@ async function findImageURLByBase(base){
   }
   return null;
 }
-function showImage(url){
-  if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; }
-}
+function showImage(url){ if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; } }
 
-/* ------------------ QR入力（スキャナ） ------------------ */
+/* ------------------ QR入力（Enter終端） ------------------ */
 $scanInput.addEventListener("keydown", e => {
   if (e.key === "Enter"){
     const qr = $scanInput.value.trim();
@@ -242,7 +192,7 @@ async function processQR(qrRaw){
   if (!baseQR){
     baseQR=sliced;
     updateBaseDisplay(baseQR);
-    setProdStateRunning();                 // 生産中表示に切替
+    setProdStateRunning();
     $mode.textContent=`照合モード（基準QR: ${baseQR}）`;
 
     let imgName="";
@@ -259,45 +209,33 @@ async function processQR(qrRaw){
 
   if (isLocked){
     if (qrRaw===ADMIN_QR){
-      setLock(false);
-      showOK();
+      setLock(false); showOK();
       $mode.textContent="解除されました。照合を再開します。";
       logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", ""]);
     } else {
-      showNGPersistent();
-      logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", ""]);
+      showNGPersistent(); logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", ""]);
     }
-    focusScanField();
-    return;
+    focusScanField(); return;
   }
 
-  const judgedOK=(sliced===baseQR);
-  if (judgedOK){
-    showOK();
-    logRow([now, qrRaw, sliced, "OK", "UNLOCK", ""]);
-  } else {
-    showNGPersistent();
-    setLock(true);
-    $mode.textContent="NG！管理者QRを読み込んでください";
-    logRow([now, qrRaw, sliced, "NG", "LOCKED", ""]);
-  }
+  const judgedOK = (sliced===baseQR);
+  if (judgedOK){ showOK(); logRow([now, qrRaw, sliced, "OK", "UNLOCK", ""]); }
+  else { showNGPersistent(); setLock(true); $mode.textContent="NG！管理者QRを読み込んでください"; logRow([now, qrRaw, sliced, "NG", "LOCKED", ""]); }
   focusScanField();
 }
 
 /* ------------------ ボタン ------------------ */
 document.getElementById("resetBtn").addEventListener("click", () => {
   baseQR=null; setLock(false); clearMarks(); updateBaseDisplay(null);
-  setProdStateSetup();                      // 段替え中に戻す
-  $productImage.style.display="none"; $imgHint.style.display="block";
-  $imgHint.textContent="画像フォルダを選択すると表示されます";
+  setProdStateSetup();
+  $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.textContent="画像フォルダを選択すると表示されます";
   $mode.textContent="基準QRを読み込んでください";
   logRow([nowString(), "-", "-", "RESET", "UNLOCK", ""]);
-  focusScanField();                         // クリック後にスキャン入力へ
+  focusScanField();
 });
 document.getElementById("saveBtn").addEventListener("click", () => { downloadCSV(logData); focusScanField(); });
 document.getElementById("exitBtn").addEventListener("click", () => { downloadCSV(logData,"qr_log"); window.close(); });
-
-document.getElementById("pickDirBtn").addEventListener("click", () => { pickImageDirectory(); setTimeout(focusScanField, 100); });
+document.getElementById("pickDirBtn").addEventListener("click", () => { pickImageDirectory(); setTimeout(focusScanField,100); });
 document.getElementById("folderInput").addEventListener("change", e => {
   imageMap.clear();
   const files=Array.from(e.target.files||[]);
@@ -308,13 +246,12 @@ document.getElementById("folderInput").addEventListener("change", e => {
 
 </script>
 
-<!-- Firebase SDK を最後に読み込み。接続ステータスを更新し、DBにアップロード -->
+<!-- Firebase SDK（接続ステータス + Firestoreアップロード） -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
   import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-  // プロジェクト（miyama-seizo）
   const firebaseConfig = {
     apiKey: "AIzaSyDb62GTdYU_zksCYiQyr9-WERZLFrztJ1U",
     authDomain: "miyama-seizo.firebaseapp.com",
@@ -330,37 +267,25 @@ document.getElementById("folderInput").addEventListener("change", e => {
   const statusEl = document.getElementById("firebaseStatus");
   function setStatus(text, color){ statusEl.textContent = `Firebase: ${text}`; statusEl.style.color = color; }
 
-  try {
-    await signInAnonymously(auth);
-    setStatus("接続済み", "#16a34a"); // 緑
-  } catch(e){
-    console.warn("匿名認証に失敗:", e);
-    setStatus("未接続（認証エラー）", "#dc2626"); // 赤
-  }
+  try { await signInAnonymously(auth); setStatus("接続済み", "#16a34a"); }
+  catch(e){ console.warn("匿名認証に失敗:", e); setStatus("未接続（認証エラー）", "#dc2626"); }
 
-  // 既存のログ追加関数を拡張（CSV保存 + Firestore書き込み + エラーハンドリング）
+  // Firestore へログを保存（CSV互換 + 集計用の明示フィールド）
   window.logRow = async function(row){
     try {
-      // CSV配列へ追加（元仕様維持）
       logData.push(row);
-
-      // Firestoreへ保存（要求仕様：読み取ったQR、生日時刻、照合結果）
       const [ts, raw, sliced, judge, lockState, imageFile] = row;
       await addDoc(collection(db, "qrLogs"), {
-        // 既存構造（互換）
         ts, raw, sliced, judge, lockState, imageFile,
         readAt: serverTimestamp(),
         uid: (auth.currentUser && auth.currentUser.uid) || null,
         pageUrl: location.href,
         userAgent: navigator.userAgent,
-        // 明示的に必要な三要素（ダブり保存で集計しやすく）
-        qrData: raw,
-        readAtText: ts,
-        result: judge
+        qrData: raw, readAtText: ts, result: judge
       });
     } catch(e){
       console.warn("Firestore書き込み失敗:", e);
-      setStatus("エラー発生（保存失敗）", "#dc2626"); // 赤
+      setStatus("エラー発生（保存失敗）", "#dc2626");
     }
   };
 </script>
