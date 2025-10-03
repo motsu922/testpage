@@ -921,7 +921,9 @@ function filterData(allData, filters) {
       });
     });
   }
-
+function getBusho(row){
+  return row.busho || row.dept || row.department || "";
+}
   function applyWorkSettingsToUI(){
     for (let i = 0; i <= 6; i++) {
       const checkbox = document.getElementById(`day${i}`);
@@ -1229,42 +1231,36 @@ function filterData(allData, filters) {
   }
 
   function getFilteredData(){
-    const fLine = lineSel.value.trim();
-    const fSliced = slicedSel.value.trim();
+  const fLine   = lineSel.value.trim();
+  const fSliced = slicedSel.value.trim();
+  const fBusho  = bushoSel.value.trim();   // 追加済みを利用
 
-    let fromDate = null, toDate = null;
-    if (dateFrom.value){ fromDate = new Date(dateFrom.value + "T00:00:00"); }
-    if (dateTo.value){ toDate = new Date(dateTo.value + "T23:59:59"); }
+  let fromDate = null, toDate = null;
+  if (dateFrom.value){ fromDate = new Date(dateFrom.value + "T00:00:00"); }
+  if (dateTo.value){   toDate   = new Date(dateTo.value   + "T23:59:59"); }
 
-    console.log("🔍 フィルター条件:", {
-      ライン: fLine || "すべて",
-      品番: fSliced || "すべて", 
-      開始日: dateFrom.value,
-      終了日: dateTo.value,
-      全データ件数: allData.length
-    });
+  const filtered = allData.filter(r => {
+    const judge = r.judge || r.result || "";
+    if (judge !== "OK") return false;
 
-    const filtered = allData.filter(r => {
-      const judge = r.judge || r.result || "";
-      if (judge !== "OK") return false;
+    if (fLine   && r.line   !== fLine)   return false;
+    if (fSliced && r.sliced !== fSliced) return false;
 
-      if (fLine && r.line !== fLine) return false;
-      if (fSliced && r.sliced !== fSliced) return false;
+    // ▼ 部署フィルタを適用
+    if (fBusho && getBusho(r) !== fBusho) return false;
 
-      let dt = null;
-      if (r.ts){ dt = parseClientDate(r.ts); }
-      if (!dt && r.readAt && r.readAt.seconds){ dt = new Date(r.readAt.seconds*1000); }
-      if (!dt) return false;
+    let dt = null;
+    if (r.ts){ dt = parseClientDate(r.ts); }
+    if (!dt && r.readAt && r.readAt.seconds){ dt = new Date(r.readAt.seconds*1000); }
+    if (!dt) return false;
 
-      if (fromDate && dt < fromDate) return false;
-      if (toDate && dt > toDate) return false;
-      return true;
-    });
-    
-    console.log("✅ フィルター後:", filtered.length + "件");
-    
-    return filtered;
-  }
+    if (fromDate && dt < fromDate) return false;
+    if (toDate   && dt > toDate)   return false;
+    return true;
+  });
+
+  return filtered;
+}
 
   // 停止時間を計算（ライン別、品番を考慮、非稼働時間を除外）
   function calculateStopTime(data){
@@ -1729,30 +1725,35 @@ function updateLineSummaryCards(data, stopTimeByLine){
     }
   }
 
-  function applyFilters(){
-    errEl.style.display="none";
-    updateDashboard();
-    
-    const fLine = lineSel.value.trim();
-    const fSliced = slicedSel.value.trim();
-    let fromDate = null, toDate = null;
-    if (dateFrom.value){ fromDate = new Date(dateFrom.value + "T00:00:00"); }
-    if (dateTo.value){ toDate = new Date(dateTo.value + "T23:59:59"); }
+ function applyFilters(){
+  errEl.style.display="none";
+  updateDashboard();
 
-    const filtered = currentDocs.filter(r => {
-      if (fLine && r.line !== fLine) return false;
-      if (fSliced && r.sliced !== fSliced) return false;
+  const fLine   = lineSel.value.trim();
+  const fSliced = slicedSel.value.trim();
+  const fBusho  = bushoSel.value.trim();   // ← これを使う
+  let fromDate = null, toDate = null;
+  if (dateFrom.value){ fromDate = new Date(dateFrom.value + "T00:00:00"); }
+  if (dateTo.value){   toDate   = new Date(dateTo.value   + "T23:59:59"); }
 
-      let dt = null;
-      if (r.ts){ dt = parseClientDate(r.ts); }
-      if (!dt && r.readAt && r.readAt.seconds){ dt = new Date(r.readAt.seconds*1000); }
-      if (fromDate && dt && dt < fromDate) return false;
-      if (toDate && dt && dt > toDate) return false;
-      return true;
-    });
-    
-    renderDetailTable(filtered);
-  }
+  const filtered = currentDocs.filter(r => {
+    if (fLine   && r.line   !== fLine)   return false;
+    if (fSliced && r.sliced !== fSliced) return false;
+
+    // ▼ 部署フィルタを適用（詳細テーブルにも反映）
+    if (fBusho && getBusho(r) !== fBusho) return false;
+
+    let dt = null;
+    if (r.ts){ dt = parseClientDate(r.ts); }
+    if (!dt && r.readAt && r.readAt.seconds){ dt = new Date(r.readAt.seconds*1000); }
+    if (fromDate && dt && dt < fromDate) return false;
+    if (toDate   && dt && dt > toDate)   return false;
+    return true;
+  });
+
+  renderDetailTable(filtered);
+}
+
 
   btnApply.addEventListener("click", applyFilters);
   btnReload.addEventListener("click", async () => {
