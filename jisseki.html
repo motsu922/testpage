@@ -1302,26 +1302,23 @@ function getBusho(row){
         const curr = records[i];
         const totalDiffMinutes = (curr.time - prev.time) / (1000 * 60);
         
-        // 同じ品番で15分以上の間隔がある場合のみ処理
-        if (prev.product === curr.product && totalDiffMinutes >= STOP_THRESHOLD_MINUTES) {
-          // 非稼働時間を除外
-          const nonWorkingMinutes = calculateNonWorkingMinutes(prev.time, curr.time);
-          const actualStopMinutes = totalDiffMinutes - nonWorkingMinutes;
-          
-          // 実際の停止時間が閾値以上の場合のみカウント
-          if (actualStopMinutes >= STOP_THRESHOLD_MINUTES) {
-            stopMinutes += actualStopMinutes;
-            stopDetails.push({
-              line: line,
-              product: prev.product,
-              startTime: prev.time,
-              endTime: curr.time,
-              stopMinutes: actualStopMinutes,
-              nonWorkingMinutes: nonWorkingMinutes
-            });
-          }
-        }
-      }
+   if (totalDiffMinutes >= STOP_THRESHOLD_MINUTES) {
+  const nonWorkingMinutes = calculateNonWorkingMinutes(prev.time, curr.time);
+  const actualStopMinutes = totalDiffMinutes - nonWorkingMinutes;
+
+  if (actualStopMinutes >= STOP_THRESHOLD_MINUTES) {
+    stopMinutes += actualStopMinutes;
+    stopDetails.push({
+      line: line,
+      product: (prev.product !== curr.product) ? `${prev.product}→${curr.product}` : prev.product,
+      startTime: prev.time,
+      endTime: curr.time,
+      stopMinutes: actualStopMinutes,
+      nonWorkingMinutes: nonWorkingMinutes,
+      reason: (prev.product !== curr.product) ? "品番切替" : "通常停止"
+    });
+  }
+}
       
       stopTimeByLine[line] = stopMinutes;
       totalStopMinutes += stopMinutes;
@@ -1335,7 +1332,42 @@ function getBusho(row){
 
     // 停止時間計算
     const { stopTimeByLine, totalStopMinutes, stopDetails } = calculateStopTime(filtered);
+function getCurrentLineStatus(recordsForLine){
+  if (!recordsForLine || recordsForLine.length === 0) return {state:'idle'};
 
+  // 時系列（OKのみ集計済みの filtered を渡している前提）
+  const list = [...recordsForLine].sort((a,b)=>{
+    const ta = a.ts ? parseClientDate(a.ts) : (a.readAt?.seconds ? new Date(a.readAt.seconds*1000) : null);
+    const tb = b.ts ? parseClientDate(b.ts) : (b.readAt?.seconds ? new Date(b.readAt.seconds*1000) : null);
+    return (ta?.getTime()||0) - (tb?.getTime()||0);
+  });
+
+  const last = list[list.length-1];
+  const last2 = list[list.length-2] || null;
+
+  // 直近イベント時刻
+  let lastTime = null;
+  if (last.ts) lastTime = parseClientDate(last.ts);
+  else if (last.readAt?.seconds) lastTime = new Date(last.readAt.seconds*1000);
+
+  if (!lastTime) return {state:'idle'};
+
+  const now = new Date();
+  const minutesFromLast = (now - lastTime)/60000;
+
+  // 現在が稼働時間外は、判定を「idle」寄りにする（必要ならここを 'stopped' にしてもOK）
+  if (!isWorkingTime(now)) return {state:'idle'};
+
+  // 15分以上データが来ていない → 停止中
+  if (minutesFromLast >= STOP_THRESHOLD_MINUTES) {
+    // 直近2件の品番が違えば「切替停止」と表示理由を付ける
+    const reason = (last2 && (last2.sliced||'') !== (last.sliced||'')) ? '品番切替' : '無通過';
+    return {state:'stopped', reason, since:lastTime};
+  }
+
+  // 15分未満 → 生産中
+  return {state:'active', product:(last.sliced||'不明'), since:lastTime};
+}
     updateLineSummaryCards(filtered, stopTimeByLine);
     updateStopDetailTable(stopDetails);
     updateStopTimeChart(stopTimeByLine);
@@ -1372,13 +1404,23 @@ function updateLineSummaryCards(data, stopTimeByLine){
 
     const { active, sessions, currentProduct } = sessionsByLine[line] || {active:null, sessions:[], currentProduct:null};
 
-    // 先頭：ステータスピル
-    let statusHtml = '';
-    if(currentProduct){
-      statusHtml = `<div class="status-pill status-on">🟢 生産中：<strong>${currentProduct}</strong><span class="time-range">（${fmt(active?.start)}〜現在）</span></div>`;
-    }else{
-      statusHtml = `<div class="status-pill status-off">⏹ 停止中</div>`;
-    }
+ // 先頭：ステータスピル（停止中対応版）
+let statusHtml = '';
+// このラインの filtered データだけ抽出して現在状態を判定
+const lineRows = data.filter(r => (r.line || '不明') === line);
+const lineStatus = getCurrentLineStatus(lineRows);
+const fmt = (d)=> d ? d.toLocaleString('ja-JP',{hour:'2-digit',minute:'2-digit'}) : '-';
+
+if (lineStatus.state === 'active') {
+  const curProd = lineStatus.product || currentProduct || '不明';
+  statusHtml = `<div class="status-pill status-on">🟢 生産中：<strong>${curProd}</strong><span class="time-range">（${fmt(lineStatus.since)}〜現在）</span></div>`;
+} else if (lineStatus.state === 'stopped') {
+  const reason = lineStatus.reason === '品番切替' ? '（品番切替）' : '';
+  statusHtml = `<div class="status-pill status-stop">⛔ 停止中${reason}<span class="time-range">（${fmt(lineStatus.since)}〜現在）</span></div>`;
+} else {
+  statusHtml = `<div class="status-pill status-off">⏹ 生産終了</div>`;
+}
+
 
     // 品番リスト（数量）＋ 終了したセッションの時間帯表示
     const productRows = Object
