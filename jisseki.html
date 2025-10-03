@@ -600,7 +600,7 @@ DEF-123,20
     </section>
   </div>
 
-  <div class="tab-content" id="detail">
+<div class="tab-content" id="detail-master">
     <section class="panel">
       <div class="pager" style="margin: 0 0 16px 0;">
         <button id="btnPrev" disabled>⬅️ 前へ</button>
@@ -725,40 +725,65 @@ function isVerifyingState(r){
   const s = extractState(r);
   return /(照合|verify|verifying|checking|compare|比較)/.test(s);
 }
-  function getCurrentLineStatus(recordsForLine){
+// 基準QR／段取り開始っぽいイベント検知（“照合中”でなくても即検知）
+function isChangeoverStart(r){
+  const s = extractState(r);
+  // 例：基準, 基準QR, 段取り, 段取, 切替, 切り替え, changeover, setup など
+  return /(基準\s*qr?|段取|段取り|切替|切り替え|changeover|setup|set[-\s]*up)/.test(s);
+}
+
+
+// === 稼働ステータス判定（切替＝停止中を即時反映） ===
+// === 稼働ステータス判定（切替＝停止中の解除条件を明確化） ===
+// === 稼働ステータス判定（基準QR待ちで即「停止中（品番切替）」） ===
+function getCurrentLineStatusGlobal(recordsForLine){
   if (!recordsForLine || recordsForLine.length === 0) return {state:'idle'};
 
-  // 時系列に整列（OKのみの filtered を想定）
-  const list = [...recordsForLine].sort((a,b)=>{
-    const ta = a.ts ? parseClientDate(a.ts) : (a.readAt?.seconds ? new Date(a.readAt.seconds*1000) : null);
-    const tb = b.ts ? parseClientDate(b.ts) : (b.readAt?.seconds ? new Date(b.readAt.seconds*1000) : null);
-    return (ta?.getTime()||0) - (tb?.getTime()||0);
-  });
-
-  const last = list[list.length-1];
-  const last2 = list[list.length-2] || null;
-
-  // 直近イベント時刻
-  let lastTime = null;
-  if (last?.ts) lastTime = parseClientDate(last.ts);
-  else if (last?.readAt?.seconds) lastTime = new Date(last.readAt.seconds*1000);
-  if (!lastTime) return {state:'idle'};
+  // 全ログを時系列化（OK/NG/基準/照合など含む）
+  const list = [...recordsForLine].map(r => ({...r, _t: parseLogTime(r)}))
+                                  .filter(r => r._t)
+                                  .sort((a,b)=>a._t - b._t);
 
   const now = new Date();
-  const minutesFromLast = (now - lastTime)/60000;
+  const inWorking = isWorkingTime(now);
 
-  // 稼働時間外は idle 扱い（必要なら 'stopped' に変更可）
-  if (!isWorkingTime(now)) return {state:'idle'};
+  // 直近OK（生産実績）
+  const okList = list.filter(r => (r.judge || r.result || '') === 'OK');
+  const lastOK = okList[okList.length - 1] || null;
+  const lastOKTime = lastOK?._t || null;
 
-  // 15分以上無通過 → 停止中（直近2件で品番が違えば「品番切替」）
-  if (minutesFromLast >= STOP_THRESHOLD_MINUTES) {
-    const reason = (last2 && (last2.sliced||'') !== (last.sliced||'')) ? '品番切替' : '無通過';
-    return {state:'stopped', reason, since:lastTime};
+  // 直近の「切替開始」シグナル（基準QR/段取り系 or 照合中/基準）
+  const changeSignals = list.filter(r => isChangeoverStart(r) || isVerifyingState(r) || isBaseState(r));
+  const lastChange = changeSignals.length ? changeSignals[changeSignals.length-1] : null;
+  const lastChangeTime = lastChange?._t || null;
+
+  // 切替を停止扱いにする最大継続時間（保険）
+  const CHANGEOVER_HARD_TIMEOUT_MIN = 60;
+  const minutesSince = (ref)=> ref ? (now - ref)/60000 : Infinity;
+
+  // --- 即時：基準QR待ち（切替シグナルが直近OKより新しい）なら即「停止中（品番切替）」 ---
+  if (lastChangeTime && (!lastOKTime || lastChangeTime > lastOKTime)) {
+    if (inWorking && minutesSince(lastChangeTime) < CHANGEOVER_HARD_TIMEOUT_MIN) {
+      return { state:'stopped', reason:'品番切替', since:lastChangeTime };
+    }
+    // 稼働外 or 長すぎ：下の通常判定へフォールバック
+  }
+
+  // --- 通常ロジック ---
+  if (!inWorking) return {state:'idle'};
+  if (!lastOKTime) return {state:'idle'};
+
+  const minutesFromLastOK = minutesSince(lastOKTime);
+  if (minutesFromLastOK >= STOP_THRESHOLD_MINUTES) {
+    const last2 = okList[okList.length - 2] || null;
+    const reason = (last2 && (last2.sliced||'') !== (lastOK.sliced||'')) ? '品番切替' : '無通過';
+    return {state:'stopped', reason, since:lastOKTime};
   }
 
   // 15分未満 → 生産中
-  return {state:'active', product:(last.sliced||'不明'), since:lastTime};
+  return {state:'active', product:(lastOK.sliced||'不明'), since:lastOKTime};
 }
+
 function isBaseState(r){
   const s = extractState(r);
   return /(基準|base|基準qr)/.test(s);
@@ -1308,59 +1333,61 @@ function getBusho(row){
 }
 
   // 停止時間を計算（ライン別、品番を考慮、非稼働時間を除外）
-  function calculateStopTime(data){
-    const lineData = {};
+function calculateStopTime(data){
+  const lineData = {};
+  
+  // ラインごとの時系列配列を準備
+  data.forEach(r => {
+    let dt = null;
+    if (r.ts){ dt = parseClientDate(r.ts); }
+    if (!dt && r.readAt && r.readAt.seconds){ dt = new Date(r.readAt.seconds*1000); }
+    if (!dt) return;
     
-    data.forEach(r => {
-      let dt = null;
-      if (r.ts){ dt = parseClientDate(r.ts); }
-      if (!dt && r.readAt && r.readAt.seconds){ dt = new Date(r.readAt.seconds*1000); }
-      if (!dt) return;
-      
-      const line = r.line || "不明";
-      const product = r.sliced || "";
-      
-      if (!lineData[line]) lineData[line] = [];
-      lineData[line].push({ time: dt, product });
-    });
+    const line = r.line || "不明";
+    const product = r.sliced || "";
     
-    const stopTimeByLine = {};
-    const stopDetails = []; // 停止詳細情報
-    let totalStopMinutes = 0;
+    if (!lineData[line]) lineData[line] = [];
+    lineData[line].push({ time: dt, product });
+  });
+  
+  const stopTimeByLine = {};
+  const stopDetails = [];
+  let totalStopMinutes = 0;
+  
+  Object.keys(lineData).forEach(line => {
+    const records = lineData[line].sort((a, b) => a.time - b.time);
+    let stopMinutes = 0;
     
-    Object.keys(lineData).forEach(line => {
-      const records = lineData[line].sort((a, b) => a.time - b.time);
-      let stopMinutes = 0;
+    for (let i = 1; i < records.length; i++) {
+      const prev = records[i - 1];
+      const curr = records[i];
+      const totalDiffMinutes = (curr.time - prev.time) / (1000 * 60);
       
-      for (let i = 1; i < records.length; i++) {
-        const prev = records[i - 1];
-        const curr = records[i];
-        const totalDiffMinutes = (curr.time - prev.time) / (1000 * 60);
-        
-   if (totalDiffMinutes >= STOP_THRESHOLD_MINUTES) {
-  const nonWorkingMinutes = calculateNonWorkingMinutes(prev.time, curr.time);
-  const actualStopMinutes = totalDiffMinutes - nonWorkingMinutes;
+      if (totalDiffMinutes >= STOP_THRESHOLD_MINUTES) {
+        const nonWorkingMinutes = calculateNonWorkingMinutes(prev.time, curr.time);
+        const actualStopMinutes = totalDiffMinutes - nonWorkingMinutes;
 
-  if (actualStopMinutes >= STOP_THRESHOLD_MINUTES) {
-    stopMinutes += actualStopMinutes;
-    stopDetails.push({
-      line: line,
-      product: (prev.product !== curr.product) ? `${prev.product}→${curr.product}` : prev.product,
-      startTime: prev.time,
-      endTime: curr.time,
-      stopMinutes: actualStopMinutes,
-      nonWorkingMinutes: nonWorkingMinutes,
-      reason: (prev.product !== curr.product) ? "品番切替" : "通常停止"
-    });
-  }
+        if (actualStopMinutes >= STOP_THRESHOLD_MINUTES) {
+          stopMinutes += actualStopMinutes;
+          stopDetails.push({
+            line: line,
+            product: (prev.product !== curr.product) ? `${prev.product}→${curr.product}` : prev.product,
+            startTime: prev.time,
+            endTime: curr.time,
+            stopMinutes: actualStopMinutes,
+            nonWorkingMinutes: nonWorkingMinutes,
+            reason: (prev.product !== curr.product) ? "品番切替" : "通常停止"
+          });
+        }
+      }
+    } // ← ここで for を閉じる
+
+    stopTimeByLine[line] = stopMinutes;
+    totalStopMinutes += stopMinutes;
+  });
+  
+  return { stopTimeByLine, totalStopMinutes, stopDetails };
 }
-      
-      stopTimeByLine[line] = stopMinutes;
-      totalStopMinutes += stopMinutes;
-    });
-    
-    return { stopTimeByLine, totalStopMinutes, stopDetails };
-  }
 
   function updateDashboard(){
     const filtered = getFilteredData();
@@ -1440,8 +1467,8 @@ function updateLineSummaryCards(data, stopTimeByLine){
 
     // ステータスピル（生産中/停止中/生産終了）
     let statusHtml = '';
-    const lineRows = data.filter(r => (r.line || '不明') === line);
-    const lineStatus = getCurrentLineStatus(lineRows);
+const lineRows = allData.filter(r => (r.line || '不明') === line);
+ const lineStatus = getCurrentLineStatusGlobal(lineRows);
 
     if (lineStatus.state === 'active') {
       const curProd = lineStatus.product || currentProduct || '不明';
