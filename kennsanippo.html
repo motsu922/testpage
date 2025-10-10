@@ -181,6 +181,10 @@
       </div>
       <div class="main">
         <div class="table-section">
+                    <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button id="loadMoreBtn" class="btn btn-secondary btn-small" onclick="loadMoreData()" style="min-width:140px">📥 過去データ読込(+100件)</button>
+            <span id="loadStatus" style="font-size:13px;color:#6c757d"></span>
+          </div>
           <table class="data-table" id="t">
             <thead id="th"></thead>
             <tbody id="tb"></tbody>
@@ -627,7 +631,9 @@ let sel = -1, data = [], items = [], cols = new Map(), inspectorCount = 0, timeP
 let master = {};
 let inspectorNames = [];
 let editingProductCode = null;
-
+let lastVisibleDoc = null;
+let isLoadingMore = false;
+let hasMoreData = true;
 const breakTimes = [
   {start: 630, end: 640},
   {start: 730, end: 780},
@@ -765,13 +771,14 @@ const businessDays = getLastNBusinessDays(2);
 const oldestDate = formatDateForFirestore(businessDays[0]);
 
 // クエリに日付フィルタを追加
-unsubscribeDaily = db.collection('dailyReports')
-  .where('pd', '>=', oldestDate)
-  .orderBy('pd', 'desc')
-  .orderBy('timestamp', 'desc')
-  .onSnapshot(snapshot => {
-    data = [];
-    snapshot.forEach(doc => {
+    unsubscribeDaily = db.collection('dailyReports')
+      .where('pd', '>=', oldestDate)
+      .orderBy('pd', 'desc')
+      .orderBy('timestamp', 'desc')
+      .onSnapshot(snapshot => {
+        data = [];
+        lastVisibleDoc = null;
+        snapshot.forEach((doc, index) => {
       const d = doc.data();
       data.push({
         id: doc.id,
@@ -795,6 +802,93 @@ unsubscribeDaily = db.collection('dailyReports')
   }
 }
 
+async function loadMoreData() {
+  if (!db || isLoadingMore || !hasMoreData) return;
+  
+  isLoadingMore = true;
+  const loadBtn = document.getElementById('loadMoreBtn');
+  const originalText = loadBtn.textContent;
+  loadBtn.textContent = '読込中...';
+  loadBtn.disabled = true;
+  
+  try {
+    let query = db.collection('dailyReports')
+      .orderBy('timestamp', 'desc')
+      .limit(100);
+    
+    if (lastVisibleDoc) {
+      query = query.startAfter(lastVisibleDoc);
+    }
+    
+    const snapshot = await query.get();
+    
+    if (snapshot.empty) {
+      hasMoreData = false;
+      updateLoadStatus();
+      loadBtn.textContent = '全データ読込済み';
+      setTimeout(() => {
+        loadBtn.textContent = originalText;
+        loadBtn.disabled = false;
+      }, 2000);
+      isLoadingMore = false;
+      return;
+    }
+    
+    snapshot.forEach((doc, index) => {
+      const d = doc.data();
+      const exists = data.some(item => item.id === doc.id);
+      if (!exists) {
+        data.push({
+          id: doc.id,
+          pd: d.pd || '',
+          on: d.on || '',
+          pieces: d.pieces || '',
+          boxes: d.boxes || '',
+          remainder: d.remainder || '',
+          ic: d.ic || '0',
+          totalTime: d.totalTime || '0',
+          ln: d.ln || '',
+          it2: d.it2 || '',
+          inspectors: d.inspectors || [],
+          ngMap: d.ngMap ? new Map(Object.entries(d.ngMap)) : new Map(),
+          rm: d.rm || ''
+        });
+      }
+      if (index === snapshot.docs.length - 1) {
+        lastVisibleDoc = doc;
+      }
+    });
+            updateLoadStatus();
+        render();
+    render();
+    updateCnt();
+    updateLoadStatus();
+    status(`過去データ ${snapshot.size}件を読み込みました`);
+    
+  } catch(error) {
+    console.error('データ読込エラー:', error);
+    alert('データの読み込みに失敗しました');
+  } finally {
+    loadBtn.textContent = originalText;
+    loadBtn.disabled = false;
+    isLoadingMore = false;
+  }
+}
+
+function updateLoadStatus() {
+  const statusEl = document.getElementById('loadStatus');
+  if (!statusEl) return;
+  
+  if (!hasMoreData) {
+    statusEl.textContent = '(全データ表示中)';
+    statusEl.style.color = '#28a745';
+  } else if (data.length > 0) {
+    statusEl.textContent = `(現在 ${data.length}件表示中)`;
+    statusEl.style.color = '#6c757d';
+  } else {
+    statusEl.textContent = '';
+  }
+}
 function addProduct() {
   if(!db) {
     showProductAlert('error', 'Firebaseに接続されていません。ページを再読み込みしてください。');
