@@ -560,103 +560,98 @@ function updateStats() {
 }
 
 function renderProductDefects() {
-  const productDefects = {};
-  const historicalData = {}; // 過去データ(比較用)
+  // key: `${productCode}||${typeKey}`
+  const productTypeDefects = {};
+  const historicalData = {}; // 比較用も種類別で持つ
 
-  // 現在の期間のデータを集計
-  filteredData.forEach(item => {
-    const productCode = item.on || 'unknown';
-
-    if (!productDefects[productCode]) {
-      productDefects[productCode] = {
-        inspection: 0,
-        totalTime: 0,
-        lotNumbers: new Set(),
-        defects: {},
-        totalDefects: 0,
-        remarks: new Set(),
-        typeCounts: {} // 検査種類ごとの件数
-      };
-    }
-
-    productDefects[productCode].inspection += parseInt(item.ic || 0);
-    productDefects[productCode].totalTime += parseInt(item.totalTime || 0);
-
-    // ★ 検査種類のカウント（空や未設定は「通常検査」扱い）
-    const typeKey = (item.it2 && item.it2.trim()) ? item.it2.trim() : '通常検査';
-    productDefects[productCode].typeCounts[typeKey] =
-      (productDefects[productCode].typeCounts[typeKey] || 0) + 1;
-
-    if (item.ln) {
-      productDefects[productCode].lotNumbers.add(item.ln);
-    }
-    if (item.rm && item.rm.trim()) {
-      productDefects[productCode].remarks.add(item.rm.trim());
-    }
-
-    if (item.ngMap) {
-      item.ngMap.forEach((value, code) => {
-        const count = parseInt(value || 0);
-        if (count > 0) {
-          if (!productDefects[productCode].defects[code]) {
-            productDefects[productCode].defects[code] = 0;
-          }
-          productDefects[productCode].defects[code] += count;
-          productDefects[productCode].totalDefects += count;
-        }
-      });
-    }
-  });
-
-  // 表示期間を取得
+  // 表示期間
   const startDate = document.getElementById('filter-start-date').value;
   const endDate = document.getElementById('filter-end-date').value;
   const displayStart = new Date(startDate);
   const displayEnd = new Date(endDate);
 
-  // 直近30日間のデータを取得(表示期間を除く)
+  // ①現期間の集計（整理No × 検査種類）
+  filteredData.forEach(item => {
+    const productCode = item.on || 'unknown';
+    const typeKey = (item.it2 && item.it2.trim()) ? item.it2.trim() : '通常検査';
+    const key = `${productCode}||${typeKey}`;
+
+    if (!productTypeDefects[key]) {
+      productTypeDefects[key] = {
+        productCode,
+        typeKey,
+        inspection: 0,
+        totalTime: 0,
+        lotNumbers: new Set(),
+        defects: {},
+        totalDefects: 0,
+        remarks: new Set()
+      };
+    }
+    const bucket = productTypeDefects[key];
+
+    bucket.inspection += parseInt(item.ic || 0);
+    bucket.totalTime += parseInt(item.totalTime || 0);
+
+    if (item.ln) bucket.lotNumbers.add(item.ln);
+    if (item.rm && item.rm.trim()) bucket.remarks.add(item.rm.trim());
+
+    if (item.ngMap) {
+      item.ngMap.forEach((value, code) => {
+        const count = parseInt(value || 0);
+        if (count > 0) {
+          if (!bucket.defects[code]) bucket.defects[code] = 0;
+          bucket.defects[code] += count;
+          bucket.totalDefects += count;
+        }
+      });
+    }
+  });
+
+  // ②直近30日（表示期間より前のみ）の履歴を種類別に
   const thirtyDaysAgo = new Date(displayStart);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   allData.forEach(item => {
     const itemDateStr = item.pd.replace(/\//g, '-');
     const itemDate = new Date(itemDateStr);
+    if (!(itemDate >= thirtyDaysAgo && itemDate < displayStart)) return;
 
-    // 表示期間外かつ直近30日以内のデータを履歴として使用
-    if (itemDate >= thirtyDaysAgo && itemDate < displayStart) {
-      const productCode = item.on || 'unknown';
+    const productCode = item.on || 'unknown';
+    const typeKey = (item.it2 && item.it2.trim()) ? item.it2.trim() : '通常検査';
+    const key = `${productCode}||${typeKey}`;
 
-if (!historicalData[productCode]) {
-  historicalData[productCode] = {
-    inspection: 0,       // ← キー名を付ける
-    totalDefects: 0,
-    defectCodes: new Set()
-  };
-}
-      historicalData[productCode].inspection += parseInt(item.ic || 0);
+    if (!historicalData[key]) {
+      historicalData[key] = {
+        inspection: 0,
+        totalDefects: 0,
+        defectCodes: new Set()
+      };
+    }
+    const hist = historicalData[key];
 
-      if (item.ngMap) {
-        item.ngMap.forEach((value, code) => {
-          const count = parseInt(value || 0);
-          if (count > 0) {
-            historicalData[productCode].totalDefects += count;
-            historicalData[productCode].defectCodes.add(code);
-          }
-        });
-      }
+    hist.inspection += parseInt(item.ic || 0);
+    if (item.ngMap) {
+      item.ngMap.forEach((value, code) => {
+        const count = parseInt(value || 0);
+        if (count > 0) {
+          hist.totalDefects += count;
+          hist.defectCodes.add(code);
+        }
+      });
     }
   });
 
-  // 不良率でソート
-  const sortedProducts = Object.entries(productDefects).sort((a, b) => {
-    const rateA = a[1].inspection > 0 ? (a[1].totalDefects / a[1].inspection) : 0;
-    const rateB = b[1].inspection > 0 ? (b[1].totalDefects / b[1].inspection) : 0;
+  // ③不良率でソート
+  const sorted = Object.entries(productTypeDefects).sort((a, b) => {
+    const A = a[1], B = b[1];
+    const rateA = A.inspection > 0 ? (A.totalDefects / A.inspection) : 0;
+    const rateB = B.inspection > 0 ? (B.totalDefects / B.inspection) : 0;
     return rateB - rateA;
   });
 
   const container = document.getElementById('product-defects');
-
-  if (sortedProducts.length === 0) {
+  if (sorted.length === 0) {
     container.innerHTML = '<div class="no-defects">データがありません</div>';
     return;
   }
@@ -664,26 +659,24 @@ if (!historicalData[productCode]) {
   const dateKey = `${startDate}_${endDate}`;
   let html = '';
 
-  sortedProducts.forEach(([productCode, data]) => {
+  sorted.forEach(([key, data]) => {
+    const { productCode, typeKey } = data;
     const defectRate = data.inspection > 0 ? (data.totalDefects / data.inspection * 100) : 0;
     const rateClass = defectRate > 3 ? 'defect-rate-high' : defectRate > 1 ? 'defect-rate-medium' : 'defect-rate-low';
 
-    // チェック状態を取得
-    const isChecked = getCheckState(productCode, dateKey);
+    // チェック状態（キーに種類も含める）
+    const cardKey = `${productCode}__${typeKey}`;
+    const isChecked = getCheckState(cardKey, dateKey);
     const completedClass = isChecked ? 'completed' : '';
 
-    // アラート判定
+    // アラート判定（種類別で比較）
     const alerts = [];
     const unusualDefects = [];
     let cardAlertClass = '';
+    const hist = historicalData[`${productCode}||${typeKey}`];
 
-    // 過去30日との比較
-    if (historicalData[productCode] && historicalData[productCode].inspection > 0) {
-      const historical = historicalData[productCode];
-      const historicalRate = historical.inspection > 0
-        ? (historical.totalDefects / historical.inspection * 100)
-        : 0;
-
+    if (hist && hist.inspection > 0) {
+      const historicalRate = (hist.totalDefects / hist.inspection) * 100;
       if (historicalRate > 0 && defectRate > historicalRate * 2) {
         alerts.push({ level: 'high', message: `不良率急増 (30日平均: ${historicalRate.toFixed(2)}% → 現在: ${defectRate.toFixed(2)}%)` });
         cardAlertClass = 'alert-high';
@@ -692,41 +685,34 @@ if (!historicalData[productCode]) {
         if (!cardAlertClass) cardAlertClass = 'alert-medium';
       }
 
-      // 過去にないNGコード
+      // 過去に無いNGコード
       Object.keys(data.defects).forEach(code => {
-        if (!historical.defectCodes.has(code)) {
+        if (!hist.defectCodes.has(code)) {
           const defectName = cols.get(code) || code;
           unusualDefects.push(`${code}: ${defectName} (${data.defects[code]}個)`);
         }
       });
-
       if (unusualDefects.length > 0 && !alerts.some(a => a.message.includes('不良率'))) {
         alerts.push({ level: 'medium', message: `新規NG発生: ${unusualDefects.length}件` });
         if (!cardAlertClass) cardAlertClass = 'alert-medium';
       }
     }
 
-    // 期間内の前半→後半の傾向
+    // 期間内の前半→後半傾向（同じ種類のみ）
     const periodDays = Math.floor((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) + 1;
     if (periodDays >= 7 && !alerts.some(a => a.level === 'high' || a.message.includes('上昇'))) {
       const midPoint = new Date(displayStart.getTime() + (displayEnd.getTime() - displayStart.getTime()) / 2);
-
       const firstHalf = { inspection: 0, defects: 0 };
       const secondHalf = { inspection: 0, defects: 0 };
 
       filteredData.forEach(item => {
-        if (item.on !== productCode) return;
-const typeKey = (item.it2 && item.it2.trim()) ? item.it2.trim() : '通常検査';
-productDefects[productCode].typeCounts[typeKey] =
-  (productDefects[productCode].typeCounts[typeKey] || 0) + 1;
-        const itemDateStr = item.pd.replace(/\//g, '-');
-        const itemDate = new Date(itemDateStr);
+        const type = (item.it2 && item.it2.trim()) ? item.it2.trim() : '通常検査';
+        if (item.on !== productCode || type !== typeKey) return;
 
+        const itemDate = new Date(item.pd.replace(/\//g, '-'));
         const inspection = parseInt(item.ic || 0);
         let itemDefects = 0;
-        if (item.ngMap) {
-          item.ngMap.forEach(value => { itemDefects += parseInt(value || 0); });
-        }
+        if (item.ngMap) item.ngMap.forEach(v => { itemDefects += parseInt(v || 0); });
 
         if (itemDate < midPoint) {
           firstHalf.inspection += inspection;
@@ -739,26 +725,24 @@ productDefects[productCode].typeCounts[typeKey] =
 
       const firstRate = firstHalf.inspection > 0 ? (firstHalf.defects / firstHalf.inspection * 100) : 0;
       const secondRate = secondHalf.inspection > 0 ? (secondHalf.defects / secondHalf.inspection * 100) : 0;
-
       if (firstRate >= 0.5 && secondRate > firstRate * 1.3) {
         alerts.push({ level: 'medium', message: `増加傾向 (前半: ${firstRate.toFixed(2)}% → 後半: ${secondRate.toFixed(2)}%)` });
         if (!cardAlertClass) cardAlertClass = 'alert-medium';
       }
     }
 
-    // カード表示用：検査時間（分）
+    // 表示用
     const totalMinutes = Number(data.totalTime || 0);
     const timeDisplay = `${totalMinutes.toLocaleString()}分`;
-
-    // ロットNo
     const lotDisplay = Array.from(data.lotNumbers).join(', ') || '-';
 
     html += `<div class="product-card ${completedClass} ${cardAlertClass}">`;
 
+    // ヘッダー（整理No / 検査種類）
     html += '<div class="product-header">';
-    html += `<div class="product-name">${productCode}</div>`;
+    html += `<div class="product-name">${productCode} / ${typeKey}</div>`;
     html += '<div class="product-checkbox">';
-    html += `<input type="checkbox" class="product-complete-check" data-product="${productCode}" ${isChecked ? 'checked' : ''} onchange="handleCheckChange(this, '${productCode}')">`;
+    html += `<input type="checkbox" class="product-complete-check" data-product="${cardKey}" ${isChecked ? 'checked' : ''} onchange="handleCheckChange(this, '${cardKey}')">`;
     html += '<label onclick="event.target.previousElementSibling.click()">入力完了</label>';
     html += '</div>';
     html += '</div>';
@@ -771,52 +755,26 @@ productDefects[productCode].typeCounts[typeKey] =
       html += `<div class="alert-message ${highestLevel}"><span class="alert-message-icon">${icon}</span>${primaryAlert.message}</div>`;
     }
 
+    // 不良率バッジ
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
     html += '<div class="product-stats">';
     html += `<span class="defect-rate-badge ${rateClass}">${defectRate.toFixed(2)}%</span>`;
     html += '</div>';
     html += '</div>';
 
-    // ▼ 製品情報（ラッパーを復活）
+    // 製品情報
     html += '<div class="product-info">';
-
-    html += '<div class="product-info-row">';
-    html += '<div class="product-info-label">検査数</div>';
-    html += `<div class="product-info-value">${data.inspection.toLocaleString()}個</div>`;
+    html += '<div class="product-info-row"><div class="product-info-label">検査数</div>';
+    html += `<div class="product-info-value">${data.inspection.toLocaleString()}個</div></div>`;
+    html += '<div class="product-info-row"><div class="product-info-label">検査時間</div>';
+    html += `<div class="product-info-value">${timeDisplay}</div></div>`;
+    html += '<div class="product-info-row"><div class="product-info-label">検査種類</div>';
+    html += `<div class="product-info-value">${typeKey}</div></div>`;
+    html += '<div class="product-info-row"><div class="product-info-label">ロットNo</div>';
+    html += `<div class="product-info-value" style="font-size:11px;">${lotDisplay}</div></div>`;
     html += '</div>';
 
-    html += '<div class="product-info-row">';
-    html += '<div class="product-info-label">検査時間</div>';
-    html += `<div class="product-info-value">${timeDisplay}</div>`;
-    html += '</div>';
-
-    // 検査種類（種類ごとの件数：例「通常検査×3, S×1」）
-    const typePairs = Object.entries(data.typeCounts || {});
-    const typeDisplayStr = typePairs.length
-      ? typePairs.map(([k, v]) => `${k}×${v}`).join(', ')
-      : '通常検査×0';
-    html += '<div class="product-info-row">';
-    html += '<div class="product-info-label">検査種類</div>';
-    html += `<div class="product-info-value">${typeDisplayStr}</div>`;
-    html += '</div>';
-
-    html += '<div class="product-info-row">';
-    html += '<div class="product-info-label">ロットNo</div>';
-    html += `<div class="product-info-value" style="font-size:11px;">${lotDisplay}</div>`;
-    html += '</div>';
-
-    html += '</div>'; // .product-info クローズ
-
-    // 備考
-    if (data.remarks && data.remarks.size > 0) {
-      html += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:2px;padding:10px;margin-bottom:12px;">';
-      html += '<div style="font-size:10px;font-weight:600;color:#92400e;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;">備考</div>';
-      Array.from(data.remarks).forEach(remark => {
-        html += `<div style="font-size:12px;color:#854d0e;padding:3px 0;">• ${remark}</div>`;
-      });
-      html += '</div>';
-    }
-
+    // 不良リスト
     if (Object.keys(data.defects).length === 0) {
       html += '<div style="text-align:center;padding:16px;color:#9ca3af;font-size:12px;">不良なし</div>';
     } else {
@@ -825,13 +783,10 @@ productDefects[productCode].typeCounts[typeKey] =
       sortedDefects.forEach(([code, count]) => {
         const defectName = cols.get(code) || code;
         const itemRate = data.inspection > 0 ? (count / data.inspection * 100).toFixed(2) : 0;
-        const isUnusual = unusualDefects.some(u => u.startsWith(code + ':'));
+        const isUnusual = hist ? !hist.defectCodes.has(code) : false;
         html += '<div class="defect-item">';
         html += `<div class="defect-name">${code}: ${defectName}${isUnusual ? ' ⚡' : ''}</div>`;
-        html += '<div>';
-        html += `<span class="defect-count">${count}</span>`;
-        html += `<span style="font-size:11px;color:#6b7280;margin-left:4px;">(${itemRate}%)</span>`;
-        html += '</div>';
+        html += `<div><span class="defect-count">${count}</span><span style="font-size:11px;color:#6b7280;margin-left:4px;">(${itemRate}%)</span></div>`;
         html += '</div>';
       });
       html += '</div>';
