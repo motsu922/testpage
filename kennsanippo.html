@@ -402,7 +402,29 @@ let db;
 let unsubscribeDaily = null;
 let unsubscribeProducts = null;
 let unsubscribeInspectors = null;
+function getLastNBusinessDays(n) {
+  const dates = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  let currentDate = new Date(today);
+  while (dates.length < n) {
+    const dayOfWeek = currentDate.getDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      dates.push(new Date(currentDate));
+    }
+    currentDate.setDate(currentDate.getDate() - 1);
+  }
+  
+  return dates.reverse();
+}
 
+function formatDateForFirestore(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}/${month}/${day}`;
+}
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -739,29 +761,37 @@ function init(){
       updateAllInspectorSelects();
     });
     
-    unsubscribeDaily = db.collection('dailyReports').orderBy('timestamp', 'desc').onSnapshot(snapshot => {
-      data = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        data.push({
-          id: doc.id,
-          pd: d.pd || '',
-          on: d.on || '',
-          pieces: d.pieces || '',
-          boxes: d.boxes || '',
-          remainder: d.remainder || '',
-          ic: d.ic || '0',
-          totalTime: d.totalTime || '0',
-          ln: d.ln || '',
-          it2: d.it2 || '',
-          inspectors: d.inspectors || [],
-          ngMap: d.ngMap ? new Map(Object.entries(d.ngMap)) : new Map(),
-          rm: d.rm || ''
-        });
+const businessDays = getLastNBusinessDays(2);
+const oldestDate = formatDateForFirestore(businessDays[0]);
+
+// クエリに日付フィルタを追加
+unsubscribeDaily = db.collection('dailyReports')
+  .where('pd', '>=', oldestDate)
+  .orderBy('pd', 'desc')
+  .orderBy('timestamp', 'desc')
+  .onSnapshot(snapshot => {
+    data = [];
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      data.push({
+        id: doc.id,
+        pd: d.pd || '',
+        on: d.on || '',
+        pieces: d.pieces || '',
+        boxes: d.boxes || '',
+        remainder: d.remainder || '',
+        ic: d.ic || '0',
+        totalTime: d.totalTime || '0',
+        ln: d.ln || '',
+        it2: d.it2 || '',
+        inspectors: d.inspectors || [],
+        ngMap: d.ngMap ? new Map(Object.entries(d.ngMap)) : new Map(),
+        rm: d.rm || ''
       });
-      render();
-      updateCnt();
     });
+    render();
+    updateCnt();
+  });
   }
 }
 
