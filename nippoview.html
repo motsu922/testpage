@@ -567,16 +567,17 @@ function renderProductDefects() {
   filteredData.forEach(item => {
     const productCode = item.on || 'unknown';
     
-    if (!productDefects[productCode]) {
-      productDefects[productCode] = {
-        inspection: 0,
-        totalTime: 0,
-        lotNumbers: new Set(),
-        defects: {},
-        totalDefects: 0,
-        remarks: new Set()
-      };
-    }
+if (!productDefects[productCode]) {
+  productDefects[productCode] = {
+    inspection: 0,
+    totalTime: 0,
+    lotNumbers: new Set(),
+    defects: {},
+    totalDefects: 0,
+    remarks: new Set(),
+    typeCounts: {} // ← 追加
+  };
+}
     
     productDefects[productCode].inspection += parseInt(item.ic || 0);
     productDefects[productCode].totalTime += parseInt(item.totalTime || 0);
@@ -623,13 +624,17 @@ function renderProductDefects() {
       
       if (!historicalData[productCode]) {
         historicalData[productCode] = {
-          inspection: 0,
+          : 0,
           totalDefects: 0,
           defectCodes: new Set()
         };
       }
       
       historicalData[productCode].inspection += parseInt(item.ic || 0);
+      
+      // 検査種類のカウント（空や未設定は「通常検査」扱い）
+const typeKey = (item.it2 && item.it2.trim()) ? item.it2.trim() : '通常検査';
+productDefects[productCode].typeCounts[typeKey] = (productDefects[productCode].typeCounts[typeKey] || 0) + 1;
       
       if (item.ngMap) {
         item.ngMap.forEach((value, code) => {
@@ -797,21 +802,31 @@ const timeDisplay = `${totalMinutes.toLocaleString()}分`;
     html += '</div>';
     
     // 製品情報
-    html += '<div class="product-info">';
-    html += '<div class="product-info-row">';
-    html += '<div class="product-info-label">検査数</div>';
-    html += `<div class="product-info-value">${data.inspection.toLocaleString()}個</div>`;
-    html += '</div>';
-    html += '<div class="product-info-row">';
-    html += '<div class="product-info-label">検査時間</div>';
-    html += `<div class="product-info-value">${timeDisplay}</div>`;
-    html += '</div>';
-    html += '<div class="product-info-row">';
-    html += '<div class="product-info-label">ロットNo</div>';
-    html += `<div class="product-info-value" style="font-size:11px;">${lotDisplay}</div>`;
-    html += '</div>';
-    html += '</div>';
-    
+html += '<div class="product-info-row">';
+html += '<div class="product-info-label">検査数</div>';
+html += `<div class="product-info-value">${data.inspection.toLocaleString()}個</div>`;
+html += '</div>';
+
+html += '<div class="product-info-row">';
+html += '<div class="product-info-label">検査時間</div>';
+html += `<div class="product-info-value">${timeDisplay}</div>`;
+html += '</div>';
+
+// ▼ 検査種類（種類ごとの件数を表示：例「通常検査×3, S×1」）
+const typePairs = Object.entries(data.typeCounts || {});
+const typeDisplay = typePairs.length
+  ? typePairs.map(([k,v]) => `${k}×${v}`).join(', ')
+  : '通常検査×0';
+html += '<div class="product-info-row">';
+html += '<div class="product-info-label">検査種類</div>';
+html += `<div class="product-info-value">${typeDisplay}</div>`;
+html += '</div>';
+
+html += '<div class="product-info-row">';
+html += '<div class="product-info-label">ロットNo</div>';
+html += `<div class="product-info-value" style="font-size:11px;">${lotDisplay}</div>`;
+html += '</div>';
+
     // 備考
     if (data.remarks && data.remarks.size > 0) {
       html += '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:2px;padding:10px;margin-bottom:12px;">';
