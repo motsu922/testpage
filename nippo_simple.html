@@ -5,24 +5,29 @@
 <title>検査日報（シンプル）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <style>
-  /* シンプル＆軽量レイアウト（旧Safari想定） */
+  /* ---- シンプル＆軽量（旧Safari想定） ---- */
   html,body{margin:0;padding:0;background:#f7f8fb;font-family:system-ui,"Noto Sans JP",sans-serif;color:#111;}
   .wrap{max-width:860px;margin:0 auto;padding:10px}
   h1{font-size:16px;margin:8px 0}
   .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin:10px 0}
   .row{margin:10px 0}
   label{display:block;font-weight:bold;margin-bottom:6px;font-size:14px}
-  input,select,textarea{width:100%;font-size:16px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff}
+  input,select,textarea{
+    width:100%;font-size:16px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff
+  }
   .hint{font-size:12px;color:#6b7280;margin-top:4px}
-  .btn{display:inline-block;border:1px solid #d1d5db;background:#111827;color:#fff;border-radius:10px;padding:12px 16px;font-weight:bold;font-size:15px;text-align:center;min-width:120px}
+  .btn{
+    display:inline-block;border:1px solid #d1d5db;background:#111827;color:#fff;border-radius:10px;
+    padding:12px 16px;font-weight:bold;font-size:15px;text-align:center;min-width:120px
+  }
   .btn:active{opacity:.9}
   .btn-line{background:#2563eb;border-color:#2563eb}
   .btn-green{background:#1a7f37;border-color:#1a7f37}
   .btn-gray{background:#6b7280;border-color:#6b7280}
   .btn-block{width:100%}
-  .flex{display:flex}
+  .flex{display:flex;justify-content:center;align-items:center;flex-wrap:wrap}
   .gap8{gap:8px}
-  .col{flex:1}
+  .col{flex:0 0 auto}
   .badge{display:inline-block;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:4px 8px;font-size:12px;color:#3730a3;margin-right:6px}
   .counter{display:flex;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff}
   .counter input{border:none;text-align:center;width:70px}
@@ -34,6 +39,11 @@
   .section-title{font-weight:bold;margin:8px 0 10px 0}
   .ng-grid{display:grid;grid-template-columns:1fr;gap:8px}
   @media (min-width:700px){ .ng-grid{grid-template-columns:1fr 1fr} }
+
+  /* --- 小さめ入力欄（iOSズーム対策でfont-size=16のまま、幅とパディングで縮小） --- */
+  input.small{
+    width:72px; padding:6px 6px; font-size:16px; /* 16px維持でズーム抑制 */
+  }
 </style>
 </head>
 <body>
@@ -70,11 +80,11 @@
     <div class="row">
       <label>検査数（個数×箱数＋端数 → 合計自動計算）</label>
       <div class="flex gap8">
-        <div class="col"><input type="number" id="pieces" placeholder="個数/箱（例 100）"></div>
-        <div style="align-self:center">×</div>
-        <div class="col"><input type="number" id="boxes" placeholder="箱数"></div>
-        <div style="align-self:center">＋</div>
-        <div class="col"><input type="number" id="remainder" placeholder="端数"></div>
+        <div class="col"><input type="number" id="pieces" class="small" placeholder="個数/箱"></div>
+        <div>×</div>
+        <div class="col"><input type="number" id="boxes" class="small" placeholder="箱数"></div>
+        <div>＋</div>
+        <div class="col"><input type="number" id="remainder" class="small" placeholder="端数"></div>
       </div>
       <div class="row" style="margin-top:8px">
         <label>合計</label>
@@ -239,7 +249,6 @@ function renderNG(){
   for(var i=0;i<ngItemsCurrent.length;i++){
     var it = ngItemsCurrent[i];
     var row = document.createElement('div');
-    // カウンター
     row.innerHTML =
       '<div class="row"><span class="badge">'+ it.code +':'+ it.name +'</span></div>' +
       '<div class="counter">' +
@@ -284,20 +293,16 @@ function onOrgChange(){
     renderNG();
     return;
   }
-  // 収容数→個数/箱に反映
   if(p.piecesPerBox>0){
     document.getElementById('pieces').value = p.piecesPerBox;
     calcTotal();
   }
-  // NG項目
   ngItemsCurrent = p.ngItems ? p.ngItems.slice(0) : [];
-  // 並び替えや特定項目の下寄せ等が必要ならここで調整可
   renderNG();
   ngInfo.innerHTML = '整理No「'+ code +'」のNG項目（'+ ngItemsCurrent.length +'件）｜収容数 '+ (p.piecesPerBox||0) +' 個/箱';
 }
 
 function clearForm(){
-  // 生産日付のみ今日に保ち、他はクリア
   var d = new Date();
   document.getElementById('pd').value = d.toISOString().split('T')[0];
   document.getElementById('on').value = "";
@@ -336,8 +341,7 @@ function submitDaily(){
   if(!st || !ed){ alert("開始・終了時刻を入力してください"); return; }
   var tmin = calculateWorkingMinutes(minutesFromHHMM(st), minutesFromHHMM(ed));
 
-  // NG集計
-  var ngObj = {}; // { code: count }
+  var ngObj = {};
   for(var i=0;i<ngItemsCurrent.length;i++){
     var c = parseInt((document.getElementById('ng_'+i)||{value:"0"}).value||"0",10);
     if(!isNaN(c) && c>0){
@@ -383,7 +387,7 @@ function initFirebase(){
 
 function loadMasters(){
   if(!db){ return; }
-  // 製品マスタ（読み取りのみ）
+  // 製品マスタ（読取のみ）
   db.collection('productMaster').onSnapshot(function(snap){
     productMaster = {};
     snap.forEach(function(doc){
@@ -393,7 +397,6 @@ function loadMasters(){
         ngItems: d.ngItems||[]
       };
     });
-    // セレクト更新
     var sel = document.getElementById('on');
     var cur = sel.value||"";
     var html = '<option value="">選択してください</option>';
@@ -405,10 +408,10 @@ function loadMasters(){
     }
     sel.innerHTML = html;
     if(cur){ sel.value = cur; }
-    onOrgChange(); // 反映
+    onOrgChange();
   });
 
-  // 検査員マスタ（読み取りのみ）
+  // 検査員マスタ（読取のみ）
   db.collection('inspectorMaster').orderBy('order').onSnapshot(function(snap){
     inspectorList = [];
     snap.forEach(function(doc){
