@@ -667,13 +667,21 @@ function renderProductDefects() {
     }
   });
 
-  // ③不良率でソート
-  const sorted = Object.entries(productTypeDefects).sort((a, b) => {
-    const A = a[1], B = b[1];
-    const rateA = A.inspection > 0 ? (A.totalDefects / A.inspection) : 0;
-    const rateB = B.inspection > 0 ? (B.totalDefects / B.inspection) : 0;
-    return rateB - rateA;
-  });
+// ③整理Noでソート（同一整理No内は検査種類の優先順）
+const TYPE_ORDER = ['通常検査','F','S','K','C','H','G','R','Z'];
+const typeRank = (t) => {
+  const idx = TYPE_ORDER.indexOf(t);
+  return idx === -1 ? TYPE_ORDER.length : idx;
+};
+
+const sorted = Object.entries(productTypeDefects).sort((a, b) => {
+  const A = a[1], B = b[1];
+  // 整理No（productCode）で昇順。数値を含む場合も自然順に。
+  const pc = (A.productCode || '').localeCompare(B.productCode || '', 'ja', { numeric: true, sensitivity: 'base' });
+  if (pc !== 0) return pc;
+  // 同一整理No内は検査種類の優先順
+  return typeRank(A.typeKey) - typeRank(B.typeKey);
+});
 
   const container = document.getElementById('product-defects');
   if (sorted.length === 0) {
