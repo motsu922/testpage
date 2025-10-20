@@ -11,14 +11,9 @@
   .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px;margin:10px 0}
   .row{margin:10px 0}
   label{display:block;font-weight:bold;margin-bottom:6px;font-size:14px}
-  input,select,textarea{
-    width:100%;font-size:16px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff
-  }
+  input,select,textarea{width:100%;font-size:16px;padding:10px;border:1px solid #d1d5db;border-radius:8px;background:#fff}
   .hint{font-size:12px;color:#6b7280;margin-top:4px}
-  .btn{
-    display:inline-block;border:1px solid #d1d5db;background:#111827;color:#fff;border-radius:10px;
-    padding:12px 16px;font-weight:bold;font-size:15px;text-align:center;min-width:120px
-  }
+  .btn{display:inline-block;border:1px solid #d1d5db;background:#111827;color:#fff;border-radius:10px;padding:12px 16px;font-weight:bold;font-size:15px;text-align:center;min-width:120px}
   .btn:active{opacity:.9}
   .btn-line{background:#2563eb;border-color:#2563eb}
   .btn-green{background:#1a7f37;border-color:#1a7f37}
@@ -38,8 +33,6 @@
   .section-title{font-weight:bold;margin:8px 0 10px 0}
   .ng-grid{display:grid;grid-template-columns:1fr;gap:8px}
   @media (min-width:700px){ .ng-grid{grid-template-columns:1fr 1fr} }
-
-  /* 小さめ数値入力（iOSズーム対策でfont-sizeは16pxのまま、幅/パディングで縮小） */
   input.small{width:72px;padding:6px 6px;font-size:16px}
 </style>
 </head>
@@ -96,14 +89,11 @@
         id="ln"
         placeholder="例: LOT-001"
         inputmode="latin"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        autocomplete="off"
-        oninput="sanitizeLot(this)"
-        oncompositionstart="lnComposing=true"
-        oncompositionend="lnComposing=false; sanitizeLot(this)"
+        maxlength="20"
+        pattern="[A-Za-z0-9\-]*"
+        autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off"
       >
+      <div class="hint">英数字・ハイフンのみ（自動で英大文字化）</div>
     </div>
   </div>
 
@@ -165,295 +155,109 @@ var firebaseConfig = {
   appId: "1:495316649507:web:fa195645f46e41b1a39396"
 };
 
-var db = null;
-var productMaster = {};   // { code: { piecesPerBox:number, ngItems:[{code,name},...] } }
-var inspectorList = [];   // ["山田", ...]
-var ngItemsCurrent = [];  // 選択中品番のNG項目
-var breakTimes = [
-  {start:630, end:640},
-  {start:730, end:780},
-  {start:860, end:870},
-  {start:1020, end:1030}
-];
-var lnComposing = false;
+var db=null, productMaster={}, inspectorList=[], ngItemsCurrent=[];
+var breakTimes=[{start:630,end:640},{start:730,end:780},{start:860,end:870},{start:1020,end:1030}];
 
-/* ---- 入力ユーティリティ ---- */
-function sanitizeLot(el){
-  if(lnComposing) return;
-  var v = el.value || "";
-  v = v.toUpperCase().replace(/[^A-Z0-9\-]/g, "");
-  el.value = v;
-}
-function zeroPad(n){ n = String(n); return n.length<2 ? "0"+n : n; }
-function showToast(msg){
-  var t = document.getElementById('toast');
-  t.textContent = msg;
-  t.style.display = 'block';
-  setTimeout(function(){ t.style.display = 'none'; }, 1800);
-}
-function setNow(which){
-  var d = new Date();
-  var v = zeroPad(d.getHours()) + ":" + zeroPad(d.getMinutes());
-  document.getElementById(which).value = v;
-  calcTotalTime();
-}
-function minutesFromHHMM(hhmm){
-  if(!hhmm) return null;
-  var sp = hhmm.split(':'); if(sp.length<2) return null;
-  var h = parseInt(sp[0],10), m = parseInt(sp[1],10);
-  if(isNaN(h)||isNaN(m)) return null;
-  return h*60 + m;
-}
-function calculateWorkingMinutes(startMinutes, endMinutes){
-  if(startMinutes==null || endMinutes==null) return 0;
-  if(endMinutes < startMinutes) endMinutes += 1440;
-  var total = 0, current = startMinutes;
-  while(current < endMinutes){
-    var nextBreakStart = null, nextBreakEnd = null;
-    for(var i=0;i<breakTimes.length;i++){
-      var b = breakTimes[i];
-      if(b.start > current && (nextBreakStart===null || b.start < nextBreakStart)){
-        nextBreakStart = b.start; nextBreakEnd = b.end;
-      }
-    }
-    if(nextBreakStart===null || nextBreakStart>=endMinutes){
-      total += (endMinutes - current); break;
-    }else{
-      total += (nextBreakStart - current); current = nextBreakEnd;
-    }
-  }
-  return total;
-}
+/* ---------- ロットNo：重複入力対策つきフィルタ ---------- */
+(function(){
+  var ln = null, composing=false, inProgress=false, prevSanitized="";
 
-/* ---- 計算＆描画 ---- */
-function calcTotal(){
-  var pieces = parseInt(document.getElementById('pieces').value||"0",10);
-  var boxes = parseInt(document.getElementById('boxes').value||"0",10);
-  var remainder = parseInt(document.getElementById('remainder').value||"0",10);
-  var total = (pieces*boxes) + remainder;
-  document.getElementById('ic').value = total>0 ? total : "";
-}
-function calcTotalTime(){
-  var st = minutesFromHHMM(document.getElementById('st').value);
-  var ed = minutesFromHHMM(document.getElementById('ed').value);
-  var mins = calculateWorkingMinutes(st, ed);
-  var txt = "0分";
-  if(mins>0){
-    var h = Math.floor(mins/60), m = mins%60;
-    txt = (h>0 ? (h+"時間"+m+"分") : (m+"分"));
+  function sanitize(v){
+    return (v||"").toUpperCase().replace(/[^A-Z0-9\-]/g,"");
   }
-  document.getElementById('totalTime').textContent = txt;
-}
-function renderNG(){
-  var area = document.getElementById('ngArea');
-  area.innerHTML = "";
-  for(var i=0;i<ngItemsCurrent.length;i++){
-    var it = ngItemsCurrent[i];
-    var row = document.createElement('div');
-    row.innerHTML =
-      '<div class="row"><span class="badge">'+ it.code +':'+ it.name +'</span></div>' +
-      '<div class="counter">' +
-        '<button type="button" onclick="ngDec('+i+')">−</button>' +
-        '<input type="number" id="ng_'+i+'" value="0" min="0" oninput="ngValidate('+i+')">' +
-        '<button type="button" onclick="ngInc('+i+')">＋</button>' +
-      '</div>';
-    area.appendChild(row);
-  }
-}
-function ngInc(i){
-  var el = document.getElementById('ng_'+i);
-  var v = parseInt(el.value||"0",10);
-  el.value = (isNaN(v)?0:v)+1;
-}
-function ngDec(i){
-  var el = document.getElementById('ng_'+i);
-  var v = parseInt(el.value||"0",10)-1;
-  el.value = v>0? v: 0;
-}
-function ngValidate(i){
-  var el = document.getElementById('ng_'+i);
-  var v = parseInt(el.value||"0",10);
-  if(isNaN(v) || v<0){ el.value = 0; }
-}
 
-/* ---- セレクト変更 ---- */
-function onOrgChange(){
-  var code = document.getElementById('on').value;
-  var ngInfo = document.getElementById('ngInfo');
-  ngItemsCurrent = [];
-  if(!code){
-    ngInfo.innerHTML = "整理Noを選択してください";
-    document.getElementById('pieces').value = "";
-    calcTotal();
-    renderNG();
-    return;
+  function onBeforeInput(e){
+    // 無効文字は事前にブロック
+    // e.data が null のケース（削除/貼り付けなど）は通す
+    if(e.data && /[^A-Za-z0-9\-]/.test(e.data)){ e.preventDefault(); }
   }
-  var p = productMaster[code] || null;
-  if(!p){
-    ngInfo.innerHTML = '<span class="ng">製品データが見つかりません</span>';
-    renderNG();
-    return;
-  }
-  if(p.piecesPerBox>0){
-    document.getElementById('pieces').value = p.piecesPerBox;
-    calcTotal();
-  }
-  ngItemsCurrent = p.ngItems ? p.ngItems.slice(0) : [];
-  renderNG();
-  ngInfo.innerHTML = '整理No「'+ code +'」のNG項目（'+ ngItemsCurrent.length +'件）｜収容数 '+ (p.piecesPerBox||0) +' 個/箱';
-}
 
-/* ---- クリア＆登録 ---- */
-function clearForm(){
-  var d = new Date();
-  document.getElementById('pd').value = d.toISOString().split('T')[0];
-  document.getElementById('on').value = "";
-  document.getElementById('it2').value = "";
-  document.getElementById('pieces').value = "";
-  document.getElementById('boxes').value = "";
-  document.getElementById('remainder').value = "";
-  document.getElementById('ic').value = "";
-  document.getElementById('ln').value = "";
-  document.getElementById('inspector').value = "";
-  document.getElementById('st').value = "";
-  document.getElementById('ed').value = "";
-  document.getElementById('totalTime').textContent = "0分";
-  document.getElementById('rm').value = "";
-  ngItemsCurrent = [];
-  document.getElementById('ngArea').innerHTML = "";
-  document.getElementById('ngInfo').innerHTML = "整理Noを選択してください";
-}
+  function onInput(e){
+    if(inProgress || composing) return;
+    var v = e.target.value;
+    var s = sanitize(v);
+    if(s === prevSanitized) return;        // 同じなら何もしない（連鎖防止）
+
+    inProgress = true;
+    var start = e.target.selectionStart, end = e.target.selectionEnd;
+    e.target.value = s;
+    // 末尾に寄せる（厳密なキャレット復元が不要ならこれでOK）
+    e.target.setSelectionRange(s.length, s.length);
+    prevSanitized = s;
+    inProgress = false;
+  }
+
+  function onCompStart(){ composing = true; }
+  function onCompEnd(){
+    composing = false;
+    // 変換確定時に最終サニタイズ
+    if(ln){ var s = sanitize(ln.value); ln.value = s; prevSanitized = s; }
+  }
+
+  function attach(){
+    ln = document.getElementById("ln");
+    if(!ln) return;
+    ln.setAttribute("autocomplete","off");
+    ln.setAttribute("autocapitalize","off");
+    ln.setAttribute("autocorrect","off");
+    ln.setAttribute("spellcheck","false");
+
+    ln.addEventListener("beforeinput", onBeforeInput, false);
+    ln.addEventListener("compositionstart", onCompStart, false);
+    ln.addEventListener("compositionend", onCompEnd, false);
+    ln.addEventListener("input", onInput, false);
+  }
+
+  document.addEventListener("DOMContentLoaded", attach);
+})();
+
+/* ---------- 共通ユーティリティ ---------- */
+function zeroPad(n){n=String(n);return n.length<2?"0"+n:n;}
+function showToast(msg){var t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(function(){t.style.display='none';},1800);}
+function setNow(w){var d=new Date();var v=zeroPad(d.getHours())+":"+zeroPad(d.getMinutes());document.getElementById(w).value=v;calcTotalTime();}
+function minutesFromHHMM(hhmm){if(!hhmm)return null;var sp=hhmm.split(':');if(sp.length<2)return null;var h=parseInt(sp[0],10),m=parseInt(sp[1],10);if(isNaN(h)||isNaN(m))return null;return h*60+m;}
+function calculateWorkingMinutes(s,e){if(s==null||e==null)return 0;if(e<s)e+=1440;var total=0,current=s;while(current<e){var nbS=null,nbE=null;for(var i=0;i<breakTimes.length;i++){var b=breakTimes[i];if(b.start>current&&(nbS===null||b.start<nbS)){nbS=b.start;nbE=b.end;}}if(nbS===null||nbS>=e){total+=(e-current);break;}else{total+=(nbS-current);current=nbE;}}return total;}
+
+/* ---------- 計算＆描画 ---------- */
+function calcTotal(){var p=parseInt(document.getElementById('pieces').value||"0",10);var b=parseInt(document.getElementById('boxes').value||"0",10);var r=parseInt(document.getElementById('remainder').value||"0",10);var t=(p*b)+r;document.getElementById('ic').value=t>0?t:"";}
+function calcTotalTime(){var st=minutesFromHHMM(document.getElementById('st').value);var ed=minutesFromHHMM(document.getElementById('ed').value);var mins=calculateWorkingMinutes(st,ed);var txt="0分";if(mins>0){var h=Math.floor(mins/60),m=mins%60;txt=(h>0?(h+"時間"+m+"分"):(m+"分"));}document.getElementById('totalTime').textContent=txt;}
+function renderNG(){var a=document.getElementById('ngArea');a.innerHTML="";for(var i=0;i<ngItemsCurrent.length;i++){var it=ngItemsCurrent[i];var row=document.createElement('div');row.innerHTML='<div class="row"><span class="badge">'+it.code+':'+it.name+'</span></div><div class="counter"><button type="button" onclick="ngDec('+i+')">−</button><input type="number" id="ng_'+i+'" value="0" min="0" oninput="ngValidate('+i+')"><button type="button" onclick="ngInc('+i+')">＋</button></div>';a.appendChild(row);}}
+function ngInc(i){var e=document.getElementById('ng_'+i);var v=parseInt(e.value||"0",10);e.value=(isNaN(v)?0:v)+1;}
+function ngDec(i){var e=document.getElementById('ng_'+i);var v=parseInt(e.value||"0",10)-1;e.value=v>0?v:0;}
+function ngValidate(i){var e=document.getElementById('ng_'+i);var v=parseInt(e.value||"0",10);if(isNaN(v)||v<0)e.value=0;}
+
+/* ---------- セレクト変更 ---------- */
+function onOrgChange(){var c=document.getElementById('on').value;var info=document.getElementById('ngInfo');ngItemsCurrent=[];if(!c){info.innerHTML="整理Noを選択してください";document.getElementById('pieces').value="";calcTotal();renderNG();return;}var p=productMaster[c]||null;if(!p){info.innerHTML='<span class="ng">製品データが見つかりません</span>';renderNG();return;}if(p.piecesPerBox>0){document.getElementById('pieces').value=p.piecesPerBox;calcTotal();}ngItemsCurrent=p.ngItems?p.ngItems.slice(0):[];renderNG();info.innerHTML='整理No「'+c+'」のNG項目（'+ngItemsCurrent.length+'件）｜収容数 '+(p.piecesPerBox||0)+' 個/箱';}
+
+/* ---------- クリア＆登録 ---------- */
+function clearForm(){var d=new Date();document.getElementById('pd').value=d.toISOString().split('T')[0];document.getElementById('on').value="";document.getElementById('it2').value="";document.getElementById('pieces').value="";document.getElementById('boxes').value="";document.getElementById('remainder').value="";document.getElementById('ic').value="";document.getElementById('ln').value="";document.getElementById('inspector').value="";document.getElementById('st').value="";document.getElementById('ed').value="";document.getElementById('totalTime').textContent="0分";document.getElementById('rm').value="";ngItemsCurrent=[];document.getElementById('ngArea').innerHTML="";document.getElementById('ngInfo').innerHTML="整理Noを選択してください";}
 function submitDaily(){
-  if(!db){ alert("Firebase未接続です"); return; }
-  var on = document.getElementById('on').value;
-  if(!on){ alert("整理Noを選択してください"); return; }
-
-  var pieces = parseInt(document.getElementById('pieces').value||"0",10);
-  var boxes = parseInt(document.getElementById('boxes').value||"0",10);
-  var remainder = parseInt(document.getElementById('remainder').value||"0",10);
-  var totalPieces = (pieces*boxes)+remainder;
-  if(totalPieces<=0){ alert("検査数（個数×箱数＋端数）を入力してください"); return; }
-
-  var ins = document.getElementById('inspector').value;
-  if(!ins){ alert("検査員を選択してください"); return; }
-
-  var st = document.getElementById('st').value;
-  var ed = document.getElementById('ed').value;
-  if(!st || !ed){ alert("開始・終了時刻を入力してください"); return; }
-
-  var tmin = calculateWorkingMinutes(minutesFromHHMM(st), minutesFromHHMM(ed));
-
-  var ngObj = {}; // {code: count}
-  for(var i=0;i<ngItemsCurrent.length;i++){
-    var c = parseInt((document.getElementById('ng_'+i)||{value:"0"}).value||"0",10);
-    if(!isNaN(c) && c>0){
-      var code = ngItemsCurrent[i].code;
-      ngObj[code] = String(c);
-    }
-  }
-
-  var data = {
-    pd: (document.getElementById('pd').value||"").replace(/-/g,'/'),
-    on: on,
-    pieces: String(pieces||0),
-    boxes: String(boxes||0),
-    remainder: String(remainder||0),
-    ic: String(totalPieces||0),
-    totalTime: String(tmin||0),
-    ln: document.getElementById('ln').value||"",
-    it2: document.getElementById('it2').value||"",
-    inspectors: [{ name: ins, timePeriods: [{ startTime: st, endTime: ed }] }],
-    ngMap: ngObj,
-    rm: document.getElementById('rm').value||"",
-    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-  };
-
-  db.collection('dailyReports').add(data).then(function(){
-    showToast("登録しました");
-    clearForm();
-  })["catch"](function(e){
-    alert("登録に失敗しました: " + e.message);
-  });
+  if(!db){alert("Firebase未接続です");return;}
+  var on=document.getElementById('on').value; if(!on){alert("整理Noを選択してください");return;}
+  var p=parseInt(document.getElementById('pieces').value||"0",10);
+  var b=parseInt(document.getElementById('boxes').value||"0",10);
+  var r=parseInt(document.getElementById('remainder').value||"0",10);
+  var total=(p*b)+r; if(total<=0){alert("検査数（個数×箱数＋端数）を入力してください");return;}
+  var ins=document.getElementById('inspector').value; if(!ins){alert("検査員を選択してください");return;}
+  var st=document.getElementById('st').value, ed=document.getElementById('ed').value; if(!st||!ed){alert("開始・終了時刻を入力してください");return;}
+  var tmin=calculateWorkingMinutes(minutesFromHHMM(st),minutesFromHHMM(ed));
+  var ngObj={}; for(var i=0;i<ngItemsCurrent.length;i++){var c=parseInt((document.getElementById('ng_'+i)||{value:"0"}).value||"0",10);if(!isNaN(c)&&c>0){var code=ngItemsCurrent[i].code;ngObj[code]=String(c);}}
+  var data={pd:(document.getElementById('pd').value||"").replace(/-/g,'/'),on:on,pieces:String(p||0),boxes:String(b||0),remainder:String(r||0),ic:String(total||0),totalTime:String(tmin||0),ln:document.getElementById('ln').value||"",it2:document.getElementById('it2').value||"",inspectors:[{name:ins,timePeriods:[{startTime:st,endTime:ed}]}],ngMap:ngObj,rm:document.getElementById('rm').value||"",timestamp:firebase.firestore.FieldValue.serverTimestamp()};
+  db.collection('dailyReports').add(data).then(function(){showToast("登録しました");clearForm();})["catch"](function(e){alert("登録に失敗しました: "+e.message);});
 }
 
-/* ---- Firebase初期化＆マスタ読込 ---- */
-function initFirebase(){
-  try{
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
-    document.getElementById('fbStatus').innerHTML = '<span class="ok">✓ 接続済み</span>';
-  }catch(e){
-    console.log(e);
-    document.getElementById('fbStatus').innerHTML = '<span class="ng">✗ 接続失敗</span>';
-  }
-}
+/* ---------- Firebase初期化＆マスタ読込 ---------- */
+function initFirebase(){try{firebase.initializeApp(firebaseConfig);db=firebase.firestore();document.getElementById('fbStatus').innerHTML='<span class="ok">✓ 接続済み</span>';}catch(e){console.log(e);document.getElementById('fbStatus').innerHTML='<span class="ng">✗ 接続失敗</span>';}}
 function loadMasters(){
-  if(!db) return;
-
-  // 製品マスタ（読み取りのみ）
-  db.collection('productMaster').onSnapshot(function(snap){
-    productMaster = {};
-    snap.forEach(function(doc){
-      var d = doc.data()||{};
-      productMaster[doc.id] = {
-        piecesPerBox: d.piecesPerBox||0,
-        ngItems: d.ngItems||[]
-      };
-    });
-    // 整理Noセレクト更新
-    var sel = document.getElementById('on');
-    var cur = sel.value||"";
-    var html = '<option value="">選択してください</option>';
-    var codes = [];
-    for(var k in productMaster){ if(productMaster.hasOwnProperty(k)) codes.push(k); }
-    codes.sort();
-    for(var i=0;i<codes.length;i++){
-      html += '<option value="'+ codes[i] +'">'+ codes[i] +'</option>';
-    }
-    sel.innerHTML = html;
-    if(cur){ sel.value = cur; }
-    onOrgChange(); // 反映
-  });
-
-  // 検査員マスタ（読み取りのみ）
-  db.collection('inspectorMaster').orderBy('order').onSnapshot(function(snap){
-    inspectorList = [];
-    snap.forEach(function(doc){
-      var d = doc.data()||{};
-      if(d.name){ inspectorList.push(d.name); }
-    });
-    var sel = document.getElementById('inspector');
-    var cur = sel.value||"";
-    var html = '<option value="">選択してください</option>';
-    for(var i=0;i<inspectorList.length;i++){
-      var nm = inspectorList[i];
-      html += '<option value="'+ nm +'">'+ nm +'</option>';
-    }
-    sel.innerHTML = html;
-    if(cur){ sel.value = cur; }
-  });
+  if(!db)return;
+  db.collection('productMaster').onSnapshot(function(s){productMaster={};s.forEach(function(doc){var d=doc.data()||{};productMaster[doc.id]={piecesPerBox:d.piecesPerBox||0,ngItems:d.ngItems||[]};});var sel=document.getElementById('on');var cur=sel.value||"";var html='<option value="">選択してください</option>';var codes=[];for(var k in productMaster){if(productMaster.hasOwnProperty(k))codes.push(k);}codes.sort();for(var i=0;i<codes.length;i++){html+='<option value="'+codes[i]+'">'+codes[i]+'</option>';}sel.innerHTML=html;if(cur){sel.value=cur;}onOrgChange();});
+  db.collection('inspectorMaster').orderBy('order').onSnapshot(function(s){inspectorList=[];s.forEach(function(doc){var d=doc.data()||{};if(d.name){inspectorList.push(d.name);}});var sel=document.getElementById('inspector');var cur=sel.value||"";var html='<option value="">選択してください</option>';for(var i=0;i<inspectorList.length;i++){var nm=inspectorList[i];html+='<option value="'+nm+'">'+nm+'</option>';}sel.innerHTML=html;if(cur){sel.value=cur;}});
 }
 
-/* ---- イベントバインド＆初期化 ---- */
-function bind(){
-  document.getElementById('on').addEventListener('change', onOrgChange);
-  document.getElementById('pieces').addEventListener('input', calcTotal);
-  document.getElementById('boxes').addEventListener('input', calcTotal);
-  document.getElementById('remainder').addEventListener('input', calcTotal);
-  document.getElementById('st').addEventListener('change', calcTotalTime);
-  document.getElementById('ed').addEventListener('change', calcTotalTime);
-}
-function initToday(){
-  var d = new Date();
-  document.getElementById('pd').value = d.toISOString().split('T')[0];
-}
-
-document.addEventListener('DOMContentLoaded', function(){
-  initToday();
-  bind();
-  initFirebase();
-  loadMasters();
-});
+/* ---------- 初期化 ---------- */
+function bind(){document.getElementById('on').addEventListener('change', onOrgChange);document.getElementById('pieces').addEventListener('input', calcTotal);document.getElementById('boxes').addEventListener('input', calcTotal);document.getElementById('remainder').addEventListener('input', calcTotal);document.getElementById('st').addEventListener('change', calcTotalTime);document.getElementById('ed').addEventListener('change', calcTotalTime);}
+function initToday(){var d=new Date();document.getElementById('pd').value=d.toISOString().split('T')[0];}
+document.addEventListener('DOMContentLoaded', function(){initToday();bind();initFirebase();loadMasters();});
 </script>
 </body>
 </html>
