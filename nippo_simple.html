@@ -5,7 +5,6 @@
 <title>検査日報（シンプル）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <style>
-  /* ---- シンプル＆軽量（旧Safari想定） ---- */
   html,body{margin:0;padding:0;background:#f7f8fb;font-family:system-ui,"Noto Sans JP",sans-serif;color:#111;}
   .wrap{max-width:860px;margin:0 auto;padding:10px}
   h1{font-size:16px;margin:8px 0}
@@ -40,10 +39,8 @@
   .ng-grid{display:grid;grid-template-columns:1fr;gap:8px}
   @media (min-width:700px){ .ng-grid{grid-template-columns:1fr 1fr} }
 
-  /* --- 小さめ入力欄（iOSズーム対策でfont-size=16のまま、幅とパディングで縮小） --- */
-  input.small{
-    width:72px; padding:6px 6px; font-size:16px; /* 16px維持でズーム抑制 */
-  }
+  /* 小さめ数値入力（iOSズーム対策でfont-sizeは16pxのまま、幅/パディングで縮小） */
+  input.small{width:72px;padding:6px 6px;font-size:16px}
 </style>
 </head>
 <body>
@@ -94,7 +91,19 @@
 
     <div class="row">
       <label>ロットNo</label>
-      <input type="text" id="ln" placeholder="例: LOT-001" oninput="toUppercase(this)">
+      <input
+        type="text"
+        id="ln"
+        placeholder="例: LOT-001"
+        inputmode="latin"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        autocomplete="off"
+        oninput="sanitizeLot(this)"
+        oncompositionstart="lnComposing=true"
+        oncompositionend="lnComposing=false; sanitizeLot(this)"
+      >
     </div>
   </div>
 
@@ -106,14 +115,8 @@
     </div>
     <div class="row">
       <div class="flex gap8">
-        <div class="col">
-          <label>開始</label>
-          <input type="time" id="st">
-        </div>
-        <div class="col">
-          <label>終了</label>
-          <input type="time" id="ed">
-        </div>
+        <div class="col"><label>開始</label><input type="time" id="st"></div>
+        <div class="col"><label>終了</label><input type="time" id="ed"></div>
       </div>
       <div class="hint">休憩：10:30-10:40 / 12:10-12:50 / 14:20-14:30 / 17:00-17:10（自動除外）</div>
     </div>
@@ -152,7 +155,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
-/* ===== 旧Safari配慮：ES5/従来構文 ===== */
+/* ===== 旧Safari配慮：ES5構文 ===== */
 var firebaseConfig = {
   apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
   authDomain: "miyamaunitec-fb87a.firebaseapp.com",
@@ -163,47 +166,48 @@ var firebaseConfig = {
 };
 
 var db = null;
-var productMaster = {};   // { code: { piecesPerBox: number, ngItems: [{code,name},...] } }
-var inspectorList = [];   // [ "山田", "佐藤", ... ]
-var ngItemsCurrent = [];  // 表示中品番のNG項目
+var productMaster = {};   // { code: { piecesPerBox:number, ngItems:[{code,name},...] } }
+var inspectorList = [];   // ["山田", ...]
+var ngItemsCurrent = [];  // 選択中品番のNG項目
 var breakTimes = [
-  {start: 630, end: 640},
-  {start: 730, end: 780},
-  {start: 860, end: 870},
-  {start: 1020, end: 1030}
+  {start:630, end:640},
+  {start:730, end:780},
+  {start:860, end:870},
+  {start:1020, end:1030}
 ];
+var lnComposing = false;
 
+/* ---- 入力ユーティリティ ---- */
+function sanitizeLot(el){
+  if(lnComposing) return;
+  var v = el.value || "";
+  v = v.toUpperCase().replace(/[^A-Z0-9\-]/g, "");
+  el.value = v;
+}
 function zeroPad(n){ n = String(n); return n.length<2 ? "0"+n : n; }
-function toUppercase(el){ el.value = el.value.toUpperCase(); }
-
 function showToast(msg){
   var t = document.getElementById('toast');
   t.textContent = msg;
   t.style.display = 'block';
   setTimeout(function(){ t.style.display = 'none'; }, 1800);
 }
-
 function setNow(which){
   var d = new Date();
   var v = zeroPad(d.getHours()) + ":" + zeroPad(d.getMinutes());
   document.getElementById(which).value = v;
   calcTotalTime();
 }
-
 function minutesFromHHMM(hhmm){
-  if(!hhmm){ return null; }
-  var sp = hhmm.split(':');
-  if(sp.length<2){ return null; }
+  if(!hhmm) return null;
+  var sp = hhmm.split(':'); if(sp.length<2) return null;
   var h = parseInt(sp[0],10), m = parseInt(sp[1],10);
-  if(isNaN(h)||isNaN(m)){ return null; }
+  if(isNaN(h)||isNaN(m)) return null;
   return h*60 + m;
 }
-
 function calculateWorkingMinutes(startMinutes, endMinutes){
-  if(startMinutes==null || endMinutes==null){ return 0; }
-  if(endMinutes < startMinutes){ endMinutes += 1440; }
-  var total = 0;
-  var current = startMinutes;
+  if(startMinutes==null || endMinutes==null) return 0;
+  if(endMinutes < startMinutes) endMinutes += 1440;
+  var total = 0, current = startMinutes;
   while(current < endMinutes){
     var nextBreakStart = null, nextBreakEnd = null;
     for(var i=0;i<breakTimes.length;i++){
@@ -213,16 +217,15 @@ function calculateWorkingMinutes(startMinutes, endMinutes){
       }
     }
     if(nextBreakStart===null || nextBreakStart>=endMinutes){
-      total += (endMinutes - current);
-      break;
+      total += (endMinutes - current); break;
     }else{
-      total += (nextBreakStart - current);
-      current = nextBreakEnd;
+      total += (nextBreakStart - current); current = nextBreakEnd;
     }
   }
   return total;
 }
 
+/* ---- 計算＆描画 ---- */
 function calcTotal(){
   var pieces = parseInt(document.getElementById('pieces').value||"0",10);
   var boxes = parseInt(document.getElementById('boxes').value||"0",10);
@@ -230,7 +233,6 @@ function calcTotal(){
   var total = (pieces*boxes) + remainder;
   document.getElementById('ic').value = total>0 ? total : "";
 }
-
 function calcTotalTime(){
   var st = minutesFromHHMM(document.getElementById('st').value);
   var ed = minutesFromHHMM(document.getElementById('ed').value);
@@ -238,11 +240,10 @@ function calcTotalTime(){
   var txt = "0分";
   if(mins>0){
     var h = Math.floor(mins/60), m = mins%60;
-    txt = (h>0? (h+"時間"+m+"分") : (m+"分"));
+    txt = (h>0 ? (h+"時間"+m+"分") : (m+"分"));
   }
   document.getElementById('totalTime').textContent = txt;
 }
-
 function renderNG(){
   var area = document.getElementById('ngArea');
   area.innerHTML = "";
@@ -259,7 +260,6 @@ function renderNG(){
     area.appendChild(row);
   }
 }
-
 function ngInc(i){
   var el = document.getElementById('ng_'+i);
   var v = parseInt(el.value||"0",10);
@@ -276,6 +276,7 @@ function ngValidate(i){
   if(isNaN(v) || v<0){ el.value = 0; }
 }
 
+/* ---- セレクト変更 ---- */
 function onOrgChange(){
   var code = document.getElementById('on').value;
   var ngInfo = document.getElementById('ngInfo');
@@ -302,6 +303,7 @@ function onOrgChange(){
   ngInfo.innerHTML = '整理No「'+ code +'」のNG項目（'+ ngItemsCurrent.length +'件）｜収容数 '+ (p.piecesPerBox||0) +' 個/箱';
 }
 
+/* ---- クリア＆登録 ---- */
 function clearForm(){
   var d = new Date();
   document.getElementById('pd').value = d.toISOString().split('T')[0];
@@ -321,7 +323,6 @@ function clearForm(){
   document.getElementById('ngArea').innerHTML = "";
   document.getElementById('ngInfo').innerHTML = "整理Noを選択してください";
 }
-
 function submitDaily(){
   if(!db){ alert("Firebase未接続です"); return; }
   var on = document.getElementById('on').value;
@@ -339,9 +340,10 @@ function submitDaily(){
   var st = document.getElementById('st').value;
   var ed = document.getElementById('ed').value;
   if(!st || !ed){ alert("開始・終了時刻を入力してください"); return; }
+
   var tmin = calculateWorkingMinutes(minutesFromHHMM(st), minutesFromHHMM(ed));
 
-  var ngObj = {};
+  var ngObj = {}; // {code: count}
   for(var i=0;i<ngItemsCurrent.length;i++){
     var c = parseInt((document.getElementById('ng_'+i)||{value:"0"}).value||"0",10);
     if(!isNaN(c) && c>0){
@@ -374,6 +376,7 @@ function submitDaily(){
   });
 }
 
+/* ---- Firebase初期化＆マスタ読込 ---- */
 function initFirebase(){
   try{
     firebase.initializeApp(firebaseConfig);
@@ -384,10 +387,10 @@ function initFirebase(){
     document.getElementById('fbStatus').innerHTML = '<span class="ng">✗ 接続失敗</span>';
   }
 }
-
 function loadMasters(){
-  if(!db){ return; }
-  // 製品マスタ（読取のみ）
+  if(!db) return;
+
+  // 製品マスタ（読み取りのみ）
   db.collection('productMaster').onSnapshot(function(snap){
     productMaster = {};
     snap.forEach(function(doc){
@@ -397,21 +400,22 @@ function loadMasters(){
         ngItems: d.ngItems||[]
       };
     });
+    // 整理Noセレクト更新
     var sel = document.getElementById('on');
     var cur = sel.value||"";
     var html = '<option value="">選択してください</option>';
     var codes = [];
-    for(var k in productMaster){ if(productMaster.hasOwnProperty(k)){ codes.push(k); } }
+    for(var k in productMaster){ if(productMaster.hasOwnProperty(k)) codes.push(k); }
     codes.sort();
     for(var i=0;i<codes.length;i++){
       html += '<option value="'+ codes[i] +'">'+ codes[i] +'</option>';
     }
     sel.innerHTML = html;
     if(cur){ sel.value = cur; }
-    onOrgChange();
+    onOrgChange(); // 反映
   });
 
-  // 検査員マスタ（読取のみ）
+  // 検査員マスタ（読み取りのみ）
   db.collection('inspectorMaster').orderBy('order').onSnapshot(function(snap){
     inspectorList = [];
     snap.forEach(function(doc){
@@ -430,6 +434,7 @@ function loadMasters(){
   });
 }
 
+/* ---- イベントバインド＆初期化 ---- */
 function bind(){
   document.getElementById('on').addEventListener('change', onOrgChange);
   document.getElementById('pieces').addEventListener('input', calcTotal);
@@ -438,7 +443,6 @@ function bind(){
   document.getElementById('st').addEventListener('change', calcTotalTime);
   document.getElementById('ed').addEventListener('change', calcTotalTime);
 }
-
 function initToday(){
   var d = new Date();
   document.getElementById('pd').value = d.toISOString().split('T')[0];
