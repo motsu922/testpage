@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>生管・物流G異常履歴管理</title>
+    <title>出荷作業異常履歴管理</title>
     <style>
         * {
             margin: 0;
@@ -178,6 +178,31 @@
 
         .btn:active {
             transform: scale(0.98);
+        }
+
+        .btn-today,
+        .btn-now {
+            padding: 12px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.3s;
+        }
+
+        .btn-today:hover,
+        .btn-now:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .btn-today:active,
+        .btn-now:active {
+            transform: translateY(0);
         }
 
         .btn-secondary {
@@ -676,7 +701,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>生管・物流G異常履歴</h1>
+        <h1>📦 出荷作業異常履歴</h1>
     </div>
 
     <div class="tab-container">
@@ -701,6 +726,32 @@
         </div>
 
         <form id="anomaly-form">
+            <div class="form-group">
+                <label>発生日 *</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="date" id="occurrence-date" required style="flex: 1;">
+                    <button type="button" class="btn-today" onclick="setToday()">Today</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>発生時刻 *</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="time" id="occurrence-time" required style="flex: 1;">
+                    <button type="button" class="btn-now" onclick="setNow()">Now</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>発生場所</label>
+                <input type="text" id="location" placeholder="例: ピロティ、C棟3階">
+            </div>
+
+            <div class="form-group">
+                <label>整理№</label>
+                <input type="text" id="reference-number" placeholder="例: 4923、B0009">
+            </div>
+
             <div class="form-group">
                 <label>異常分類 *</label>
                 <select id="category" required>
@@ -772,7 +823,10 @@
             <table class="history-table">
                 <thead>
                     <tr>
-                        <th>発生日時</th>
+                        <th>発生日</th>
+                        <th>発生時刻</th>
+                        <th>発生場所</th>
+                        <th>整理№</th>
                         <th>分類</th>
                         <th>処置者</th>
                         <th>異常内容</th>
@@ -844,6 +898,22 @@
                 <button class="edit-modal-close" onclick="closeEditModal()">&times;</button>
             </div>
             <form id="edit-form">
+                <div class="form-group">
+                    <label>発生日 *</label>
+                    <input type="date" id="edit-occurrence-date" required>
+                </div>
+                <div class="form-group">
+                    <label>発生時刻 *</label>
+                    <input type="time" id="edit-occurrence-time" required>
+                </div>
+                <div class="form-group">
+                    <label>発生場所</label>
+                    <input type="text" id="edit-location">
+                </div>
+                <div class="form-group">
+                    <label>整理№</label>
+                    <input type="text" id="edit-reference-number">
+                </div>
                 <div class="form-group">
                     <label>異常分類 *</label>
                     <select id="edit-category" required>
@@ -1189,6 +1259,19 @@
             }
         }
 
+        // Today/Nowボタンの処理
+        window.setToday = function() {
+            const today = new Date();
+            const dateStr = today.toISOString().split('T')[0];
+            document.getElementById('occurrence-date').value = dateStr;
+        }
+
+        window.setNow = function() {
+            const now = new Date();
+            const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            document.getElementById('occurrence-time').value = timeStr;
+        }
+
         // 表示モード切り替え
         window.switchView = function(mode) {
             viewMode = mode;
@@ -1229,7 +1312,7 @@
             if (logsToDisplay.length === 0) {
                 tableLogList.innerHTML = `
                     <tr>
-                        <td colspan="10" style="text-align: center; padding: 40px; color: #999;">
+                        <td colspan="13" style="text-align: center; padding: 40px; color: #999;">
                             まだ履歴がありません
                         </td>
                     </tr>
@@ -1237,17 +1320,16 @@
                 return;
             }
 
-            // 日付順に並び替え
+            // 日付順に並び替え（発生日時でソート）
             const sortedLogs = [...logsToDisplay].sort((a, b) => {
-                return new Date(b.timestamp) - new Date(a.timestamp);
+                const dateA = new Date(a.occurrenceDate + 'T' + a.occurrenceTime);
+                const dateB = new Date(b.occurrenceDate + 'T' + b.occurrenceTime);
+                return dateB - dateA;
             });
 
             tableLogList.innerHTML = '';
             sortedLogs.forEach((log) => {
                 const logKey = isFirebaseConnected ? log._key : logs.indexOf(log);
-                const date = new Date(log.timestamp);
-                const dateStr = `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')}`;
-                const timeStr = `${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
                 
                 const tr = document.createElement('tr');
                 
@@ -1264,7 +1346,10 @@
                 }
 
                 tr.innerHTML = `
-                    <td class="table-date">${dateStr}<br>${timeStr}</td>
+                    <td class="table-date">${log.occurrenceDate || '-'}</td>
+                    <td class="table-date">${log.occurrenceTime || '-'}</td>
+                    <td class="table-handler">${log.location || '<span style="color: #ccc;">-</span>'}</td>
+                    <td class="table-handler">${log.referenceNumber || '<span style="color: #ccc;">-</span>'}</td>
                     <td><span class="table-category">${log.category}</span></td>
                     <td class="table-handler">${log.handler}</td>
                     <td class="table-description">${log.description}</td>
@@ -1322,14 +1407,14 @@
 
             // 日付順に並び替え
             const sortedLogs = [...logsToDisplay].sort((a, b) => {
-                return new Date(b.timestamp) - new Date(a.timestamp);
+                const dateA = new Date(a.occurrenceDate + 'T' + a.occurrenceTime);
+                const dateB = new Date(b.occurrenceDate + 'T' + b.occurrenceTime);
+                return dateB - dateA;
             });
 
             logList.innerHTML = '';
             sortedLogs.forEach((log) => {
                 const logKey = isFirebaseConnected ? log._key : logs.indexOf(log);
-                const date = new Date(log.timestamp);
-                const dateStr = `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
                 
                 const logDiv = document.createElement('div');
                 logDiv.className = 'log-item';
@@ -1349,10 +1434,12 @@
                         <button class="table-edit-btn" data-log-key="${logKey}">編集</button>
                     </div>
                     <div class="log-header">
-                        <span class="log-date">${dateStr}</span>
+                        <span class="log-date">${log.occurrenceDate} ${log.occurrenceTime}</span>
                         <span class="log-category">${log.category}</span>
                     </div>
                     <div class="log-content">
+                        ${log.location ? `<p><strong>発生場所:</strong> ${log.location}</p>` : ''}
+                        ${log.referenceNumber ? `<p><strong>整理№:</strong> ${log.referenceNumber}</p>` : ''}
                         <p><strong>処置者:</strong> ${log.handler}</p>
                         <p><strong>異常内容:</strong> ${log.description}</p>
                         ${log.cause ? `<p><strong>原因:</strong> ${log.cause}</p>` : ''}
@@ -1416,6 +1503,10 @@
         document.getElementById('anomaly-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const occurrenceDate = document.getElementById('occurrence-date').value;
+            const occurrenceTime = document.getElementById('occurrence-time').value;
+            const location = document.getElementById('location').value;
+            const referenceNumber = document.getElementById('reference-number').value;
             const category = document.getElementById('category').value;
             const handler = document.getElementById('handler').value;
             const description = document.getElementById('description').value;
@@ -1424,6 +1515,10 @@
             const countermeasure = document.getElementById('countermeasure').value;
 
             const logData = {
+                occurrenceDate,
+                occurrenceTime,
+                location,
+                referenceNumber,
                 category,
                 handler,
                 description,
@@ -1774,6 +1869,10 @@
             updateEditHandlerSelect();
             
             // フォームに値を設定
+            document.getElementById('edit-occurrence-date').value = log.occurrenceDate || '';
+            document.getElementById('edit-occurrence-time').value = log.occurrenceTime || '';
+            document.getElementById('edit-location').value = log.location || '';
+            document.getElementById('edit-reference-number').value = log.referenceNumber || '';
             document.getElementById('edit-category').value = log.category;
             document.getElementById('edit-handler').value = log.handler;
             document.getElementById('edit-description').value = log.description;
@@ -1801,6 +1900,10 @@
             if (!editingLogKey) return;
             
             const updatedData = {
+                occurrenceDate: document.getElementById('edit-occurrence-date').value,
+                occurrenceTime: document.getElementById('edit-occurrence-time').value,
+                location: document.getElementById('edit-location').value,
+                referenceNumber: document.getElementById('edit-reference-number').value,
                 category: document.getElementById('edit-category').value,
                 handler: document.getElementById('edit-handler').value,
                 description: document.getElementById('edit-description').value,
