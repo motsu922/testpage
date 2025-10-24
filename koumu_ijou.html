@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>物流G異常履歴管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            padding-bottom: 80px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .tab-container {
+            display: flex;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .tab.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+
+        .content {
+            display: none;
+            padding: 20px;
+        }
+
+        .content.active {
+            display: block;
+        }
+
+        .form-group {
+            background: white;
+            margin-bottom: 15px;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .photo-upload {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .photo-upload input[type="file"] {
+            display: none;
+        }
+
+        .photo-upload label {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-block;
+            margin: 0;
+        }
+
+        .photo-preview {
+            margin-top: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .photo-preview-item {
+            position: relative;
+            width: 100px;
+            height: 100px;
+        }
+
+        .photo-preview-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+        }
+
+        .photo-preview-item .remove-photo {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #f5576c;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: transform 0.2s;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            margin-top: 20px;
+        }
+
+        .log-item {
+            background: white;
+            margin-bottom: 15px;
+            padding: 15px;
+            padding-top: 45px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: relative;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .log-date {
+            color: #667eea;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .log-category {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+        }
+
+        .log-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 10;
+        }
+
+        .log-delete-btn {
+            background: #f5576c;
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 11px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .log-content {
+            margin-top: 10px;
+            line-height: 1.6;
+        }
+
+        .log-content p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        .log-content strong {
+            color: #333;
+        }
+
+        .log-photos {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+
+        .log-photos img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .list-management {
+            background: white;
+            margin-bottom: 15px;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .list-management h3 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 18px;
+        }
+
+        .list-items {
+            margin: 15px 0;
+        }
+
+        .list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background: #f9f9f9;
+            margin-bottom: 8px;
+            border-radius: 8px;
+        }
+
+        .list-item button {
+            background: #f5576c;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .add-item-form {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .add-item-form input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .add-item-form button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal img {
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 10px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 60px;
+            height: 60px;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+
+        .storage-info {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .storage-info h3 {
+            margin-bottom: 10px;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .storage-info p {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .storage-bar {
+            margin-top: 10px;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .storage-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s;
+        }
+
+        .filter-controls {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .filter-controls select,
+        .filter-controls input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .stats-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: 700;
+            color: #667eea;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 18px;
+            }
+            
+            .tab {
+                font-size: 13px;
+                padding: 12px 5px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📦 物流G異常履歴</h1>
+    </div>
+
+    <div class="tab-container">
+        <div class="tab active" onclick="switchTab('input')">入力</div>
+        <div class="tab" onclick="switchTab('history')">履歴</div>
+        <div class="tab" onclick="switchTab('manage')">管理</div>
+    </div>
+
+    <!-- 入力タブ -->
+    <div id="input-content" class="content active">
+        <div class="stats-card">
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-number" id="total-logs">0</span>
+                    <span class="stat-label">総件数</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="today-logs">0</span>
+                    <span class="stat-label">本日の登録</span>
+                </div>
+            </div>
+        </div>
+
+        <form id="anomaly-form">
+            <div class="form-group">
+                <label>異常分類 *</label>
+                <select id="category" required>
+                    <option value="">選択してください</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>処置者 *</label>
+                <select id="handler" required>
+                    <option value="">選択してください</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>異常内容 *</label>
+                <textarea id="description" required placeholder="詳細を入力してください"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>対応内容</label>
+                <textarea id="action" placeholder="実施した対応を入力してください"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>写真</label>
+                <div class="photo-upload">
+                    <label for="photo-input">📷 写真を追加</label>
+                    <input type="file" id="photo-input" accept="image/*" multiple>
+                    <span id="photo-count"></span>
+                </div>
+                <div id="photo-preview" class="photo-preview"></div>
+            </div>
+
+            <button type="submit" class="btn">登録する</button>
+        </form>
+    </div>
+
+    <!-- 履歴タブ -->
+    <div id="history-content" class="content">
+        <div class="filter-controls">
+            <select id="filter-category" onchange="filterLogs()">
+                <option value="">すべての分類</option>
+            </select>
+            <select id="filter-handler" onchange="filterLogs()">
+                <option value="">すべての処置者</option>
+            </select>
+            <input type="text" id="search-text" placeholder="🔍 キーワード検索..." oninput="filterLogs()">
+        </div>
+        <div id="log-list"></div>
+    </div>
+
+    <!-- 管理タブ -->
+    <div id="manage-content" class="content">
+        <div class="storage-info">
+            <h3>💾 データ保存状況</h3>
+            <p id="storage-type">Firebase Realtime Databaseに保存されています</p>
+            <p><strong>登録件数:</strong> <span id="storage-count">0</span>件</p>
+            <div class="storage-bar">
+                <div class="storage-bar-fill" id="storage-bar" style="width: 0%"></div>
+            </div>
+            <p style="margin-top: 10px; font-size: 12px; color: #999;" id="storage-note">
+                ※クラウドに保存されているため、複数端末で共有可能です
+            </p>
+        </div>
+
+        <div class="list-management">
+            <h3>異常分類の管理</h3>
+            <div id="category-list" class="list-items"></div>
+            <div class="add-item-form">
+                <input type="text" id="new-category" placeholder="新しい分類を入力">
+                <button onclick="addCategory()">追加</button>
+            </div>
+        </div>
+
+        <div class="list-management">
+            <h3>処置者の管理</h3>
+            <div id="handler-list" class="list-items"></div>
+            <div class="add-item-form">
+                <input type="text" id="new-handler" placeholder="新しい処置者を入力">
+                <button onclick="addHandler()">追加</button>
+            </div>
+        </div>
+
+        <button class="btn btn-danger" onclick="exportData()">📥 データをエクスポート</button>
+        <button class="btn btn-danger" onclick="confirmDeleteAll()">🗑️ すべてのデータを削除</button>
+    </div>
+
+    <!-- 画像拡大モーダル -->
+    <div id="image-modal" class="modal" onclick="closeModal()">
+        <img id="modal-image" src="" alt="拡大画像">
+    </div>
+
+    <script type="module">
+        // Firebase設定とインポート
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getDatabase, ref, push, set, onValue, remove, update } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+
+        // Firebase設定（miyamaunitec-fb87aプロジェクト用）
+        const firebaseConfig = {
+            apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+            authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+            databaseURL: "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "miyamaunitec-fb87a",
+            storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+            messagingSenderId: "495316649507",
+            appId: "1:495316649507:web:9916cba8e6b6ee7fa39396"
+        };
+
+        let app, database, storage;
+        let isFirebaseConnected = false;
+
+        // Firebase初期化
+        try {
+            app = initializeApp(firebaseConfig);
+            database = getDatabase(app);
+            storage = getStorage(app);
+            isFirebaseConnected = true;
+            console.log('Firebase接続成功');
+        } catch (error) {
+            console.error('Firebase初期化エラー:', error);
+            alert('Firebase接続に失敗しました。設定を確認してください。');
+        }
+
+        // データ管理
+        let categories = [];
+        let handlers = [];
+        let logs = [];
+        let selectedPhotos = [];
+        
+        // Firebaseのキー管理用
+        let categoryKeys = {};
+        let handlerKeys = {};
+        let logKeys = {};
+
+        // 初期化
+        function init() {
+            if (isFirebaseConnected) {
+                initializeFirebaseData();
+            } else {
+                loadLocalData();
+                updateCategorySelect();
+                updateHandlerSelect();
+                updateCategoryList();
+                updateHandlerList();
+                displayLogs();
+                updateStats();
+                updateStorageInfo();
+            }
+        }
+
+        // Firebaseデータの初期化とリスナー設定
+        function initializeFirebaseData() {
+            // 異常分類のリスナー
+            const categoriesRef = ref(database, 'categories');
+            onValue(categoriesRef, (snapshot) => {
+                const data = snapshot.val();
+                if (!data) {
+                    // 初期データを設定
+                    const defaultCategories = ['数量異常', '品質異常', '梱包異常', '伝票異常', 'システム異常', 'その他'];
+                    defaultCategories.forEach(cat => {
+                        push(ref(database, 'categories'), cat);
+                    });
+                } else {
+                    categoryKeys = {};
+                    categories = [];
+                    for (let key in data) {
+                        categories.push(data[key]);
+                        categoryKeys[data[key]] = key;
+                    }
+                    updateCategorySelect();
+                    updateCategoryList();
+                }
+            });
+
+            // 処置者のリスナー
+            const handlersRef = ref(database, 'handlers');
+            onValue(handlersRef, (snapshot) => {
+                const data = snapshot.val();
+                if (!data) {
+                    const defaultHandlers = ['山田太郎', '佐藤花子', '田中一郎', '鈴木次郎'];
+                    defaultHandlers.forEach(handler => {
+                        push(ref(database, 'handlers'), handler);
+                    });
+                } else {
+                    handlerKeys = {};
+                    handlers = [];
+                    for (let key in data) {
+                        handlers.push(data[key]);
+                        handlerKeys[data[key]] = key;
+                    }
+                    updateHandlerSelect();
+                    updateHandlerList();
+                }
+            });
+
+            // 異常履歴のリスナー
+            const logsRef = ref(database, 'logs');
+            onValue(logsRef, (snapshot) => {
+                const data = snapshot.val();
+                logKeys = {};
+                logs = [];
+                if (data) {
+                    for (let key in data) {
+                        const log = data[key];
+                        log._key = key;
+                        logs.push(log);
+                        logKeys[key] = log;
+                    }
+                }
+                displayLogs();
+                updateStats();
+                updateStorageInfo();
+            });
+        }
+
+        // ローカルデータ読み込み（Firebaseが使えない場合のフォールバック）
+        function loadLocalData() {
+            const savedCategories = localStorage.getItem('categories');
+            const savedHandlers = localStorage.getItem('handlers');
+            const savedLogs = localStorage.getItem('logs');
+
+            if (savedCategories) {
+                categories = JSON.parse(savedCategories);
+            } else {
+                categories = ['数量異常', '品質異常', '梱包異常', '伝票異常', 'システム異常', 'その他'];
+                saveCategories();
+            }
+
+            if (savedHandlers) {
+                handlers = JSON.parse(savedHandlers);
+            } else {
+                handlers = ['山田太郎', '佐藤花子', '田中一郎', '鈴木次郎'];
+                saveHandlers();
+            }
+
+            if (savedLogs) {
+                logs = JSON.parse(savedLogs);
+            }
+        }
+
+        // データ保存
+        function saveCategories() {
+            if (isFirebaseConnected) {
+                // Firebaseの場合は自動保存されるので何もしない
+                return;
+            }
+            localStorage.setItem('categories', JSON.stringify(categories));
+        }
+
+        function saveHandlers() {
+            if (isFirebaseConnected) {
+                // Firebaseの場合は自動保存されるので何もしない
+                return;
+            }
+            localStorage.setItem('handlers', JSON.stringify(handlers));
+        }
+
+        function saveLogs() {
+            if (isFirebaseConnected) {
+                // Firebaseの場合は自動保存されるので何もしない
+                return;
+            }
+            localStorage.setItem('logs', JSON.stringify(logs));
+        }
+
+        // 分類セレクト更新
+        function updateCategorySelect() {
+            const select = document.getElementById('category');
+            const filterSelect = document.getElementById('filter-category');
+            
+            select.innerHTML = '<option value="">選択してください</option>';
+            filterSelect.innerHTML = '<option value="">すべての分類</option>';
+            
+            categories.forEach(cat => {
+                const option1 = document.createElement('option');
+                option1.value = cat;
+                option1.textContent = cat;
+                select.appendChild(option1);
+
+                const option2 = document.createElement('option');
+                option2.value = cat;
+                option2.textContent = cat;
+                filterSelect.appendChild(option2);
+            });
+        }
+
+        // 処置者セレクト更新
+        function updateHandlerSelect() {
+            const select = document.getElementById('handler');
+            const filterSelect = document.getElementById('filter-handler');
+            
+            select.innerHTML = '<option value="">選択してください</option>';
+            filterSelect.innerHTML = '<option value="">すべての処置者</option>';
+            
+            handlers.forEach(handler => {
+                const option1 = document.createElement('option');
+                option1.value = handler;
+                option1.textContent = handler;
+                select.appendChild(option1);
+
+                const option2 = document.createElement('option');
+                option2.value = handler;
+                option2.textContent = handler;
+                filterSelect.appendChild(option2);
+            });
+        }
+
+        // 分類リスト更新
+        function updateCategoryList() {
+            const list = document.getElementById('category-list');
+            list.innerHTML = '';
+            
+            categories.forEach((cat, index) => {
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                
+                const key = isFirebaseConnected ? categoryKeys[cat] : index;
+                
+                div.innerHTML = `
+                    <span>${cat}</span>
+                    <button data-key="${key}" data-value="${cat}" class="delete-category-btn">削除</button>
+                `;
+                
+                const deleteBtn = div.querySelector('.delete-category-btn');
+                deleteBtn.addEventListener('click', function() {
+                    if (isFirebaseConnected) {
+                        deleteCategoryFirebase(this.getAttribute('data-key'));
+                    } else {
+                        deleteCategory(parseInt(this.getAttribute('data-key')));
+                    }
+                });
+                
+                list.appendChild(div);
+            });
+        }
+
+        // 処置者リスト更新
+        function updateHandlerList() {
+            const list = document.getElementById('handler-list');
+            list.innerHTML = '';
+            
+            handlers.forEach((handler, index) => {
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                
+                const key = isFirebaseConnected ? handlerKeys[handler] : index;
+                
+                div.innerHTML = `
+                    <span>${handler}</span>
+                    <button data-key="${key}" data-value="${handler}" class="delete-handler-btn">削除</button>
+                `;
+                
+                const deleteBtn = div.querySelector('.delete-handler-btn');
+                deleteBtn.addEventListener('click', function() {
+                    if (isFirebaseConnected) {
+                        deleteHandlerFirebase(this.getAttribute('data-key'));
+                    } else {
+                        deleteHandler(parseInt(this.getAttribute('data-key')));
+                    }
+                });
+                
+                list.appendChild(div);
+            });
+        }
+
+        // 統計更新
+        function updateStats() {
+            document.getElementById('total-logs').textContent = logs.length;
+            
+            const today = new Date().toDateString();
+            const todayLogs = logs.filter(log => {
+                const logDate = new Date(log.timestamp).toDateString();
+                return logDate === today;
+            });
+            document.getElementById('today-logs').textContent = todayLogs.length;
+        }
+
+        // ストレージ情報更新
+        function updateStorageInfo() {
+            const storageSize = new Blob([JSON.stringify(logs)]).size;
+            const maxSize = 5 * 1024 * 1024; // 5MB (目安)
+            const percentage = Math.min((storageSize / maxSize) * 100, 100);
+            
+            document.getElementById('storage-count').textContent = logs.length;
+            document.getElementById('storage-bar').style.width = percentage + '%';
+            
+            // Firebase接続状態によってテキストを変更
+            if (isFirebaseConnected) {
+                document.getElementById('storage-type').textContent = 'Firebase Realtime Databaseに保存されています';
+                document.getElementById('storage-note').textContent = '※クラウドに保存されているため、複数端末で共有可能です';
+            } else {
+                document.getElementById('storage-type').textContent = 'ブラウザのローカルストレージに保存されています';
+                document.getElementById('storage-note').textContent = '※ブラウザのキャッシュをクリアするとデータが削除されます';
+            }
+        }
+
+        // ログ表示
+        function displayLogs(filteredLogs = null) {
+            const logList = document.getElementById('log-list');
+            const logsToDisplay = filteredLogs || logs;
+            
+            if (logsToDisplay.length === 0) {
+                logList.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+                            <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/>
+                        </svg>
+                        <p>まだ履歴がありません</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 日付順に並び替え
+            const sortedLogs = [...logsToDisplay].sort((a, b) => {
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+
+            logList.innerHTML = '';
+            sortedLogs.forEach((log) => {
+                const logKey = isFirebaseConnected ? log._key : logs.indexOf(log);
+                const date = new Date(log.timestamp);
+                const dateStr = `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+                
+                const logDiv = document.createElement('div');
+                logDiv.className = 'log-item';
+                
+                let photosHtml = '';
+                if (log.photos && log.photos.length > 0) {
+                    photosHtml = '<div class="log-photos">';
+                    log.photos.forEach(photo => {
+                        photosHtml += `<img src="${photo}" onclick="openModal('${photo}')" alt="異常写真">`;
+                    });
+                    photosHtml += '</div>';
+                }
+
+                logDiv.innerHTML = `
+                    <div class="log-actions">
+                        <button class="log-delete-btn" data-log-key="${logKey}">削除</button>
+                    </div>
+                    <div class="log-header">
+                        <span class="log-date">${dateStr}</span>
+                        <span class="log-category">${log.category}</span>
+                    </div>
+                    <div class="log-content">
+                        <p><strong>処置者:</strong> ${log.handler}</p>
+                        <p><strong>異常内容:</strong> ${log.description}</p>
+                        ${log.action ? `<p><strong>対応内容:</strong> ${log.action}</p>` : ''}
+                        ${photosHtml}
+                    </div>
+                `;
+                
+                // 削除ボタンにイベントリスナーを追加
+                const deleteBtn = logDiv.querySelector('.log-delete-btn');
+                deleteBtn.addEventListener('click', function() {
+                    const key = this.getAttribute('data-log-key');
+                    if (isFirebaseConnected) {
+                        deleteLogFirebase(key);
+                    } else {
+                        deleteLog(parseInt(key));
+                    }
+                });
+                
+                logList.appendChild(logDiv);
+            });
+        }
+
+        // ログのフィルタリング
+        window.filterLogs = function() {
+            const categoryFilter = document.getElementById('filter-category').value;
+            const handlerFilter = document.getElementById('filter-handler').value;
+            const searchText = document.getElementById('search-text').value.toLowerCase();
+
+            let filtered = logs;
+
+            if (categoryFilter) {
+                filtered = filtered.filter(log => log.category === categoryFilter);
+            }
+
+            if (handlerFilter) {
+                filtered = filtered.filter(log => log.handler === handlerFilter);
+            }
+
+            if (searchText) {
+                filtered = filtered.filter(log => {
+                    return log.description.toLowerCase().includes(searchText) ||
+                           (log.action && log.action.toLowerCase().includes(searchText));
+                });
+            }
+
+            displayLogs(filtered);
+        }
+
+        // フォーム送信
+        document.getElementById('anomaly-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const category = document.getElementById('category').value;
+            const handler = document.getElementById('handler').value;
+            const description = document.getElementById('description').value;
+            const action = document.getElementById('action').value;
+
+            const logData = {
+                category,
+                handler,
+                description,
+                action,
+                timestamp: new Date().toISOString(),
+                photos: []
+            };
+
+            try {
+                // 写真の処理
+                if (selectedPhotos.length > 0) {
+                    if (isFirebaseConnected) {
+                        // Firebaseの場合：Storageにアップロード
+                        for (let photo of selectedPhotos) {
+                            const photoStorageRef = storageRef(storage, `photos/${Date.now()}_${photo.name}`);
+                            await uploadBytes(photoStorageRef, photo);
+                            const photoUrl = await getDownloadURL(photoStorageRef);
+                            logData.photos.push(photoUrl);
+                        }
+                    } else {
+                        // ローカルの場合：Base64に変換
+                        for (let photo of selectedPhotos) {
+                            const reader = new FileReader();
+                            const base64 = await new Promise((resolve) => {
+                                reader.onload = (e) => resolve(e.target.result);
+                                reader.readAsDataURL(photo);
+                            });
+                            logData.photos.push(base64);
+                        }
+                    }
+                }
+
+                // データ保存
+                if (isFirebaseConnected) {
+                    const newLogRef = push(ref(database, 'logs'));
+                    await set(newLogRef, logData);
+                } else {
+                    logs.push(logData);
+                    saveLogs();
+                    displayLogs();
+                    updateStats();
+                    updateStorageInfo();
+                }
+
+                alert('登録が完了しました！');
+                
+                // フォームリセット
+                e.target.reset();
+                selectedPhotos = [];
+                document.getElementById('photo-preview').innerHTML = '';
+                document.getElementById('photo-count').textContent = '';
+                
+            } catch (error) {
+                console.error('保存エラー:', error);
+                alert('保存に失敗しました: ' + error.message);
+            }
+        });
+
+        // 写真選択
+        document.getElementById('photo-input').addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            selectedPhotos = files;
+            
+            const preview = document.getElementById('photo-preview');
+            const count = document.getElementById('photo-count');
+            
+            preview.innerHTML = '';
+            count.textContent = files.length > 0 ? `${files.length}枚選択` : '';
+            
+            files.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const div = document.createElement('div');
+                    div.className = 'photo-preview-item';
+                    div.innerHTML = `
+                        <img src="${e.target.result}">
+                        <button class="remove-photo" onclick="removePhoto(${index})">×</button>
+                    `;
+                    preview.appendChild(div);
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        // 写真削除
+        window.removePhoto = function(index) {
+            selectedPhotos.splice(index, 1);
+            const fileInput = document.getElementById('photo-input');
+            const dataTransfer = new DataTransfer();
+            selectedPhotos.forEach(file => dataTransfer.items.add(file));
+            fileInput.files = dataTransfer.files;
+            
+            // プレビュー更新
+            const event = new Event('change');
+            fileInput.dispatchEvent(event);
+        }
+
+        // タブ切り替え
+        window.switchTab = function(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(`${tab}-content`).classList.add('active');
+        }
+
+        // 分類追加
+        window.addCategory = async function() {
+            const input = document.getElementById('new-category');
+            const value = input.value.trim();
+            
+            if (!value) {
+                alert('分類名を入力してください');
+                return;
+            }
+
+            if (categories.includes(value)) {
+                alert('既に登録されています');
+                return;
+            }
+
+            try {
+                if (isFirebaseConnected) {
+                    await push(ref(database, 'categories'), value);
+                } else {
+                    categories.push(value);
+                    saveCategories();
+                    updateCategorySelect();
+                    updateCategoryList();
+                }
+                input.value = '';
+                alert('追加しました');
+            } catch (error) {
+                alert('追加に失敗しました: ' + error.message);
+            }
+        }
+
+        // 処置者追加
+        window.addHandler = async function() {
+            const input = document.getElementById('new-handler');
+            const value = input.value.trim();
+            
+            if (!value) {
+                alert('処置者名を入力してください');
+                return;
+            }
+
+            if (handlers.includes(value)) {
+                alert('既に登録されています');
+                return;
+            }
+
+            try {
+                if (isFirebaseConnected) {
+                    await push(ref(database, 'handlers'), value);
+                } else {
+                    handlers.push(value);
+                    saveHandlers();
+                    updateHandlerSelect();
+                    updateHandlerList();
+                }
+                input.value = '';
+                alert('追加しました');
+            } catch (error) {
+                alert('追加に失敗しました: ' + error.message);
+            }
+        }
+
+        // 分類削除（ローカル用）
+        function deleteCategory(index) {
+            if (!confirm('この分類を削除しますか？')) return;
+            
+            categories.splice(index, 1);
+            saveCategories();
+            updateCategorySelect();
+            updateCategoryList();
+            alert('削除しました');
+        }
+
+        // 分類削除（Firebase用）
+        async function deleteCategoryFirebase(key) {
+            if (!confirm('この分類を削除しますか？')) return;
+            
+            try {
+                await remove(ref(database, `categories/${key}`));
+                alert('削除しました');
+            } catch (error) {
+                alert('削除に失敗しました: ' + error.message);
+            }
+        }
+
+        // 処置者削除（ローカル用）
+        function deleteHandler(index) {
+            if (!confirm('この処置者を削除しますか？')) return;
+            
+            handlers.splice(index, 1);
+            saveHandlers();
+            updateHandlerSelect();
+            updateHandlerList();
+            alert('削除しました');
+        }
+
+        // 処置者削除（Firebase用）
+        async function deleteHandlerFirebase(key) {
+            if (!confirm('この処置者を削除しますか？')) return;
+            
+            try {
+                await remove(ref(database, `handlers/${key}`));
+                alert('削除しました');
+            } catch (error) {
+                alert('削除に失敗しました: ' + error.message);
+            }
+        }
+
+        // ログ削除（ローカル用）
+        function deleteLog(index) {
+            if (!confirm('この履歴を削除しますか？')) return;
+            
+            logs.splice(index, 1);
+            saveLogs();
+            displayLogs();
+            updateStats();
+            updateStorageInfo();
+            alert('削除しました');
+        }
+
+        // ログ削除（Firebase用）
+        async function deleteLogFirebase(key) {
+            if (!confirm('この履歴を削除しますか？')) return;
+            
+            try {
+                // 写真も削除（オプション）
+                const log = logKeys[key];
+                if (log && log.photos && log.photos.length > 0) {
+                    for (let photoUrl of log.photos) {
+                        try {
+                            // Firebase Storageの写真を削除
+                            if (photoUrl.includes('firebasestorage.googleapis.com')) {
+                                const photoPath = decodeURIComponent(photoUrl.split('/o/')[1].split('?')[0]);
+                                await deleteObject(storageRef(storage, photoPath));
+                            }
+                        } catch (e) {
+                            console.log('写真の削除に失敗:', e);
+                        }
+                    }
+                }
+                
+                await remove(ref(database, `logs/${key}`));
+                alert('削除しました');
+            } catch (error) {
+                alert('削除に失敗しました: ' + error.message);
+            }
+        }
+
+        // 全データ削除
+        window.confirmDeleteAll = async function() {
+            const confirmed = confirm('⚠️ 警告：すべてのデータが削除されます。\nこの操作は取り消せません。本当に削除しますか？');
+            if (!confirmed) return;
+            
+            const doubleCheck = confirm('最終確認：本当にすべてのデータを削除しますか？');
+            if (!doubleCheck) return;
+            
+            try {
+                if (isFirebaseConnected) {
+                    // Firebaseのデータを削除
+                    await remove(ref(database, 'logs'));
+                    await remove(ref(database, 'categories'));
+                    await remove(ref(database, 'handlers'));
+                    
+                    // 初期データを再設定
+                    const defaultCategories = ['数量異常', '品質異常', '梱包異常', '伝票異常', 'システム異常', 'その他'];
+                    for (let cat of defaultCategories) {
+                        await push(ref(database, 'categories'), cat);
+                    }
+                    
+                    const defaultHandlers = ['山田太郎', '佐藤花子', '田中一郎', '鈴木次郎'];
+                    for (let handler of defaultHandlers) {
+                        await push(ref(database, 'handlers'), handler);
+                    }
+                } else {
+                    localStorage.clear();
+                    logs = [];
+                    categories = ['数量異常', '品質異常', '梱包異常', '伝票異常', 'システム異常', 'その他'];
+                    handlers = ['山田太郎', '佐藤花子', '田中一郎', '鈴木次郎'];
+                    
+                    saveCategories();
+                    saveHandlers();
+                    saveLogs();
+                    
+                    updateCategorySelect();
+                    updateHandlerSelect();
+                    updateCategoryList();
+                    updateHandlerList();
+                    displayLogs();
+                    updateStats();
+                    updateStorageInfo();
+                }
+                
+                alert('すべてのデータを削除しました');
+            } catch (error) {
+                alert('削除に失敗しました: ' + error.message);
+            }
+        }
+
+        // データエクスポート
+        window.exportData = function() {
+            const data = {
+                categories: categories,
+                handlers: handlers,
+                logs: logs,
+                exportDate: new Date().toISOString()
+            };
+            
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `shipping-anomaly-backup-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            
+            URL.revokeObjectURL(url);
+            alert('データをエクスポートしました');
+        }
+
+        // モーダル
+        window.openModal = function(src) {
+            document.getElementById('modal-image').src = src;
+            document.getElementById('image-modal').classList.add('active');
+        }
+
+        window.closeModal = function() {
+            document.getElementById('image-modal').classList.remove('active');
+        }
+
+        // 初期化実行
+        init();
+    </script>
+</body>
+</html>
