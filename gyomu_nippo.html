@@ -2191,53 +2191,77 @@
             dragStartLeft = parseFloat(draggedElement.style.left);
         }
 
-        function handleMouseUp() {
-            if (draggedElement) {
-                draggedElement.classList.remove('dragging');
-                const id = parseInt(draggedElement.dataset.id);
-                const item = timelineItems.find(i => i.id === id);
-                if (item) {
-                    const oldHours = item.hours;
-                    item.left = parseFloat(draggedElement.style.left);
-                    item.width = parseFloat(draggedElement.style.width);
-                    item.hours = parseFloat(((item.width / 100) * 16).toFixed(1));
-                    if (item.taskId && item.type !== 'planned') {
-                        const task = tasks.find(t => t.id === item.taskId);
-                        if (task) {
-                            task.actualHours = Math.max(0, task.actualHours - oldHours + item.hours);
-                            if (task.plannedHours > 0) {
-                                task.progress = Math.min(100, Math.round((task.actualHours / task.plannedHours) * 100));
-                            }
-                        }
-                    }
-                    const textSpan = draggedElement.querySelector('.task-bar-text');
-                    if (textSpan) {
-                        textSpan.textContent = `${item.taskName} (${item.hours}h)`;
-                        
-                        // テキスト位置を再チェック
-                        setTimeout(() => {
-                            const barWidth = draggedElement.offsetWidth;
-                            const textWidth = textSpan.offsetWidth;
-                            const buttonsWidth = item.type === 'planned' ? 60 : 42;
-                            
-                            if (textWidth + buttonsWidth + 20 > barWidth) {
-                                textSpan.classList.add('external');
-                            } else {
-                                textSpan.classList.remove('external');
-                            }
-                        }, 10);
-                    }
-                    saveData();
-                    renderTaskList();
-                    updateAnalytics();
-                }
-                draggedElement = null;
-            }
-            isResizing = false;
-            resizeDirection = '';
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
+       // 1日16h（8:00-24:00）を前提 → 15分刻み = 16h * 4 = 64グリッド
+function snapPercentTo15min(pct){
+  const grid = 64; // 15分刻み
+  const step = 100 / grid; // 1.5625%
+  return Math.round(pct / step) * step;
+}
+
+function handleMouseUp() {
+  if (draggedElement) {
+    draggedElement.classList.remove('dragging');
+    const id = parseInt(draggedElement.dataset.id);
+    const item = timelineItems.find(i => i.id === id);
+    if (item) {
+      const oldHours = item.hours;
+
+      // スナップして確定
+      let leftPct = parseFloat(draggedElement.style.left);
+      let widthPct = parseFloat(draggedElement.style.width);
+
+      leftPct = snapPercentTo15min(leftPct);
+      widthPct = snapPercentTo15min(widthPct);
+
+      // はみ出し最終チェック（右端クランプ）
+      if (leftPct + widthPct > 100) {
+        widthPct = snapPercentTo15min(100 - leftPct);
+      }
+      draggedElement.style.left = `${leftPct}%`;
+      draggedElement.style.width = `${widthPct}%`;
+
+      item.left  = leftPct;
+      item.width = widthPct;
+
+      // 16hベースで時間に変換（0.25h刻みになる）
+      item.hours = parseFloat(((item.width / 100) * 16).toFixed(2));
+
+      if (item.taskId && item.type !== 'planned') {
+        const task = tasks.find(t => t.id === item.taskId);
+        if (task) {
+          task.actualHours = Math.max(0, task.actualHours - oldHours + item.hours);
+          if (task.plannedHours > 0) {
+            task.progress = Math.min(100, Math.round((task.actualHours / task.plannedHours) * 100));
+          }
         }
+      }
+
+      const textSpan = draggedElement.querySelector('.task-bar-text');
+      if (textSpan) {
+        textSpan.textContent = `${item.taskName} (${item.hours}h)`;
+        setTimeout(() => {
+          const barWidth = draggedElement.offsetWidth;
+          const textWidth = textSpan.scrollWidth;
+          const buttonsWidth = item.type === 'planned' ? 60 : 42;
+          if (textWidth + buttonsWidth + 20 > barWidth) {
+            textSpan.classList.add('external');
+          } else {
+            textSpan.classList.remove('external');
+          }
+        }, 10);
+      }
+
+      saveData();
+      renderTaskList();
+      updateAnalytics();
+    }
+    draggedElement = null;
+  }
+  isResizing = false;
+  resizeDirection = '';
+  document.removeEventListener('mousemove', handleMouseMove);
+  document.removeEventListener('mouseup', handleMouseUp);
+}
 
         function updateAnalytics() {
             const filterMember = document.getElementById('filterMember').value;
@@ -2988,43 +3012,33 @@
             }
         }
 
-        function recalculateTextDisplay() {
-            // 全てのタスクバーのテキスト表示を再計算
-            document.querySelectorAll('.task-bar').forEach(bar => {
-                const textSpan = bar.querySelector('.task-bar-text');
-                if (!textSpan) return;
-                
-                const barWidth = bar.offsetWidth;
-                const textWidth = textSpan.scrollWidth;
-                const hasPlannedButton = bar.classList.contains('planned');
-                const buttonsWidth = hasPlannedButton ? 60 : 42;
-                
-                if (textWidth + buttonsWidth + 20 > barWidth) {
-                    // テキストがはみ出る場合、外部に表示
-                    textSpan.classList.add('external');
-                    textSpan.style.overflow = 'visible';
-                    textSpan.style.textOverflow = 'clip';
-                    
-                    // バーの位置から表示位置を決定
-                    const barLeft = parseFloat(bar.style.left);
-                    if (barLeft < 30) {
-                        textSpan.style.left = '0px';
-                        textSpan.style.right = 'auto';
-                    } else if (barLeft > 70) {
-                        textSpan.style.left = 'auto';
-                        textSpan.style.right = '0px';
-                    }
-                } else {
-                    // テキストが収まる場合、バー内に表示
-                    textSpan.classList.remove('external');
-                    textSpan.style.overflow = 'hidden';
-                    textSpan.style.textOverflow = 'ellipsis';
-                    textSpan.style.left = '';
-                    textSpan.style.right = '';
-                }
-            });
-        }
+function recalculateTextDisplay(){
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.task-bar').forEach(bar => {
+      const textSpan = bar.querySelector('.task-bar-text');
+      if (!textSpan) return;
+      const barWidth = bar.offsetWidth;
+      const textWidth = textSpan.scrollWidth;
+      const hasPlannedButton = bar.classList.contains('planned');
+      const buttonsWidth = hasPlannedButton ? 60 : 42;
 
+      if (textWidth + buttonsWidth + 20 > barWidth) {
+        textSpan.classList.add('external');
+        textSpan.style.overflow = 'visible';
+        textSpan.style.textOverflow = 'clip';
+        const barLeft = parseFloat(bar.style.left);
+        if (barLeft < 30) { textSpan.style.left = '0px'; textSpan.style.right = 'auto'; }
+        else if (barLeft > 70) { textSpan.style.left = 'auto'; textSpan.style.right = '0px'; }
+      } else {
+        textSpan.classList.remove('external');
+        textSpan.style.overflow = 'hidden';
+        textSpan.style.textOverflow = 'ellipsis';
+        textSpan.style.left = '';
+        textSpan.style.right = '';
+      }
+    });
+  });
+}
         function zoomIn() {
             if (zoomScale < MAX_ZOOM) {
                 zoomScale = Math.min(MAX_ZOOM, zoomScale + ZOOM_STEP);
