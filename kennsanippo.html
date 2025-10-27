@@ -1922,7 +1922,14 @@ document.addEventListener('DOMContentLoaded', init);
     const d = new Date(); 
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; 
   }
-  function cutQR(qr){ return qr.substr(CUT_START, CUT_LENGTH).replace(/[\s\u3000]+/g, ""); }
+  function cutQR(qr, isBaseQR = false){ 
+    // 基準QRの場合: "Seihin-N0006" → "N0006" のようにハイフン以降を取得
+    if(isBaseQR && qr.includes("-")){
+      return qr.split("-").slice(-1)[0].replace(/[\s\u3000]+/g, "");
+    }
+    // 検査QRの場合: 従来通りの処理
+    return qr.substr(CUT_START, CUT_LENGTH).replace(/[\s\u3000]+/g, ""); 
+  }
   function showOK(){ $ok.style.display = "block"; $ng.style.display = "none"; setTimeout(() => { $ok.style.display = "none"; }, 1500); }
   function showNGPersistent(){ $ok.style.display = "none"; $ng.style.display = "block"; }
   function clearMarksUI(){ $ok.style.display = "none"; $ng.style.display = "none"; }
@@ -2013,9 +2020,10 @@ document.addEventListener('DOMContentLoaded', init);
 
   async function processQR(qrRaw){
     const now = nowString();
-    const sliced = cutQR(qrRaw);
-
+    
     if(!baseQR){
+      // 基準QRの設定時のみisBaseQR=trueを渡す
+      const sliced = cutQR(qrRaw, true);
       baseQR = sliced; 
       updateBaseDisplay(baseQR); 
       $mode.textContent = `照合モード(基準QR: ${baseQR})`;
@@ -2038,6 +2046,9 @@ document.addEventListener('DOMContentLoaded', init);
       lastScanIndex = -1;
       return;
     }
+
+    // 検査QRの処理: isBaseQR=falseで従来通りの切り出し
+    const sliced = cutQR(qrRaw, false);
 
     if(isLocked){
       if(qrRaw === ADMIN_QR){
