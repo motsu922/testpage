@@ -2003,33 +2003,44 @@
             bar.addEventListener('mousedown', handleMouseDown);
             
             // バーの幅をチェックして、テキストがはみ出る場合は外側に表示
+            // 二重のrequestAnimationFrameでレイアウトが完全に安定してから判定
             requestAnimationFrame(() => {
-                const textSpan = bar.querySelector('.task-bar-text');
-                const barWidth = bar.offsetWidth;
-                const textWidth = textSpan.scrollWidth; // scrollWidthで実際のテキスト幅を取得
-                const buttonsWidth = item.type === 'planned' ? 60 : 42; // ボタンの実際の幅
-                
-                // テキストがバー内に収まるかチェック
-                if (textWidth + buttonsWidth + 20 > barWidth) {
-                    // テキストがはみ出る場合、外部に表示
-                    textSpan.classList.add('external');
-                    textSpan.style.overflow = 'visible';
-                    textSpan.style.textOverflow = 'clip';
+                requestAnimationFrame(() => {
+                    const textSpan = bar.querySelector('.task-bar-text');
+                    if (!textSpan) return;
                     
-                    // 左側のバーの場合は左寄せ
-                    if (item.left < 30) {
-                        textSpan.style.left = '0px';
-                    } else if (item.left > 70) {
-                        // 右側のバーの場合は右寄せ
-                        textSpan.style.left = 'auto';
-                        textSpan.style.right = '0px';
+                    const barWidth = bar.offsetWidth;
+                    const textWidth = textSpan.scrollWidth; // scrollWidthで実際のテキスト幅を取得
+                    const buttonsWidth = item.type === 'planned' ? 60 : 42; // ボタンの実際の幅
+                    
+                    // マージンを含めた判定（より余裕を持たせる）
+                    const requiredWidth = textWidth + buttonsWidth + 30;
+                    
+                    // テキストがバー内に収まるかチェック
+                    if (requiredWidth > barWidth) {
+                        // テキストがはみ出る場合、外部に表示
+                        textSpan.classList.add('external');
+                        textSpan.style.overflow = 'visible';
+                        textSpan.style.textOverflow = 'clip';
+                        
+                        // 左側のバーの場合は左寄せ
+                        if (item.left < 30) {
+                            textSpan.style.left = '0px';
+                            textSpan.style.right = 'auto';
+                        } else if (item.left > 70) {
+                            // 右側のバーの場合は右寄せ
+                            textSpan.style.left = 'auto';
+                            textSpan.style.right = '0px';
+                        }
+                    } else {
+                        // テキストが収まる場合、バー内に表示
+                        textSpan.classList.remove('external');
+                        textSpan.style.overflow = 'hidden';
+                        textSpan.style.textOverflow = 'ellipsis';
+                        textSpan.style.left = '';
+                        textSpan.style.right = '';
                     }
-                } else {
-                    // テキストが収まる場合、バー内に表示
-                    textSpan.classList.remove('external');
-                    textSpan.style.overflow = 'hidden';
-                    textSpan.style.textOverflow = 'ellipsis';
-                }
+                });
             });
             
             return bar;
@@ -3019,41 +3030,46 @@
         }
 
         function recalculateTextDisplay() {
-            // requestAnimationFrameで一拍待ってから判定（レンダリング完了後に実行）
+            // 二重のrequestAnimationFrameでレイアウトが完全に安定してから判定
             requestAnimationFrame(() => {
-                // 全てのタスクバーのテキスト表示を再計算
-                document.querySelectorAll('.task-bar').forEach(bar => {
-                    const textSpan = bar.querySelector('.task-bar-text');
-                    if (!textSpan) return;
-                    
-                    const barWidth = bar.offsetWidth;
-                    const textWidth = textSpan.scrollWidth;
-                    const hasPlannedButton = bar.classList.contains('planned');
-                    const buttonsWidth = hasPlannedButton ? 60 : 42;
-                    
-                    if (textWidth + buttonsWidth + 20 > barWidth) {
-                        // テキストがはみ出る場合、外部に表示
-                        textSpan.classList.add('external');
-                        textSpan.style.overflow = 'visible';
-                        textSpan.style.textOverflow = 'clip';
+                requestAnimationFrame(() => {
+                    // 全てのタスクバーのテキスト表示を再計算
+                    document.querySelectorAll('.task-bar').forEach(bar => {
+                        const textSpan = bar.querySelector('.task-bar-text');
+                        if (!textSpan) return;
                         
-                        // バーの位置から表示位置を決定
-                        const barLeft = parseFloat(bar.style.left);
-                        if (barLeft < 30) {
-                            textSpan.style.left = '0px';
-                            textSpan.style.right = 'auto';
-                        } else if (barLeft > 70) {
-                            textSpan.style.left = 'auto';
-                            textSpan.style.right = '0px';
+                        const barWidth = bar.offsetWidth;
+                        const textWidth = textSpan.scrollWidth;
+                        const hasPlannedButton = bar.classList.contains('planned');
+                        const buttonsWidth = hasPlannedButton ? 60 : 42;
+                        
+                        // マージンを含めた判定（より余裕を持たせる）
+                        const requiredWidth = textWidth + buttonsWidth + 30;
+                        
+                        if (requiredWidth > barWidth) {
+                            // テキストがはみ出る場合、外部に表示
+                            textSpan.classList.add('external');
+                            textSpan.style.overflow = 'visible';
+                            textSpan.style.textOverflow = 'clip';
+                            
+                            // バーの位置から表示位置を決定
+                            const barLeft = parseFloat(bar.style.left);
+                            if (barLeft < 30) {
+                                textSpan.style.left = '0px';
+                                textSpan.style.right = 'auto';
+                            } else if (barLeft > 70) {
+                                textSpan.style.left = 'auto';
+                                textSpan.style.right = '0px';
+                            }
+                        } else {
+                            // テキストが収まる場合、バー内に表示
+                            textSpan.classList.remove('external');
+                            textSpan.style.overflow = 'hidden';
+                            textSpan.style.textOverflow = 'ellipsis';
+                            textSpan.style.left = '';
+                            textSpan.style.right = '';
                         }
-                    } else {
-                        // テキストが収まる場合、バー内に表示
-                        textSpan.classList.remove('external');
-                        textSpan.style.overflow = 'hidden';
-                        textSpan.style.textOverflow = 'ellipsis';
-                        textSpan.style.left = '';
-                        textSpan.style.right = '';
-                    }
+                    });
                 });
             });
         }
