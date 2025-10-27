@@ -276,6 +276,46 @@
             border-radius: 5px;
         }
 
+        .zoom-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f8f9fa;
+            padding: 8px 15px;
+            border-radius: 5px;
+            border: 2px solid #e9ecef;
+        }
+
+        .zoom-controls label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .zoom-controls button {
+            padding: 5px 12px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .zoom-controls button:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .zoom-level {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+            min-width: 50px;
+            text-align: center;
+        }
+
         .btn-recurring {
             background: #6610f2;
             color: white;
@@ -333,14 +373,21 @@
         }
 
         .timeline {
-            min-width: 2400px;
             padding: 20px;
+            transition: min-width 0.3s ease;
         }
 
         .timeline-grid {
             display: grid;
             grid-template-columns: 150px 1fr;
             gap: 10px;
+        }
+
+        .time-labels {
+            display: grid;
+            grid-template-columns: repeat(17, 1fr);
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
         }
 
         .person-label {
@@ -387,7 +434,7 @@
             display: grid;
             grid-template-columns: repeat(17, 1fr);
             margin-bottom: 10px;
-            min-width: 2400px;
+            transition: all 0.3s ease;
         }
 
         .time-label {
@@ -1031,10 +1078,6 @@
                 <input type="date" id="taskDeadline" placeholder="期限">
                 <select id="assignee">
                     <option value="">担当者選択</option>
-                    <option value="山田太郎">山田太郎</option>
-                    <option value="佐藤花子">佐藤花子</option>
-                    <option value="鈴木一郎">鈴木一郎</option>
-                    <option value="田中美咲">田中美咲</option>
                 </select>
                 <button class="btn btn-primary" onclick="addTask()">追加</button>
             </div>
@@ -1057,6 +1100,13 @@
                     <button class="btn btn-primary" onclick="showAddTaskModal('actual')">実績追加</button>
                     <button class="btn btn-recurring" onclick="showRecurringModal()">🔄 定期登録</button>
                     <button class="btn btn-delete-recurring" onclick="showDeleteRecurringModal()">🗑️ 定期解除</button>
+                </div>
+                <div class="zoom-controls">
+                    <label>🔍 表示スケール:</label>
+                    <button onclick="zoomOut()">−</button>
+                    <span class="zoom-level" id="zoomLevel">100%</span>
+                    <button onclick="zoomIn()">＋</button>
+                    <button onclick="resetZoom()" style="margin-left: 10px;">リセット</button>
                 </div>
             </div>
 
@@ -1097,10 +1147,6 @@
                     <label>担当者:</label>
                     <select id="filterMember" onchange="updateAnalytics()">
                         <option value="">全員</option>
-                        <option value="山田太郎">山田太郎</option>
-                        <option value="佐藤花子">佐藤花子</option>
-                        <option value="鈴木一郎">鈴木一郎</option>
-                        <option value="田中美咲">田中美咲</option>
                     </select>
                 </div>
                 <div class="filter-group">
@@ -1222,10 +1268,6 @@
                 <div class="form-group">
                     <label>担当者</label>
                     <select id="modalAssignee">
-                        <option value="山田太郎">山田太郎</option>
-                        <option value="佐藤花子">佐藤花子</option>
-                        <option value="鈴木一郎">鈴木一郎</option>
-                        <option value="田中美咲">田中美咲</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -1279,10 +1321,6 @@
                 <div class="form-group">
                     <label>担当者</label>
                     <select id="recurringAssignee">
-                        <option value="山田太郎">山田太郎</option>
-                        <option value="佐藤花子">佐藤花子</option>
-                        <option value="鈴木一郎">鈴木一郎</option>
-                        <option value="田中美咲">田中美咲</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -1367,10 +1405,6 @@
                     <label>担当者（オプション）</label>
                     <select id="deleteRecurringAssignee">
                         <option value="">全員</option>
-                        <option value="山田太郎">山田太郎</option>
-                        <option value="佐藤花子">佐藤花子</option>
-                        <option value="鈴木一郎">鈴木一郎</option>
-                        <option value="田中美咲">田中美咲</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -1448,6 +1482,10 @@
         let selectedDeleteType = 'planned';
         let selectedDeletePattern = 'daily';
         let selectedDeleteDays = [];
+        let zoomScale = 1.0; // ズームスケール (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
+        const MIN_ZOOM = 0.5;
+        const MAX_ZOOM = 3.0;
+        const ZOOM_STEP = 0.25;
 
         // 初期化
         initializeApp();
@@ -1457,6 +1495,8 @@
             document.getElementById('timelineDate').valueAsDate = currentDate;
             updateCurrentDateDisplay();
             loadData();
+            updateMemberSelectors(); // 担当者リストを初期化
+            loadZoom(); // ズーム設定を読み込み
             renderTaskList();
             updateAnalytics();
             renderTimeline();
@@ -1898,6 +1938,9 @@
 
                 grid.appendChild(row);
             });
+            
+            // ズームを適用
+            updateZoom();
         }
 
         function createTaskBar(item) {
@@ -2909,6 +2952,56 @@
             updateMemberSelectors();
             
             showNotification('🗑️ 全データを削除しました');
+        }
+
+        // ズーム機能
+        function updateZoom() {
+            const timeline = document.querySelector('.timeline');
+            const timeLabels = document.querySelector('.time-labels');
+            
+            if (timeline && timeLabels) {
+                const baseWidth = 2400; // 基準幅
+                const newWidth = baseWidth * zoomScale;
+                
+                timeline.style.minWidth = `${newWidth}px`;
+                timeLabels.style.minWidth = `${newWidth}px`;
+                
+                // ズームレベル表示を更新
+                document.getElementById('zoomLevel').textContent = `${Math.round(zoomScale * 100)}%`;
+                
+                // ズームを保存
+                localStorage.setItem('timelineZoom', zoomScale.toString());
+            }
+        }
+
+        function zoomIn() {
+            if (zoomScale < MAX_ZOOM) {
+                zoomScale = Math.min(MAX_ZOOM, zoomScale + ZOOM_STEP);
+                updateZoom();
+                showNotification(`🔍 ${Math.round(zoomScale * 100)}%に拡大`);
+            }
+        }
+
+        function zoomOut() {
+            if (zoomScale > MIN_ZOOM) {
+                zoomScale = Math.max(MIN_ZOOM, zoomScale - ZOOM_STEP);
+                updateZoom();
+                showNotification(`🔍 ${Math.round(zoomScale * 100)}%に縮小`);
+            }
+        }
+
+        function resetZoom() {
+            zoomScale = 1.0;
+            updateZoom();
+            showNotification('🔍 100%にリセット');
+        }
+
+        function loadZoom() {
+            const savedZoom = localStorage.getItem('timelineZoom');
+            if (savedZoom) {
+                zoomScale = parseFloat(savedZoom);
+                updateZoom();
+            }
         }
     </script>
 </body>
