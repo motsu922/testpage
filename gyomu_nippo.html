@@ -376,13 +376,27 @@
             padding: 20px;
             transition: min-width 0.3s ease;
         }
+.timeline-grid{
+  display:grid;
+  grid-template-columns: var(--label-col) minmax(var(--scale-width, 2400px), 1fr);
+  gap: var(--col-gap);
+}
+/* 追加：time-labels を2列化（左はダミー、右が64分割スケール） */
+.time-labels{
+  display:grid;
+  grid-template-columns: var(--label-col) minmax(var(--scale-width, 2400px), 1fr);
+  column-gap: var(--col-gap);
+}
 
-        .timeline-grid {
-            display: grid;
-            grid-template-columns: 150px 1fr;
-            gap: 10px;
-        }
+/* 追加：右側の64分割コンテナ */
+.time-scale{
+  display:grid;
+  grid-template-columns: repeat(64, 1fr);
+  min-width: var(--scale-width, 2400px);
+}
 
+
+        
         .time-labels {
             display: grid;
             grid-template-columns: repeat(17, 1fr);
@@ -1913,36 +1927,54 @@
             }
         }
 
-        function renderTimeline() {
-            const grid = document.getElementById('timelineGrid');
-            grid.innerHTML = '';
-            const currentDateStr = formatDate(currentDate);
-            
-            // メンバーリストを動的に使用
-            members.forEach(member => {
-                const label = document.createElement('div');
-                label.className = 'person-label';
-                label.textContent = member;
-                grid.appendChild(label);
+function renderTimeline() {
+  const grid = document.getElementById('timelineGrid');
+  grid.innerHTML = '';
 
-                const row = document.createElement('div');
-                row.className = 'timeline-row';
-                row.dataset.member = member;
+  // ---- 目盛りを作り直す（ダミー列＋64分割） ----
+  const labels = document.querySelector('.time-labels');
+  labels.innerHTML = '';
 
-                const memberItems = timelineItems.filter(item => 
-                    item.assignee === member && item.date === currentDateStr
-                );
-                memberItems.forEach(item => {
-                    const bar = createTaskBar(item);
-                    row.appendChild(bar);
-                });
+  // 左側ダミー（担当者列と同じ幅を確保）
+  const spacer = document.createElement('div');
+  spacer.style.height = '1px';     // 見た目は不要なので薄く
+  labels.appendChild(spacer);
 
-                grid.appendChild(row);
-            });
-            
-            // ズームを適用
-            updateZoom();
-        }
+  // 右側の64分割スケール
+  const scale = document.createElement('div');
+  scale.className = 'time-scale';
+
+  for (let h = 8; h < 24; h++) {
+    for (let q = 0; q < 4; q++) {
+      const m = q * 15;
+      const label = document.createElement('div');
+      label.className = 'time-label';
+      label.textContent = (m === 0) ? `${h}:00` : `${h}:${String(m).padStart(2,'0')}`;
+      scale.appendChild(label);
+    }
+  }
+  labels.appendChild(scale);
+
+  // ---- 行を描画 ----
+  const currentDateStr = formatDate(currentDate);
+  members.forEach(member => {
+    const label = document.createElement('div');
+    label.className = 'person-label';
+    label.textContent = member;
+    grid.appendChild(label);
+
+    const row = document.createElement('div');
+    row.className = 'timeline-row';
+    row.dataset.member = member;
+
+    const memberItems = timelineItems.filter(i => i.assignee === member && i.date === currentDateStr);
+    memberItems.forEach(item => row.appendChild(createTaskBar(item)));
+    grid.appendChild(row);
+  });
+
+  updateZoom();  // ← ズーム反映（下の③も変更）
+}
+
 
         function createTaskBar(item) {
             const bar = document.createElement('div');
@@ -2964,29 +2996,24 @@
         }
 
         // ズーム機能
-        function updateZoom() {
-            const timeline = document.querySelector('.timeline');
-            const timeLabels = document.querySelector('.time-labels');
-            
-            if (timeline && timeLabels) {
-                const baseWidth = 2400; // 基準幅
-                const newWidth = baseWidth * zoomScale;
-                
-                timeline.style.minWidth = `${newWidth}px`;
-                timeLabels.style.minWidth = `${newWidth}px`;
-                
-                // ズームレベル表示を更新
-                document.getElementById('zoomLevel').textContent = `${Math.round(zoomScale * 100)}%`;
-                
-                // ズームを保存
-                localStorage.setItem('timelineZoom', zoomScale.toString());
-                
-                // テキスト表示を再計算（ズーム後に実行）
-                setTimeout(() => {
-                    recalculateTextDisplay();
-                }, 100);
-            }
-        }
+       function updateZoom(){
+  // 64コマ分の基準幅（お好みで）：例 2400px
+  const baseWidth = 2400;
+  const newWidth = baseWidth * zoomScale;
+
+  // 共通CSS変数 --scale-width を更新（labels と grid の両方に効く）
+  const timeline = document.querySelector('.timeline');
+  if (timeline){
+    timeline.style.setProperty('--scale-width', `${newWidth}px`);
+  }
+
+  // 表示%を更新
+  const z = document.getElementById('zoomLevel');
+  if (z) z.textContent = `${Math.round(zoomScale*100)}%`;
+
+  // （任意）テキストの外出し再計算
+  setTimeout(recalculateTextDisplay, 50);
+}
 
         function recalculateTextDisplay() {
             // 全てのタスクバーのテキスト表示を再計算
