@@ -503,38 +503,43 @@
             padding-right: 5px;
         }
 
-        .task-bar-text.external {
+        /* ホバー時の詳細表示 */
+        .task-bar:hover .task-bar-text::after {
+            content: attr(data-full-text);
             position: absolute;
             left: 0;
-            background: rgba(0,0,0,0.9);
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 11px;
+            top: -30px;
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
             white-space: nowrap;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 2000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            pointer-events: none;
         }
 
-        /* 予定の外部テキストを上に配置 */
-        .task-bar.planned .task-bar-text.external {
-            top: -24px;
-            z-index: 1000;
+        /* ホバー時の矢印 */
+        .task-bar:hover .task-bar-text::before {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: -6px;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 6px solid rgba(0, 0, 0, 0.95);
+            z-index: 2001;
+            pointer-events: none;
         }
 
-        /* 実績の外部テキストを下に配置 */
-        .task-bar.actual-planned .task-bar-text.external,
-        .task-bar.actual-adhoc .task-bar-text.external {
-            bottom: -24px;
-            top: auto;
-            z-index: 1000;
-        }
-
-        /* ホバー時にさらに前面に */
+        /* ホバー時のバー全体の強調 */
         .task-bar:hover {
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
             z-index: 2000;
         }
 
-        .task-bar:hover .task-bar-text.external {
+        .task-bar:hover .task-bar-text {
             z-index: 2001;
         }
 
@@ -1512,7 +1517,7 @@
         let zoomScale = 1.0; // ズームスケール (0.5 = 50%, 1.0 = 100%, 2.0 = 200%)
         const MIN_ZOOM = 0.5;
         const MAX_ZOOM = 3.0;
-        const ZOOM_STEP = 0.25;
+        const ZOOM_STEP = 0.5; // 50%刻み
 
         // 初期化
         initializeApp();
@@ -1991,7 +1996,7 @@
             const copyButton = `<button class="copy-bar-btn" onclick="copyBar(${item.id}); event.stopPropagation();" title="複製">⎘</button>`;
             
             bar.innerHTML = `
-                <span class="task-bar-text">${item.taskName} (${item.hours}h)</span>
+                <span class="task-bar-text" data-full-text="${item.taskName} (${item.hours}h)">${item.taskName} (${item.hours}h)</span>
                 <div class="bar-buttons">
                     ${copyToActualButton}
                     ${copyButton}
@@ -2001,47 +2006,6 @@
                 <div class="resize-handle right"></div>
             `;
             bar.addEventListener('mousedown', handleMouseDown);
-            
-            // バーの幅をチェックして、テキストがはみ出る場合は外側に表示
-            // 二重のrequestAnimationFrameでレイアウトが完全に安定してから判定
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    const textSpan = bar.querySelector('.task-bar-text');
-                    if (!textSpan) return;
-                    
-                    const barWidth = bar.offsetWidth;
-                    const textWidth = textSpan.scrollWidth; // scrollWidthで実際のテキスト幅を取得
-                    const buttonsWidth = item.type === 'planned' ? 60 : 42; // ボタンの実際の幅
-                    
-                    // マージンを含めた判定（より余裕を持たせる）
-                    const requiredWidth = textWidth + buttonsWidth + 30;
-                    
-                    // テキストがバー内に収まるかチェック
-                    if (requiredWidth > barWidth) {
-                        // テキストがはみ出る場合、外部に表示
-                        textSpan.classList.add('external');
-                        textSpan.style.overflow = 'visible';
-                        textSpan.style.textOverflow = 'clip';
-                        
-                        // 左側のバーの場合は左寄せ
-                        if (item.left < 30) {
-                            textSpan.style.left = '0px';
-                            textSpan.style.right = 'auto';
-                        } else if (item.left > 70) {
-                            // 右側のバーの場合は右寄せ
-                            textSpan.style.left = 'auto';
-                            textSpan.style.right = '0px';
-                        }
-                    } else {
-                        // テキストが収まる場合、バー内に表示
-                        textSpan.classList.remove('external');
-                        textSpan.style.overflow = 'hidden';
-                        textSpan.style.textOverflow = 'ellipsis';
-                        textSpan.style.left = '';
-                        textSpan.style.right = '';
-                    }
-                });
-            });
             
             return bar;
         }
@@ -3022,56 +2986,17 @@
                 // ズームを保存
                 localStorage.setItem('timelineZoom', zoomScale.toString());
                 
-                // テキスト表示を再計算（ズーム後に実行）
+                // CSSトランジション完了を待ってからテキスト表示を再計算
+                // transition: 0.3s なので、350msで確実に完了
                 setTimeout(() => {
                     recalculateTextDisplay();
-                }, 100);
+                }, 350);
             }
         }
 
         function recalculateTextDisplay() {
-            // 二重のrequestAnimationFrameでレイアウトが完全に安定してから判定
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    // 全てのタスクバーのテキスト表示を再計算
-                    document.querySelectorAll('.task-bar').forEach(bar => {
-                        const textSpan = bar.querySelector('.task-bar-text');
-                        if (!textSpan) return;
-                        
-                        const barWidth = bar.offsetWidth;
-                        const textWidth = textSpan.scrollWidth;
-                        const hasPlannedButton = bar.classList.contains('planned');
-                        const buttonsWidth = hasPlannedButton ? 60 : 42;
-                        
-                        // マージンを含めた判定（より余裕を持たせる）
-                        const requiredWidth = textWidth + buttonsWidth + 30;
-                        
-                        if (requiredWidth > barWidth) {
-                            // テキストがはみ出る場合、外部に表示
-                            textSpan.classList.add('external');
-                            textSpan.style.overflow = 'visible';
-                            textSpan.style.textOverflow = 'clip';
-                            
-                            // バーの位置から表示位置を決定
-                            const barLeft = parseFloat(bar.style.left);
-                            if (barLeft < 30) {
-                                textSpan.style.left = '0px';
-                                textSpan.style.right = 'auto';
-                            } else if (barLeft > 70) {
-                                textSpan.style.left = 'auto';
-                                textSpan.style.right = '0px';
-                            }
-                        } else {
-                            // テキストが収まる場合、バー内に表示
-                            textSpan.classList.remove('external');
-                            textSpan.style.overflow = 'hidden';
-                            textSpan.style.textOverflow = 'ellipsis';
-                            textSpan.style.left = '';
-                            textSpan.style.right = '';
-                        }
-                    });
-                });
-            });
+            // ホバーツールチップを使用するため、外部表示判定は不要
+            // この関数は互換性のために残しておく
         }
 
         function zoomIn() {
