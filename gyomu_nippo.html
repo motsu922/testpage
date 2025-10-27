@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>量産G工数管理</title>
+    <title>工数管理アプリ</title>
     <style>
         * {
             margin: 0;
@@ -1204,7 +1204,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>量産G工数管理</h1>
+            <h1>📊 工数管理アプリ</h1>
+            <p>タスクの予定・実績を管理し、タイムラインで可視化</p>
         </div>
 
         <div class="tabs">
@@ -1375,15 +1376,17 @@
   "messagingSenderId": "1094762407781",
   "appId": "1:1094762407781:web:d4c4a9302fd8e86697e38c"
 }</textarea>
-                    <div style="margin-top: 15px; display: flex; gap: 10px;">
+                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
                         <button class="btn btn-primary" onclick="connectFirebase()">接続</button>
                         <button class="btn btn-secondary" onclick="disconnectFirebase()">切断</button>
-                        <button class="btn btn-success" onclick="syncToFirebase()">手動同期</button>
+                        <button class="btn btn-success" onclick="syncToFirebase()" title="ローカルデータをFirebaseにアップロード">↑ アップロード</button>
+                        <button class="btn btn-info" onclick="syncFromFirebase()" title="Firebaseからローカルにダウンロード" style="background: #17a2b8; color: white;">↓ ダウンロード</button>
                     </div>
                     <p style="margin-top: 10px; font-size: 12px; color: #6c757d;">
                         ℹ️ <strong>✨ 自動接続・自動同期が有効です！</strong><br>
                         ページを開くと自動的にFirebaseに接続します。<br>
                         データ変更時も自動でFirebaseに保存され、他のユーザーと即座に共有されます。<br>
+                        <strong>手動同期:</strong> ↑アップロード（ローカル→Firebase）/ ↓ダウンロード（Firebase→ローカル）<br>
                         <a href="https://console.firebase.google.com/project/qcnippo/database/qcnippo-default-rtdb/data" target="_blank" style="color: #667eea;">データベースを確認</a>
                     </p>
                 </div>
@@ -1819,19 +1822,30 @@
         }
 
         function autoConnectFirebase() {
-            const configText = document.getElementById('firebaseConfig').value.trim();
+            // localStorageから設定を読み込み
+            const savedConfig = localStorage.getItem('firebaseConfig');
             
-            if (!configText) {
-                return; // 設定がない場合は何もしない
+            if (!savedConfig) {
+                console.log('Firebase設定が保存されていません');
+                return; // 保存された設定がない場合は何もしない
+            }
+            
+            // テキストエリアに設定を表示
+            const configTextArea = document.getElementById('firebaseConfig');
+            if (configTextArea) {
+                configTextArea.value = savedConfig;
             }
             
             try {
-                const config = JSON.parse(configText);
+                const config = JSON.parse(savedConfig);
                 
                 // APIキーが設定されているか確認
                 if (!config.apiKey || config.apiKey === 'YOUR_API_KEY') {
+                    console.log('Firebase APIキーが未設定です');
                     return;
                 }
+                
+                console.log('Firebase初期化を開始...');
                 
                 // Firebase初期化
                 firebaseApp = firebase.initializeApp(config);
@@ -1840,12 +1854,15 @@
                 
                 updateSyncStatus();
                 console.log('✓ Firebaseに自動接続しました');
+                showNotification('✓ Firebaseに接続しました');
                 
                 // Firebaseからデータを読み込み（リスナー設定）
                 setupFirebaseListener();
                 
             } catch (error) {
                 console.error('Firebase自動接続エラー:', error);
+                isFirebaseConnected = false;
+                updateSyncStatus();
                 // エラーが出ても続行（ローカルモードで動作）
             }
         }
@@ -1909,9 +1926,45 @@
             const savedTimeline = localStorage.getItem('timelineItems');
             const savedMembers = localStorage.getItem('members');
             
-            if (savedTasks) tasks = JSON.parse(savedTasks);
-            if (savedTimeline) timelineItems = JSON.parse(savedTimeline);
-            if (savedMembers) members = JSON.parse(savedMembers);
+            if (savedTasks) {
+                try {
+                    const parsed = JSON.parse(savedTasks);
+                    // 有効なタスクのみをロード
+                    tasks = parsed.filter(task => task && task.id && task.name);
+                } catch (e) {
+                    console.error('Failed to parse tasks:', e);
+                    tasks = [];
+                }
+            }
+            
+            if (savedTimeline) {
+                try {
+                    const parsed = JSON.parse(savedTimeline);
+                    // 有効なタイムラインアイテムのみをロード
+                    timelineItems = parsed.filter(item => 
+                        item && 
+                        item.id && 
+                        item.taskName && 
+                        typeof item.hours === 'number' &&
+                        typeof item.left === 'number' &&
+                        typeof item.width === 'number'
+                    );
+                } catch (e) {
+                    console.error('Failed to parse timeline items:', e);
+                    timelineItems = [];
+                }
+            }
+            
+            if (savedMembers) {
+                try {
+                    const parsed = JSON.parse(savedMembers);
+                    // 空でない要素のみをロード
+                    members = parsed.filter(m => m && typeof m === 'string' && m.trim());
+                } catch (e) {
+                    console.error('Failed to parse members:', e);
+                    members = ['山田太郎', '佐藤花子', '鈴木一郎', '田中美咲'];
+                }
+            }
             
             // Firebase設定を読み込み
             const savedFirebaseConfig = localStorage.getItem('firebaseConfig');
@@ -3236,8 +3289,11 @@
             try {
                 const config = JSON.parse(configText);
                 
+                console.log('Firebase接続を開始...', config);
+                
                 // 既存の接続を切断
                 if (firebaseApp) {
+                    console.log('既存の接続を切断します');
                     firebaseApp.delete();
                 }
                 
@@ -3248,6 +3304,7 @@
                 
                 // 設定を保存
                 localStorage.setItem('firebaseConfig', configText);
+                console.log('Firebase設定を保存しました');
                 
                 updateSyncStatus();
                 showNotification('✓ Firebaseに接続しました');
@@ -3255,9 +3312,20 @@
                 // リスナー設定
                 setupFirebaseListener();
                 
+                // 接続テスト
+                database.ref('workHoursData').once('value')
+                    .then(() => {
+                        console.log('✓ Firebase接続テスト成功');
+                    })
+                    .catch((error) => {
+                        console.error('Firebase接続テストエラー:', error);
+                    });
+                
             } catch (error) {
                 alert('Firebase接続エラー: ' + error.message);
-                console.error(error);
+                console.error('Firebase接続エラー:', error);
+                isFirebaseConnected = false;
+                updateSyncStatus();
             }
         }
 
@@ -3285,17 +3353,99 @@
             }
             
             try {
+                // データをクリーンアップ（undefinedやnullを除去）
+                const cleanTimelineItems = timelineItems.map(item => {
+                    const cleaned = {};
+                    Object.keys(item).forEach(key => {
+                        if (item[key] !== undefined && item[key] !== null) {
+                            cleaned[key] = item[key];
+                        }
+                    });
+                    return cleaned;
+                }).filter(item => item.id && item.taskName); // 必須フィールドチェック
+                
+                const cleanTasks = tasks.map(task => {
+                    const cleaned = {};
+                    Object.keys(task).forEach(key => {
+                        if (task[key] !== undefined && task[key] !== null) {
+                            cleaned[key] = task[key];
+                        }
+                    });
+                    return cleaned;
+                }).filter(task => task.id && task.name); // 必須フィールドチェック
+                
                 const data = {
-                    tasks: tasks,
-                    timelineItems: timelineItems,
-                    members: members,
+                    tasks: cleanTasks,
+                    timelineItems: cleanTimelineItems,
+                    members: members.filter(m => m), // 空要素を除去
                     lastUpdated: new Date().toISOString()
                 };
                 
                 database.ref('workHoursData').set(data);
                 localStorage.setItem('lastUpdated', data.lastUpdated);
-                showNotification('✓ データを同期しました');
+                showNotification('✓ ローカル → Firebase にアップロードしました');
                 
+            } catch (error) {
+                alert('同期エラー: ' + error.message);
+                console.error('Sync error details:', error);
+                console.error('Timeline items:', timelineItems);
+            }
+        }
+
+        function syncFromFirebase() {
+            if (!isFirebaseConnected || !database) {
+                alert('Firebaseに接続されていません');
+                return;
+            }
+            
+            if (!confirm('Firebaseのデータでローカルデータを上書きします。よろしいですか？')) {
+                return;
+            }
+            
+            try {
+                database.ref('workHoursData').once('value')
+                    .then((snapshot) => {
+                        const data = snapshot.val();
+                        if (data) {
+                            // データを検証してクリーンアップ
+                            tasks = (data.tasks || []).filter(task => task && task.id && task.name);
+                            
+                            timelineItems = (data.timelineItems || []).filter(item => 
+                                item && 
+                                item.id && 
+                                item.taskName && 
+                                typeof item.hours === 'number' &&
+                                typeof item.left === 'number' &&
+                                typeof item.width === 'number'
+                            );
+                            
+                            members = (data.members || ['山田太郎', '佐藤花子', '鈴木一郎', '田中美咲'])
+                                .filter(m => m && typeof m === 'string' && m.trim());
+                            
+                            // localStorageに保存
+                            localStorage.setItem('tasks', JSON.stringify(tasks));
+                            localStorage.setItem('timelineItems', JSON.stringify(timelineItems));
+                            localStorage.setItem('members', JSON.stringify(members));
+                            localStorage.setItem('lastUpdated', data.lastUpdated);
+                            
+                            // 画面を更新
+                            renderTaskList();
+                            renderTimeline();
+                            updateAnalytics();
+                            renderMemberList();
+                            updateMemberSelectors();
+                            
+                            showNotification('✓ Firebase → ローカル にダウンロードしました');
+                            console.log('✓ Firebaseからデータを取得しました');
+                        } else {
+                            alert('Firebaseにデータがありません');
+                        }
+                    })
+                    .catch((error) => {
+                        alert('同期エラー: ' + error.message);
+                        console.error(error);
+                    });
+                    
             } catch (error) {
                 alert('同期エラー: ' + error.message);
                 console.error(error);
