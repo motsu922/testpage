@@ -316,6 +316,66 @@
             text-align: center;
         }
 
+        /* タスク集計シート */
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .summary-table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .summary-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border: 1px solid #dee2e6;
+        }
+
+        .summary-table td {
+            padding: 10px 12px;
+            border: 1px solid #dee2e6;
+        }
+
+        .summary-table tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .summary-table tbody tr:hover {
+            background: #e9ecef;
+        }
+
+        .summary-table tfoot {
+            background: #f8f9fa;
+            font-weight: 700;
+        }
+
+        .summary-table tfoot td {
+            padding: 12px;
+            border-top: 2px solid #667eea;
+        }
+
+        .hours-cell {
+            text-align: right;
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+        }
+
+        .hours-planned {
+            color: #667eea;
+        }
+
+        .hours-actual {
+            color: #28a745;
+        }
+
+        .hours-adhoc {
+            color: #dc3545;
+        }
+
         .btn-recurring {
             background: #6610f2;
             color: white;
@@ -1224,6 +1284,12 @@
                     <div class="timeline-grid" id="timelineGrid"></div>
                 </div>
             </div>
+
+            <!-- タスク別集計データシート -->
+            <div style="margin-top: 30px; background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <h3 style="margin-bottom: 15px; color: #495057;">📊 タスク別工数集計（本日）</h3>
+                <div id="taskSummarySheet"></div>
+            </div>
         </div>
 
         <!-- 集計・分析 -->
@@ -1376,7 +1442,7 @@
                         </div>
                         <div class="color-option red" onclick="selectColorType('adhoc')" data-type="adhoc">
                             <div style="font-size: 24px; margin-bottom: 5px;">⚡</div>
-                            <div>突発対応</div>
+                            <div>トラブル対応</div>
                             <div style="font-size: 11px; color: #6c757d;">(赤色)</div>
                         </div>
                     </div>
@@ -2033,6 +2099,117 @@
             
             // ズームを適用
             updateZoom();
+            
+            // タスク集計シートを更新
+            renderTaskSummarySheet();
+        }
+
+        function renderTaskSummarySheet() {
+            const sheet = document.getElementById('taskSummarySheet');
+            if (!sheet) return;
+            
+            const currentDateStr = formatDate(currentDate);
+            
+            // 本日のタイムラインアイテムを取得
+            const todayItems = timelineItems.filter(item => item.date === currentDateStr);
+            
+            if (todayItems.length === 0) {
+                sheet.innerHTML = '<p style="color: #6c757d; text-align: center; padding: 20px;">本日のタスクはありません</p>';
+                return;
+            }
+            
+            // 担当者ごとに集計
+            const assigneeSummary = {};
+            
+            todayItems.forEach(item => {
+                if (!assigneeSummary[item.assignee]) {
+                    assigneeSummary[item.assignee] = {};
+                }
+                
+                if (!assigneeSummary[item.assignee][item.taskName]) {
+                    assigneeSummary[item.assignee][item.taskName] = {
+                        taskName: item.taskName,
+                        planned: 0,
+                        actualPlanned: 0,
+                        actualAdhoc: 0,
+                        total: 0
+                    };
+                }
+                
+                const taskData = assigneeSummary[item.assignee][item.taskName];
+                
+                if (item.type === 'planned') {
+                    taskData.planned += item.hours;
+                } else if (item.type === 'actual-planned') {
+                    taskData.actualPlanned += item.hours;
+                } else if (item.type === 'actual-adhoc') {
+                    taskData.actualAdhoc += item.hours;
+                }
+                
+                taskData.total = taskData.actualPlanned + taskData.actualAdhoc;
+            });
+            
+            // HTML生成
+            let html = '';
+            
+            // 担当者ごとにテーブルを生成
+            Object.keys(assigneeSummary).sort().forEach(assignee => {
+                const tasks = Object.values(assigneeSummary[assignee]);
+                tasks.sort((a, b) => b.total - a.total);
+                
+                // 担当者の合計を計算
+                const totals = {
+                    planned: tasks.reduce((sum, item) => sum + item.planned, 0),
+                    actualPlanned: tasks.reduce((sum, item) => sum + item.actualPlanned, 0),
+                    actualAdhoc: tasks.reduce((sum, item) => sum + item.actualAdhoc, 0),
+                    total: tasks.reduce((sum, item) => sum + item.total, 0)
+                };
+                
+                html += `
+                    <div style="margin-bottom: 30px;">
+                        <h4 style="margin-bottom: 10px; color: #495057; border-left: 4px solid #667eea; padding-left: 10px;">👤 ${assignee}</h4>
+                        <table class="summary-table">
+                            <thead>
+                                <tr>
+                                    <th>タスク名</th>
+                                    <th style="text-align: right;">予定 (h)</th>
+                                    <th style="text-align: right;">実績（計画） (h)</th>
+                                    <th style="text-align: right;">実績（トラブル） (h)</th>
+                                    <th style="text-align: right;">実績合計 (h)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                tasks.forEach(item => {
+                    html += `
+                        <tr>
+                            <td>${item.taskName}</td>
+                            <td class="hours-cell hours-planned">${item.planned.toFixed(2)}</td>
+                            <td class="hours-cell hours-actual">${item.actualPlanned.toFixed(2)}</td>
+                            <td class="hours-cell hours-adhoc">${item.actualAdhoc.toFixed(2)}</td>
+                            <td class="hours-cell" style="font-weight: 700;">${item.total.toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td>小計</td>
+                                    <td class="hours-cell hours-planned">${totals.planned.toFixed(2)}</td>
+                                    <td class="hours-cell hours-actual">${totals.actualPlanned.toFixed(2)}</td>
+                                    <td class="hours-cell hours-adhoc">${totals.actualAdhoc.toFixed(2)}</td>
+                                    <td class="hours-cell" style="font-weight: 700; color: #667eea;">${totals.total.toFixed(2)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                `;
+            });
+            
+            sheet.innerHTML = html;
         }
 
         function createTaskBar(item) {
