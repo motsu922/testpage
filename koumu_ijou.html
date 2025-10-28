@@ -334,6 +334,50 @@
             white-space: nowrap;
         }
 
+        /* 照合ガイドのスタイル */
+        .guide-result-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            margin-top: 15px;
+        }
+
+        .guide-result-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .guide-image-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .guide-image-container:hover {
+            transform: scale(1.02);
+        }
+
+        .guide-image-container img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .guide-not-found {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
         .view-toggle {
             background: white;
             padding: 10px 20px;
@@ -706,6 +750,7 @@
 
     <div class="tab-container">
         <div class="tab active" onclick="switchTab('input')">入力</div>
+        <div class="tab" onclick="switchTab('guide')">照合ガイド</div>
         <div class="tab" onclick="switchTab('history')">履歴</div>
         <div class="tab" onclick="switchTab('manage')">管理</div>
     </div>
@@ -744,7 +789,7 @@
 
             <div class="form-group">
                 <label>発生場所</label>
-                <input type="text" id="location" placeholder="例: ピロティ、C棟3階">
+                <input type="text" id="location" placeholder="例: 第1倉庫、A棟3階">
             </div>
 
             <div class="form-group">
@@ -798,6 +843,26 @@
 
             <button type="submit" class="btn">登録する</button>
         </form>
+    </div>
+
+    <!-- 照合ガイドタブ -->
+    <div id="guide-content" class="content">
+        <div class="stats-card">
+            <h2>🔍 照合ガイド検索</h2>
+            <p style="color: #666; font-size: 14px; margin-top: 10px;">整理№または品番を入力して照合ガイドを検索できます</p>
+        </div>
+
+        <div style="background: white; padding: 20px; margin: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <div class="form-group">
+                <label>整理№ / 品番で検索</label>
+                <input type="text" id="guide-search-input" placeholder="例: 4923, B0009" style="width: 100%;">
+            </div>
+            <button class="btn" onclick="searchGuide()" style="margin-top: 10px;">🔍 検索</button>
+        </div>
+
+        <div id="guide-result" style="padding: 0 15px 15px 15px;">
+            <!-- 検索結果がここに表示されます -->
+        </div>
     </div>
 
     <!-- 履歴タブ -->
@@ -878,6 +943,39 @@
             <div class="add-item-form">
                 <input type="text" id="new-handler" placeholder="新しい処置者を入力">
                 <button onclick="addHandler()">追加</button>
+            </div>
+        </div>
+
+        <div class="list-management">
+            <h3>📸 照合ガイドの管理</h3>
+            <p style="color: #666; font-size: 13px; margin-bottom: 15px;">
+                整理№または品番ごとに照合ガイド画像を登録できます
+            </p>
+            
+            <div class="add-item-form" style="flex-direction: column; gap: 15px;">
+                <input type="text" id="guide-number" placeholder="整理№ / 品番 (例: 4923, B0009)" style="width: 100%;">
+                
+                <div style="display: flex; gap: 10px; width: 100%;">
+                    <input type="file" id="guide-image" accept="image/*" style="flex: 1;">
+                    <button onclick="uploadGuideImage()" style="white-space: nowrap;">📤 アップロード</button>
+                </div>
+                
+                <div id="guide-upload-preview" style="margin-top: 10px;"></div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; margin-bottom: 10px;">
+                <span style="font-weight: 600; color: #333;">登録済み一覧</span>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span style="font-size: 13px; color: #666;">並べ替え:</span>
+                    <select id="guide-sort-order" onchange="sortGuideList()" style="padding: 5px 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 13px;">
+                        <option value="alpha">アルファベット順</option>
+                        <option value="date">登録日順（新しい順）</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="guide-list" class="list-items" style="margin-top: 10px;">
+                <!-- 登録済みガイド一覧 -->
             </div>
         </div>
 
@@ -985,11 +1083,13 @@
         let handlers = [];
         let logs = [];
         let selectedPhotos = [];
+        let guides = {}; // 照合ガイド: { "4923": { url: "https://...", timestamp: "2025-10-24T..." }, ... }
         
         // Firebaseのキー管理用
         let categoryKeys = {};
         let handlerKeys = {};
         let logKeys = {};
+        let guideKeys = {};
 
         // 表示モード
         let viewMode = 'table'; // 'table' or 'card'
@@ -1001,6 +1101,7 @@
         function init() {
             if (isFirebaseConnected) {
                 initializeFirebaseData();
+                loadGuidesFromFirebase();
             } else {
                 loadLocalData();
                 updateCategorySelect();
@@ -1010,6 +1111,7 @@
                 displayLogs();
                 updateStats();
                 updateStorageInfo();
+                loadGuidesFromFirebase();
             }
         }
 
@@ -1257,6 +1359,224 @@
                 document.getElementById('storage-type').textContent = 'ブラウザのローカルストレージに保存されています';
                 document.getElementById('storage-note').textContent = '※ブラウザのキャッシュをクリアするとデータが削除されます';
             }
+        }
+
+        // 照合ガイドの検索
+        window.searchGuide = function() {
+            const input = document.getElementById('guide-search-input').value.trim();
+            const resultDiv = document.getElementById('guide-result');
+            
+            if (!input) {
+                resultDiv.innerHTML = `
+                    <div class="guide-not-found">
+                        <p>整理№または品番を入力してください</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // ガイドを検索
+            const guideData = guides[input];
+            
+            if (guideData) {
+                const guideUrl = typeof guideData === 'string' ? guideData : guideData.url;
+                resultDiv.innerHTML = `
+                    <div class="guide-result-card">
+                        <h3>📋 ${input} の照合ガイド</h3>
+                        <div class="guide-image-container" onclick="openModal('${guideUrl}')">
+                            <img src="${guideUrl}" alt="照合ガイド">
+                        </div>
+                        <p style="text-align: center; margin-top: 10px; color: #666; font-size: 13px;">
+                            クリックで拡大表示
+                        </p>
+                    </div>
+                `;
+            } else {
+                resultDiv.innerHTML = `
+                    <div class="guide-not-found">
+                        <p style="font-size: 18px; margin-bottom: 10px;">❌</p>
+                        <p><strong>${input}</strong> の照合ガイドは登録されていません</p>
+                        <p style="margin-top: 10px; font-size: 13px;">管理タブから登録できます</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 照合ガイドのアップロード
+        window.uploadGuideImage = async function() {
+            const numberInput = document.getElementById('guide-number');
+            const fileInput = document.getElementById('guide-image');
+            const number = numberInput.value.trim();
+            const file = fileInput.files[0];
+            
+            if (!number) {
+                alert('整理№または品番を入力してください');
+                return;
+            }
+            
+            if (!file) {
+                alert('画像ファイルを選択してください');
+                return;
+            }
+            
+            if (!file.type.startsWith('image/')) {
+                alert('画像ファイルを選択してください');
+                return;
+            }
+            
+            try {
+                let imageUrl;
+                const timestamp = new Date().toISOString();
+                
+                if (isFirebaseConnected) {
+                    // Firebase Storageにアップロード
+                    const timestampNum = Date.now();
+                    const fileName = `guide_${number}_${timestampNum}.jpg`;
+                    const storageReference = storageRef(storage, `guides/${fileName}`);
+                    
+                    await uploadBytes(storageReference, file);
+                    imageUrl = await getDownloadURL(storageReference);
+                    
+                    // Firebaseに保存（URLと登録日時）
+                    await set(ref(database, `guides/${number}`), {
+                        url: imageUrl,
+                        timestamp: timestamp
+                    });
+                } else {
+                    // ローカルにBase64で保存
+                    imageUrl = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.readAsDataURL(file);
+                    });
+                    
+                    guides[number] = {
+                        url: imageUrl,
+                        timestamp: timestamp
+                    };
+                    localStorage.setItem('guides', JSON.stringify(guides));
+                    displayGuideList();
+                }
+                
+                alert(`${number} の照合ガイドを登録しました！`);
+                
+                // フォームをリセット
+                numberInput.value = '';
+                fileInput.value = '';
+                document.getElementById('guide-upload-preview').innerHTML = '';
+                
+            } catch (error) {
+                console.error('アップロードエラー:', error);
+                alert('アップロードに失敗しました: ' + error.message);
+            }
+        }
+
+        // 照合ガイドの並べ替え
+        window.sortGuideList = function() {
+            displayGuideList();
+        }
+
+        // 照合ガイド一覧を表示
+        function displayGuideList() {
+            const listDiv = document.getElementById('guide-list');
+            const sortOrder = document.getElementById('guide-sort-order')?.value || 'alpha';
+            
+            const guideEntries = Object.entries(guides);
+            
+            if (guideEntries.length === 0) {
+                listDiv.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">まだ照合ガイドが登録されていません</p>';
+                return;
+            }
+            
+            // 並べ替え
+            guideEntries.sort((a, b) => {
+                const [numberA, dataA] = a;
+                const [numberB, dataB] = b;
+                
+                if (sortOrder === 'alpha') {
+                    // アルファベット順（数字も含む）
+                    return numberA.localeCompare(numberB, 'ja', { numeric: true });
+                } else {
+                    // 登録日順（新しい順）
+                    const timestampA = typeof dataA === 'string' ? new Date(0) : new Date(dataA.timestamp || 0);
+                    const timestampB = typeof dataB === 'string' ? new Date(0) : new Date(dataB.timestamp || 0);
+                    return timestampB - timestampA;
+                }
+            });
+            
+            listDiv.innerHTML = '';
+            guideEntries.forEach(([number, data]) => {
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                
+                // 登録日時の表示
+                let dateInfo = '';
+                if (typeof data === 'object' && data.timestamp) {
+                    const date = new Date(data.timestamp);
+                    const dateStr = `${date.getFullYear()}/${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+                    dateInfo = `<span style="font-size: 12px; color: #999; margin-left: 10px;">${dateStr}</span>`;
+                }
+                
+                div.innerHTML = `
+                    <span>
+                        <span style="font-weight: 600; color: #667eea;">${number}</span>
+                        ${dateInfo}
+                    </span>
+                    <button onclick="deleteGuide('${number}')">削除</button>
+                `;
+                listDiv.appendChild(div);
+            });
+        }
+
+        // 照合ガイドを削除
+        window.deleteGuide = async function(number) {
+            if (!confirm(`${number} の照合ガイドを削除しますか？`)) return;
+            
+            try {
+                if (isFirebaseConnected) {
+                    await remove(ref(database, `guides/${number}`));
+                } else {
+                    delete guides[number];
+                    localStorage.setItem('guides', JSON.stringify(guides));
+                    displayGuideList();
+                }
+                alert('削除しました');
+            } catch (error) {
+                alert('削除に失敗しました: ' + error.message);
+            }
+        }
+
+        // 照合ガイドをFirebaseから読み込み
+        function loadGuidesFromFirebase() {
+            if (!isFirebaseConnected) {
+                // ローカルから読み込み
+                const saved = localStorage.getItem('guides');
+                if (saved) {
+                    guides = JSON.parse(saved);
+                }
+                displayGuideList();
+                return;
+            }
+            
+            onValue(ref(database, 'guides'), (snapshot) => {
+                guides = {};
+                guideKeys = {};
+                
+                snapshot.forEach((child) => {
+                    const number = child.key;
+                    const data = child.val();
+                    
+                    // 旧形式（文字列）と新形式（オブジェクト）の両方に対応
+                    if (typeof data === 'string') {
+                        guides[number] = { url: data, timestamp: null };
+                    } else {
+                        guides[number] = data;
+                    }
+                    guideKeys[number] = data;
+                });
+                
+                displayGuideList();
+            });
         }
 
         // Today/Nowボタンの処理
