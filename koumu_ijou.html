@@ -628,6 +628,21 @@
             margin-right: 5px;
         }
 
+        .table-line-btn {
+            background: #06C755;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        .table-line-btn:hover {
+            background: #05b04d;
+        }
+
         .empty-state {
             text-align: center;
             padding: 40px 20px;
@@ -899,6 +914,7 @@
                         <th>対応内容</th>
                         <th>対策</th>
                         <th>写真</th>
+                        <th>LINE</th>
                         <th>編集</th>
                         <th>削除</th>
                     </tr>
@@ -1361,6 +1377,59 @@
             }
         }
 
+        // LINEに転送
+        function sendToLine(logKey) {
+            // ログデータを取得
+            let log;
+            if (isFirebaseConnected) {
+                log = logKeys[logKey];
+            } else {
+                log = logs[parseInt(logKey)];
+            }
+            
+            if (!log) {
+                alert('データが見つかりません');
+                return;
+            }
+            
+            // LINEメッセージを作成
+            let message = `【出荷作業異常報告】\n\n`;
+            message += `📅 発生日時: ${log.occurrenceDate || '-'} ${log.occurrenceTime || '-'}\n`;
+            
+            if (log.location) {
+                message += `📍 発生場所: ${log.location}\n`;
+            }
+            if (log.referenceNumber) {
+                message += `🔢 整理№: ${log.referenceNumber}\n`;
+            }
+            
+            message += `📋 分類: ${log.category}\n`;
+            message += `👤 処置者: ${log.handler}\n\n`;
+            
+            message += `【異常内容】\n${log.description}\n\n`;
+            
+            if (log.cause) {
+                message += `【原因】\n${log.cause}\n\n`;
+            }
+            if (log.action) {
+                message += `【対応内容】\n${log.action}\n\n`;
+            }
+            if (log.countermeasure) {
+                message += `【対策】\n${log.countermeasure}\n\n`;
+            }
+            
+            if (log.photos && log.photos.length > 0) {
+                message += `📷 写真: ${log.photos.length}枚添付`;
+            }
+            
+            // LINEアプリで開く
+            const encodedMessage = encodeURIComponent(message);
+            const lineUrl = `https://line.me/R/share?text=${encodedMessage}`;
+            
+            // 新しいウィンドウで開く（モバイルの場合はLINEアプリが起動）
+            window.open(lineUrl, '_blank');
+        }
+
         // 照合ガイドの検索
         window.searchGuide = function() {
             const input = document.getElementById('guide-search-input').value.trim();
@@ -1642,7 +1711,7 @@
             if (logsToDisplay.length === 0) {
                 tableLogList.innerHTML = `
                     <tr>
-                        <td colspan="13" style="text-align: center; padding: 40px; color: #999;">
+                        <td colspan="14" style="text-align: center; padding: 40px; color: #999;">
                             まだ履歴がありません
                         </td>
                     </tr>
@@ -1688,6 +1757,9 @@
                     <td class="table-action">${log.countermeasure || '<span style="color: #ccc;">-</span>'}</td>
                     <td>${photosHtml}</td>
                     <td>
+                        <button class="table-line-btn" data-log-key="${logKey}">LINE</button>
+                    </td>
+                    <td>
                         <button class="table-edit-btn" data-log-key="${logKey}">編集</button>
                     </td>
                     <td>
@@ -1695,6 +1767,13 @@
                     </td>
                 `;
                 
+                // LINEボタンにイベントリスナーを追加
+                const lineBtn = tr.querySelector('.table-line-btn');
+                lineBtn.addEventListener('click', function() {
+                    const key = this.getAttribute('data-log-key');
+                    sendToLine(key);
+                });
+
                 // 編集ボタンにイベントリスナーを追加
                 const editBtn = tr.querySelector('.table-edit-btn');
                 editBtn.addEventListener('click', function() {
@@ -1761,7 +1840,8 @@
                 logDiv.innerHTML = `
                     <div class="log-actions">
                         <button class="log-delete-btn" data-log-key="${logKey}" style="margin-right: 5px;">削除</button>
-                        <button class="table-edit-btn" data-log-key="${logKey}">編集</button>
+                        <button class="table-edit-btn" data-log-key="${logKey}" style="margin-right: 5px;">編集</button>
+                        <button class="table-line-btn" data-log-key="${logKey}">LINE</button>
                     </div>
                     <div class="log-header">
                         <span class="log-date">${log.occurrenceDate} ${log.occurrenceTime}</span>
@@ -1779,6 +1859,13 @@
                     </div>
                 `;
                 
+                // LINEボタンにイベントリスナーを追加
+                const lineBtn = logDiv.querySelector('.table-line-btn');
+                lineBtn.addEventListener('click', function() {
+                    const key = this.getAttribute('data-log-key');
+                    sendToLine(key);
+                });
+
                 // 編集ボタンにイベントリスナーを追加
                 const editBtn = logDiv.querySelector('.table-edit-btn');
                 editBtn.addEventListener('click', function() {
