@@ -1463,6 +1463,7 @@
                     <input type="date" id="timelineDate" onchange="onDateChange()">
                 </div>
                 <div class="date-selector">
+                    <button id="undoBtn" class="btn btn-secondary" onclick="performUndo()" style="opacity: 0.5; cursor: not-allowed;" disabled title="戻せる操作がありません">↶ もとに戻す</button>
                     <button class="btn btn-primary" onclick="showAddTaskModal('planned')">予定追加</button>
                     <button class="btn btn-primary" onclick="showAddTaskModal('actual')">実績追加</button>
                     <button class="btn btn-recurring" onclick="showRecurringModal()">🔄 定期登録</button>
@@ -1476,8 +1477,8 @@
                     <button onclick="resetZoom()" style="margin-left: 10px;">リセット</button>
                 </div>
             </div>
+            <div id="deadlineWarnings" style="margin-top: 15px;"></div>
 
-            <div id="deadlineWarnings"></div>
 
             <div class="timeline-container">
                 <div class="timeline">
@@ -1596,7 +1597,7 @@
   "messagingSenderId": "1094762407781",
   "appId": "1:1094762407781:web:d4c4a9302fd8e86697e38c"
 }</textarea>
-                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                        </button>
                         <button class="btn btn-primary" onclick="connectFirebase()">接続</button>
                         <button class="btn btn-secondary" onclick="disconnectFirebase()">切断</button>
                         <button class="btn btn-success" onclick="syncToFirebase()" title="ローカルデータをFirebaseにアップロード">↑ アップロード</button>
@@ -1904,6 +1905,8 @@
         let database = null;
         let isFirebaseConnected = false;
         let firebaseSyncTimer = null; // Firebase同期のタイマー
+        let undoStack = []; // Undo用の履歴スタック
+        const MAX_UNDO_STACK = 20; // 最大20回までUndo可能
         let draggedElement = null;
         let dragStartX = 0;
         let dragStartLeft = 0;
@@ -2347,6 +2350,71 @@
             });
         }
 
+
+        // Undo用に現在の状態を保存
+        function saveStateForUndo() {
+            const state = {
+                tasks: JSON.parse(JSON.stringify(tasks)),
+                timelineItems: JSON.parse(JSON.stringify(timelineItems)),
+                members: JSON.parse(JSON.stringify(members))
+            };
+            
+            undoStack.push(state);
+            
+            // スタックサイズを制限
+            if (undoStack.length > MAX_UNDO_STACK) {
+                undoStack.shift(); // 古い履歴を削除
+            }
+            
+            // Undoボタンの状態を更新
+            updateUndoButton();
+        }
+
+        // Undo実行
+        function performUndo() {
+            if (undoStack.length === 0) {
+                showNotification("⚠ これ以上戻せません");
+                return;
+            }
+            
+            // 最後の状態を取得
+            const previousState = undoStack.pop();
+            
+            // 状態を復元
+            tasks = previousState.tasks;
+            timelineItems = previousState.timelineItems;
+            members = previousState.members;
+            
+            // 画面を更新
+            saveData();
+            renderTaskList();
+            renderTimeline();
+            updateAnalytics();
+            renderMemberList();
+            updateMemberSelectors();
+            updateUndoButton();
+            
+            showNotification("↶ 操作を取り消しました");
+        }
+
+        // Undoボタンの有効/無効を更新
+        function updateUndoButton() {
+            const undoBtn = document.getElementById("undoBtn");
+            if (undoBtn) {
+                if (undoStack.length > 0) {
+                    undoBtn.disabled = false;
+                    undoBtn.style.opacity = "1";
+                    undoBtn.style.cursor = "pointer";
+                    undoBtn.title = undoStack.length + "回前まで戻せます";
+                } else {
+                    undoBtn.disabled = true;
+                    undoBtn.style.opacity = "0.5";
+                    undoBtn.style.cursor = "not-allowed";
+                    undoBtn.title = "戻せる操作がありません";
+                }
+            }
+        }
+
         function saveData() {
             localStorage.setItem('tasks', JSON.stringify(tasks));
             localStorage.setItem('timelineItems', JSON.stringify(timelineItems));
@@ -2441,33 +2509,67 @@
         }
 
         function checkDeadlines() {
-            const warningsDiv = document.getElementById('deadlineWarnings');
+            const warningsDiv = document.getElementById("deadlineWarnings");
             const today = formatDate(currentDate);
             const todayTime = new Date(today).getTime();
             
-            const warnings = tasks.filter(task => {
-                if (!task.deadline) return false;
+            // 期限超過タスクと期限が近いタスクを取得
+            const overdueAndWarnings = tasks.filter(task => {
+                if (!task.deadline || task.progress >= 100) return false;
                 const deadlineTime = new Date(task.deadline).getTime();
                 const daysUntil = Math.ceil((deadlineTime - todayTime) / (1000 * 60 * 60 * 24));
-                return daysUntil >= 0 && daysUntil <= 3 && task.progress < 100;
+                // 期限超過（マイナス）または3日以内
+                return daysUntil <= 3;
             });
 
-            if (warnings.length > 0) {
-                let html = '<div class="warning-box"><h3>⚠️ 期限が近いタスク</h3>';
-                warnings.forEach(task => {
+            // 期限超過と期限が近いタスクで分類
+            const overdueTasks = overdueAndWarnings.filter(task => {
+                const deadlineTime = new Date(task.deadline).getTime();
+                const daysUntil = Math.ceil((deadlineTime - todayTime) / (1000 * 60 * 60 * 24));
+                return daysUntil < 0;
+            });
+            
+            const upcomingTasks = overdueAndWarnings.filter(task => {
+                const deadlineTime = new Date(task.deadline).getTime();
+                const daysUntil = Math.ceil((deadlineTime - todayTime) / (1000 * 60 * 60 * 24));
+                return daysUntil >= 0 && daysUntil <= 3;
+            });
+
+            let html = "";
+            
+            // 期限超過タスクを表示（赤色）
+            if (overdueTasks.length > 0) {
+                html += "<div class=\"warning-box\" style=\"background: #f8d7da; border-left: 4px solid #dc3545;\">";
+                html += "<h3 style=\"color: #dc3545;\">🚨 期限超過タスク</h3>";
+                overdueTasks.forEach(task => {
+                    const deadlineTime = new Date(task.deadline).getTime();
+                    const daysOverdue = Math.abs(Math.ceil((deadlineTime - todayTime) / (1000 * 60 * 60 * 24)));
+                    html += "<div class=\"warning-item\" style=\"color: #721c24;\">";
+                    html += "<strong>" + task.name + "</strong> (" + task.assignee + ") - ";
+                    html += "期限: " + task.deadline + " (<strong>" + daysOverdue + "日超過</strong>) - ";
+                    html += "進捗: " + task.progress + "%";
+                    html += "</div>";
+                });
+                html += "</div>";
+            }
+            
+            // 期限が近いタスクを表示（黄色）
+            if (upcomingTasks.length > 0) {
+                html += "<div class=\"warning-box\" style=\"background: #fff3cd; border-left: 4px solid #ffc107; margin-top: " + (overdueTasks.length > 0 ? "10px" : "0") + ";\">";
+                html += "<h3 style=\"color: #856404;\">⚠️ 期限が近いタスク</h3>";
+                upcomingTasks.forEach(task => {
                     const deadlineTime = new Date(task.deadline).getTime();
                     const daysUntil = Math.ceil((deadlineTime - todayTime) / (1000 * 60 * 60 * 24));
-                    html += `<div class="warning-item">
-                        <strong>${task.name}</strong> (${task.assignee}) - 
-                        期限: ${task.deadline} (あと${daysUntil}日) - 
-                        進捗: ${task.progress}%
-                    </div>`;
+                    html += "<div class=\"warning-item\" style=\"color: #856404;\">";
+                    html += "<strong>" + task.name + "</strong> (" + task.assignee + ") - ";
+                    html += "期限: " + task.deadline + " (あと" + daysUntil + "日) - ";
+                    html += "進捗: " + task.progress + "%";
+                    html += "</div>";
                 });
-                html += '</div>';
-                warningsDiv.innerHTML = html;
-            } else {
-                warningsDiv.innerHTML = '';
+                html += "</div>";
             }
+            
+            warningsDiv.innerHTML = html;
         }
 
         function showAddTaskModal(type) {
@@ -2591,6 +2693,7 @@
         }
 
         function addTask() {
+            saveStateForUndo();
             const name = document.getElementById('taskName').value;
             const plannedHours = parseFloat(document.getElementById('plannedHours').value) || 0;
             const deadline = document.getElementById('taskDeadline').value;
@@ -2689,6 +2792,7 @@
         }
 
         function deleteTask(id) {
+            saveStateForUndo();
             if (!confirm('このタスクを削除しますか？')) return;
             tasks = tasks.filter(t => t.id !== id);
             timelineItems = timelineItems.filter(item => item.taskId !== id);
@@ -2933,6 +3037,7 @@
         }
 
         function deleteTimelineItem(id) {
+            saveStateForUndo();
             const item = timelineItems.find(i => i.id === id);
             if (item && item.taskId && item.type !== 'planned') {
                 const task = tasks.find(t => t.id === item.taskId);
@@ -2951,6 +3056,7 @@
         }
 
         function copyToActual(plannedItemId) {
+            saveStateForUndo();
             const plannedItem = timelineItems.find(i => i.id === plannedItemId);
             if (!plannedItem) return;
             
@@ -2993,13 +3099,80 @@
             const originalItem = timelineItems.find(i => i.id === itemId);
             if (!originalItem) return;
             
-            // 同じ内容でタスクバーを複製（少し右にずらす）
+            // 担当者選択モーダルを表示
+            showCopyToMemberModal(originalItem);
+        }
+
+        // 担当者を選択してタスクをコピーする関数
+        function showCopyToMemberModal(originalItem) {
+            const modal = document.createElement("div");
+            modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 5000;";
+            
+            const modalContent = document.createElement("div");
+            modalContent.style.cssText = "background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 400px; width: 90%;";
+            
+            const typeText = originalItem.type === "planned" ? "予定" : "実績";
+            
+            let optionsHtml = "";
+            members.forEach(m => {
+                const selected = m === originalItem.assignee ? "selected" : "";
+                optionsHtml += "<option value=\"" + m + "\" " + selected + ">" + m + "</option>";
+            });
+            
+            modalContent.innerHTML = "<h3 style=\"margin-bottom: 20px; color: #333;\">タスクをコピー</h3>" +
+                "<p style=\"margin-bottom: 15px; color: #666;\">" +
+                "<strong>" + originalItem.taskName + "</strong> (" + typeText + ")<br>" +
+                "現在の担当者: <strong>" + originalItem.assignee + "</strong>" +
+                "</p>" +
+                "<div style=\"margin-bottom: 20px;\">" +
+                "<label style=\"display: block; margin-bottom: 8px; font-weight: 600; color: #495057;\">" +
+                "コピー先の担当者を選択:" +
+                "</label>" +
+                "<select id=\"copyToMemberSelect\" style=\"width: 100%; padding: 10px; border: 2px solid #e9ecef; border-radius: 5px; font-size: 14px;\">" +
+                optionsHtml +
+                "</select>" +
+                "</div>" +
+                "<div style=\"display: flex; gap: 10px; justify-content: flex-end;\">" +
+                "<button id=\"copyModalCancel\" style=\"padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;\">" +
+                "キャンセル" +
+                "</button>" +
+                "<button id=\"copyModalConfirm\" style=\"padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;\">" +
+                "コピー" +
+                "</button>" +
+                "</div>";
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            const cancelBtn = document.getElementById("copyModalCancel");
+            const confirmBtn = document.getElementById("copyModalConfirm");
+            const memberSelect = document.getElementById("copyToMemberSelect");
+            
+            function closeModal() {
+                modal.remove();
+            }
+            
+            cancelBtn.addEventListener("click", closeModal);
+            modal.addEventListener("click", function(e) {
+                if (e.target === modal) closeModal();
+            });
+            
+            confirmBtn.addEventListener("click", function() {
+                const selectedMember = memberSelect.value;
+                copyBarToMember(originalItem, selectedMember);
+                closeModal();
+            });
+        }
+
+        // 指定した担当者にタスクをコピーする関数
+        function copyBarToMember(originalItem, targetMember) {
+            saveStateForUndo();
             const copiedItem = {
                 id: Date.now(),
                 taskId: originalItem.taskId,
                 taskName: originalItem.taskName,
-                assignee: originalItem.assignee,
-                left: Math.min(90, originalItem.left + 5), // 5%右にずらす（最大90%まで）
+                assignee: targetMember,
+                left: originalItem.left,
                 width: originalItem.width,
                 hours: originalItem.hours,
                 type: originalItem.type,
@@ -3008,8 +3181,7 @@
             
             timelineItems.push(copiedItem);
             
-            // 実績タスクの場合、タスクリストの実績工数と進捗率を更新
-            if (copiedItem.type !== 'planned' && copiedItem.taskId) {
+            if (copiedItem.type !== "planned" && copiedItem.taskId) {
                 const task = tasks.find(t => t.id === copiedItem.taskId);
                 if (task) {
                     task.actualHours = (task.actualHours || 0) + copiedItem.hours;
@@ -3024,9 +3196,11 @@
             renderTaskList();
             updateAnalytics();
             
-            // フィードバック
-            const typeText = copiedItem.type === 'planned' ? '予定' : '実績';
-            showNotification(`⎘ ${typeText}を複製しました`);
+            const typeText = copiedItem.type === "planned" ? "予定" : "実績";
+            const message = targetMember === originalItem.assignee ? 
+                "⎘ " + typeText + "を複製しました" : 
+                "⎘ " + typeText + "を" + targetMember + "にコピーしました";
+            showNotification(message);
         }
 
 
@@ -3081,6 +3255,8 @@
             
             function finishEditing() {
                 const newName = input.value.trim();
+                    // 名前変更前に状態を保存（Undo用）
+                    saveStateForUndo();
                 if (newName && newName !== item.taskName) {
                     // 名前を更新
                     item.taskName = newName;
@@ -3156,6 +3332,9 @@
             if (e.currentTarget.classList.contains("editing")) {
                 return;
             }
+            
+            // ドラッグ開始前に状態を保存（Undo用）
+            saveStateForUndo();
             
             // 編集入力フィールドをクリックした場合は無視
             if (e.target.classList.contains("task-bar-edit-input")) {
