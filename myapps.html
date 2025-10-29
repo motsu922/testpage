@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web App Portfolio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .hidden { display: none; }
+        .app-card {
+            transition: all 0.2s;
+        }
+        .app-card:hover img {
+            transform: scale(1.02);
+        }
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .aspect-video {
+            aspect-ratio: 16 / 9;
+        }
+    </style>
+</head>
+<body class="bg-white min-h-screen">
+    <!-- ヘッダー -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-screen-2xl mx-auto px-4 py-2 flex justify-between items-center">
+            <h1 class="text-xl font-bold text-gray-900">📱 My Apps</h1>
+            <div id="authButtons"></div>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="max-w-screen-2xl mx-auto px-4 py-6">
+        
+        <!-- ログインフォーム -->
+        <div id="loginSection" class="hidden max-w-md mx-auto bg-white rounded-lg shadow-md p-8">
+            <h2 class="text-2xl font-bold mb-6 text-center">管理者ログイン</h2>
+            <form id="loginForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">メールアドレス</label>
+                    <input type="email" id="loginEmail" required
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">パスワード</label>
+                    <input type="password" id="loginPassword" required
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <button type="submit"
+                    class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">
+                    ログイン
+                </button>
+            </form>
+            <p id="loginError" class="text-red-500 text-sm mt-4 text-center hidden"></p>
+        </div>
+
+        <!-- 管理画面 -->
+        <div id="adminSection" class="hidden">
+            <div class="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
+                <h2 id="formTitle" class="text-lg sm:text-xl font-bold mb-4">新規アプリ登録</h2>
+                <form id="addAppForm" class="space-y-3">
+                    <input type="hidden" id="editingAppId" value="">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">アプリ名</label>
+                        <input type="text" id="appTitle" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">URL</label>
+                        <input type="url" id="appUrl" required placeholder="https://example.com"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">説明</label>
+                        <textarea id="appDescription" rows="4" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">管理者向けリンク（任意）</label>
+                        <div class="space-y-2">
+                            <input type="url" id="githubUrl" placeholder="GitHub: https://github.com/..."
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <input type="url" id="firebaseUrl" placeholder="Firebase: https://console.firebase.google.com/..."
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <input type="url" id="otherUrl" placeholder="その他: https://..."
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">サムネイル画像</label>
+                        <input type="file" id="appThumbnail" accept="image/*" required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md">
+                        <p class="text-xs text-gray-500 mt-1">編集時は変更する場合のみ選択してください</p>
+                        <img id="currentThumbnail" class="hidden mt-2 w-32 h-32 object-cover rounded-md border">
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="submit" id="submitButton"
+                            class="flex-grow bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition">
+                            アプリを追加
+                        </button>
+                        <button type="button" id="cancelButton" onclick="cancelEdit()" 
+                            class="hidden bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600 transition">
+                            キャンセル
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-4 sm:p-6">
+                <h2 class="text-lg sm:text-xl font-bold mb-3 sm:mb-4">登録済みアプリ管理</h2>
+                <div id="adminAppList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                    <!-- 管理用アプリリスト -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 公開ページ（ポートフォリオ一覧） -->
+        <div id="publicSection">
+            <div id="appList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- アプリカードがここに表示される -->
+            </div>
+            <p id="noApps" class="text-center text-gray-500 hidden">まだアプリが登録されていません</p>
+        </div>
+    </main>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, serverTimestamp, orderBy, query } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDxl5a__1aGS-19zn4cQNn6FutP7-q_mag",
+            authDomain: "personal-60023.firebaseapp.com",
+            projectId: "personal-60023",
+            storageBucket: "personal-60023.firebasestorage.app",
+            messagingSenderId: "920380998275",
+            appId: "1:920380998275:web:1ac685f50fe5f14de191b6"
+        };
+
+        // Firebase初期化
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        // DOM要素
+        const loginSection = document.getElementById('loginSection');
+        const adminSection = document.getElementById('adminSection');
+        const publicSection = document.getElementById('publicSection');
+        const authButtons = document.getElementById('authButtons');
+        const loginForm = document.getElementById('loginForm');
+        const loginError = document.getElementById('loginError');
+        const addAppForm = document.getElementById('addAppForm');
+        const appList = document.getElementById('appList');
+        const adminAppList = document.getElementById('adminAppList');
+        const noApps = document.getElementById('noApps');
+
+        // 認証状態の監視
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // ログイン済み - 管理画面を表示
+                loginSection.classList.add('hidden');
+                adminSection.classList.remove('hidden');
+                publicSection.classList.remove('hidden');
+                authButtons.innerHTML = `
+                    <button onclick="handleLogout()" class="bg-red-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-md hover:bg-red-700 transition">
+                        ログアウト
+                    </button>
+                `;
+                loadApps(true);
+            } else {
+                // 未ログイン - 公開ページのみ表示
+                loginSection.classList.add('hidden');
+                adminSection.classList.add('hidden');
+                publicSection.classList.remove('hidden');
+                authButtons.innerHTML = `
+                    <button onclick="showLogin()" class="bg-blue-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 text-sm sm:text-base rounded-md hover:bg-blue-700 transition">
+                        管理者ログイン
+                    </button>
+                `;
+                loadApps(false);
+            }
+        });
+
+        // ログインフォーム送信
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                loginError.classList.add('hidden');
+            } catch (error) {
+                loginError.textContent = 'ログインに失敗しました: ' + error.message;
+                loginError.classList.remove('hidden');
+            }
+        });
+
+        // アプリ追加/編集フォーム送信
+        addAppForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const editingId = document.getElementById('editingAppId').value;
+            const title = document.getElementById('appTitle').value;
+            const url = document.getElementById('appUrl').value;
+            const description = document.getElementById('appDescription').value;
+            const githubUrl = document.getElementById('githubUrl').value;
+            const firebaseUrl = document.getElementById('firebaseUrl').value;
+            const otherUrl = document.getElementById('otherUrl').value;
+            const thumbnailFile = document.getElementById('appThumbnail').files[0];
+
+            try {
+                // 編集モード
+                if (editingId) {
+                    const appData = {
+                        title,
+                        url,
+                        description,
+                        githubUrl: githubUrl || '',
+                        firebaseUrl: firebaseUrl || '',
+                        otherUrl: otherUrl || '',
+                        updatedAt: serverTimestamp()
+                    };
+
+                    // 画像が選択されている場合のみ更新
+                    if (thumbnailFile) {
+                        // 古い画像を削除
+                        const apps = await getDocs(collection(db, 'apps'));
+                        const oldApp = apps.docs.find(doc => doc.id === editingId);
+                        if (oldApp && oldApp.data().thumbnailPath) {
+                            const oldImageRef = ref(storage, oldApp.data().thumbnailPath);
+                            try {
+                                await deleteObject(oldImageRef);
+                            } catch (err) {
+                                console.log('古い画像の削除に失敗:', err);
+                            }
+                        }
+
+                        // 新しい画像をアップロード
+                        const storageRef = ref(storage, `thumbnails/${Date.now()}_${thumbnailFile.name}`);
+                        await uploadBytes(storageRef, thumbnailFile);
+                        const thumbnailUrl = await getDownloadURL(storageRef);
+                        appData.thumbnailUrl = thumbnailUrl;
+                        appData.thumbnailPath = storageRef.fullPath;
+                    }
+
+                    await updateDoc(doc(db, 'apps', editingId), appData);
+                    alert('アプリを更新しました！');
+                } 
+                // 新規追加モード
+                else {
+                    if (!thumbnailFile) {
+                        alert('サムネイル画像を選択してください');
+                        return;
+                    }
+
+                    // 画像をStorageにアップロード
+                    const storageRef = ref(storage, `thumbnails/${Date.now()}_${thumbnailFile.name}`);
+                    await uploadBytes(storageRef, thumbnailFile);
+                    const thumbnailUrl = await getDownloadURL(storageRef);
+
+                    // Firestoreにデータを保存
+                    await addDoc(collection(db, 'apps'), {
+                        title,
+                        url,
+                        description,
+                        githubUrl: githubUrl || '',
+                        firebaseUrl: firebaseUrl || '',
+                        otherUrl: otherUrl || '',
+                        thumbnailUrl,
+                        thumbnailPath: storageRef.fullPath,
+                        createdAt: serverTimestamp()
+                    });
+
+                    alert('アプリを追加しました！');
+                }
+
+                resetForm();
+                loadApps(true);
+            } catch (error) {
+                alert('エラーが発生しました: ' + error.message);
+            }
+        });
+
+        // アプリ一覧を読み込み
+        async function loadApps(isAdmin) {
+            try {
+                const q = query(collection(db, 'apps'), orderBy('createdAt', 'desc'));
+                const querySnapshot = await getDocs(q);
+                
+                if (querySnapshot.empty) {
+                    noApps.classList.remove('hidden');
+                    appList.innerHTML = '';
+                    if (isAdmin) adminAppList.innerHTML = '';
+                    return;
+                }
+
+                noApps.classList.add('hidden');
+                appList.innerHTML = '';
+                if (isAdmin) adminAppList.innerHTML = '';
+
+                querySnapshot.forEach((docSnapshot) => {
+                    const app = docSnapshot.data();
+                    const appId = docSnapshot.id;
+                    
+                    // 公開ページ用カード
+                    const card = createAppCard(app);
+                    appList.appendChild(card);
+
+                    // 管理画面用カード
+                    if (isAdmin) {
+                        const adminCard = createAdminAppCard(app, appId);
+                        adminAppList.appendChild(adminCard);
+                    }
+                });
+            } catch (error) {
+                console.error('アプリの読み込みに失敗しました:', error);
+            }
+        }
+
+        // 公開ページ用アプリカード作成
+        function createAppCard(app) {
+            const card = document.createElement('div');
+            card.className = 'app-card cursor-pointer';
+            card.innerHTML = `
+                <div class="mb-4">
+                    <img src="${app.thumbnailUrl}" alt="${app.title}" class="w-full aspect-video object-cover rounded-xl">
+                </div>
+                <div class="flex gap-3">
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-base font-semibold mb-2 line-clamp-2 leading-tight">${app.title}</h3>
+                        <p class="text-sm text-gray-600 line-clamp-2 leading-relaxed mb-3">${app.description}</p>
+                        <a href="${app.url}" target="_blank" rel="noopener noreferrer"
+                            class="inline-block text-sm text-blue-600 hover:text-blue-800 font-medium">
+                            開く →
+                        </a>
+                    </div>
+                </div>
+            `;
+            return card;
+        }
+
+        // 管理画面用アプリカード作成
+        function createAdminAppCard(app, appId) {
+            const card = document.createElement('div');
+            card.className = 'bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition';
+            
+            // 管理者向けリンクボタンを生成
+            let adminLinks = '';
+            if (app.githubUrl || app.firebaseUrl || app.otherUrl) {
+                adminLinks = '<div class="flex gap-1 mb-2">';
+                if (app.githubUrl) {
+                    adminLinks += `<a href="${app.githubUrl}" target="_blank" class="flex-1 bg-gray-700 text-white px-2 py-1 text-xs rounded hover:bg-gray-800 transition text-center" title="GitHub">🔗 GitHub</a>`;
+                }
+                if (app.firebaseUrl) {
+                    adminLinks += `<a href="${app.firebaseUrl}" target="_blank" class="flex-1 bg-orange-500 text-white px-2 py-1 text-xs rounded hover:bg-orange-600 transition text-center" title="Firebase">🔥 Firebase</a>`;
+                }
+                if (app.otherUrl) {
+                    adminLinks += `<a href="${app.otherUrl}" target="_blank" class="flex-1 bg-purple-500 text-white px-2 py-1 text-xs rounded hover:bg-purple-600 transition text-center" title="その他">🔗 Other</a>`;
+                }
+                adminLinks += '</div>';
+            }
+            
+            card.innerHTML = `
+                <img src="${app.thumbnailUrl}" alt="${app.title}" class="w-full aspect-video object-cover">
+                <div class="p-3">
+                    <h4 class="font-bold text-sm mb-1 truncate">${app.title}</h4>
+                    <p class="text-gray-600 text-xs truncate mb-3">${app.url}</p>
+                    ${adminLinks}
+                    <div class="flex gap-2">
+                        <button onclick="editApp('${appId}')"
+                            class="flex-1 bg-blue-600 text-white px-2 py-1.5 text-xs rounded hover:bg-blue-700 transition">
+                            編集
+                        </button>
+                        <button onclick="deleteApp('${appId}')"
+                            class="flex-1 bg-red-600 text-white px-2 py-1.5 text-xs rounded hover:bg-red-700 transition">
+                            削除
+                        </button>
+                    </div>
+                </div>
+            `;
+            return card;
+        }
+
+        // ログアウト
+        window.handleLogout = async () => {
+            try {
+                await signOut(auth);
+            } catch (error) {
+                alert('ログアウトに失敗しました');
+            }
+        };
+
+        // ログイン画面表示
+        window.showLogin = () => {
+            loginSection.classList.remove('hidden');
+            publicSection.classList.add('hidden');
+        };
+
+        // アプリ削除
+        window.deleteApp = async (appId) => {
+            if (!confirm('本当にこのアプリを削除しますか？')) return;
+
+            try {
+                // アプリデータを取得
+                const apps = await getDocs(collection(db, 'apps'));
+                const appDoc = apps.docs.find(doc => doc.id === appId);
+                
+                if (appDoc) {
+                    const appData = appDoc.data();
+                    
+                    // Storageから画像を削除
+                    if (appData.thumbnailPath) {
+                        const imageRef = ref(storage, appData.thumbnailPath);
+                        try {
+                            await deleteObject(imageRef);
+                        } catch (err) {
+                            console.log('画像の削除に失敗:', err);
+                        }
+                    }
+
+                    // Firestoreからドキュメントを削除
+                    await deleteDoc(doc(db, 'apps', appId));
+
+                    alert('アプリを削除しました');
+                    loadApps(true);
+                }
+            } catch (error) {
+                alert('削除に失敗しました: ' + error.message);
+            }
+        };
+
+        // アプリ編集
+        window.editApp = async (appId) => {
+            try {
+                // Firestoreからアプリを取得
+                const apps = await getDocs(collection(db, 'apps'));
+                const appDoc = apps.docs.find(doc => doc.id === appId);
+                
+                if (!appDoc) return;
+                
+                const app = appDoc.data();
+
+                // フォームに値をセット
+                document.getElementById('editingAppId').value = appId;
+                document.getElementById('appTitle').value = app.title;
+                document.getElementById('appUrl').value = app.url;
+                document.getElementById('appDescription').value = app.description;
+                document.getElementById('githubUrl').value = app.githubUrl || '';
+                document.getElementById('firebaseUrl').value = app.firebaseUrl || '';
+                document.getElementById('otherUrl').value = app.otherUrl || '';
+                
+                // 現在のサムネイルを表示
+                const currentThumbnail = document.getElementById('currentThumbnail');
+                currentThumbnail.src = app.thumbnailUrl;
+                currentThumbnail.classList.remove('hidden');
+                
+                // サムネイル入力をオプショナルに
+                document.getElementById('appThumbnail').removeAttribute('required');
+                
+                // UIを編集モードに変更
+                document.getElementById('formTitle').textContent = 'アプリ編集';
+                document.getElementById('submitButton').textContent = '更新する';
+                document.getElementById('submitButton').className = 'flex-grow bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition';
+                document.getElementById('cancelButton').classList.remove('hidden');
+                
+                // フォームまでスクロール
+                document.getElementById('addAppForm').scrollIntoView({ behavior: 'smooth' });
+            } catch (error) {
+                alert('編集データの読み込みに失敗しました: ' + error.message);
+            }
+        };
+
+        // 編集キャンセル
+        window.cancelEdit = () => {
+            resetForm();
+        };
+
+        // フォームリセット
+        function resetForm() {
+            addAppForm.reset();
+            document.getElementById('editingAppId').value = '';
+            document.getElementById('githubUrl').value = '';
+            document.getElementById('firebaseUrl').value = '';
+            document.getElementById('otherUrl').value = '';
+            document.getElementById('currentThumbnail').classList.add('hidden');
+            document.getElementById('appThumbnail').setAttribute('required', 'required');
+            document.getElementById('formTitle').textContent = '新規アプリ登録';
+            document.getElementById('submitButton').textContent = 'アプリを追加';
+            document.getElementById('submitButton').className = 'flex-grow bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition';
+            document.getElementById('cancelButton').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
