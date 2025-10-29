@@ -713,12 +713,13 @@
             gap: 3px;
             opacity: 0;
             transition: opacity 0.2s;
-            z-index: 100;
+            z-index: 2500;
             margin-top: 2px;
         }
 
         .task-bar:hover .bar-buttons {
             opacity: 1;
+            z-index: 2500;
         }
 
         .task-bar-text {
@@ -754,11 +755,10 @@
             top: -28px;
         }
 
-        /* 実績タスクの短時間タスク名を下に */
+        /* 実績タスクの短時間タスク名も上に */
         .task-bar.actual-planned.short-task .task-bar-text,
         .task-bar.actual-adhoc.short-task .task-bar-text {
-            top: auto;
-            bottom: -28px;
+            top: -28px;
         }
 
         /* ホバー時の詳細表示（通常サイズのタスクのみ） */
@@ -799,6 +799,36 @@
 
         .task-bar:hover .task-bar-text {
             z-index: 2001;
+        }
+
+
+        /* 編集モード用のスタイル */
+        .task-bar.editing {
+            z-index: 3000;
+        }
+
+        .task-bar-edit-input {
+            position: absolute;
+            top: -45px;
+            left: 0;
+            width: max-content;
+            min-width: 200px;
+            max-width: 400px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            background: white;
+            color: #333;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 3001;
+        }
+
+        .task-bar-edit-input:focus {
+            outline: none;
+            border-color: #764ba2;
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
         }
 
         .task-bar.planned {
@@ -1873,6 +1903,7 @@
         let firebaseApp = null;
         let database = null;
         let isFirebaseConnected = false;
+        let firebaseSyncTimer = null; // Firebase同期のタイマー
         let draggedElement = null;
         let dragStartX = 0;
         let dragStartLeft = 0;
@@ -2323,7 +2354,7 @@
             
             // Firebase連携時は自動同期
             if (isFirebaseConnected) {
-                syncToFirebase();
+                // syncToFirebase(); // scheduleFirebaseSyncで呼ばれる
             }
         }
 
@@ -2880,6 +2911,12 @@
             `;
             bar.addEventListener('mousedown', handleMouseDown);
             
+            // ダブルクリックで編集できるようにする
+            bar.addEventListener("dblclick", function(e) {
+                e.stopPropagation();
+                editTaskBarName(item.id, bar);
+            });
+            
             // バーの実際の幅で短時間タスクかどうかを判定
             requestAnimationFrame(() => {
                 const barWidth = bar.offsetWidth;
@@ -2990,6 +3027,81 @@
             // フィードバック
             const typeText = copiedItem.type === 'planned' ? '予定' : '実績';
             showNotification(`⎘ ${typeText}を複製しました`);
+        }
+
+
+        // タスクバーの名前を編集する関数
+        function editTaskBarName(itemId, barElement) {
+            const item = timelineItems.find(i => i.id === itemId);
+            if (!item) return;
+            
+            // 既に編集中の場合は無視
+            if (barElement.classList.contains("editing")) return;
+            
+            // 編集モードに設定
+            barElement.classList.add("editing");
+            
+            // 入力フィールドを作成
+            const input = document.createElement("input");
+            input.type = "text";
+            input.className = "task-bar-edit-input";
+            input.value = item.taskName;
+            
+            // バーに追加
+            barElement.appendChild(input);
+            
+            // フォーカスして全選択
+            input.focus();
+            input.select();
+            
+            // Enterキーで確定
+            input.addEventListener("keydown", function(e) {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    finishEditing();
+                } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelEditing();
+                }
+            });
+            
+            // フォーカスが外れたら確定
+            input.addEventListener("blur", function() {
+                setTimeout(() => finishEditing(), 100);
+            });
+            
+            function finishEditing() {
+                const newName = input.value.trim();
+                if (newName && newName !== item.taskName) {
+                    // 名前を更新
+                    item.taskName = newName;
+                    
+                    // タスクバーのテキストを更新
+                    const textSpan = barElement.querySelector(".task-bar-text");
+                    if (textSpan) {
+                        textSpan.textContent = newName;
+                        textSpan.setAttribute("data-full-text", newName);
+                    }
+                    
+                    // データを保存（0.5秒待機してから）
+                    scheduleFirebaseSync();
+                    
+                    showNotification("✓ 予定名を更新しました");
+                }
+                
+                // 編集モードを解除
+                barElement.classList.remove("editing");
+                if (input.parentNode) {
+                    input.remove();
+                }
+            }
+            
+            function cancelEditing() {
+                barElement.classList.remove("editing");
+                if (input.parentNode) {
+                    input.remove();
+                }
+            }
         }
 
         function showNotification(message) {
@@ -3764,6 +3876,25 @@
             isFirebaseConnected = false;
             updateSyncStatus();
             showNotification('✓ Firebaseから切断しました');
+        }
+
+
+        // Firebase同期をスケジュールする関数（0.5秒待機）
+        function scheduleFirebaseSync() {
+            // 既存のタイマーをクリア
+            if (firebaseSyncTimer) {
+                clearTimeout(firebaseSyncTimer);
+            }
+            
+            // まずローカルストレージに保存
+            saveData();
+            
+            // Firebaseに接続されている場合のみ、0.5秒後に同期
+            if (isFirebaseConnected && database) {
+                firebaseSyncTimer = setTimeout(() => {
+                    syncToFirebase();
+                }, 500);
+            }
         }
 
         function syncToFirebase() {
