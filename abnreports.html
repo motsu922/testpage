@@ -1,1551 +1,1268 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>異常履歴入力ツール</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>異常履歴入力ツール</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f5;}
+  .container{max-width:800px;margin:0 auto;padding:10px;}
+  .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.1);}
+  .header h1{font-size:1.5rem;margin-bottom:5px;}
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
-            background: #f5f5f5;
-            padding: 0;
-            margin: 0;
-        }
+  .tabs{display:flex;background:#fff;margin:15px 0 0;border-radius:8px 8px 0 0;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1);}
+  .tab{flex:1;padding:15px;text-align:center;cursor:pointer;background:#f8f9fa;border:none;font-size:1rem;font-weight:bold;transition:.3s;color:#666;}
+  .tab.active{background:#fff;color:#667eea;border-bottom:3px solid #667eea;}
 
-        .container { max-width: 800px; margin: 0 auto; padding: 10px; }
+  .tab-content{display:none;background:#fff;padding:20px;border-radius:0 0 8px 8px;box-shadow:0 2px 10px rgba(0,0,0,.1);}
+  .tab-content.active{display:block;}
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white; padding: 20px; text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header h1 { font-size: 1.5rem; margin-bottom: 5px; }
+  .form-group{margin-bottom:20px;}
+  .form-group label{display:block;margin-bottom:8px;font-weight:bold;color:#333;font-size:.95rem;}
+  .form-group input,.form-group textarea,.form-group select{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:6px;font-size:1rem;transition:border-color .3s;}
+  .form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:#667eea;}
+  .form-group textarea{min-height:100px;resize:vertical;}
 
-        .tabs {
-            display: flex; background: white; margin: 15px 0 0 0; border-radius: 8px 8px 0 0; overflow: hidden;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        .tab {
-            flex: 1; padding: 15px; text-align: center; cursor: pointer; background: #f8f9fa; border: none;
-            font-size: 1rem; font-weight: bold; transition: all 0.3s; color: #666;
-        }
-        .tab.active { background: white; color: #667eea; border-bottom: 3px solid #667eea; }
+  .time-group{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 
-        .tab-content { display: none; background: white; padding: 20px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .tab-content.active { display: block; }
+  .photo-upload{border:2px dashed #e0e0e0;border-radius:6px;padding:20px;text-align:center;cursor:pointer;transition:.3s;}
+  .photo-upload:hover{border-color:#667eea;background:#f8f9ff;}
+  .photo-upload input[type="file"]{display:none;}
+  .photo-preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-top:15px;}
+  .photo-item{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1);}
+  .photo-item img{width:100%;height:100%;object-fit:cover;}
+  .photo-item .remove-btn{position:absolute;top:5px;right:5px;background:rgba(255,59,48,.9);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:1;}
 
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; font-size: 0.95rem; }
-        .form-group input, .form-group textarea, .form-group select {
-            width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 1rem; transition: border-color 0.3s;
-        }
-        .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: #667eea; }
-        .form-group textarea { min-height: 100px; resize: vertical; }
+  .btn{width:100%;padding:15px;border:none;border-radius:6px;font-size:1rem;font-weight:bold;cursor:pointer;transition:.3s;margin-top:10px;}
+  .btn-primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(102,126,234,.4);}
+  .btn-secondary{background:#6c757d;color:#fff;}
+  .btn-export{background:#28a745;color:#fff;}
+  .btn-import{background:#17a2b8;color:#fff;}
 
-        .time-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .history-controls{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;}
+  .view-toggle{display:flex;gap:5px;}
+  .view-toggle button{padding:8px 15px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold;}
+  .view-toggle button.active{background:#667eea;color:#fff;}
 
-        .photo-upload {
-            border: 2px dashed #e0e0e0; border-radius: 6px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.3s;
-        }
-        .photo-upload:hover { border-color: #667eea; background: #f8f9ff; }
-        .photo-upload input[type="file"] { display: none; }
+  .card-view{display:grid;gap:15px;}
+  .anomaly-card{background:#fff;border-radius:8px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,.1);border-left:4px solid #667eea;}
+  .anomaly-card.complete{border-left-color:#28a745;}
+  .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e0e0e0;}
+  .card-id{font-size:1.2rem;font-weight:bold;color:#667eea;}
+  .card-status{padding:4px 12px;border-radius:12px;font-size:.85rem;font-weight:bold;}
+  .status-pending{background:#fff3cd;color:#856404;}
+  .status-complete{background:#d4edda;color:#155724;}
+  .card-body{display:grid;gap:8px;}
+  .card-field{display:grid;grid-template-columns:120px 1fr;gap:10px;}
+  .field-label{font-weight:bold;color:#666;}
+  .field-value{color:#333;}
 
-        .photo-preview { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 15px; }
-        .photo-item { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .photo-item img { width: 100%; height: 100%; object-fit: cover; }
-        .photo-item .remove-btn {
-            position: absolute; top: 5px; right: 5px; background: rgba(255, 59, 48, 0.9); color: white; border: none; border-radius: 50%;
-            width: 24px; height: 24px; cursor: pointer; font-size: 14px; line-height: 1;
-        }
+  .table-view{overflow-x:auto;display:none;}
+  .table-view.active{display:block;}
+  table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1);}
+  th,td{padding:12px;text-align:left;border-bottom:1px solid #e0e0e0;}
+  th{background:#667eea;color:#fff;font-weight:bold;position:sticky;top:0;}
+  tr:hover{background:#f8f9ff;}
+  .action-btns{display:flex;gap:5px;}
+  .btn-small{padding:5px 10px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem;}
+  .btn-edit{background:#ffc107;color:#000;}
+  .btn-delete{background:#dc3545;color:#fff;}
 
-        .btn { width: 100%; padding: 15px; border: none; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: all 0.3s; margin-top: 10px; }
-        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
-        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn-export { background: #28a745; color: white; }
-        .btn-import { background: #17a2b8; color: white; }
+  .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;}
+  .modal.active{display:flex;}
+  .modal-content{background:#fff;padding:30px;border-radius:8px;max-width:400px;width:90%;text-align:center;}
+  .modal-icon{font-size:3rem;margin-bottom:15px;}
+  .modal-content h3{margin-bottom:20px;color:#333;}
 
-        .history-controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
-        .view-toggle { display: flex; gap: 5px; }
-        .view-toggle button {
-            padding: 8px 15px; border: 2px solid #667eea; background: white; color: #667eea; border-radius: 6px; cursor: pointer; font-weight: bold;
-        }
-        .view-toggle button.active { background: #667eea; color: white; }
+  @media (max-width:600px){
+    .card-field{grid-template-columns:1fr;gap:5px;}
+    .time-group{grid-template-columns:1fr;}
+    table{font-size:.85rem;}
+    th,td{padding:8px;}
+  }
 
-        .card-view { display: grid; gap: 15px; }
-        .anomaly-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #667eea; }
-        .anomaly-card.complete { border-left-color: #28a745; }
+  .empty-state{text-align:center;padding:40px 20px;color:#999;}
+  .empty-state-icon{font-size:3rem;margin-bottom:15px;}
 
-        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #e0e0e0; }
-        .card-id { font-size: 1.2rem; font-weight: bold; color: #667eea; }
-        .card-status { padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: bold; }
-        .status-pending { background: #fff3cd; color: #856404; }
-        .status-complete { background: #d4edda; color: #155724; }
+  .master-item{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #667eea;}
+  .master-item-name{font-weight:500;color:#333;}
+  .master-item .btn-delete{padding:5px 12px;background:#dc3545;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85rem;}
+  .master-item .btn-delete:hover{background:#c82333;}
 
-        .card-body { display: grid; gap: 8px; }
-        .card-field { display: grid; grid-template-columns: 120px 1fr; gap: 10px; }
-        .field-label { font-weight: bold; color: #666; }
-        .field-value { color: #333; }
+  .stat-card{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;}
+  .stat-card h4{font-size:.9rem;margin-bottom:10px;opacity:.9;}
+  .stat-card .stat-value{font-size:2.5rem;font-weight:bold;margin-bottom:5px;}
+  .stat-card .stat-label{font-size:.85rem;opacity:.8;}
 
-        .table-view { overflow-x: auto; display: none; }
-        .table-view.active { display: block; }
+  .similar-item{background:#f8f9fa;padding:15px;border-radius:6px;margin-bottom:10px;border-left:4px solid #ff9800;}
+  .similar-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e0e0e0;}
+  .similar-score{background:#ff9800;color:#fff;padding:4px 12px;border-radius:12px;font-size:.85rem;font-weight:bold;}
 
-        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
-        th { background: #667eea; color: white; font-weight: bold; position: sticky; top: 0; }
-        tr:hover { background: #f8f9ff; }
+  .chart-bar{background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);height:30px;border-radius:4px;display:flex;align-items:center;padding:0 10px;color:#fff;font-weight:bold;margin-bottom:10px;transition:.3s;}
+  .chart-bar:hover{transform:translateX(5px);box-shadow:0 2px 8px rgba(102,126,234,.4);}
+  .trend-badge{display:inline-block;padding:5px 15px;border-radius:20px;font-weight:bold;font-size:.9rem;margin:5px;}
+  .trend-increase{background:#ffebee;color:#c62828;}
+  .trend-decrease{background:#e8f5e9;color:#2e7d32;}
+  .trend-stable{background:#fff3e0;color:#ef6c00;}
+  .analysis-insight{background:#e3f2fd;border-left:4px solid #2196f3;padding:15px;border-radius:6px;margin-top:15px;}
+  .analysis-insight strong{color:#1976d2;}
 
-        .action-btns { display: flex; gap: 5px; }
-        .btn-small { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
-        .btn-edit { background: #ffc107; color: #000; }
-        .btn-delete { background: #dc3545; color: white; }
-
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
-        .modal.active { display: flex; }
-        .modal-content { background: white; padding: 30px; border-radius: 8px; max-width: 400px; width: 90%; text-align: center; }
-        .modal-icon { font-size: 3rem; margin-bottom: 15px; }
-        .modal-content h3 { margin-bottom: 20px; color: #333; }
-        .checkbox-group { display: flex; align-items: center; gap: 10px; margin-top: 15px; }
-        .checkbox-group input[type="checkbox"] { width: auto; height: 20px; cursor: pointer; }
-
-        @media (max-width: 600px) {
-            .card-field { grid-template-columns: 1fr; gap: 5px; }
-            .time-group { grid-template-columns: 1fr; }
-            table { font-size: 0.85rem; }
-            th, td { padding: 8px; }
-        }
-
-        .empty-state { text-align: center; padding: 40px 20px; color: #999; }
-        .empty-state-icon { font-size: 3rem; margin-bottom: 15px; }
-
-        .master-item {
-            display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; background: #f8f9fa;
-            border-radius: 6px; border-left: 3px solid #667eea;
-        }
-        .master-item-name { font-weight: 500; color: #333; }
-        .master-item .btn-delete { padding: 5px 12px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
-        .master-item .btn-delete:hover { background: #c82333; }
-
-        .stat-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; text-align: center;
-        }
-        .stat-card h4 { font-size: 0.9rem; margin-bottom: 10px; opacity: 0.9; }
-        .stat-card .stat-value { font-size: 2.5rem; font-weight: bold; margin-bottom: 5px; }
-        .stat-card .stat-label { font-size: 0.85rem; opacity: 0.8; }
-
-        .similar-item { background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #ff9800; }
-        .similar-item-header {
-            display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #e0e0e0;
-        }
-        .similar-score { background: #ff9800; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; font-weight: bold; }
-
-        .chart-bar { background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 30px; border-radius: 4px; display: flex; align-items: center; padding: 0 10px; color: white; font-weight: bold; margin-bottom: 10px; transition: all 0.3s; }
-        .chart-bar:hover { transform: translateX(5px); box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4); }
-
-        .trend-badge { display: inline-block; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 0.9rem; margin: 5px; }
-        .trend-increase { background: #ffebee; color: #c62828; }
-        .trend-decrease { background: #e8f5e9; color: #2e7d32; }
-        .trend-stable { background: #fff3e0; color: #ef6c00; }
-
-        .analysis-insight { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; border-radius: 6px; margin-top: 15px; }
-        .analysis-insight strong { color: #1976d2; }
-
-        .suggestion-btn {
-            display: inline-block; padding: 8px 15px; margin: 5px; background: linear-gradient(135deg, #8e24aa 0%, #6a1b9a 100%); color: white;
-            border: none; border-radius: 20px; cursor: pointer; font-size: 0.9rem; transition: all 0.3s; box-shadow: 0 2px 5px rgba(142, 36, 170, 0.3);
-        }
-        .suggestion-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(142, 36, 170, 0.4); }
-        .suggestion-btn:active { transform: translateY(0); }
-        .suggestion-category { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e0e0e0; }
-        .suggestion-category:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-        .suggestion-category-title { font-weight: bold; color: #8e24aa; margin-bottom: 8px; font-size: 0.9rem; }
-
-        .past-history-item {
-            background: white; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid #ff9800; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        .past-history-item:last-child { margin-bottom: 0; }
-        .past-history-date { font-size: 0.85rem; color: #666; margin-bottom: 8px; }
-        .past-history-field { margin-bottom: 10px; padding: 8px; background: #f5f5f5; border-radius: 4px; }
-        .past-history-field strong { color: #ff9800; display: block; margin-bottom: 5px; }
-
-        .copy-btn {
-            display: inline-block; padding: 5px 12px; margin-left: 10px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; transition: all 0.3s;
-        }
-        .copy-btn:hover { background: #f57c00; transform: translateY(-1px); }
-
-        /* 追加：他◯件展開用 */
-        .more-btn {
-            margin-top: 8px; font-size: 12px; padding: 6px 12px; background: #e4e4e7; border: none; border-radius: 6px; cursor: pointer;
-        }
-        .more-btn:hover { background: #d4d4d8; }
-
-        details.past-history-detail {
-            margin: 8px 0; padding: 8px; background: #fafafa; border: 1px solid #ddd; border-radius: 6px;
-        }
-        details.past-history-detail > summary {
-            cursor: pointer; font-weight: 600; color: #555;
-        }
-    </style>
+  .past-history-item{background:#fff;padding:15px;border-radius:6px;margin-bottom:15px;border-left:4px solid #ff9800;box-shadow:0 2px 5px rgba(0,0,0,.1);}
+  .past-history-item:last-child{margin-bottom:0;}
+  .past-history-date{font-size:.85rem;color:#666;margin-bottom:8px;}
+  .past-history-field{margin-bottom:10px;padding:8px;background:#f5f5f5;border-radius:4px;}
+  .past-history-field strong{color:#ff9800;display:block;margin-bottom:5px;}
+  .copy-btn{display:inline-block;padding:5px 12px;margin-left:10px;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85rem;transition:.3s;}
+  .copy-btn:hover{background:#f57c00;transform:translateY(-1px);}
+</style>
 </head>
 <body>
-    <div class="header">
-        <h1>📋 異常履歴入力ツール</h1>
-        <p>製造・技術部門連携システム</p>
+  <div class="header">
+    <h1>📋 異常履歴入力ツール</h1>
+    <p>製造・技術部門連携システム</p>
+  </div>
+
+  <div class="container">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('manufacturing', event)">製造入力</button>
+      <button class="tab" onclick="switchTab('technical', event)">技術入力</button>
+      <button class="tab" onclick="switchTab('history', event)">履歴</button>
+      <button class="tab" onclick="switchTab('analysis', event)">📊 分析</button>
+      <button class="tab" onclick="switchTab('master', event)">⚙️ 管理</button>
     </div>
 
-    <div class="container">
-        <div class="tabs">
-            <button class="tab active" onclick="switchTab('manufacturing')">製造入力</button>
-            <button class="tab" onclick="switchTab('technical')">技術入力</button>
-            <button class="tab" onclick="switchTab('history')">履歴</button>
-            <button class="tab" onclick="switchTab('analysis')">📊 分析</button>
-            <button class="tab" onclick="switchTab('master')">⚙️ 管理</button>
+    <!-- 製造入力 -->
+    <div id="manufacturing" class="tab-content active">
+      <h2 style="margin-bottom:20px;color:#667eea;">製造部門 - 異常報告</h2>
+      <p style="margin-bottom:20px;color:#666;">いつ・どこで・どの整理Noで・何があった を入力してください</p>
+
+      <form id="manufacturingForm">
+        <!-- いつ -->
+        <div style="background:#f0f7ff;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#667eea;margin-bottom:15px;font-size:1.1rem;">📅 いつ</h3>
+
+          <div class="form-group">
+            <label>発生日 *</label>
+            <div style="display:flex;gap:10px;">
+              <input type="date" id="occurrenceDate" required style="flex:1;">
+              <button type="button" onclick="setNowDate()" class="btn btn-secondary" style="width:auto;padding:12px 20px;margin:0;background:#17a2b8;">📅 NOW</button>
+            </div>
+            <p style="font-size:.85rem;color:#666;margin-top:5px;">※勤務時間: 8:00〜翌6:00 (0:00〜6:00の異常は前日扱い)</p>
+          </div>
+
+          <div class="form-group">
+            <label>時刻</label>
+            <div class="time-group">
+              <div>
+                <label style="font-weight:normal;font-size:.9rem;">発生時刻</label>
+                <div style="display:flex;gap:5px;">
+                  <input type="time" id="occurrenceTime" style="flex:1;">
+                  <button type="button" onclick="setNowTime('occurrenceTime')" class="btn btn-secondary" style="width:auto;padding:8px 12px;margin:0;font-size:.85rem;background:#17a2b8;">NOW</button>
+                </div>
+              </div>
+              <div>
+                <label style="font-weight:normal;font-size:.9rem;">再開時刻</label>
+                <div style="display:flex;gap:5px;">
+                  <input type="time" id="restartTime" style="flex:1;">
+                  <button type="button" onclick="setNowTime('restartTime')" class="btn btn-secondary" style="width:auto;padding:8px 12px;margin:0;font-size:.85rem;background:#17a2b8;">NOW</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- 製造入力フォーム -->
-        <div id="manufacturing" class="tab-content active">
-            <h2 style="margin-bottom: 20px; color: #667eea;">製造部門 - 異常報告</h2>
-            <p style="margin-bottom: 20px; color: #666;">いつ・どこで・どの整理Noで・何があった を入力してください</p>
-            <form id="manufacturingForm">
-                <!-- いつ -->
-                <div style="background: #f0f7ff; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                    <h3 style="color: #667eea; margin-bottom: 15px; font-size: 1.1rem;">📅 いつ</h3>
-                    <div class="form-group">
-                        <label>発生日 *</label>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="date" id="occurrenceDate" required style="flex: 1;">
-                            <button type="button" onclick="setNowDate()" class="btn btn-secondary" style="width: auto; padding: 12px 20px; margin: 0; background: #17a2b8;">📅 NOW</button>
-                        </div>
-                        <p style="font-size: 0.85rem; color: #666; margin-top: 5px;">※勤務時間: 8:00〜翌6:00 (0:00〜6:00の異常は前日扱い)</p>
-                    </div>
+        <!-- どこで -->
+        <div style="background:#fff4e6;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#f57c00;margin-bottom:15px;font-size:1.1rem;">📍 どこで</h3>
 
-                    <div class="form-group">
-                        <label>時刻</label>
-                        <div class="time-group">
-                            <div>
-                                <label style="font-weight: normal; font-size: 0.9rem;">発生時刻</label>
-                                <div style="display: flex; gap: 5px;">
-                                    <input type="time" id="occurrenceTime" style="flex: 1;">
-                                    <button type="button" onclick="setNowTime('occurrenceTime')" class="btn btn-secondary" style="width: auto; padding: 8px 12px; margin: 0; font-size: 0.85rem; background: #17a2b8;">NOW</button>
-                                </div>
-                            </div>
-                            <div>
-                                <label style="font-weight: normal; font-size: 0.9rem;">再開時刻</label>
-                                <div style="display: flex; gap: 5px;">
-                                    <input type="time" id="restartTime" style="flex: 1;">
-                                    <button type="button" onclick="setNowTime('restartTime')" class="btn btn-secondary" style="width: auto; padding: 8px 12px; margin: 0; font-size: 0.85rem; background: #17a2b8;">NOW</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+          <div class="form-group">
+            <label>部署 *</label>
+            <select id="department" required onchange="updateLineOptions()">
+              <option value="">選択してください</option>
+            </select>
+          </div>
 
-                <!-- どこで -->
-                <div style="background: #fff4e6; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                    <h3 style="color: #f57c00; margin-bottom: 15px; font-size: 1.1rem;">📍 どこで</h3>
-                    <div class="form-group">
-                        <label>部署 *</label>
-                        <select id="department" required onchange="updateLineOptions()">
-                            <option value="">選択してください</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>ライン名 *</label>
-                        <select id="lineName" required>
-                            <option value="">部署を先に選択してください</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>処置者 *</label>
-                        <select id="handler" required>
-                            <option value="">部署を先に選択してください</option>
-                        </select>
-                    </div>
-                </div>
+          <div class="form-group">
+            <label>ライン名 *</label>
+            <select id="lineName" required>
+              <option value="">部署を先に選択してください</option>
+            </select>
+          </div>
 
-                <!-- どの整理Noで -->
-                <div style="background: #f3e5f5; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                    <h3 style="color: #8e24aa; margin-bottom: 15px; font-size: 1.1rem;">🔢 どの整理Noで</h3>
-                    <div class="form-group">
-                        <label>整理No *</label>
-                        <input type="text" id="serialNo" required placeholder="例: 2024-001" onblur="searchSimilarSerialNo()">
-                        <p style="margin-top: 5px; font-size: 0.85rem; color: #666;">※整理Noを入力すると過去の類似データから候補が表示されます</p>
-                    </div>
-                    <!-- 候補ワード表示（製造側のまま残す） -->
-                    <div id="suggestionArea" style="display: none; margin-top: 15px; padding: 15px; background: white; border-radius: 6px; border: 2px solid #8e24aa;">
-                        <h4 style="color: #8e24aa; margin-bottom: 10px; font-size: 0.95rem;">💡 過去の類似整理Noから候補を表示</h4>
-                        <div id="suggestionButtons"></div>
-                    </div>
-                </div>
-
-                <!-- 何があった -->
-                <div style="background: #e8f5e9; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                    <h3 style="color: #2e7d32; margin-bottom: 15px; font-size: 1.1rem;">📝 何があった</h3>
-                    <div class="form-group">
-                        <label>異常内容 *</label>
-                        <textarea id="anomalyContent" required placeholder="発生した異常の詳細を記載してください"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>製造処置内容 *</label>
-                        <textarea id="actionTaken" required placeholder="実施した処置内容を記載してください"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>遡り *</label>
-                        <select id="traceback" required>
-                            <option value="">選択してください</option>
-                            <option value="有">有</option>
-                            <option value="無">無</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>技術要請 *</label>
-                        <select id="techRequest" required>
-                            <option value="">選択してください</option>
-                            <option value="要請">技術要請あり（技術部門の入力が必要）</option>
-                            <option value="完結">製造で完結（技術入力不要）</option>
-                        </select>
-                        <p style="margin-top: 5px; font-size: 0.85rem; color: #666;">※製造で完結する場合は「製造で完結」を選択してください</p>
-                    </div>
-                    <div class="form-group">
-                        <label>写真</label>
-                        <div class="photo-upload" onclick="document.getElementById('mfgPhotos').click()">
-                            <div style="font-size: 2rem;">📸</div>
-                            <p>写真をアップロード（複数可）</p>
-                            <input type="file" id="mfgPhotos" accept="image/*" multiple>
-                        </div>
-                        <div id="mfgPhotoPreview" class="photo-preview"></div>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary">登録してLINE転送確認</button>
-            </form>
+          <div class="form-group">
+            <label>処置者 *</label>
+            <select id="handler" required>
+              <option value="">部署を先に選択してください</option>
+            </select>
+          </div>
         </div>
 
-        <!-- 技術入力フォーム -->
-        <div id="technical" class="tab-content">
-            <h2 style="margin-bottom: 20px; color: #667eea;">技術部門 - 追加入力</h2>
-            <div class="form-group">
-                <label>対象の案件選択 *</label>
-                <select id="selectSerialNo" onchange="loadManufacturingData()">
-                    <option value="">案件を選択してください</option>
-                </select>
-                <p style="margin-top: 5px; font-size: 0.85rem; color: #666;">※[品番] 日付 - 異常内容 の形式で表示されます</p>
-            </div>
+        <!-- どの整理Noで -->
+        <div style="background:#f3e5f5;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#8e24aa;margin-bottom:15px;font-size:1.1rem;">🔢 どの整理Noで</h3>
 
-            <div id="selectedDataDisplay" style="background: #f8f9ff; padding: 15px; border-radius: 6px; margin-bottom: 20px; display: none;">
-                <h3 style="color: #667eea; margin-bottom: 10px;">製造部門入力内容</h3>
-                <div id="displayContent"></div>
-            </div>
+          <div class="form-group">
+            <label>整理No *</label>
+            <input type="text" id="serialNo" required placeholder="例: 2024-001" onblur="searchSimilarSerialNo()">
+            <p style="margin-top:5px;font-size:.85rem;color:#666;">※整理Noを入力すると過去の類似データから候補が表示されます</p>
+          </div>
 
-            <!-- 過去の同一整理Noの対応履歴（※最新1件のみ + 他◯件展開。保全単位は非表示） -->
-            <div id="pastHistoryArea" style="display: none; margin-bottom: 20px; padding: 15px; background: #fff3e0; border-radius: 6px; border: 2px solid #ff9800;">
-                <h3 style="color: #ff9800; margin-bottom: 10px; font-size: 1.1rem;">📚 過去の同一整理Noの対応履歴</h3>
-                <div id="pastHistoryContent"></div>
-            </div>
-
-            <form id="technicalForm">
-                <div class="form-group">
-                    <label>技術処置者 *</label>
-                    <input type="text" id="techHandler" required placeholder="技術処置者名を入力">
-                </div>
-                <div class="form-group">
-                    <label>命数有無 *</label>
-                    <select id="lifespan" required>
-                        <option value="">選択してください</option>
-                        <option value="有">有</option>
-                        <option value="無">無</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>保全単位 *</label>
-                    <input type="text" id="maintenanceUnit" required placeholder="例: モーター、ベアリング">
-                </div>
-                <div class="form-group">
-                    <label>何が悪くどうした *</label>
-                    <textarea id="rootCauseAction" required placeholder="原因と対策を記載してください"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>再発か新規か *</label>
-                    <select id="recurrenceType" required>
-                        <option value="">選択してください</option>
-                        <option value="再発">再発</option>
-                        <option value="新規">新規</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>写真</label>
-                    <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
-                        <div style="font-size: 2rem;">📸</div>
-                        <p>写真をアップロード（複数可）</p>
-                        <input type="file" id="techPhotos" accept="image/*" multiple>
-                    </div>
-                    <div id="techPhotoPreview" class="photo-preview"></div>
-                </div>
-                <button type="submit" class="btn btn-primary">登録してLINE転送確認</button>
-            </form>
+          <!-- 候補ワード表示（製造のみ残す） -->
+          <div id="suggestionArea" style="display:none;margin-top:15px;padding:15px;background:#fff;border-radius:6px;border:2px solid #8e24aa;">
+            <h4 style="color:#8e24aa;margin-bottom:10px;font-size:.95rem;">💡 過去の類似整理Noから候補を表示</h4>
+            <div id="suggestionButtons"></div>
+          </div>
         </div>
 
-        <!-- 履歴表示 -->
-        <div id="history" class="tab-content">
-            <h2 style="margin-bottom: 20px; color: #667eea;">異常履歴</h2>
-            <div class="history-controls">
-                <div class="view-toggle">
-                    <button class="active" onclick="toggleView('card')">カード</button>
-                    <button onclick="toggleView('table')">テーブル</button>
-                </div>
-                <button class="btn" onclick="switchTab('analysis')" style="flex: 1; background: #ff9800; color: white;">📊 分析</button>
-                <button class="btn btn-export" onclick="exportCSV()" style="flex: 1;">📥 CSV出力</button>
-                <button class="btn btn-import" onclick="document.getElementById('csvImport').click()" style="flex: 1;">📤 CSVインポート</button>
-                <input type="file" id="csvImport" accept=".csv" style="display: none;" onchange="importCSV(event)">
+        <!-- 何があった -->
+        <div style="background:#e8f5e9;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#2e7d32;margin-bottom:15px;font-size:1.1rem;">📝 何があった</h3>
+
+          <div class="form-group">
+            <label>異常内容 *</label>
+            <textarea id="anomalyContent" required placeholder="発生した異常の詳細を記載してください"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>製造処置内容 *</label>
+            <textarea id="actionTaken" required placeholder="実施した処置内容を記載してください"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>遡り *</label>
+            <select id="traceback" required>
+              <option value="">選択してください</option>
+              <option value="有">有</option>
+              <option value="無">無</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>技術要請 *</label>
+            <select id="techRequest" required>
+              <option value="">選択してください</option>
+              <option value="要請">技術要請あり（技術部門の入力が必要）</option>
+              <option value="完結">製造で完結（技術入力不要）</option>
+            </select>
+            <p style="margin-top:5px;font-size:.85rem;color:#666;">※製造で完結する場合は「製造で完結」を選択</p>
+          </div>
+
+          <div class="form-group">
+            <label>写真</label>
+            <div class="photo-upload" onclick="document.getElementById('mfgPhotos').click()">
+              <div style="font-size:2rem;">📸</div>
+              <p>写真をアップロード（複数可）</p>
+              <input type="file" id="mfgPhotos" accept="image/*" multiple>
             </div>
-            <div id="cardView" class="card-view"></div>
-            <div id="tableView" class="table-view"></div>
+            <div id="mfgPhotoPreview" class="photo-preview"></div>
+          </div>
         </div>
 
-        <!-- 分析ページ -->
-        <div id="analysis" class="tab-content">
-            <h2 style="margin-bottom: 20px; color: #ff9800;">📊 異常データ分析</h2>
-
-            <!-- 検索セクション -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                <h3 style="color: #ff9800; margin-bottom: 15px;">🔍 類似異常検索</h3>
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
-                    <h4 style="font-size: 1rem; margin-bottom: 10px; color: #666;">絞り込み条件</h4>
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <label>部署</label>
-                        <select id="searchDepartment" onchange="updateSearchLineOptions()">
-                            <option value="">すべて</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 15px;">
-                        <label>ライン名</label>
-                        <select id="searchLine">
-                            <option value="">すべて</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <label>整理No</label>
-                        <input type="text" id="searchSerialNo" placeholder="整理Noで絞り込み（例: 2024-001）">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>検索キーワード</label>
-                    <input type="text" id="searchKeyword" placeholder="異常内容のキーワードを入力（例: モーター、停止、異音）">
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="searchSimilarAnomalies()" class="btn btn-primary" style="background: #ff9800; flex: 1;">検索</button>
-                    <button onclick="clearSearchFilters()" class="btn btn-secondary" style="flex: 1;">クリア</button>
-                </div>
-                <div id="similarResults" style="margin-top: 20px;"></div>
-            </div>
-
-            <!-- 統計情報 -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                <h3 style="color: #ff9800; margin-bottom: 15px;">📈 統計情報</h3>
-                <div id="statisticsDisplay" style="display: grid; gap: 15px;"></div>
-            </div>
-
-            <!-- 傾向分析 -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                <h3 style="color: #ff9800; margin-bottom: 15px;">📊 月別傾向分析</h3>
-                <div id="trendChart" style="min-height: 300px;"></div>
-                <div id="trendAnalysis" style="margin-top: 15px;"></div>
-            </div>
-
-            <!-- 部署別・ライン別分析 -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                <h3 style="color: #ff9800; margin-bottom: 15px;">🏢 部署・ライン別分析</h3>
-                <div id="departmentAnalysis" style="display: grid; gap: 15px;"></div>
-            </div>
-
-            <!-- 再発分析 -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <h3 style="color: #ff9800; margin-bottom: 15px;">🔄 再発・新規分析</h3>
-                <div id="recurrenceAnalysis"></div>
-            </div>
-        </div>
-
-        <!-- 管理画面 -->
-        <div id="master" class="tab-content">
-            <h2 style="margin-bottom: 20px; color: #667eea;">⚙️ マスタ管理</h2>
-            <!-- 部署管理 -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                <h3 style="color: #667eea; margin-bottom: 15px;">部署管理</h3>
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <input type="text" id="newDepartment" placeholder="新しい部署名を入力" style="flex: 1; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                    <button onclick="addDepartment()" class="btn btn-primary" style="width: auto; padding: 10px 20px; margin: 0;">追加</button>
-                </div>
-                <div id="departmentList" style="display: grid; gap: 10px;"></div>
-            </div>
-
-            <!-- ライン名管理 -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                <h3 style="color: #f57c00; margin-bottom: 15px;">ライン名管理</h3>
-                <div class="form-group">
-                    <label>対象部署</label>
-                    <select id="lineManageDept" onchange="updateLineManageList()">
-                        <option value="">部署を選択してください</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <input type="text" id="newLine" placeholder="新しいライン名を入力" style="flex: 1; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                    <button onclick="addLine()" class="btn btn-primary" style="width: auto; padding: 10px 20px; margin: 0; background: #f57c00;">追加</button>
-                </div>
-                <div id="lineList" style="display: grid; gap: 10px;"></div>
-            </div>
-
-            <!-- 処置者管理 -->
-            <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                <h3 style="color: #2e7d32; margin-bottom: 15px;">処置者管理</h3>
-                <div class="form-group">
-                    <label>対象部署</label>
-                    <select id="handlerManageDept" onchange="updateHandlerManageList()">
-                        <option value="">部署を選択してください</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                    <input type="text" id="newHandler" placeholder="新しい処置者名を入力" style="flex: 1; padding: 10px; border: 2px solid #e0e0e0; border-radius: 6px;">
-                    <button onclick="addHandler()" class="btn btn-primary" style="width: auto; padding: 10px 20px; margin: 0; background: #2e7d32;">追加</button>
-                </div>
-                <div id="handlerList" style="display: grid; gap: 10px;"></div>
-            </div>
-        </div>
+        <button type="submit" class="btn btn-primary" id="mfgSubmit">登録</button>
+      </form>
     </div>
 
-    <!-- LINE転送確認モーダル -->
-    <div id="lineModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-icon">✅</div>
-            <h3>登録が完了しました</h3>
-            <p style="margin-bottom: 20px;">LINE通知を送信しますか？</p>
-            <div class="checkbox-group">
-                <input type="checkbox" id="lineConfirm">
-                <label for="lineConfirm">LINEで通知を送信する</label>
-            </div>
-            <button class="btn btn-primary" onclick="confirmLineTransfer()">確認</button>
+    <!-- 技術入力（※類似候補エリアは削除済み） -->
+    <div id="technical" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#667eea;">技術部門 - 追加入力</h2>
+
+      <div class="form-group">
+        <label>対象の案件選択 *</label>
+        <select id="selectSerialNo" onchange="loadManufacturingData()">
+          <option value="">案件を選択してください</option>
+        </select>
+        <p style="margin-top:5px;font-size:.85rem;color:#666;">※[品番] 日付 - 異常内容 の形式で表示</p>
+      </div>
+
+      <div id="selectedDataDisplay" style="background:#f8f9ff;padding:15px;border-radius:6px;margin-bottom:20px;display:none;">
+        <h3 style="color:#667eea;margin-bottom:10px;">製造部門入力内容</h3>
+        <div id="displayContent"></div>
+      </div>
+
+      <!-- 過去の同一整理Noの対応履歴（直近1件のみ＋他n件トグル。保全単位は非表示） -->
+      <div id="pastHistoryArea" style="display:none;margin-bottom:20px;padding:15px;background:#fff3e0;border-radius:6px;border:2px solid #ff9800;">
+        <h3 style="color:#ff9800;margin-bottom:10px;font-size:1.1rem;">📚 過去の同一整理Noの対応履歴</h3>
+        <div id="pastHistoryContent"></div>
+      </div>
+
+      <form id="technicalForm">
+        <div class="form-group">
+          <label>技術処置者 *</label>
+          <input type="text" id="techHandler" required placeholder="技術処置者名を入力">
         </div>
+
+        <div class="form-group">
+          <label>命数有無 *</label>
+          <select id="lifespan" required>
+            <option value="">選択してください</option>
+            <option value="有">有</option>
+            <option value="無">無</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>保全単位 *</label>
+          <input type="text" id="maintenanceUnit" required placeholder="例: モーター、ベアリング">
+        </div>
+
+        <div class="form-group">
+          <label>何が悪くどうした *</label>
+          <textarea id="rootCauseAction" required placeholder="原因と対策を記載してください"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>再発か新規か *</label>
+          <select id="recurrenceType" required>
+            <option value="">選択してください</option>
+            <option value="再発">再発</option>
+            <option value="新規">新規</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>写真</label>
+          <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
+            <div style="font-size:2rem;">📸</div>
+            <p>写真をアップロード（複数可）</p>
+            <input type="file" id="techPhotos" accept="image/*" multiple>
+          </div>
+          <div id="techPhotoPreview" class="photo-preview"></div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="techSubmit">登録</button>
+      </form>
     </div>
+
+    <!-- 履歴 -->
+    <div id="history" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#667eea;">異常履歴</h2>
+
+      <div class="history-controls">
+        <div class="view-toggle">
+          <button class="active" onclick="toggleView('card', event)">カード</button>
+          <button onclick="toggleView('table', event)">テーブル</button>
+        </div>
+        <button class="btn btn-export" onclick="exportCSV()" style="flex:1;">📥 CSV出力</button>
+        <button class="btn btn-import" onclick="document.getElementById('csvImport').click()" style="flex:1;">📤 CSVインポート</button>
+        <input type="file" id="csvImport" accept=".csv" style="display:none;" onchange="importCSV(event)">
+      </div>
+
+      <div id="cardView" class="card-view"></div>
+      <div id="tableView" class="table-view"></div>
+    </div>
+
+    <!-- 分析 -->
+    <div id="analysis" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#ff9800;">📊 異常データ分析</h2>
+
+      <!-- 検索 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#ff9800;margin-bottom:15px;">🔍 類似異常検索</h3>
+
+        <div style="background:#f8f9fa;padding:15px;border-radius:6px;margin-bottom:15px;">
+          <h4 style="font-size:1rem;margin-bottom:10px;color:#666;">絞り込み条件</h4>
+
+          <div class="form-group" style="margin-bottom:15px;">
+            <label>部署</label>
+            <select id="searchDepartment" onchange="updateSearchLineOptions()">
+              <option value="">すべて</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:15px;">
+            <label>ライン名</label>
+            <select id="searchLine">
+              <option value="">すべて</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom:0;">
+            <label>整理No</label>
+            <input type="text" id="searchSerialNo" placeholder="整理Noで絞り込み（例: 2024-001）">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>検索キーワード</label>
+          <input type="text" id="searchKeyword" placeholder="異常内容のキーワードを入力（例: モーター、停止、異音）">
+        </div>
+
+        <div style="display:flex;gap:10px;">
+          <button onclick="searchSimilarAnomalies()" class="btn btn-primary" style="background:#ff9800;flex:1;">検索</button>
+          <button onclick="clearSearchFilters()" class="btn btn-secondary" style="flex:1;">クリア</button>
+        </div>
+
+        <div id="similarResults" style="margin-top:20px;"></div>
+      </div>
+
+      <!-- 統計 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#ff9800;margin-bottom:15px;">📈 統計情報</h3>
+        <div id="statisticsDisplay" style="display:grid;gap:15px;"></div>
+      </div>
+
+      <!-- 月別傾向 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#ff9800;margin-bottom:15px;">📊 月別傾向分析</h3>
+        <div id="trendChart" style="min-height:300px;"></div>
+        <div id="trendAnalysis" style="margin-top:15px;"></div>
+      </div>
+
+      <!-- 部署・ライン別 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#ff9800;margin-bottom:15px;">🏢 部署・ライン別分析</h3>
+        <div id="departmentAnalysis" style="display:grid;gap:15px;"></div>
+      </div>
+
+      <!-- 再発分析 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+        <h3 style="color:#ff9800;margin-bottom:15px;">🔄 再発・新規分析</h3>
+        <div id="recurrenceAnalysis"></div>
+      </div>
+    </div>
+
+    <!-- 管理 -->
+    <div id="master" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#667eea;">⚙️ マスタ管理</h2>
+
+      <!-- 部署管理 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#667eea;margin-bottom:15px;">部署管理</h3>
+        <div style="display:flex;gap:10px;margin-bottom:15px;">
+          <input type="text" id="newDepartment" placeholder="新しい部署名を入力" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button onclick="addDepartment()" class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;">追加</button>
+        </div>
+        <div id="departmentList" style="display:grid;gap:10px;"></div>
+      </div>
+
+      <!-- ライン名管理 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#f57c00;margin-bottom:15px;">ライン名管理</h3>
+        <div class="form-group">
+          <label>対象部署</label>
+          <select id="lineManageDept" onchange="updateLineManageList()">
+            <option value="">部署を選択してください</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:15px;">
+          <input type="text" id="newLine" placeholder="新しいライン名を入力" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button onclick="addLine()" class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#f57c00;">追加</button>
+        </div>
+        <div id="lineList" style="display:grid;gap:10px;"></div>
+      </div>
+
+      <!-- 処置者管理 -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+        <h3 style="color:#2e7d32;margin-bottom:15px;">処置者管理</h3>
+        <div class="form-group">
+          <label>対象部署</label>
+          <select id="handlerManageDept" onchange="updateHandlerManageList()">
+            <option value="">部署を選択してください</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:15px;">
+          <input type="text" id="newHandler" placeholder="新しい処置者名を入力" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button onclick="addHandler()" class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#2e7d32;">追加</button>
+        </div>
+        <div id="handlerList" style="display:grid;gap:10px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 汎用成功モーダル（LINE関連は撤去） -->
+  <div id="successModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-icon">✅</div>
+      <h3>登録が完了しました</h3>
+      <button class="btn btn-primary" onclick="closeSuccessModal()">OK</button>
+    </div>
+  </div>
 
 <script>
-    let anomalyData = [];
-    let mfgPhotos = [];
-    let techPhotos = [];
-    let currentView = 'card';
+  let anomalyData = [];
+  let mfgPhotos = [];
+  let techPhotos = [];
+  let currentView = 'card';
 
-    // マスタデータ
-    let masterData = {
-        departments: [],
-        lines: {}, // { departmentName: [line1, line2, ...] }
-        handlers: {} // { departmentName: [handler1, handler2, ...] }
+  // マスタ
+  let masterData = {
+    departments: [],
+    lines: {},
+    handlers: {}
+  };
+
+  // ========= ユーティリティ =========
+  function el(tag, opts={}){const e=document.createElement(tag);if(opts.text!=null)e.textContent=opts.text; if(opts.html!=null)e.innerHTML=opts.html; if(opts.attrs){Object.entries(opts.attrs).forEach(([k,v])=>e.setAttribute(k,v));} return e;}
+  function escapeHtml(text){return String(text).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+  function truncateText(t,max){return (t && t.length>max)?t.substring(0,max)+'...':t;}
+
+  // ========= 初期ロード =========
+  function loadData(){
+    const saved = localStorage.getItem('anomalyData');
+    if(saved){ try{ anomalyData = JSON.parse(saved);}catch{} }
+
+    const savedMaster = localStorage.getItem('masterData');
+    if(savedMaster){ try{ masterData = JSON.parse(savedMaster);}catch{} }
+    else{
+      masterData = {
+        departments:['製造1課','製造2課','組立課'],
+        lines:{'製造1課':['ライン1','ライン2'],'製造2課':['ラインA','ラインB'],'組立課':['組立1','組立2']},
+        handlers:{'製造1課':['山田太郎','佐藤花子'],'製造2課':['鈴木一郎','田中美咲'],'組立課':['高橋健太','伊藤愛']}
+      };
+      saveMasterData();
+    }
+    updateHistory();
+    updateSerialNoSelect();
+    updateAllDepartmentSelects();
+  }
+  function saveData(){ localStorage.setItem('anomalyData', JSON.stringify(anomalyData)); }
+  function saveMasterData(){ localStorage.setItem('masterData', JSON.stringify(masterData)); }
+
+  // ========= セレクト更新 =========
+  function updateAllDepartmentSelects(){
+    updateDepartmentSelect('department');
+    updateDepartmentSelect('lineManageDept');
+    updateDepartmentSelect('handlerManageDept');
+    updateDepartmentList();
+    updateSearchDepartmentSelect();
+  }
+  function updateDepartmentSelect(id){
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">選択してください</option>';
+    masterData.departments.forEach(d=>{
+      const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);
+    });
+    if(cur && masterData.departments.includes(cur)) sel.value = cur;
+  }
+  function updateLineOptions(){
+    const dept = document.getElementById('department').value;
+    const lineSel = document.getElementById('lineName');
+    const handlerSel = document.getElementById('handler');
+    lineSel.innerHTML = '<option value="">選択してください</option>';
+    handlerSel.innerHTML = '<option value="">選択してください</option>';
+    (masterData.lines[dept]||[]).forEach(l=>{const o=el('option',{text:l});o.value=l;lineSel.appendChild(o);});
+    (masterData.handlers[dept]||[]).forEach(h=>{const o=el('option',{text:h});o.value=h;handlerSel.appendChild(o);});
+  }
+
+  // 部署管理
+  function addDepartment(){
+    const input=document.getElementById('newDepartment'); const name=input.value.trim();
+    if(!name) return alert('部署名を入力してください');
+    if(masterData.departments.includes(name)) return alert('この部署は既に登録されています');
+    masterData.departments.push(name); masterData.lines[name]=[]; masterData.handlers[name]=[];
+    saveMasterData(); updateAllDepartmentSelects(); input.value='';
+  }
+  function deleteDepartment(name){
+    if(!confirm(`「${name}」を削除しますか？関連するライン名と処置者も削除されます。`)) return;
+    masterData.departments = masterData.departments.filter(d=>d!==name);
+    delete masterData.lines[name]; delete masterData.handlers[name];
+    saveMasterData(); updateAllDepartmentSelects();
+  }
+  function updateDepartmentList(){
+    const list=document.getElementById('departmentList'); list.innerHTML='';
+    if(masterData.departments.length===0){ list.innerHTML='<p style="color:#999;text-align:center;">部署が登録されていません</p>'; return;}
+    masterData.departments.forEach(d=>{
+      const div=el('div',{attrs:{class:'master-item'}});
+      div.appendChild(el('span',{attrs:{class:'master-item-name'},text:d}));
+      const btn=el('button',{attrs:{class:'btn-delete'},text:'削除'});
+      btn.onclick=()=>deleteDepartment(d);
+      div.appendChild(btn);
+      list.appendChild(div);
+    });
+  }
+
+  // ライン管理
+  function addLine(){
+    const dept=document.getElementById('lineManageDept').value;
+    const input=document.getElementById('newLine'); const name=input.value.trim();
+    if(!dept) return alert('部署を選択してください');
+    if(!name) return alert('ライン名を入力してください');
+    masterData.lines[dept]=masterData.lines[dept]||[];
+    if(masterData.lines[dept].includes(name)) return alert('このライン名は既に登録されています');
+    masterData.lines[dept].push(name); saveMasterData(); updateLineManageList(); input.value='';
+  }
+  function deleteLine(dept,name){
+    if(!confirm(`「${name}」を削除しますか？`)) return;
+    masterData.lines[dept]=masterData.lines[dept].filter(l=>l!==name);
+    saveMasterData(); updateLineManageList();
+  }
+  function updateLineManageList(){
+    const dept=document.getElementById('lineManageDept').value;
+    const list=document.getElementById('lineList'); list.innerHTML='';
+    if(!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return;}
+    const arr=masterData.lines[dept]||[];
+    if(arr.length===0){ list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; return;}
+    arr.forEach(l=>{
+      const div=el('div',{attrs:{class:'master-item'}});
+      div.appendChild(el('span',{attrs:{class:'master-item-name'},text:l}));
+      const btn=el('button',{attrs:{class:'btn-delete'},text:'削除'});
+      btn.onclick=()=>deleteLine(dept,l);
+      div.appendChild(btn);
+      list.appendChild(div);
+    });
+  }
+
+  // 処置者管理
+  function addHandler(){
+    const dept=document.getElementById('handlerManageDept').value;
+    const input=document.getElementById('newHandler'); const name=input.value.trim();
+    if(!dept) return alert('部署を選択してください');
+    if(!name) return alert('処置者名を入力してください');
+    masterData.handlers[dept]=masterData.handlers[dept]||[];
+    if(masterData.handlers[dept].includes(name)) return alert('この処置者は既に登録されています');
+    masterData.handlers[dept].push(name); saveMasterData(); updateHandlerManageList(); input.value='';
+  }
+  function deleteHandler(dept,name){
+    if(!confirm(`「${name}」を削除しますか？`)) return;
+    masterData.handlers[dept]=masterData.handlers[dept].filter(h=>h!==name);
+    saveMasterData(); updateHandlerManageList();
+  }
+  function updateHandlerManageList(){
+    const dept=document.getElementById('handlerManageDept').value;
+    const list=document.getElementById('handlerList'); list.innerHTML='';
+    if(!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return;}
+    const arr=masterData.handlers[dept]||[];
+    if(arr.length===0){ list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; return;}
+    arr.forEach(h=>{
+      const div=el('div',{attrs:{class:'master-item'}});
+      div.appendChild(el('span',{attrs:{class:'master-item-name'},text:h}));
+      const btn=el('button',{attrs:{class:'btn-delete'},text:'削除'});
+      btn.onclick=()=>deleteHandler(dept,h);
+      div.appendChild(btn);
+      list.appendChild(div);
+    });
+  }
+
+  // ========= タブ =========
+  function switchTab(tabName, ev){
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    if(ev && ev.currentTarget) ev.currentTarget.classList.add('active');
+    document.getElementById(tabName).classList.add('active');
+    if(tabName==='history') updateHistory();
+    else if(tabName==='technical') updateSerialNoSelect();
+    else if(tabName==='analysis') updateAnalysis();
+  }
+
+  // ========= NOW =========
+  function setNowDate(){
+    const now=new Date(); const h=now.getHours();
+    if(h>=0 && h<6) now.setDate(now.getDate()-1);
+    const y=now.getFullYear();
+    const m=String(now.getMonth()+1).padStart(2,'0');
+    const d=String(now.getDate()).padStart(2,'0');
+    document.getElementById('occurrenceDate').value=`${y}-${m}-${d}`;
+  }
+  function setNowTime(id){
+    const now=new Date();
+    const hh=String(now.getHours()).padStart(2,'0');
+    const mm=String(now.getMinutes()).padStart(2,'0');
+    document.getElementById(id).value=`${hh}:${mm}`;
+  }
+
+  // ========= 候補（製造のみ） =========
+  function extractTopCandidates(arr,field,max){
+    const map={}; arr.forEach(it=>{const t=it[field]; if(t && t.trim()) map[t]=(map[t]||0)+1;});
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,max).map(x=>x[0]);
+  }
+  function applySuggestion(id,text){
+    const f=document.getElementById(id); if(!f) return;
+    f.value=text;
+    if(f.tagName==='TEXTAREA'){ f.style.height='auto'; f.style.height=f.scrollHeight+'px'; }
+    f.style.background='#e1bee7'; setTimeout(()=>{f.style.background='';},500);
+  }
+  function searchSimilarSerialNo(){
+    const s=document.getElementById('serialNo').value.trim();
+    const area=document.getElementById('suggestionArea');
+    const box=document.getElementById('suggestionButtons');
+    if(!s){ area.style.display='none'; return; }
+    const similar=anomalyData.filter(it=>it.serialNo===s).slice(0,10);
+    if(similar.length===0){ area.style.display='none'; return; }
+    const candA=extractTopCandidates(similar,'anomalyContent',4);
+    const candM=extractTopCandidates(similar,'actionTaken',4);
+    let html='';
+    if(candA.length>0){
+      html+=`<div class="suggestion-category">
+        <div class="suggestion-category-title">📝 異常内容の候補（品番: ${escapeHtml(s)}）</div>
+        <div>${candA.map(t=>`<button type="button" class="suggestion-btn" onclick="applySuggestion('anomalyContent','${escapeHtml(t)}')">${escapeHtml(truncateText(t,30))}</button>`).join('')}</div>
+      </div>`;
+    }
+    if(candM.length>0){
+      html+=`<div class="suggestion-category">
+        <div class="suggestion-category-title">🔧 製造処置内容の候補（品番: ${escapeHtml(s)}）</div>
+        <div>${candM.map(t=>`<button type="button" class="suggestion-btn" onclick="applySuggestion('actionTaken','${escapeHtml(t)}')">${escapeHtml(truncateText(t,30))}</button>`).join('')}</div>
+      </div>`;
+    }
+    if(html){ box.innerHTML=html; area.style.display='block'; } else area.style.display='none';
+  }
+
+  // ========= 写真 =========
+  function handlePhotoUpload(inputId,previewId,arr){
+    const input=document.getElementById(inputId);
+    input.addEventListener('change',e=>{
+      const files=Array.from(e.target.files);
+      files.forEach(f=>{
+        const reader=new FileReader();
+        reader.onload=ev=>{ arr.push(ev.target.result); displayPhotos(previewId,arr); };
+        reader.readAsDataURL(f);
+      });
+    });
+  }
+  function displayPhotos(previewId,arr){
+    const preview=document.getElementById(previewId); preview.innerHTML='';
+    arr.forEach((photo,idx)=>{
+      const div=el('div',{attrs:{class:'photo-item'}});
+      const img=el('img'); img.src=photo; img.alt=`Photo ${idx+1}`;
+      const btn=el('button',{attrs:{class:'remove-btn'},text:'×'});
+      btn.onclick=()=>{ arr.splice(idx,1); displayPhotos(previewId,arr); };
+      div.appendChild(img); div.appendChild(btn);
+      preview.appendChild(div);
+    });
+  }
+
+  // ========= 製造フォーム =========
+  document.getElementById('manufacturingForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    const data={
+      id: Date.now()+Math.random(),
+      department: document.getElementById('department').value,
+      lineName: document.getElementById('lineName').value,
+      serialNo: document.getElementById('serialNo').value,
+      occurrenceDate: document.getElementById('occurrenceDate').value,
+      occurrenceTime: document.getElementById('occurrenceTime').value,
+      restartTime: document.getElementById('restartTime').value,
+      anomalyContent: document.getElementById('anomalyContent').value,
+      actionTaken: document.getElementById('actionTaken').value,
+      traceback: document.getElementById('traceback').value,
+      handler: document.getElementById('handler').value,
+      techRequest: document.getElementById('techRequest').value,
+      mfgPhotos:[...mfgPhotos],
+      status: (document.getElementById('techRequest').value==='完結')?'complete':'pending',
+      createdAt: new Date().toISOString()
     };
+    anomalyData.push(data); saveData();
+    // リセット
+    this.reset(); mfgPhotos=[]; document.getElementById('mfgPhotoPreview').innerHTML='';
+    document.getElementById('lineName').innerHTML='<option value="">部署を先に選択してください</option>';
+    document.getElementById('handler').innerHTML='<option value="">部署を先に選択してください</option>';
+    updateSerialNoSelect(); updateHistory();
+    openSuccessModal();
+  });
 
-    // ローカルストレージからデータ読み込み
-    function loadData() {
-        const saved = localStorage.getItem('anomalyData');
-        if (saved) { anomalyData = JSON.parse(saved); }
-
-        const savedMaster = localStorage.getItem('masterData');
-        if (savedMaster) {
-            masterData = JSON.parse(savedMaster);
-        } else {
-            masterData = {
-                departments: ['製造1課', '製造2課', '組立課'],
-                lines: {
-                    '製造1課': ['ライン1', 'ライン2'],
-                    '製造2課': ['ラインA', 'ラインB'],
-                    '組立課': ['組立1', '組立2']
-                },
-                handlers: {
-                    '製造1課': ['山田太郎', '佐藤花子'],
-                    '製造2課': ['鈴木一郎', '田中美咲'],
-                    '組立課': ['高橋健太', '伊藤愛']
-                }
-            };
-            saveMasterData();
-        }
-
-        updateHistory();
-        updateSerialNoSelect();
-        updateAllDepartmentSelects();
+  // ========= 技術フォーム =========
+  document.getElementById('technicalForm').addEventListener('submit',function(e){
+    e.preventDefault();
+    const id=document.getElementById('selectSerialNo').value;
+    const idx=anomalyData.findIndex(it=>it.id==id);
+    if(idx!==-1){
+      anomalyData[idx].techHandler=document.getElementById('techHandler').value;
+      anomalyData[idx].lifespan=document.getElementById('lifespan').value;
+      anomalyData[idx].maintenanceUnit=document.getElementById('maintenanceUnit').value;
+      anomalyData[idx].rootCauseAction=document.getElementById('rootCauseAction').value;
+      anomalyData[idx].recurrenceType=document.getElementById('recurrenceType').value;
+      anomalyData[idx].techPhotos=[...techPhotos];
+      anomalyData[idx].status='complete';
+      anomalyData[idx].completedAt=new Date().toISOString();
+      saveData();
+      this.reset(); techPhotos=[]; document.getElementById('techPhotoPreview').innerHTML='';
+      document.getElementById('selectedDataDisplay').style.display='none';
+      document.getElementById('pastHistoryArea').style.display='none';
+      updateSerialNoSelect(); updateHistory();
+      openSuccessModal();
     }
+  });
 
-    // データ保存
-    function saveData() { localStorage.setItem('anomalyData', JSON.stringify(anomalyData)); }
-    function saveMasterData() { localStorage.setItem('masterData', JSON.stringify(masterData)); }
+  // 成功モーダル
+  function openSuccessModal(){ document.getElementById('successModal').classList.add('active'); }
+  function closeSuccessModal(){ document.getElementById('successModal').classList.remove('active'); }
 
-    // 部署選択肢を全て更新
-    function updateAllDepartmentSelects() {
-        updateDepartmentSelect('department');
-        updateDepartmentSelect('lineManageDept');
-        updateDepartmentSelect('handlerManageDept');
-        updateDepartmentList();
+  // ========= 技術 対象選択 =========
+  function updateSerialNoSelect(){
+    const sel=document.getElementById('selectSerialNo');
+    sel.innerHTML='<option value="">整理Noを選択してください</option>';
+    anomalyData
+      .filter(it=>it.status==='pending' && it.techRequest==='要請')
+      .sort((a,b)=>new Date(b.occurrenceDate)-new Date(a.occurrenceDate))
+      .forEach(it=>{
+        const o=document.createElement('option');
+        o.value=it.id;
+        o.textContent=`[${it.serialNo}] ${it.occurrenceDate} - ${truncateText(it.anomalyContent,30)}`;
+        sel.appendChild(o);
+      });
+  }
+
+  function loadManufacturingData(){
+    const id=document.getElementById('selectSerialNo').value;
+    const disp=document.getElementById('displayContent');
+    const wrap=document.getElementById('selectedDataDisplay');
+    if(!id){ wrap.style.display='none'; document.getElementById('pastHistoryArea').style.display='none'; disp.innerHTML=''; return; }
+    const data=anomalyData.find(it=>it.id==id);
+    if(data){
+      disp.innerHTML='';
+      const grid=el('div',{});
+      grid.style.display='grid'; grid.style.gap='10px';
+      grid.appendChild(el('div',{html:`<strong>整理No（品番）:</strong> ${escapeHtml(data.serialNo)}`}));
+      if(data.department) grid.appendChild(el('div',{html:`<strong>部署:</strong> ${escapeHtml(data.department)}`}));
+      if(data.lineName) grid.appendChild(el('div',{html:`<strong>ライン名:</strong> ${escapeHtml(data.lineName)}`}));
+      grid.appendChild(el('div',{html:`<strong>異常内容:</strong> ${escapeHtml(data.anomalyContent)}`}));
+      grid.appendChild(el('div',{html:`<strong>製造処置:</strong> ${escapeHtml(data.actionTaken)}`}));
+      grid.appendChild(el('div',{html:`<strong>発生日:</strong> ${escapeHtml(data.occurrenceDate)}`}));
+      grid.appendChild(el('div',{html:`<strong>処置者:</strong> ${escapeHtml(data.handler)}`}));
+      disp.appendChild(grid);
+      wrap.style.display='block';
+      // 過去履歴（直近1件＋他n件）
+      showPastHistory(data.serialNo, data.id);
+    }else{
+      disp.innerHTML='<p style="color:#999;">データが見つかりません</p>';
+      wrap.style.display='block';
+      document.getElementById('pastHistoryArea').style.display='none';
     }
-    function updateDepartmentSelect(selectId) {
-        const select = document.getElementById(selectId);
-        const currentValue = select.value;
-        select.innerHTML = '<option value="">選択してください</option>';
-        masterData.departments.forEach(dept => {
-            const option = document.createElement('option');
-            option.value = dept; option.textContent = dept; select.appendChild(option);
-        });
-        if (currentValue && masterData.departments.includes(currentValue)) { select.value = currentValue; }
-    }
+  }
 
-    // ライン名選択肢を更新
-    function updateLineOptions() {
-        const dept = document.getElementById('department').value;
-        const lineSelect = document.getElementById('lineName');
-        const handlerSelect = document.getElementById('handler');
+  // 過去履歴（直近1件のみ表示。保全単位は出さない。ボタンで他n件を展開）
+  function showPastHistory(serialNo,currentId){
+    const area=document.getElementById('pastHistoryArea');
+    const box=document.getElementById('pastHistoryContent');
+    // 現在の異常内容（キーワード抽出）
+    const cur=anomalyData.find(it=>it.id==currentId);
+    if(!cur || !cur.anomalyContent){ area.style.display='none'; return; }
+    const kw=cur.anomalyContent.toLowerCase().replace(/[、。，．,.\s]+/g,' ').split(' ').filter(w=>w.length>=2);
 
-        lineSelect.innerHTML = '<option value="">選択してください</option>';
-        handlerSelect.innerHTML = '<option value="">選択してください</option>';
-
-        if (dept && masterData.lines[dept]) {
-            masterData.lines[dept].forEach(line => {
-                const option = document.createElement('option');
-                option.value = line; option.textContent = line; lineSelect.appendChild(option);
-            });
-        }
-        if (dept && masterData.handlers[dept]) {
-            masterData.handlers[dept].forEach(handler => {
-                const option = document.createElement('option');
-                option.value = handler; option.textContent = handler; handlerSelect.appendChild(option);
-            });
-        }
-    }
-
-    // 部署管理
-    function addDepartment() {
-        const input = document.getElementById('newDepartment');
-        const deptName = input.value.trim();
-
-        if (!deptName) { alert('部署名を入力してください'); return; }
-        if (masterData.departments.includes(deptName)) { alert('この部署は既に登録されています'); return; }
-
-        masterData.departments.push(deptName);
-        masterData.lines[deptName] = [];
-        masterData.handlers[deptName] = [];
-        saveMasterData();
-        updateAllDepartmentSelects();
-        input.value = '';
-    }
-    function deleteDepartment(deptName) {
-        if (!confirm(`「${deptName}」を削除してもよろしいですか？\n関連するライン名と処置者も削除されます。`)) return;
-        masterData.departments = masterData.departments.filter(d => d !== deptName);
-        delete masterData.lines[deptName];
-        delete masterData.handlers[deptName];
-        saveMasterData();
-        updateAllDepartmentSelects();
-    }
-    function updateDepartmentList() {
-        const list = document.getElementById('departmentList');
-        list.innerHTML = '';
-        if (masterData.departments.length === 0) {
-            list.innerHTML = '<p style="color: #999; text-align: center;">部署が登録されていません</p>'; return;
-        }
-        masterData.departments.forEach(dept => {
-            const div = document.createElement('div');
-            div.className = 'master-item';
-            div.innerHTML = `<span class="master-item-name">${dept}</span>
-                             <button class="btn-delete" onclick="deleteDepartment('${dept}')">削除</button>`;
-            list.appendChild(div);
-        });
-    }
-
-    // ライン名管理
-    function addLine() {
-        const dept = document.getElementById('lineManageDept').value;
-        const input = document.getElementById('newLine');
-        const lineName = input.value.trim();
-
-        if (!dept) { alert('部署を選択してください'); return; }
-        if (!lineName) { alert('ライン名を入力してください'); return; }
-
-        if (!masterData.lines[dept]) masterData.lines[dept] = [];
-        if (masterData.lines[dept].includes(lineName)) { alert('このライン名は既に登録されています'); return; }
-
-        masterData.lines[dept].push(lineName);
-        saveMasterData();
-        updateLineManageList();
-        input.value = '';
-    }
-    function deleteLine(dept, lineName) {
-        if (!confirm(`「${lineName}」を削除してもよろしいですか？`)) return;
-        masterData.lines[dept] = masterData.lines[dept].filter(l => l !== lineName);
-        saveMasterData();
-        updateLineManageList();
-    }
-    function updateLineManageList() {
-        const dept = document.getElementById('lineManageDept').value;
-        const list = document.getElementById('lineList');
-        list.innerHTML = '';
-        if (!dept) { list.innerHTML = '<p style="color: #999; text-align: center;">部署を選択してください</p>'; return; }
-        if (!masterData.lines[dept] || masterData.lines[dept].length === 0) {
-            list.innerHTML = '<p style="color: #999; text-align: center;">ライン名が登録されていません</p>'; return;
-        }
-        masterData.lines[dept].forEach(line => {
-            const div = document.createElement('div');
-            div.className = 'master-item';
-            div.innerHTML = `<span class="master-item-name">${line}</span>
-                             <button class="btn-delete" onclick="deleteLine('${dept}', '${line}')">削除</button>`;
-            list.appendChild(div);
-        });
-    }
-
-    // 処置者管理
-    function addHandler() {
-        const dept = document.getElementById('handlerManageDept').value;
-        const input = document.getElementById('newHandler');
-        const handlerName = input.value.trim();
-
-        if (!dept) { alert('部署を選択してください'); return; }
-        if (!handlerName) { alert('処置者名を入力してください'); return; }
-
-        if (!masterData.handlers[dept]) masterData.handlers[dept] = [];
-        if (masterData.handlers[dept].includes(handlerName)) { alert('この処置者は既に登録されています'); return; }
-
-        masterData.handlers[dept].push(handlerName);
-        saveMasterData();
-        updateHandlerManageList();
-        input.value = '';
-    }
-    function deleteHandler(dept, handlerName) {
-        if (!confirm(`「${handlerName}」を削除してもよろしいですか？`)) return;
-        masterData.handlers[dept] = masterData.handlers[dept].filter(h => h !== handlerName);
-        saveMasterData();
-        updateHandlerManageList();
-    }
-    function updateHandlerManageList() {
-        const dept = document.getElementById('handlerManageDept').value;
-        const list = document.getElementById('handlerList');
-        list.innerHTML = '';
-        if (!dept) { list.innerHTML = '<p style="color: #999; text-align: center;">部署を選択してください</p>'; return; }
-        if (!masterData.handlers[dept] || masterData.handlers[dept].length === 0) {
-            list.innerHTML = '<p style="color: #999; text-align: center;">処置者が登録されていません</p>'; return;
-        }
-        masterData.handlers[dept].forEach(handler => {
-            const div = document.createElement('div');
-            div.className = 'master-item';
-            div.innerHTML = `<span class="master-item-name">${handler}</span>
-                             <button class="btn-delete" onclick="deleteHandler('${dept}', '${handler}')">削除</button>`;
-            list.appendChild(div);
-        });
-    }
-
-    // タブ切り替え
-    function switchTab(tabName) {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-        event.target.classList.add('active');
-        document.getElementById(tabName).classList.add('active');
-
-        if (tabName === 'history') updateHistory();
-        else if (tabName === 'technical') updateSerialNoSelect();
-        else if (tabName === 'analysis') updateAnalysis();
-    }
-
-    // NOW機能: 勤務時間考慮した日付設定 (8:00〜翌6:00、0:00〜6:00は前日扱い)
-    function setNowDate() {
-        const now = new Date();
-        const hour = now.getHours();
-        if (hour >= 0 && hour < 6) now.setDate(now.getDate() - 1);
-        const y = now.getFullYear();
-        const m = String(now.getMonth() + 1).padStart(2, '0');
-        const d = String(now.getDate()).padStart(2, '0');
-        document.getElementById('occurrenceDate').value = `${y}-${m}-${d}`;
-    }
-
-    // NOW機能: 現在時刻設定
-    function setNowTime(fieldId) {
-        const now = new Date();
-        const h = String(now.getHours()).padStart(2, '0');
-        const mi = String(now.getMinutes()).padStart(2, '0');
-        document.getElementById(fieldId).value = `${h}:${mi}`;
-    }
-
-    // 類似整理No検索（製造）と候補ワード表示
-    function searchSimilarSerialNo() {
-        const inputSerialNo = document.getElementById('serialNo').value.trim();
-        const suggestionArea = document.getElementById('suggestionArea');
-        const suggestionButtons = document.getElementById('suggestionButtons');
-
-        if (!inputSerialNo) { suggestionArea.style.display = 'none'; return; }
-
-        const similarData = anomalyData.filter(item => item.serialNo === inputSerialNo).slice(0, 10);
-
-        if (similarData.length === 0) { suggestionArea.style.display = 'none'; return; }
-
-        const anomalyContents = extractTopCandidates(similarData, 'anomalyContent', 4);
-        const actionTakens = extractTopCandidates(similarData, 'actionTaken', 4);
-
-        let html = '';
-
-        if (anomalyContents.length > 0) {
-            html += `
-                <div class="suggestion-category">
-                    <div class="suggestion-category-title">📝 異常内容の候補（品番: ${inputSerialNo}）</div>
-                    <div>
-                        ${anomalyContents.map(text =>
-                            `<button type="button" class="suggestion-btn" onclick="applySuggestion('anomalyContent', '${escapeHtml(text)}')">${truncateText(text, 30)}</button>`
-                        ).join('')}
-                    </div>
-                </div>`;
-        }
-        if (actionTakens.length > 0) {
-            html += `
-                <div class="suggestion-category">
-                    <div class="suggestion-category-title">🔧 製造処置内容の候補（品番: ${inputSerialNo}）</div>
-                    <div>
-                        ${actionTakens.map(text =>
-                            `<button type="button" class="suggestion-btn" onclick="applySuggestion('actionTaken', '${escapeHtml(text)}')">${truncateText(text, 30)}</button>`
-                        ).join('')}
-                    </div>
-                </div>`;
-        }
-
-        if (html) { suggestionButtons.innerHTML = html; suggestionArea.style.display = 'block'; }
-        else { suggestionArea.style.display = 'none'; }
-    }
-
-    // 候補テキストを抽出（重複除去、頻度順）
-    function extractTopCandidates(dataArray, field, maxCount) {
-        const freq = {};
-        dataArray.forEach(item => {
-            const txt = item[field];
-            if (txt && txt.trim()) freq[txt] = (freq[txt] || 0) + 1;
-        });
-        return Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0, maxCount).map(e=>e[0]);
-    }
-
-    // 候補を入力欄に適用
-    function applySuggestion(fieldId, text) {
-        const field = document.getElementById(fieldId);
-        if (!field) return;
-        field.value = text;
-        if (field.tagName === 'TEXTAREA') { field.style.height = 'auto'; field.style.height = field.scrollHeight + 'px'; }
-        field.style.background = '#e1bee7';
-        setTimeout(()=> field.style.background = '', 500);
-    }
-
-    // HTMLエスケープ
-    function escapeHtml(text) {
-        return text.replace(/'/g, '\\\'').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-    function truncateText(text, maxLength) { return text.length <= maxLength ? text : text.substring(0, maxLength) + '...'; }
-
-    // 写真プレビュー処理
-    function handlePhotoUpload(inputId, previewId, photoArray) {
-        const input = document.getElementById(inputId);
-        input.addEventListener('change', function(e) {
-            const files = Array.from(e.target.files);
-            files.forEach(file => {
-                const reader = new FileReader();
-                reader.onload = function(ev) {
-                    photoArray.push(ev.target.result);
-                    displayPhotos(previewId, photoArray);
-                };
-                reader.readAsDataURL(file);
-            });
-        });
-    }
-    function displayPhotos(previewId, photoArray) {
-        const preview = document.getElementById(previewId);
-        preview.innerHTML = '';
-        photoArray.forEach((photo, index) => {
-            const div = document.createElement('div');
-            div.className = 'photo-item';
-            div.innerHTML = `
-                <img src="${photo}" alt="Photo ${index + 1}">
-                <button class="remove-btn" onclick="removePhoto('${previewId}', ${index}, '${previewId === 'mfgPhotoPreview' ? 'mfg' : 'tech'}')">×</button>`;
-            preview.appendChild(div);
-        });
-    }
-    function removePhoto(previewId, index, type) {
-        if (type === 'mfg') { mfgPhotos.splice(index, 1); displayPhotos(previewId, mfgPhotos); }
-        else { techPhotos.splice(index, 1); displayPhotos(previewId, techPhotos); }
-    }
-
-    // 製造フォーム送信
-    document.getElementById('manufacturingForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const techRequest = document.getElementById('techRequest').value;
-
-        const data = {
-            id: Date.now() + Math.random(),
-            department: document.getElementById('department').value,
-            lineName: document.getElementById('lineName').value,
-            serialNo: document.getElementById('serialNo').value,
-            occurrenceDate: document.getElementById('occurrenceDate').value,
-            occurrenceTime: document.getElementById('occurrenceTime').value,
-            restartTime: document.getElementById('restartTime').value,
-            anomalyContent: document.getElementById('anomalyContent').value,
-            actionTaken: document.getElementById('actionTaken').value,
-            traceback: document.getElementById('traceback').value,
-            handler: document.getElementById('handler').value,
-            techRequest: techRequest,
-            mfgPhotos: [...mfgPhotos],
-            status: techRequest === '完結' ? 'complete' : 'pending',
-            createdAt: new Date().toISOString()
-        };
-
-        anomalyData.push(data);
-        saveData();
-
-        document.getElementById('lineModal').classList.add('active');
-
-        this.reset();
-        mfgPhotos = [];
-        document.getElementById('mfgPhotoPreview').innerHTML = '';
-        document.getElementById('lineName').innerHTML = '<option value="">部署を先に選択してください</option>';
-        document.getElementById('handler').innerHTML = '<option value="">部署を先に選択してください</option>';
+    // 同一整理No＆技術完了＆要請＆原因あり
+    const list=anomalyData.filter(it=>{
+      if(it.serialNo!==serialNo || it.id==currentId || it.status!=='complete' || it.techRequest!=='要請' || !it.rootCauseAction || !it.anomalyContent) return false;
+      const txt=it.anomalyContent.toLowerCase();
+      return kw.some(k=>txt.includes(k));
+    }).sort((a,b)=>{
+      const sa=kw.filter(k=>a.anomalyContent.toLowerCase().includes(k)).length;
+      const sb=kw.filter(k=>b.anomalyContent.toLowerCase().includes(k)).length;
+      if(sb!==sa) return sb-sa;
+      return new Date(b.occurrenceDate)-new Date(a.occurrenceDate);
     });
 
-    // 技術フォーム送信
-    document.getElementById('technicalForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const recordId = document.getElementById('selectSerialNo').value;
-        const index = anomalyData.findIndex(item => item.id == recordId);
-        if (index !== -1) {
-            anomalyData[index].techHandler = document.getElementById('techHandler').value;
-            anomalyData[index].lifespan = document.getElementById('lifespan').value;
-            anomalyData[index].maintenanceUnit = document.getElementById('maintenanceUnit').value;
-            anomalyData[index].rootCauseAction = document.getElementById('rootCauseAction').value;
-            anomalyData[index].recurrenceType = document.getElementById('recurrenceType').value;
-            anomalyData[index].techPhotos = [...techPhotos];
-            anomalyData[index].status = 'complete';
-            anomalyData[index].completedAt = new Date().toISOString();
+    if(list.length===0){ area.style.display='none'; return; }
 
-            saveData();
+    // 直近1件
+    const top=list[0];
+    const others=list.slice(1);
+    const matchCount=kw.filter(k=>top.anomalyContent.toLowerCase().includes(k)).length;
+    const rate=Math.round((matchCount/kw.length)*100);
 
-            document.getElementById('lineModal').classList.add('active');
+    let html = `
+      <div style="margin-bottom:10px;padding:10px;background:#fff;border-radius:4px;border-left:3px solid #4caf50;">
+        <strong style="color:#2e7d32;">✅ この品番（${escapeHtml(serialNo)}）で類似の異常が過去に${list.length}件あります</strong>
+        <div style="font-size:.85rem;color:#666;margin-top:5px;">現在の異常: ${escapeHtml(cur.anomalyContent)}</div>
+      </div>
 
-            this.reset();
-            techPhotos = [];
-            document.getElementById('techPhotoPreview').innerHTML = '';
-            document.getElementById('selectedDataDisplay').style.display = 'none';
-            document.getElementById('pastHistoryArea').style.display = 'none';
-            updateSerialNoSelect();
-        }
-    });
+      <div class="past-history-item">
+        <div class="past-history-date">📅 ${escapeHtml(top.occurrenceDate)} ${top.occurrenceTime?`(${escapeHtml(top.occurrenceTime)})`:''}
+          <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:10px;margin-left:10px;font-size:.8rem;">最も類似</span>
+          <span style="background:#2196f3;color:#fff;padding:2px 8px;border-radius:10px;margin-left:5px;font-size:.8rem;">一致度 ${rate}%</span>
+        </div>
+        <div class="past-history-field">
+          <strong>📝 異常内容</strong>
+          <div>${escapeHtml(top.anomalyContent)}</div>
+        </div>
+        <div class="past-history-field">
+          <strong>🔧 製造処置内容</strong>
+          <div>${escapeHtml(top.actionTaken||'-')}</div>
+        </div>
+        <div class="past-history-field">
+          <strong>💡 技術処置内容（何が悪くどうした）</strong>
+          <div>${escapeHtml(top.rootCauseAction)}</div>
+          <button type="button" class="copy-btn" onclick="applySuggestion('rootCauseAction','${escapeHtml(top.rootCauseAction)}')">📋 コピー</button>
+        </div>
+        <div style="margin-top:10px;font-size:.85rem;color:#666;">
+          ${top.techHandler?`技術処置者: ${escapeHtml(top.techHandler)} | `:''}
+          ${top.recurrenceType?`区分: ${escapeHtml(top.recurrenceType)} | `:''}
+          ${top.department?`部署: ${escapeHtml(top.department)}`:''}
+        </div>
+      </div>
+    `;
 
-    // LINE転送確認
-    function confirmLineTransfer() {
-        const checkbox = document.getElementById('lineConfirm');
-        if (checkbox.checked) { alert('LINE通知を送信しました ✓'); }
-        document.getElementById('lineModal').classList.remove('active');
-        checkbox.checked = false;
-    }
-
-    // 整理No選択肢更新（技術ページ：技術要請・未完のみ）
-    function updateSerialNoSelect() {
-        const select = document.getElementById('selectSerialNo');
-        select.innerHTML = '<option value="">整理Noを選択してください</option>';
-        anomalyData
-            .filter(item => item.status === 'pending' && item.techRequest === '要請')
-            .sort((a,b)=> new Date(b.occurrenceDate) - new Date(a.occurrenceDate))
-            .forEach(item => {
-                const option = document.createElement('option');
-                option.value = item.id;
-                option.textContent = `[${item.serialNo}] ${item.occurrenceDate} - ${item.anomalyContent.substring(0, 30)}...`;
-                select.appendChild(option);
-            });
-    }
-
-    // 製造データ読み込み（技術ページ）
-    function loadManufacturingData() {
-        const recordId = document.getElementById('selectSerialNo').value;
-        const display = document.getElementById('displayContent');
-        const selectedDataDisplay = document.getElementById('selectedDataDisplay');
-
-        if (!recordId) {
-            selectedDataDisplay.style.display = 'none';
-            document.getElementById('pastHistoryArea').style.display = 'none';
-            display.innerHTML = '';
-            return;
-        }
-
-        const data = anomalyData.find(item => item.id == recordId);
-        if (data) {
-            display.innerHTML = `
-                <div style="display: grid; gap: 10px;">
-                    <div><strong>整理No（品番）:</strong> ${data.serialNo}</div>
-                    ${data.department ? `<div><strong>部署:</strong> ${data.department}</div>` : ''}
-                    ${data.lineName ? `<div><strong>ライン名:</strong> ${data.lineName}</div>` : ''}
-                    <div><strong>異常内容:</strong> ${data.anomalyContent}</div>
-                    <div><strong>製造処置:</strong> ${data.actionTaken}</div>
-                    <div><strong>発生日:</strong> ${data.occurrenceDate}</div>
-                    <div><strong>処置者:</strong> ${data.handler}</div>
-                </div>`;
-            selectedDataDisplay.style.display = 'block';
-
-            // 過去の同一整理No（品番）の対応履歴（最新1件＋他◯件）
-            showPastHistory(data.serialNo, data.id);
-        } else {
-            display.innerHTML = '<p style="color: #999;">データが見つかりません</p>';
-            selectedDataDisplay.style.display = 'block';
-            document.getElementById('pastHistoryArea').style.display = 'none';
-        }
-    }
-
-    // 過去の同一整理No（品番）の対応履歴を表示（最新1件＋他◯件／保全単位は表示しない）
-    function showPastHistory(serialNo, currentRecordId) {
-        const pastHistoryArea = document.getElementById('pastHistoryArea');
-        const pastHistoryContent = document.getElementById('pastHistoryContent');
-
-        const currentData = anomalyData.find(item => item.id == currentRecordId);
-        if (!currentData || !currentData.anomalyContent) {
-            pastHistoryArea.style.display = 'none';
-            return;
-        }
-        const currentAnomalyContent = currentData.anomalyContent.toLowerCase();
-        const keywords = currentAnomalyContent.replace(/[、。，．,.\s]+/g, ' ').split(' ').filter(w => w.length >= 2);
-
-        // 同じ整理Noで、技術入力完了・要請・本文あり・自分以外
-        let pastData = anomalyData.filter(item => {
-            if (item.serialNo !== serialNo || item.id == currentRecordId) return false;
-            if (item.status !== 'complete' || item.techRequest !== '要請') return false;
-            if (!item.rootCauseAction || !item.anomalyContent) return false;
-            return true;
-        });
-
-        if (pastData.length === 0) {
-            pastHistoryArea.style.display = 'none';
-            return;
-        }
-
-        // 類似度（キーワード一致数）→ 日付新しい順
-        pastData = pastData.sort((a, b) => {
-            const scoreA = keywords.filter(kw => a.anomalyContent.toLowerCase().includes(kw)).length;
-            const scoreB = keywords.filter(kw => b.anomalyContent.toLowerCase().includes(kw)).length;
-            if (scoreB !== scoreA) return scoreB - scoreA;
-            return new Date(b.occurrenceDate) - new Date(a.occurrenceDate);
-        });
-
-        const latest = pastData[0];
-        const others = pastData.slice(1);
-
-        let html = `
-            <div style="margin-bottom: 10px; padding: 10px; background: #fff; border-radius: 4px; border-left: 3px solid #4caf50;">
-                <strong style="color: #2e7d32;">✅ この品番（${serialNo}）で類似の異常が過去に${pastData.length}件あります</strong>
-                <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">現在の異常: ${currentData.anomalyContent}</div>
-            </div>
-
-            <div class="past-history-item">
-                <div class="past-history-date">
-                    📅 ${latest.occurrenceDate} ${latest.occurrenceTime ? `(${latest.occurrenceTime})` : ''}
-                    <span style="background: #4caf50; color: white; padding: 2px 8px; border-radius: 10px; margin-left: 10px; font-size: 0.8rem;">最新</span>
+    if(others.length>0){
+      const othersId = 'others-'+Date.now();
+      html += `
+        <div style="text-align:center;margin-top:10px;">
+          <button class="btn btn-secondary" style="width:auto;" onclick="const o=document.getElementById('${othersId}'); const show=o.style.display!=='block'; o.style.display=show?'block':'none'; this.textContent = show ? '他${others.length}件を隠す' : '他${others.length}件を表示';">
+            他${others.length}件を表示
+          </button>
+        </div>
+        <div id="${othersId}" style="display:none;margin-top:10px;">
+          ${others.map(it=>{
+            const c=kw.filter(k=>it.anomalyContent.toLowerCase().includes(k)).length;
+            const r=Math.round((c/kw.length)*100);
+            return `
+              <div class="past-history-item">
+                <div class="past-history-date">📅 ${escapeHtml(it.occurrenceDate)} ${it.occurrenceTime?`(${escapeHtml(it.occurrenceTime)})`:''}
+                  <span style="background:#2196f3;color:#fff;padding:2px 8px;border-radius:10px;margin-left:5px;font-size:.8rem;">一致度 ${r}%</span>
                 </div>
-                <div class="past-history-field">
-                    <strong>📝 異常内容</strong>
-                    <div>${latest.anomalyContent}</div>
+                <div class="past-history-field"><strong>📝 異常内容</strong><div>${escapeHtml(it.anomalyContent)}</div></div>
+                <div class="past-history-field"><strong>🔧 製造処置内容</strong><div>${escapeHtml(it.actionTaken||'-')}</div></div>
+                <div class="past-history-field"><strong>💡 技術処置内容（何が悪くどうした）</strong>
+                  <div>${escapeHtml(it.rootCauseAction)}</div>
+                  <button type="button" class="copy-btn" onclick="applySuggestion('rootCauseAction','${escapeHtml(it.rootCauseAction)}')">📋 コピー</button>
                 </div>
-                <div class="past-history-field">
-                    <strong>🔧 製造処置内容</strong>
-                    <div>${latest.actionTaken}</div>
+                <div style="margin-top:10px;font-size:.85rem;color:#666;">
+                  ${it.techHandler?`技術処置者: ${escapeHtml(it.techHandler)} | `:''}
+                  ${it.recurrenceType?`区分: ${escapeHtml(it.recurrenceType)} | `:''}
+                  ${it.department?`部署: ${escapeHtml(it.department)}`:''}
                 </div>
-                <div class="past-history-field">
-                    <strong>💡 技術処置内容（何が悪くどうした）</strong>
-                    <div>${latest.rootCauseAction}</div>
-                    <button type="button" class="copy-btn" onclick="applySuggestion('rootCauseAction', '${escapeHtml(latest.rootCauseAction)}')">📋 コピー</button>
-                </div>
-                <div style="margin-top: 10px; font-size: 0.85rem; color: #666;">
-                    ${latest.techHandler ? `技術処置者: ${latest.techHandler} | ` : ''}
-                    ${latest.recurrenceType ? `区分: ${latest.recurrenceType} | ` : ''}
-                    ${latest.department ? `部署: ${latest.department}` : ''}
-                </div>
-            </div>
-        `;
-
-        if (others.length > 0) {
-            html += `
-                <button class="more-btn" id="showOthersBtn">他 ${others.length} 件 を表示</button>
-                <div id="pastOthersWrap" style="margin-top:8px;"></div>
+              </div>
             `;
-        }
-
-        pastHistoryContent.innerHTML = html;
-        pastHistoryArea.style.display = 'block';
-
-        const btn = document.getElementById('showOthersBtn');
-        if (btn) {
-            btn.addEventListener('click', () => {
-                const wrap = document.getElementById('pastOthersWrap');
-                wrap.innerHTML = others.map(item => `
-                    <details class="past-history-detail">
-                        <summary>${item.occurrenceDate} / ${item.serialNo} / ${escapeHtml(item.anomalyContent.substring(0,20))}...</summary>
-                        <div class="past-history-field" style="margin-top:8px;">
-                            <strong>📝 異常内容</strong>
-                            <div>${item.anomalyContent}</div>
-                        </div>
-                        <div class="past-history-field">
-                            <strong>🔧 製造処置内容</strong>
-                            <div>${item.actionTaken}</div>
-                        </div>
-                        <div class="past-history-field">
-                            <strong>💡 技術処置内容（何が悪くどうした）</strong>
-                            <div>${item.rootCauseAction}</div>
-                            <button type="button" class="copy-btn" onclick="applySuggestion('rootCauseAction', '${escapeHtml(item.rootCauseAction)}')">📋 コピー</button>
-                        </div>
-                        <div style="margin-top: 6px; font-size: 0.85rem; color: #666;">
-                            ${item.techHandler ? `技術処置者: ${item.techHandler} | ` : ''}
-                            ${item.recurrenceType ? `区分: ${item.recurrenceType} | ` : ''}
-                            ${item.department ? `部署: ${item.department}` : ''}
-                        </div>
-                    </details>
-                `).join('');
-                btn.remove();
-            });
-        }
+          }).join('')}
+        </div>
+      `;
     }
 
-    // 履歴表示更新
-    function updateHistory() { (currentView === 'card') ? updateCardView() : updateTableView(); }
+    box.innerHTML = html;
+    area.style.display='block';
+  }
 
-    function updateCardView() {
-        const cardView = document.getElementById('cardView');
-        if (anomalyData.length === 0) {
-            cardView.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
-            return;
-        }
-        cardView.innerHTML = anomalyData.map(item => {
-            let statusText = '完了', statusClass = 'status-complete';
-            if (item.status === 'pending') { statusText = '技術入力待ち'; statusClass = 'status-pending'; }
-            else if (item.status === 'complete' && item.techRequest === '完結') { statusText = '完了（製造完結）'; statusClass = 'status-complete'; }
-            return `
-            <div class="anomaly-card ${item.status === 'complete' ? 'complete' : ''}">
-                <div class="card-header">
-                    <div class="card-id">${item.serialNo}</div>
-                    <div class="card-status ${statusClass}">${statusText}</div>
-                </div>
-                <div class="card-body">
-                    ${item.department ? `<div class="card-field"><div class="field-label">部署</div><div class="field-value">${item.department}</div></div>` : ''}
-                    ${item.lineName ? `<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${item.lineName}</div></div>` : ''}
-                    ${item.techRequest ? `<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${item.techRequest === '要請' ? '技術要請あり' : '製造で完結'}</div></div>` : ''}
-                    <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${item.anomalyContent}</div></div>
-                    <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${item.actionTaken}</div></div>
-                    <div class="card-field"><div class="field-label">発生日時</div><div class="field-value">${item.occurrenceDate} ${item.occurrenceTime || ''}</div></div>
-                    <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${item.handler}</div></div>
-                    ${item.status === 'complete' && item.techRequest === '要請' ? `
-                        <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${item.techHandler || '-'}</div></div>
-                        <div class="card-field"><div class="field-label">保全単位</div><div class="field-value">${item.maintenanceUnit || '-'}</div></div>
-                        <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction || '-'}</div></div>
-                        <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${item.recurrenceType || '-'}</div></div>
-                    ` : ''}
-                    <div class="action-btns" style="margin-top: 10px;">
-                        <button class="btn-small btn-delete" onclick="deleteRecord(${item.id})">削除</button>
-                    </div>
-                </div>
-            </div>`;
-        }).join('');
-    }
-
-    function updateTableView() {
-        const tableView = document.getElementById('tableView');
-        if (anomalyData.length === 0) {
-            tableView.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
-            return;
-        }
-        tableView.innerHTML = `
-            <table>
-                <thead>
-                    <tr>
-                        <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th><th>発生日</th><th>処置者</th><th>状態</th><th>操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${anomalyData.map(item => `
-                        <tr>
-                            <td>${item.serialNo}</td>
-                            <td>${item.department || '-'}</td>
-                            <td>${item.lineName || '-'}</td>
-                            <td>${item.anomalyContent.substring(0, 30)}...</td>
-                            <td>${item.occurrenceDate}</td>
-                            <td>${item.handler}</td>
-                            <td><span class="card-status ${item.status === 'complete' ? 'status-complete' : 'status-pending'}">${item.status === 'complete' ? '完了' : '待ち'}</span></td>
-                            <td><button class="btn-small btn-delete" onclick="deleteRecord(${item.id})">削除</button></td>
-                        </tr>`).join('')}
-                </tbody>
-            </table>`;
-    }
-
-    function toggleView(view) {
-        currentView = view;
-        document.querySelectorAll('.view-toggle button').forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
-        if (view === 'card') { document.getElementById('cardView').style.display = 'grid'; document.getElementById('tableView').style.display = 'none'; }
-        else { document.getElementById('cardView').style.display = 'none'; document.getElementById('tableView').style.display = 'block'; }
-        updateHistory();
-    }
-
-    function deleteRecord(id) {
-        if (!confirm('このレコードを削除してもよろしいですか？')) return;
-        anomalyData = anomalyData.filter(item => item.id !== id);
-        saveData();
-        updateHistory();
-        updateSerialNoSelect();
-    }
-
-    // CSV出力
-    function exportCSV() {
-        if (anomalyData.length === 0) { alert('エクスポートするデータがありません'); return; }
-        const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','命数有無','保全単位','原因対策','再発新規','状態'];
-        const rows = anomalyData.map(item => [
-            item.serialNo, item.department || '', item.lineName || '', item.occurrenceDate, item.occurrenceTime || '', item.restartTime || '',
-            item.anomalyContent, item.actionTaken, item.traceback, item.handler,
-            item.techRequest === '要請' ? '技術要請あり' : item.techRequest === '完結' ? '製造で完結' : '',
-            item.techHandler || '', item.lifespan || '', item.maintenanceUnit || '', item.rootCauseAction || '', item.recurrenceType || '',
-            item.status === 'complete' ? '完了' : '技術入力待ち'
-        ]);
-
-        let csv = '\uFEFF' + headers.join(',') + '\n';
-        rows.forEach(row => { csv += row.map(cell => `"${cell}"`).join(',') + '\n'; });
-
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `異常履歴_${new Date().toISOString().split('T')[0]}.csv`;
-        link.click();
-    }
-
-    // CSVインポート
-    function importCSV(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const text = e.target.result;
-                const lines = text.split('\n').filter(line => line.trim());
-                if (lines.length < 2) { alert('CSVファイルが空です'); return; }
-
-                const dataLines = lines.slice(1);
-                let importCount = 0;
-
-                dataLines.forEach(line => {
-                    const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g).map(v => v.replace(/^"|"$/g, ''));
-                    if (values.length >= 10) {
-                        let techRequest = '';
-                        if (values[10] === '技術要請あり') techRequest = '要請';
-                        else if (values[10] === '製造で完結') techRequest = '完結';
-
-                        const data = {
-                            id: Date.now() + importCount,
-                            serialNo: values[0],
-                            department: values[1] || '',
-                            lineName: values[2] || '',
-                            occurrenceDate: values[3],
-                            occurrenceTime: values[4] || '',
-                            restartTime: values[5] || '',
-                            anomalyContent: values[6],
-                            actionTaken: values[7],
-                            traceback: values[8],
-                            handler: values[9],
-                            techRequest: techRequest,
-                            techHandler: values[11] || '',
-                            lifespan: values[12] || '',
-                            maintenanceUnit: values[13] || '',
-                            rootCauseAction: values[14] || '',
-                            recurrenceType: values[15] || '',
-                            status: values[16] === '完了' ? 'complete' : 'pending',
-                            mfgPhotos: [],
-                            techPhotos: [],
-                            createdAt: new Date().toISOString()
-                        };
-                        anomalyData.push(data);
-                        importCount++;
-                    }
-                });
-
-                saveData();
-                updateHistory();
-                updateSerialNoSelect();
-                alert(`${importCount}件のデータをインポートしました`);
-            } catch (error) {
-                alert('CSVファイルの読み込みに失敗しました');
-                console.error(error);
-            }
-        };
-        reader.readAsText(file, 'UTF-8');
-        event.target.value = '';
-    }
-
-    // === 分析機能 ===
-    function updateAnalysis() {
-        updateStatistics();
-        updateTrendAnalysis();
-        updateDepartmentAnalysis();
-        updateRecurrenceAnalysis();
-        updateSearchDepartmentSelect();
-    }
-
-    // 検索フィルタの部署選択肢を更新
-    function updateSearchDepartmentSelect() {
-        const select = document.getElementById('searchDepartment');
-        const currentValue = select.value;
-        select.innerHTML = '<option value="">すべて</option>';
-        masterData.departments.forEach(dept => {
-            const option = document.createElement('option');
-            option.value = dept; option.textContent = dept; select.appendChild(option);
-        });
-        if (currentValue && masterData.departments.includes(currentValue)) {
-            select.value = currentValue; updateSearchLineOptions();
-        }
-    }
-
-    // 類似異常検索
-    function searchSimilarAnomalies() {
-        const keyword = document.getElementById('searchKeyword').value.trim().toLowerCase();
-        const department = document.getElementById('searchDepartment').value;
-        const line = document.getElementById('searchLine').value;
-        const serialNo = document.getElementById('searchSerialNo').value.trim();
-        const resultsDiv = document.getElementById('similarResults');
-
-        let results = anomalyData.filter(item => {
-            if (department && item.department !== department) return false;
-            if (line && item.lineName !== line) return false;
-            if (serialNo && !item.serialNo.toLowerCase().includes(serialNo.toLowerCase())) return false;
-            if (keyword) {
-                const content = (item.anomalyContent + ' ' + item.actionTaken + ' ' + (item.rootCauseAction || '')).toLowerCase();
-                return content.includes(keyword);
-            }
-            return true;
-        });
-
-        if (keyword) {
-            results = results.map(item => {
-                const content = (item.anomalyContent + ' ' + item.actionTaken + ' ' + (item.rootCauseAction || '')).toLowerCase();
-                const score = (content.match(new RegExp(keyword, 'g')) || []).length;
-                return { ...item, score };
-            }).sort((a,b)=> b.score - a.score);
-        } else {
-            results.sort((a,b)=> new Date(b.occurrenceDate) - new Date(a.occurrenceDate));
-        }
-
-        if (results.length === 0) {
-            resultsDiv.innerHTML = '<p style="color: #999;">該当する異常が見つかりませんでした</p>'; return;
-        }
-
-        const filterInfo = [];
-        if (department) filterInfo.push(`部署: ${department}`);
-        if (line) filterInfo.push(`ライン: ${line}`);
-        if (serialNo) filterInfo.push(`整理No: ${serialNo}`);
-        if (keyword) filterInfo.push(`キーワード: ${keyword}`);
-
-        resultsDiv.innerHTML = `
-            <div style="margin-bottom: 15px; padding: 10px; background: #e3f2fd; border-radius: 6px;">
-                <strong>検索条件:</strong> ${filterInfo.length > 0 ? filterInfo.join(' / ') : 'すべて'}
+  // ========= 履歴 =========
+  function updateHistory(){ (currentView==='card')?updateCardView():updateTableView(); }
+  function updateCardView(){
+    const wrap=document.getElementById('cardView');
+    if(anomalyData.length===0){ wrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`; return; }
+    wrap.innerHTML = anomalyData.map(it=>{
+      let statusText='完了', statusClass='status-complete';
+      if(it.status==='pending'){ statusText='技術入力待ち'; statusClass='status-pending'; }
+      else if(it.status==='complete' && it.techRequest==='完結'){ statusText='完了（製造完結）'; statusClass='status-complete'; }
+      return `
+        <div class="anomaly-card ${it.status==='complete'?'complete':''}">
+          <div class="card-header">
+            <div class="card-id">${escapeHtml(it.serialNo)}</div>
+            <div class="card-status ${statusClass}">${statusText}</div>
+          </div>
+          <div class="card-body">
+            ${it.department?`<div class="card-field"><div class="field-label">部署</div><div class="field-value">${escapeHtml(it.department)}</div></div>`:''}
+            ${it.lineName?`<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${escapeHtml(it.lineName)}</div></div>`:''}
+            ${it.techRequest?`<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${it.techRequest==='要請'?'技術要請あり':'製造で完結'}</div></div>`:''}
+            <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${escapeHtml(it.anomalyContent)}</div></div>
+            <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${escapeHtml(it.actionTaken)}</div></div>
+            <div class="card-field"><div class="field-label">発生日時</div><div class="field-value">${escapeHtml(it.occurrenceDate)} ${it.occurrenceTime?escapeHtml(it.occurrenceTime):''}</div></div>
+            <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${escapeHtml(it.handler)}</div></div>
+            ${ (it.status==='complete' && it.techRequest==='要請')?`
+              <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${escapeHtml(it.techHandler||'-')}</div></div>
+              <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${escapeHtml(it.rootCauseAction||'-')}</div></div>
+              <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${escapeHtml(it.recurrenceType||'-')}</div></div>
+            `:''}
+            <div class="action-btns" style="margin-top:10px;">
+              <button class="btn-small btn-delete" onclick="deleteRecord(${it.id})">削除</button>
             </div>
-            <p style="margin-bottom: 15px; font-weight: bold; color: #333;">該当件数: ${results.length}件</p>
-            ${results.map(item => `
-                <div class="similar-item">
-                    <div class="similar-item-header">
-                        <div><strong style="color: #ff9800;">${item.serialNo}</strong><span style="color: #666; margin-left: 10px;">${item.occurrenceDate}</span></div>
-                        ${keyword && item.score ? `<span class="similar-score">一致度: ${item.score}</span>` : ''}
-                    </div>
-                    ${item.department || item.lineName ? `
-                    <div style="margin-bottom: 8px;">
-                        ${item.department ? `<span style="background: #e3f2fd; padding: 3px 10px; border-radius: 12px; font-size: 0.85rem; margin-right: 5px;">${item.department}</span>` : ''}
-                        ${item.lineName ? `<span style="background: #fff3e0; padding: 3px 10px; border-radius: 12px; font-size: 0.85rem;">${item.lineName}</span>` : ''}
-                    </div>` : ''}
-                    <div style="margin-bottom: 8px;"><strong>異常内容:</strong> ${item.anomalyContent}</div>
-                    <div style="margin-bottom: 8px;"><strong>製造処置:</strong> ${item.actionTaken}</div>
-                    ${item.rootCauseAction ? `
-                    <div style="margin-bottom: 8px; background: #f1f8e9; padding: 10px; border-radius: 4px; border-left: 3px solid #8bc34a;">
-                        <strong style="color: #558b2f;">💡 技術対策:</strong> ${item.rootCauseAction}
-                    </div>` : ''}
-                    <div style="font-size: 0.85rem; color: #666; margin-top: 5px;">
-                        ${item.handler ? `処置者: ${item.handler}` : ''}${item.handler && item.techHandler ? ' / ' : ''}${item.techHandler ? `技術処置者: ${item.techHandler}` : ''}
-                    </div>
-                </div>`).join('')}
-        `;
-    }
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  function updateTableView(){
+    const wrap=document.getElementById('tableView');
+    if(anomalyData.length===0){ wrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`; return; }
+    wrap.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th><th>発生日</th><th>処置者</th><th>状態</th><th>操作</th>
+        </tr></thead>
+        <tbody>
+          ${anomalyData.map(it=>`
+            <tr>
+              <td>${escapeHtml(it.serialNo)}</td>
+              <td>${escapeHtml(it.department||'-')}</td>
+              <td>${escapeHtml(it.lineName||'-')}</td>
+              <td>${escapeHtml(truncateText(it.anomalyContent,30))}</td>
+              <td>${escapeHtml(it.occurrenceDate)}</td>
+              <td>${escapeHtml(it.handler)}</td>
+              <td><span class="card-status ${it.status==='complete'?'status-complete':'status-pending'}">${it.status==='complete'?'完了':'待ち'}</span></td>
+              <td><button class="btn-small btn-delete" onclick="deleteRecord(${it.id})">削除</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+  function toggleView(view,ev){
+    currentView=view;
+    document.querySelectorAll('.view-toggle button').forEach(b=>b.classList.remove('active'));
+    if(ev && ev.currentTarget) ev.currentTarget.classList.add('active');
+    document.getElementById('cardView').style.display=(view==='card')?'grid':'none';
+    document.getElementById('tableView').style.display=(view==='table')?'block':'none';
+    updateHistory();
+  }
+  function deleteRecord(id){
+    if(!confirm('このレコードを削除しますか？')) return;
+    anomalyData = anomalyData.filter(it=>it.id!==id);
+    saveData(); updateHistory(); updateSerialNoSelect();
+  }
 
-    // 検索フィルタのライン名選択肢を更新
-    function updateSearchLineOptions() {
-        const dept = document.getElementById('searchDepartment').value;
-        const lineSelect = document.getElementById('searchLine');
-        lineSelect.innerHTML = '<option value="">すべて</option>';
-        if (dept && masterData.lines[dept]) {
-            masterData.lines[dept].forEach(line => {
-                const option = document.createElement('option');
-                option.value = line; option.textContent = line; lineSelect.appendChild(option);
-            });
-        }
-    }
-
-    // 検索フィルタをクリア
-    function clearSearchFilters() {
-        document.getElementById('searchDepartment').value = '';
-        document.getElementById('searchLine').value = '';
-        document.getElementById('searchLine').innerHTML = '<option value="">すべて</option>';
-        document.getElementById('searchSerialNo').value = '';
-        document.getElementById('searchKeyword').value = '';
-        document.getElementById('similarResults').innerHTML = '';
-    }
-
-    // 統計情報更新
-    function updateStatistics() {
-        const total = anomalyData.length;
-        const completed = anomalyData.filter(item => item.status === 'complete').length;
-        const pending = total - completed;
-
-        const now = new Date();
-        const thisMonth = anomalyData.filter(item => {
-            const d = new Date(item.occurrenceDate);
-            return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-        }).length;
-
-        let avgTime = 0, timeCount = 0;
-        anomalyData.forEach(item => {
-            if (item.occurrenceTime && item.restartTime) {
-                const [oh, om] = item.occurrenceTime.split(':').map(Number);
-                const [rh, rm] = item.restartTime.split(':').map(Number);
-                let minutes = (rh * 60 + rm) - (oh * 60 + om);
-                if (minutes < 0) minutes += 24 * 60;
-                avgTime += minutes; timeCount++;
-            }
+  // ========= CSV =========
+  function exportCSV(){
+    if(anomalyData.length===0) return alert('エクスポートするデータがありません');
+    const headers=['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','命数有無','保全単位','原因対策','再発新規','状態'];
+    const rows=anomalyData.map(it=>[
+      it.serialNo,it.department||'',it.lineName||'',it.occurrenceDate,it.occurrenceTime||'',it.restartTime||'',it.anomalyContent,it.actionTaken,it.traceback,it.handler,
+      it.techRequest==='要請'?'技術要請あり':it.techRequest==='完結'?'製造で完結':'',
+      it.techHandler||'',it.lifespan||'',it.maintenanceUnit||'',it.rootCauseAction||'',it.recurrenceType||'',it.status==='complete'?'完了':'技術入力待ち'
+    ]);
+    let csv='\uFEFF'+headers.join(',')+'\n';
+    rows.forEach(r=>{ csv += r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')+'\n'; });
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+  }
+  function importCSV(e){
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const text=ev.target.result; const lines=text.split('\n').filter(l=>l.trim());
+        if(lines.length<2) return alert('CSVファイルが空です');
+        const dataLines=lines.slice(1); let cnt=0;
+        dataLines.forEach((line,i)=>{
+          const values=line.match(/("([^"]|"")*"|[^",]+)(?=\s*,|\s*$)/g);
+          if(!values) return;
+          const v=values.map(s=>s.replace(/^"|"$/g,'').replace(/""/g,'"'));
+          if(v.length>=10){
+            let techReq='';
+            if(v[10]==='技術要請あり') techReq='要請';
+            else if(v[10]==='製造で完結') techReq='完結';
+            const d={
+              id: Date.now()+cnt+i,
+              serialNo:v[0],department:v[1]||'',lineName:v[2]||'',
+              occurrenceDate:v[3],occurrenceTime:v[4]||'',restartTime:v[5]||'',
+              anomalyContent:v[6],actionTaken:v[7],traceback:v[8],handler:v[9],
+              techRequest:techReq,techHandler:v[11]||'',lifespan:v[12]||'',
+              maintenanceUnit:v[13]||'',rootCauseAction:v[14]||'',recurrenceType:v[15]||'',
+              status:(v[16]==='完了')?'complete':'pending',
+              mfgPhotos:[],techPhotos:[],createdAt:new Date().toISOString()
+            };
+            anomalyData.push(d); cnt++;
+          }
         });
-        avgTime = timeCount > 0 ? Math.round(avgTime / timeCount) : 0;
+        saveData(); updateHistory(); updateSerialNoSelect();
+        alert(`${cnt}件のデータをインポートしました`);
+      }catch(err){ console.error(err); alert('CSVの読み込みに失敗しました'); }
+    };
+    reader.readAsText(file,'UTF-8'); e.target.value='';
+  }
 
-        const statsDiv = document.getElementById('statisticsDisplay');
-        statsDiv.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                <div class="stat-card"><h4>総異常件数</h4><div class="stat-value">${total}</div><div class="stat-label">件</div></div>
-                <div class="stat-card" style="background: linear-gradient(135deg, #2e7d32 0%, #66bb6a 100%);"><h4>対応完了</h4><div class="stat-value">${completed}</div><div class="stat-label">件 (${total>0?Math.round(completed/total*100):0}%)</div></div>
-                <div class="stat-card" style="background: linear-gradient(135deg, #f57c00 0%, #ffb74d 100%);"><h4>対応待ち</h4><div class="stat-value">${pending}</div><div class="stat-label">件</div></div>
-                <div class="stat-card" style="background: linear-gradient(135deg, #c62828 0%, #ef5350 100%);"><h4>今月の異常</h4><div class="stat-value">${thisMonth}</div><div class="stat-label">件</div></div>
-                <div class="stat-card" style="background: linear-gradient(135deg, #1976d2 0%, #42a5f5 100%);"><h4>平均対応時間</h4><div class="stat-value">${avgTime}</div><div class="stat-label">分</div></div>
-            </div>`;
+  // ========= 分析 =========
+  function updateAnalysis(){
+    updateStatistics(); updateTrendAnalysis(); updateDepartmentAnalysis(); updateRecurrenceAnalysis(); updateSearchDepartmentSelect();
+  }
+  function updateSearchDepartmentSelect(){
+    const sel=document.getElementById('searchDepartment'); const cur=sel.value;
+    sel.innerHTML='<option value="">すべて</option>';
+    masterData.departments.forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);});
+    if(cur && masterData.departments.includes(cur)){ sel.value=cur; updateSearchLineOptions(); }
+  }
+  function updateSearchLineOptions(){
+    const dept=document.getElementById('searchDepartment').value;
+    const sel=document.getElementById('searchLine'); sel.innerHTML='<option value="">すべて</option>';
+    (masterData.lines[dept]||[]).forEach(l=>{const o=document.createElement('option');o.value=l;o.textContent=l;sel.appendChild(o);});
+  }
+  function clearSearchFilters(){
+    document.getElementById('searchDepartment').value='';
+    document.getElementById('searchLine').innerHTML='<option value="">すべて</option>';
+    document.getElementById('searchSerialNo').value='';
+    document.getElementById('searchKeyword').value='';
+    document.getElementById('similarResults').innerHTML='';
+  }
+  function searchSimilarAnomalies(){
+    const keyword=document.getElementById('searchKeyword').value.trim().toLowerCase();
+    const dept=document.getElementById('searchDepartment').value;
+    const line=document.getElementById('searchLine').value;
+    const serialNo=document.getElementById('searchSerialNo').value.trim();
+    const out=document.getElementById('similarResults');
+
+    let results=anomalyData.filter(it=>{
+      if(dept && it.department!==dept) return false;
+      if(line && it.lineName!==line) return false;
+      if(serialNo && !it.serialNo.toLowerCase().includes(serialNo.toLowerCase())) return false;
+      if(keyword){
+        const content=(it.anomalyContent+' '+it.actionTaken+' '+(it.rootCauseAction||'')).toLowerCase();
+        return content.includes(keyword);
+      }
+      return true;
+    });
+
+    if(keyword){
+      results=results.map(it=>{
+        const content=(it.anomalyContent+' '+it.actionTaken+' '+(it.rootCauseAction||'')).toLowerCase();
+        const score=(content.match(new RegExp(keyword,'g'))||[]).length;
+        return {...it,score};
+      }).sort((a,b)=> (b.score||0)-(a.score||0));
+    }else{
+      results.sort((a,b)=> new Date(b.occurrenceDate)-new Date(a.occurrenceDate));
     }
 
-    // 月別傾向分析
-    function updateTrendAnalysis() {
-        const monthly = {};
-        anomalyData.forEach(item => {
-            const d = new Date(item.occurrenceDate);
-            const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-            monthly[key] = (monthly[key] || 0) + 1;
-        });
-        const months = Object.keys(monthly).sort();
-        const maxCount = Math.max(...Object.values(monthly), 1);
+    if(results.length===0){ out.innerHTML='<p style="color:#999;">該当する異常が見つかりませんでした</p>'; return; }
 
-        const chartDiv = document.getElementById('trendChart');
-        chartDiv.innerHTML = months.map(m => {
-            const count = monthly[m];
-            const pct = (count / maxCount) * 100;
-            return `
-                <div style="margin-bottom: 15px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <span style="font-weight: bold;">${m}</span><span style="color:#666;">${count}件</span>
-                    </div>
-                    <div style="background:#e0e0e0; height:30px; border-radius:4px; overflow:hidden;">
-                        <div class="chart-bar" style="width:${pct}%;">${count}件</div>
-                    </div>
-                </div>`;
-        }).join('');
+    const info=[];
+    if(dept) info.push(`部署: ${escapeHtml(dept)}`);
+    if(line) info.push(`ライン: ${escapeHtml(line)}`);
+    if(serialNo) info.push(`整理No: ${escapeHtml(serialNo)}`);
+    if(keyword) info.push(`キーワード: ${escapeHtml(keyword)}`);
 
-        const analysisDiv = document.getElementById('trendAnalysis');
-        if (months.length >= 3) {
-            const recent3 = months.slice(-3).map(m => monthly[m]);
-            const avgRecent = recent3.reduce((a,b)=>a+b,0)/3;
-            const prev = months.slice(-6,-3).map(m => monthly[m]);
-            const avgPrev = prev.length>0 ? prev.reduce((a,b)=>a+b,0)/prev.length : avgRecent;
+    out.innerHTML = `
+      <div style="margin-bottom:15px;padding:10px;background:#e3f2fd;border-radius:6px;">
+        <strong>検索条件:</strong> ${info.length>0?info.join(' / '):'すべて'}
+      </div>
+      <p style="margin-bottom:15px;font-weight:bold;color:#333;">該当件数: ${results.length}件</p>
+      ${results.map(it=>`
+        <div class="similar-item">
+          <div class="similar-item-header">
+            <div><strong style="color:#ff9800;">${escapeHtml(it.serialNo)}</strong><span style="color:#666;margin-left:10px;">${escapeHtml(it.occurrenceDate)}</span></div>
+            ${keyword && it.score?`<span class="similar-score">一致度: ${it.score}</span>`:''}
+          </div>
+          ${(it.department||it.lineName)?`
+            <div style="margin-bottom:8px;">
+              ${it.department?`<span style="background:#e3f2fd;padding:3px 10px;border-radius:12px;font-size:.85rem;margin-right:5px;">${escapeHtml(it.department)}</span>`:''}
+              ${it.lineName?`<span style="background:#fff3e0;padding:3px 10px;border-radius:12px;font-size:.85rem;">${escapeHtml(it.lineName)}</span>`:''}
+            </div>`:''}
+          <div style="margin-bottom:8px;"><strong>異常内容:</strong> ${escapeHtml(it.anomalyContent)}</div>
+          <div style="margin-bottom:8px;"><strong>製造処置:</strong> ${escapeHtml(it.actionTaken)}</div>
+          ${it.rootCauseAction?`<div style="margin-bottom:8px;background:#f1f8e9;padding:10px;border-radius:4px;border-left:3px solid #8bc34a;">
+            <strong style="color:#558b2f;">💡 技術対策:</strong> ${escapeHtml(it.rootCauseAction)}
+          </div>`:''}
+          <div style="font-size:.85rem;color:#666;margin-top:5px;">
+            ${it.handler?`処置者: ${escapeHtml(it.handler)}`:''}
+            ${(it.handler && it.techHandler)?' / ':''}
+            ${it.techHandler?`技術処置者: ${escapeHtml(it.techHandler)}`:''}
+          </div>
+        </div>
+      `).join('')}
+    `;
+  }
 
-            let trend = '', trendClass = '';
-            if (avgRecent > avgPrev * 1.2) { trend = '増加傾向'; trendClass = 'trend-increase'; }
-            else if (avgRecent < avgPrev * 0.8) { trend = '減少傾向'; trendClass = 'trend-decrease'; }
-            else { trend = '横ばい'; trendClass = 'trend-stable'; }
+  function updateStatistics(){
+    const total=anomalyData.length;
+    const completed=anomalyData.filter(it=>it.status==='complete').length;
+    const pending=total-completed;
+    const now=new Date();
+    const thisMonth=anomalyData.filter(it=>{
+      const d=new Date(it.occurrenceDate);
+      return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+    }).length;
+    let avg=0, n=0;
+    anomalyData.forEach(it=>{
+      if(it.occurrenceTime && it.restartTime){
+        const [oh,om]=it.occurrenceTime.split(':').map(Number);
+        const [rh,rm]=it.restartTime.split(':').map(Number);
+        let mins=(rh*60+rm)-(oh*60+om);
+        if(mins<0) mins+=24*60;
+        avg+=mins; n++;
+      }
+    });
+    avg = n>0 ? Math.round(avg/n) : 0;
 
-            analysisDiv.innerHTML = `
-                <div class="analysis-insight">
-                    <strong>📊 傾向分析:</strong> 直近3ヶ月の平均は<strong>${avgRecent.toFixed(1)}件/月</strong>で、
-                    <span class="trend-badge ${trendClass}">${trend}</span>です。
-                    ${trend==='増加傾向' ? '⚠️ 異常発生が増えています。原因を特定し、対策が必要です。' : ''}
-                    ${trend==='減少傾向' ? '✅ 改善が見られます。現在の取り組みを継続しましょう。' : ''}
-                </div>`;
-        } else {
-            analysisDiv.innerHTML = '<p style="color: #999;">データが不足しているため、傾向分析を表示できません</p>';
-        }
+    const stats=document.getElementById('statisticsDisplay');
+    stats.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
+        <div class="stat-card"><h4>総異常件数</h4><div class="stat-value">${total}</div><div class="stat-label">件</div></div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#2e7d32 0%,#66bb6a 100%);"><h4>対応完了</h4><div class="stat-value">${completed}</div><div class="stat-label">件 (${total>0?Math.round(completed/total*100):0}%)</div></div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#f57c00 0%,#ffb74d 100%);"><h4>対応待ち</h4><div class="stat-value">${pending}</div><div class="stat-label">件</div></div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#c62828 0%,#ef5350 100%);"><h4>今月の異常</h4><div class="stat-value">${thisMonth}</div><div class="stat-label">件</div></div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#1976d2 0%,#42a5f5 100%);"><h4>平均対応時間</h4><div class="stat-value">${avg}</div><div class="stat-label">分</div></div>
+      </div>
+    `;
+  }
+
+  function updateTrendAnalysis(){
+    const monthly={};
+    anomalyData.forEach(it=>{
+      const d=new Date(it.occurrenceDate);
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      monthly[k]=(monthly[k]||0)+1;
+    });
+    const keys=Object.keys(monthly).sort();
+    const max=Math.max(...Object.values(monthly),1);
+    const chart=document.getElementById('trendChart');
+    chart.innerHTML = keys.map(m=>{
+      const c=monthly[m]; const p=(c/max)*100;
+      return `
+        <div style="margin-bottom:15px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+            <span style="font-weight:bold;">${m}</span><span style="color:#666;">${c}件</span>
+          </div>
+          <div style="background:#e0e0e0;height:30px;border-radius:4px;overflow:hidden;">
+            <div class="chart-bar" style="width:${p}%;">${c}件</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const analysis=document.getElementById('trendAnalysis');
+    if(keys.length>=3){
+      const r3=keys.slice(-3).map(k=>monthly[k]); const avgR=r3.reduce((a,b)=>a+b,0)/3;
+      const prev=keys.slice(-6,-3).map(k=>monthly[k]); const avgP=prev.length>0?prev.reduce((a,b)=>a+b,0)/prev.length:avgR;
+      let trend='横ばい', cls='trend-stable';
+      if(avgR>avgP*1.2){ trend='増加傾向'; cls='trend-increase'; }
+      else if(avgR<avgP*0.8){ trend='減少傾向'; cls='trend-decrease'; }
+      analysis.innerHTML = `
+        <div class="analysis-insight">
+          <strong>📊 傾向分析:</strong> 直近3ヶ月平均は<strong>${avgR.toFixed(1)}件/月</strong>で、
+          <span class="trend-badge ${cls}">${trend}</span>です。
+          ${trend==='増加傾向'?'⚠️ 異常発生が増えています。原因特定と対策を。':''}
+          ${trend==='減少傾向'?'✅ 改善が見られます。現状維持を。':''}
+        </div>
+      `;
+    }else{
+      analysis.innerHTML = '<p style="color:#999;">データが不足しているため、傾向分析を表示できません</p>';
     }
+  }
 
-    // 部署・ライン別分析
-    function updateDepartmentAnalysis() {
-        const deptData = {}, lineData = {};
-        anomalyData.forEach(item => {
-            if (item.department) deptData[item.department] = (deptData[item.department] || 0) + 1;
-            if (item.lineName) lineData[item.lineName] = (lineData[item.lineName] || 0) + 1;
-        });
-        const maxDept = Math.max(...Object.values(deptData), 1);
-        const maxLine = Math.max(...Object.values(lineData), 1);
+  function updateDepartmentAnalysis(){
+    const dept={}, line={};
+    anomalyData.forEach(it=>{ if(it.department) dept[it.department]=(dept[it.department]||0)+1; if(it.lineName) line[it.lineName]=(line[it.lineName]||0)+1; });
+    const maxD=Math.max(...Object.values(dept),1), maxL=Math.max(...Object.values(line),1);
+    const wrap=document.getElementById('departmentAnalysis');
+    let html='<h4 style="color:#666;margin-bottom:10px;">部署別異常件数</h4>';
+    Object.entries(dept).sort((a,b)=>b[1]-a[1]).forEach(([d,c])=>{
+      html+=`
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span>${escapeHtml(d)}</span><span style="color:#666;">${c}件</span></div>
+          <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
+            <div class="chart-bar" style="width:${(c/maxD)*100}%;height:25px;font-size:.85rem;">${c}件</div>
+          </div>
+        </div>`;
+    });
+    html+='<h4 style="color:#666;margin:20px 0 10px;">ライン別異常件数</h4>';
+    Object.entries(line).sort((a,b)=>b[1]-a[1]).forEach(([l,c])=>{
+      html+=`
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span>${escapeHtml(l)}</span><span style="color:#666;">${c}件</span></div>
+          <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
+            <div class="chart-bar" style="width:${(c/maxL)*100}%;height:25px;font-size:.85rem;background:linear-gradient(90deg,#f57c00 0%,#ffb74d 100%);">${c}件</div>
+          </div>
+        </div>`;
+    });
+    wrap.innerHTML = html || '<p style="color:#999;">データがありません</p>';
+  }
 
-        const analysisDiv = document.getElementById('departmentAnalysis');
-        let html = '<h4 style="color:#666; margin-bottom:10px;">部署別異常件数</h4>';
-        for (const [dept, count] of Object.entries(deptData).sort((a,b)=>b[1]-a[1])) {
-            const pct = (count / maxDept) * 100;
-            html += `
-                <div style="margin-bottom:10px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <span>${dept}</span><span style="color:#666;">${count}件</span>
-                    </div>
-                    <div style="background:#e0e0e0; height:25px; border-radius:4px; overflow:hidden;">
-                        <div class="chart-bar" style="width:${pct}%; height:25px; font-size:0.85rem;">${count}件</div>
-                    </div>
-                </div>`;
-        }
-        html += '<h4 style="color:#666; margin:20px 0 10px;">ライン別異常件数</h4>';
-        for (const [line, count] of Object.entries(lineData).sort((a,b)=>b[1]-a[1])) {
-            const pct = (count / maxLine) * 100;
-            html += `
-                <div style="margin-bottom:10px;">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-                        <span>${line}</span><span style="color:#666;">${count}件</span>
-                    </div>
-                    <div style="background:#e0e0e0; height:25px; border-radius:4px; overflow:hidden;">
-                        <div class="chart-bar" style="width:${pct}%; height:25px; font-size:0.85rem; background: linear-gradient(90deg, #f57c00 0%, #ffb74d 100%);">${count}件</div>
-                    </div>
-                </div>`;
-        }
-        analysisDiv.innerHTML = html || '<p style="color:#999;">データがありません</p>';
-    }
+  function updateRecurrenceAnalysis(){
+    const rec=anomalyData.filter(it=>it.recurrenceType==='再発').length;
+    const nw=anomalyData.filter(it=>it.recurrenceType==='新規').length;
+    const total=rec+nw; const wrap=document.getElementById('recurrenceAnalysis');
+    if(total===0){ wrap.innerHTML='<p style="color:#999;">技術対応済みのデータがありません</p>'; return; }
+    const rate=((rec/total)*100).toFixed(1);
+    wrap.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <div style="text-align:center;padding:20px;background:#ffebee;border-radius:8px;"><div style="font-size:3rem;font-weight:bold;color:#c62828;">${rec}</div><div style="color:#666;margin-top:5px;">再発件数</div></div>
+        <div style="text-align:center;padding:20px;background:#e8f5e9;border-radius:8px;"><div style="font-size:3rem;font-weight:bold;color:#2e7d32;">${nw}</div><div style="color:#666;margin-top:5px;">新規件数</div></div>
+      </div>
+      <div class="analysis-insight"><strong>🔄 再発率:</strong> ${rate}% (${rec}/${total}件)
+        ${rate>30?'<br>⚠️ 再発率が高めです。根本原因と恒久対策を。':''}
+        ${rate<20?'<br>✅ 再発率は良好です。現行対策を継続。':''}
+      </div>
+    `;
+  }
 
-    // 再発・新規分析
-    function updateRecurrenceAnalysis() {
-        const recurrence = anomalyData.filter(item => item.recurrenceType === '再発').length;
-        const newCases = anomalyData.filter(item => item.recurrenceType === '新規').length;
-        const total = recurrence + newCases;
-        const analysisDiv = document.getElementById('recurrenceAnalysis');
-
-        if (total === 0) {
-            analysisDiv.innerHTML = '<p style="color: #999;">技術対応済みのデータがありません</p>'; return;
-        }
-        const rate = (recurrence / total * 100).toFixed(1);
-
-        analysisDiv.innerHTML = `
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
-                <div style="text-align:center; padding:20px; background:#ffebee; border-radius:8px;">
-                    <div style="font-size:3rem; font-weight:bold; color:#c62828;">${recurrence}</div>
-                    <div style="color:#666; margin-top:5px;">再発件数</div>
-                </div>
-                <div style="text-align:center; padding:20px; background:#e8f5e9; border-radius:8px;">
-                    <div style="font-size:3rem; font-weight:bold; color:#2e7d32;">${newCases}</div>
-                    <div style="color:#666; margin-top:5px;">新規件数</div>
-                </div>
-            </div>
-            <div class="analysis-insight">
-                <strong>🔄 再発率:</strong> ${rate}% (${recurrence}/${total}件)
-                ${rate > 30 ? '<br>⚠️ 再発率が高めです。根本原因の追求と恒久対策が必要です。' : ''}
-                ${rate < 20 ? '<br>✅ 再発率は良好です。現在の対策を継続しましょう。' : ''}
-            </div>`;
-    }
-
-    // 初期化
-    handlePhotoUpload('mfgPhotos', 'mfgPhotoPreview', mfgPhotos);
-    handlePhotoUpload('techPhotos', 'techPhotoPreview', techPhotos);
-    loadData();
-    setNowDate();
+  // ========= ビュー初期化 =========
+  handlePhotoUpload('mfgPhotos','mfgPhotoPreview',mfgPhotos);
+  handlePhotoUpload('techPhotos','techPhotoPreview',techPhotos);
+  loadData(); setNowDate();
 </script>
 </body>
 </html>
