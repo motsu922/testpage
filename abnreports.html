@@ -165,7 +165,6 @@
         .trend-stable { background: #fff3e0; color: #ef6c00; }
 
         .analysis-insight { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; border-radius: 6px; margin-top: 15px; }
-        .analysis-insight strong { color: #1976d2; }
 
         .suggestion-btn {
             display: inline-block; padding: 8px 15px; margin: 5px; background: linear-gradient(135deg, #8e24aa 0%, #6a1b9a 100%);
@@ -173,10 +172,6 @@
         }
         .suggestion-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(142, 36, 170, 0.4); }
         .suggestion-btn:active { transform: translateY(0); }
-
-        .suggestion-category { margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e0e0e0; }
-        .suggestion-category:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-        .suggestion-category-title { font-weight: bold; color: #8e24aa; margin-bottom: 8px; font-size: 0.9rem; }
 
         .past-history-item {
             background: white; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid #ff9800;
@@ -191,6 +186,11 @@
             display: inline-block; padding: 5px 12px; margin-left: 10px; background: #ff9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem; transition: all 0.3s;
         }
         .copy-btn:hover { background: #f57c00; transform: translateY(-1px); }
+
+        /* ▼ 追加：他◯件トグルの簡易スタイル */
+        .toggle-link {
+            display: inline-block; margin: 8px 0 0; cursor: pointer; font-weight: bold; color: #1976d2;
+        }
     </style>
 </head>
 <body>
@@ -345,13 +345,13 @@
                 <div id="displayContent"></div>
             </div>
 
-            <!-- 過去の対応履歴表示エリア -->
+            <!-- 過去の対応履歴表示エリア（※仕様変更反映済み） -->
             <div id="pastHistoryArea" style="display: none; margin-bottom: 20px; padding: 15px; background: #fff3e0; border-radius: 6px; border: 2px solid #ff9800;">
                 <h3 style="color: #ff9800; margin-bottom: 10px; font-size: 1.1rem;">📚 過去の同一整理Noの対応履歴</h3>
                 <div id="pastHistoryContent"></div>
             </div>
 
-            <!-- 技術入力用候補 -->
+            <!-- 技術入力用候補（※保全単位の候補は存続） -->
             <div id="techSuggestionArea" style="display: none; margin-bottom: 20px; padding: 15px; background: white; border-radius: 6px; border: 2px solid #667eea;">
                 <h4 style="color: #667eea; margin-bottom: 10px; font-size: 0.95rem;">💡 過去の類似整理Noから候補を表示</h4>
                 <div id="techSuggestionButtons"></div>
@@ -1065,7 +1065,9 @@
             }
         }
 
-        // ===== 過去履歴 =====
+        // ===== 過去履歴（仕様変更反映） =====
+        // - 保全単位は表示しない
+        // - 類似が複数ある場合は直近1件のみ初期表示し、他◯件はユーザーが展開
         function showPastHistory(serialNo, currentRecordId){
             const area = document.getElementById('pastHistoryArea');
             const content = document.getElementById('pastHistoryContent');
@@ -1076,64 +1078,113 @@
             const currentAnomalyContent = currentData.anomalyContent.toLowerCase();
             const keywords = currentAnomalyContent.replace(/[、。，．,.\s]+/g,' ').split(' ').filter(w=>w.length>=2);
 
-            const pastData = anomalyData.filter(item=>{
+            // 類似の判定：同一品番、完了＆技術要請あり、原因/異常テキストあり、かつキーワード一致
+            let pastData = anomalyData.filter(item=>{
                 if (item.serialNo !== serialNo || String(item.id) === String(currentRecordId) || item.status !== 'complete' || item.techRequest !== '要請' || !item.rootCauseAction || !item.anomalyContent) return false;
                 const pastAnomaly = item.anomalyContent.toLowerCase();
-                return keywords.some(k => pastAnomaly.includes(k));
-            }).sort((a,b)=>{
-                const scoreA = keywords.filter(kw => a.anomalyContent.toLowerCase().includes(kw)).length;
-                const scoreB = keywords.filter(kw => b.anomalyContent.toLowerCase().includes(kw)).length;
-                if (scoreB!==scoreA) return scoreB-scoreA;
-                return new Date(b.occurrenceDate) - new Date(a.occurrenceDate);
+                return keywords.length === 0 ? true : keywords.some(k => pastAnomaly.includes(k));
             });
 
             if (pastData.length===0){ area.style.display='none'; return; }
+
+            // 一致度（簡易スコア）は保持しつつ、直近優先に並べ替え（発生日降順）
+            pastData = pastData
+                .map(item=>{
+                    const score = keywords.filter(kw => item.anomalyContent.toLowerCase().includes(kw)).length;
+                    return { ...item, _score: score };
+                })
+                .sort((a,b)=>{
+                    const ad = new Date(a.occurrenceDate), bd = new Date(b.occurrenceDate);
+                    return bd - ad; // 直近順
+                });
+
+            const first = pastData[0];
+            const others = pastData.slice(1);
 
             let html = `
                 <div style="margin-bottom:10px;padding:10px;background:#fff;border-radius:4px;border-left:3px solid #4caf50;">
                     <strong style="color:#2e7d32;">✅ この品番（${esc(serialNo)}）で類似の異常が過去に${pastData.length}件あります</strong>
                     <div style="font-size:0.85rem;color:#666;margin-top:5px;">現在の異常: ${esc(currentData.anomalyContent)}</div>
-                </div>`;
+                </div>
 
-            pastData.forEach((item, index)=>{
-                const matchCount = keywords.filter(kw => item.anomalyContent.toLowerCase().includes(kw)).length;
-                const matchRate = Math.round((matchCount / Math.max(keywords.length,1)) * 100);
-                html += `
+                <!-- 直近1件のみ表示 -->
                 <div class="past-history-item">
                     <div class="past-history-date">
-                        📅 ${esc(item.occurrenceDate)} ${item.occurrenceTime ? `(${esc(item.occurrenceTime)})` : ''}
-                        ${index===0 ? '<span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:10px;margin-left:10px;font-size:0.8rem;">最も類似</span>' : ''}
-                        <span style="background:#2196f3;color:#fff;padding:2px 8px;border-radius:10px;margin-left:5px;font-size:0.8rem;">一致度 ${matchRate}%</span>
+                        📅 ${esc(first.occurrenceDate)} ${first.occurrenceTime ? `(${esc(first.occurrenceTime)})` : ''}
+                        <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:10px;margin-left:10px;font-size:0.8rem;">直近</span>
+                        ${first._score ? `<span style="background:#2196f3;color:#fff;padding:2px 8px;border-radius:10px;margin-left:5px;font-size:0.8rem;">一致語数 ${first._score}</span>` : ''}
                     </div>
                     <div class="past-history-field">
                         <strong>📝 異常内容</strong>
-                        <div>${esc(item.anomalyContent)}</div>
+                        <div>${esc(first.anomalyContent)}</div>
                     </div>
                     <div class="past-history-field">
                         <strong>🔧 製造処置内容</strong>
-                        <div>${esc(item.actionTaken)}</div>
+                        <div>${esc(first.actionTaken)}</div>
                     </div>
                     <div class="past-history-field">
                         <strong>💡 技術処置内容（何が悪くどうした）</strong>
-                        <div>${esc(item.rootCauseAction)}</div>
-                        <button type="button" class="copy-btn" onclick="applySuggestion('rootCauseAction', '${esc(item.rootCauseAction)}')">📋 コピー</button>
+                        <div>${esc(first.rootCauseAction)}</div>
+                        <button type="button" class="copy-btn" onclick="applySuggestion('rootCauseAction', '${esc(first.rootCauseAction)}')">📋 コピー</button>
                     </div>
-                    ${item.maintenanceUnit ? `
-                    <div class="past-history-field">
-                        <strong>🔩 保全単位</strong>
-                        <div>${esc(item.maintenanceUnit)}</div>
-                        <button type="button" class="copy-btn" onclick="applySuggestion('maintenanceUnit', '${esc(item.maintenanceUnit)}')">📋 コピー</button>
-                    </div>` : ''}
                     <div style="margin-top:10px;font-size:0.85rem;color:#666;">
-                        ${item.techHandler ? `技術処置者: ${esc(item.techHandler)} | ` : ''}
-                        ${item.recurrenceType ? `区分: ${esc(item.recurrenceType)} | ` : ''}
-                        ${item.department ? `部署: ${esc(item.department)}` : ''}
+                        ${first.techHandler ? `技術処置者: ${esc(first.techHandler)} | ` : ''}
+                        ${first.recurrenceType ? `区分: ${esc(first.recurrenceType)} | ` : ''}
+                        ${first.department ? `部署: ${esc(first.department)}` : ''}
                     </div>
-                </div>`;
-            });
+                </div>
+            `;
+
+            // 他◯件のトグル
+            if (others.length > 0){
+                const otherListId = 'otherPast_' + currentRecordId;
+                html += `
+                    <div>
+                        <a class="toggle-link" href="javascript:void(0)" onclick="toggleOthers('${otherListId}', this)">他${others.length}件を表示</a>
+                        <div id="${otherListId}" style="display:none; margin-top:10px;">
+                            ${others.map(item => `
+                                <div class="past-history-item">
+                                    <div class="past-history-date">
+                                        📅 ${esc(item.occurrenceDate)} ${item.occurrenceTime ? `(${esc(item.occurrenceTime)})` : ''}
+                                        ${item._score ? `<span style="background:#2196f3;color:#fff;padding:2px 8px;border-radius:10px;margin-left:5px;font-size:0.8rem;">一致語数 ${item._score}</span>` : ''}
+                                    </div>
+                                    <div class="past-history-field">
+                                        <strong>📝 異常内容</strong>
+                                        <div>${esc(item.anomalyContent)}</div>
+                                    </div>
+                                    <div class="past-history-field">
+                                        <strong>🔧 製造処置内容</strong>
+                                        <div>${esc(item.actionTaken)}</div>
+                                    </div>
+                                    <div class="past-history-field">
+                                        <strong>💡 技術処置内容（何が悪くどうした）</strong>
+                                        <div>${esc(item.rootCauseAction)}</div>
+                                        <button type="button" class="copy-btn" onclick="applySuggestion('rootCauseAction', '${esc(item.rootCauseAction)}')">📋 コピー</button>
+                                    </div>
+                                    <div style="margin-top:10px;font-size:0.85rem;color:#666;">
+                                        ${item.techHandler ? `技術処置者: ${esc(item.techHandler)} | ` : ''}
+                                        ${item.recurrenceType ? `区分: ${esc(item.recurrenceType)} | ` : ''}
+                                        ${item.department ? `部署: ${esc(item.department)}` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
 
             content.innerHTML = html;
             area.style.display='block';
+        }
+
+        function toggleOthers(id, anchor){
+            const box = document.getElementById(id);
+            const opened = box.style.display !== 'none';
+            box.style.display = opened ? 'none' : 'block';
+            if (anchor){
+                anchor.textContent = opened ? anchor.textContent.replace('隠す','表示')
+                                            : anchor.textContent.replace('表示','隠す');
+            }
         }
 
         function showTechSuggestions(serialNo){
@@ -1168,7 +1219,7 @@
                     <div class="suggestion-category-title">🔩 保全単位の候補（品番: ${esc(serialNo)}）</div>
                     <div>
                         ${maintenanceUnits.map(text =>
-                            `<button type="button" class="suggestion-btn" onclick="applySuggestion('maintenanceUnit', '${esc(text)}')">${esc(truncateText(text,20))}</button>`
+                            `<button type="button" class="suggestion-btn" onclick="applySuggestion('maintenanceUnit', '${esc(truncateText(text,20))}')">${esc(truncateText(text,20))}</button>`
                         ).join('')}
                     </div>
                 </div>`;
@@ -1704,7 +1755,6 @@
         }
 
         // ===== イベント補助 =====
-        // テキストエリア：Enter送信 / Ctrl+Enter改行
         function enableTextareaShortcuts(){
             ['anomalyContent','actionTaken','rootCauseAction'].forEach(id=>{
                 const el = document.getElementById(id);
