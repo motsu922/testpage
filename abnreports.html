@@ -344,7 +344,7 @@
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
-  import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, where, enableIndexedDbPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+ import { getFirestore, collection, addDoc, getDoc, getDocs, onSnapshot, query, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, where, enableIndexedDbPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
   import { getStorage, ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
 
   const firebaseConfig = {
@@ -989,18 +989,47 @@
   });
 
   async function deleteRecord(id){
-    if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
-    const baseRef = ref(storage, `anomalies/${id}`);
-    try{
-      const all = await listAll(baseRef);
-      for (const f of all.items){ await deleteObject(f); }
-      for (const p of all.prefixes){
-        const all2 = await listAll(p);
-        for (const f2 of all2.items){ await deleteObject(f2); }
-      }
-    }catch(err){}
-    await deleteDoc(doc(db,'anomalies',id));
+  if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
+
+  // 1) ドキュメントを取得してURL配列を取り出す
+  let data = {};
+  try{
+    const snap = await getDoc(doc(db,'anomalies', id));
+    if (!snap.exists()){
+      alert('ドキュメントが見つかりません'); 
+      return;
+    }
+    data = snap.data() || {};
+  }catch(e){
+    alert('取得エラー: ' + (e.code||e.message));
+    return;
   }
+
+  // 2) URL直指定で画像削除（失敗は記録するが続行）
+  const urls = []
+    .concat(data.mfgPhotoUrls || [])
+    .concat(data.techPhotoUrls || []);
+  const storageErrors = [];
+  for (const u of urls){
+    try{
+      await deleteObject(ref(storage, u)); // https:// or gs:// どちらでもOK
+    }catch(e){
+      storageErrors.push(`${u} : ${e.code||e.message}`);
+    }
+  }
+
+  // 3) 最後に Firestore ドキュメント削除（ここが本丸）
+  try{
+    await deleteDoc(doc(db,'anomalies', id));
+    if (storageErrors.length){
+      alert('レコードは削除しました（画像の一部は削除失敗）：\n' + storageErrors.join('\n'));
+    }
+    // onSnapshotでUIから消えます
+  }catch(e){
+    alert('レコード削除エラー: ' + (e.code||e.message));
+  }
+}
+
 
   document.getElementById('btnExport').addEventListener('click', ()=>{
     if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
