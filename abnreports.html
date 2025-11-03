@@ -2,1320 +2,676 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>異常履歴入力ツール（Firebase連携版）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>出荷作業 異常履歴管理（RTDB版）</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f5}
-  .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-  .header h1{font-size:1.5rem;margin-bottom:5px}
-  .container{max-width:900px;margin:0 auto;padding:10px}
-  .tabs{display:flex;background:#fff;margin:15px 0 0;border-radius:8px 8px 0 0;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
-  .tab{flex:1;padding:15px;text-align:center;cursor:pointer;background:#f8f9fa;border:none;font-size:1rem;font-weight:bold;transition:.3s;color:#666}
-  .tab.active{background:#fff;color:#667eea;border-bottom:3px solid #667eea}
-  .tab-content{display:none;background:#fff;padding:20px;border-radius:0 0 8px 8px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
-  .tab-content.active{display:block}
-  .form-group{margin-bottom:20px}
-  .form-group label{display:block;margin-bottom:8px;font-weight:bold;color:#333;font-size:.95rem}
-  .form-group input,.form-group textarea,.form-group select{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:6px;font-size:1rem;transition:border-color .3s}
-  .form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:#667eea}
-  .form-group textarea{min-height:100px;resize:vertical}
-  .time-group{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .photo-upload{border:2px dashed #e0e0e0;border-radius:6px;padding:20px;text-align:center;cursor:pointer;transition:.3s}
-  .photo-upload:hover{border-color:#667eea;background:#f8f9ff}
-  .photo-upload input[type=file]{display:none}
-  .photo-preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-top:15px}
-  .photo-item{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
-  .photo-item img{width:100%;height:100%;object-fit:cover}
-  .photo-item .remove-btn{position:absolute;top:5px;right:5px;background:rgba(255,59,48,.9);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:1}
-  .btn{width:100%;padding:15px;border:none;border-radius:6px;font-size:1rem;font-weight:bold;cursor:pointer;transition:.3s;margin-top:10px}
-  .btn-primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
-  .btn-secondary{background:#6c757d;color:#fff}
-  .btn-export{background:#28a745;color:#fff}
-  .history-controls{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap}
-  .view-toggle{display:flex;gap:5px}
-  .view-toggle button{padding:8px 15px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
-  .view-toggle button.active{background:#667eea;color:#fff}
-  .card-view{display:grid;gap:15px}
-  .anomaly-card{background:#fff;border-radius:8px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,.1);border-left:4px solid #667eea}
-  .anomaly-card.complete{border-left-color:#28a745}
-  .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e0e0e0}
-  .card-id{font-size:1.2rem;font-weight:bold;color:#667eea}
-  .card-status{padding:4px 12px;border-radius:12px;font-size:.85rem;font-weight:bold}
-  .status-pending{background:#fff3cd;color:#856404}
-  .status-complete{background:#d4edda;color:#155724}
-  .card-body{display:grid;gap:8px}
-  .card-field{display:grid;grid-template-columns:120px 1fr;gap:10px}
-  .field-label{font-weight:bold;color:#666}
-  .field-value{color:#333}
-  .table-view{overflow-x:auto;display:none}
-  .table-view.active{display:block}
-  table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-  th,td{padding:12px;text-align:left;border-bottom:1px solid #e0e0e0}
-  th{background:#667eea;color:#fff;font-weight:bold;position:sticky;top:0}
-  tr:hover{background:#f8f9ff}
-  .action-btns{display:flex;gap:6px;flex-wrap:wrap}
-  .btn-small{padding:6px 10px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
-  .btn-edit{background:#ffc107;color:#000}
-  .btn-delete{background:#dc3545;color:#fff}
-  .empty-state{text-align:center;padding:40px 20px;color:#999}
-  .empty-state-icon{font-size:3rem;margin-bottom:15px}
-  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
-  .modal.active{display:flex}
-  .modal-content{background:#fff;padding:20px;border-radius:8px;max-width:680px;width:95%;max-height:90vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.2)}
-  .modal-title{font-size:1.1rem;font-weight:bold;margin-bottom:10px;color:#333}
-  .edit-tabs{display:flex;gap:8px;margin:8px 0 16px}
-  .edit-tab{flex:1;padding:10px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
-  .edit-tab.active{background:#667eea;color:#fff}
-  .modal-actions{display:flex;gap:10px;margin-top:10px}
-  .btn-cancel{background:#9e9e9e;color:#fff}
-  @media (max-width:600px){
-    .card-field{grid-template-columns:1fr;gap:5px}
-    .time-group{grid-template-columns:1fr}
-    table{font-size:.85rem}
-    th,td{padding:8px}
+  :root{
+    --bg:#f5f7fb; --card:#fff; --ink:#1f2937; --muted:#6b7280;
+    --brand:#6366f1; --ok:#10b981; --warn:#f59e0b; --bad:#ef4444; --b:#e5e7eb;
   }
-  #authGate{position:fixed;inset:0;background:#f5f5f5;display:flex;align-items:center;justify-content:center;z-index:2000}
-  #authCard{background:#fff;max-width:380px;width:92%;padding:24px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15)}
-  #signOutBtn{position:fixed;right:12px;top:12px;background:#ef5350;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;z-index:1500}
-  
-  /* ワード候補スタイル */
-  .word-suggestions{position:relative;}
-  .word-suggestion-box{position:absolute;z-index:100;background:#fff;border:2px solid #667eea;border-radius:8px;padding:10px;max-height:300px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15);display:none;width:100%;margin-top:5px;}
-  .word-suggestion-box.active{display:block;}
-  .word-suggestion-header{font-size:.85rem;color:#667eea;font-weight:bold;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #e0e0e0;}
-  .word-tag{display:inline-block;background:#f0f7ff;color:#667eea;padding:6px 12px;margin:3px;border-radius:16px;cursor:pointer;font-size:.85rem;transition:.2s;border:1px solid #e3f2fd;}
-  .word-tag:hover{background:#667eea;color:#fff;transform:translateY(-2px);box-shadow:0 2px 8px rgba(102,126,234,.3);}
-  
-  /* 類似案件表示スタイル */
-  .similar-cases-box{background:#fff4e6;border:2px solid #f57c00;border-radius:8px;padding:15px;margin-bottom:20px;display:none;}
-  .similar-cases-box.active{display:block;}
-  .similar-cases-header{color:#f57c00;font-weight:bold;margin-bottom:15px;font-size:1rem;display:flex;align-items:center;gap:8px;}
-  .similar-case-item{background:#fff;border-left:3px solid #f57c00;border-radius:6px;padding:12px;margin-bottom:10px;}
-  .similar-case-item:last-child{margin-bottom:0;}
-  .similar-case-date{font-weight:bold;color:#f57c00;margin-bottom:8px;font-size:.95rem;}
-  .similar-case-content{font-size:.9rem;color:#333;line-height:1.5;margin-bottom:8px;}
-  .similar-case-tech{margin-top:8px;padding-top:8px;border-top:1px solid #ffe0b2;font-size:.9rem;color:#666;}
-  .similar-case-tech strong{color:#f57c00;}
-  .show-more-btn{width:100%;padding:10px;background:#fff;color:#f57c00;border:2px solid #f57c00;border-radius:6px;font-weight:bold;cursor:pointer;transition:.2s;margin-top:10px;}
-  .show-more-btn:hover{background:#f57c00;color:#fff;}
-  
-  /* 統計カードスタイル */
-  .stat-card{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;}
-  .stat-card h4{font-size:.9rem;margin-bottom:10px;opacity:.9;}
-  .stat-value{font-size:2.5rem;font-weight:bold;margin-bottom:5px;}
-  .stat-label{font-size:.85rem;opacity:.8;}
-  .chart-bar{background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);height:30px;display:flex;align-items:center;padding:0 10px;color:#fff;font-weight:bold;border-radius:4px;transition:.3s;}
-  .analysis-insight{border-left:4px solid #2196f3;padding:15px;border-radius:6px;background:#e3f2fd;line-height:1.6;}
-  .trend-badge{display:inline-block;padding:3px 12px;border-radius:12px;font-weight:bold;margin:0 5px;}
-  .trend-increase{background:#ffebee;color:#c62828;}
-  .trend-decrease{background:#e8f5e9;color:#2e7d32;}
-  .trend-stable{background:#fff3e0;color:#ef6c00;}
+  *{ box-sizing:border-box }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif }
+  .container{ max-width:1200px; margin:24px auto; padding:0 16px }
+  .header{ background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; padding:20px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.12) }
+  .grid{ display:grid; gap:16px }
+  @media(min-width:980px){ .grid-2{ grid-template-columns:1fr 1fr } .grid-3{ grid-template-columns:1fr 1fr 1fr } }
+  .card{ background:var(--card); border:1px solid var(--b); border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.04) }
+  .card h3{ margin:0; padding:14px 16px; border-bottom:1px solid var(--b) }
+  .card .body{ padding:14px 16px }
+  label{ display:block; font-size:12px; color:var(--muted); margin:10px 0 6px }
+  input,select,textarea{ width:100%; padding:10px 12px; border:1px solid var(--b); border-radius:10px; background:#fff; font-size:14px }
+  textarea{ min-height:80px; resize:vertical }
+  .row{ display:grid; gap:10px; grid-template-columns:1fr 1fr }
+  .btn{ display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:10px; border:1px solid var(--b); background:#fff; cursor:pointer; font-weight:600 }
+  .btn.brand{ background:var(--brand); color:#fff; border-color:transparent }
+  .btn.ok{ background:var(--ok); color:#fff; border-color:transparent }
+  .btn.bad{ background:var(--bad); color:#fff; border-color:transparent }
+  .btn.small{ padding:6px 10px; font-size:12px }
+  .list .item{ display:flex; gap:12px; padding:12px 10px; border-bottom:1px solid var(--b); align-items:flex-start }
+  .pill{ display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--b); color:var(--muted) }
+  .muted{ color:var(--muted) }
+  .thumbs{ display:flex; gap:8px; flex-wrap:wrap }
+  .thumbs img{ width:100px; height:100px; object-fit:cover; border-radius:8px; border:1px solid var(--b) }
+  .toolbar{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0 12px }
+  .right{ margin-left:auto }
+  .hidden{ display:none !important }
+  .danger{ color:var(--bad) }
+  .hr{ height:1px; background:var(--b); margin:10px 0 }
+  .footer-info{ font-size:12px; color:var(--muted); padding-top:8px }
+  /* サインインモーダル */
+  .modal{ position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:50 }
+  .modal .dialog{ width:min(420px,92vw); background:#fff; border-radius:12px; padding:20px; box-shadow:0 20px 60px rgba(0,0,0,.25) }
+  .dialog h2{ margin:0 0 8px }
+  .center{ text-align:center }
 </style>
 </head>
 <body>
-  <button id="signOutBtn" style="display:none;">サインアウト</button>
-  <div id="authGate">
-    <div id="authCard">
-      <h2 style="margin-bottom:10px;color:#667eea;">🔐 サインイン</h2>
-      <p style="color:#666;margin-bottom:15px;">社内メールでログインしてください</p>
-      <div class="form-group">
-        <label>メールアドレス</label>
-        <input type="email" id="authEmail" placeholder="user@miyama-unitec.co.jp">
+  <div id="authModal" class="modal">
+    <div class="dialog">
+      <h2>サインイン</h2>
+      <p class="muted" style="margin:0 0 12px">メールアドレスとパスワードを入力してください。</p>
+      <label>メール</label>
+      <input id="email" type="email" placeholder="you@example.com"/>
+      <label>パスワード</label>
+      <input id="password" type="password" placeholder="••••••••"/>
+      <div class="toolbar" style="margin-top:12px">
+        <button id="btnSignIn" class="btn brand">サインイン</button>
+        <button id="btnRegister" class="btn">新規登録</button>
+        <span id="authMsg" class="muted"></span>
       </div>
-      <div class="form-group">
-        <label>パスワード</label>
-        <input type="password" id="authPassword" placeholder="••••••••">
-      </div>
-      <button class="btn btn-primary" id="authLoginBtn">ログイン</button>
-      <p id="authMsg" style="color:#c62828;margin-top:10px;"></p>
     </div>
   </div>
 
-  <div class="header">
-    <h1>📋 異常履歴入力ツール</h1>
-    <p>Firebase連携版（Auth / Firestore / Storage）</p>
-  </div>
-
-  <div class="container" style="display:none" id="appRoot">
-    <div class="tabs">
-      <button class="tab active" data-tab="manufacturing">製造入力</button>
-      <button class="tab" data-tab="technical">技術入力</button>
-      <button class="tab" data-tab="history">履歴</button>
-      <button class="tab" data-tab="analysis">📊 分析</button>
-      <button class="tab" data-tab="master">⚙️ 管理</button>
+  <div id="app" class="container hidden">
+    <div class="header">
+      <h1 style="margin:0 0 6px;">出荷作業 異常履歴管理（RTDB版）</h1>
+      <div class="toolbar">
+        <span id="loginInfo" class="pill">—</span>
+        <span class="right"></span>
+        <button id="btnSignOut" class="btn">サインアウト</button>
+      </div>
     </div>
 
-    <!-- 製造入力 -->
-    <div id="manufacturing" class="tab-content active">
-      <h2 style="margin-bottom:20px;color:#667eea;">製造部門 - 異常報告</h2>
-      <form id="manufacturingForm">
-        <div style="background:#f0f7ff;padding:15px;border-radius:6px;margin-bottom:20px;">
-          <h3 style="color:#667eea;margin-bottom:15px;font-size:1.1rem;">📅 いつ</h3>
-          <div class="form-group">
-            <label>発生日 *</label>
-            <div style="display:flex;gap:10px;">
-              <input type="date" id="occurrenceDate" required style="flex:1;">
-              <button type="button" class="btn btn-secondary" style="width:auto;padding:12px 20px;margin:0;background:#17a2b8;" id="btnNowDate">📅 NOW</button>
+    <div class="grid grid-2" style="margin-top:16px">
+      <!-- 製造入力 -->
+      <div class="card">
+        <h3>① 製造／現場入力</h3>
+        <div class="body">
+          <div class="row">
+            <div>
+              <label>部署</label>
+              <select id="mfgDepartment"></select>
+            </div>
+            <div>
+              <label>ライン</label>
+              <select id="mfgLine"></select>
             </div>
           </div>
-          <div class="form-group">
-            <label>時刻</label>
-            <div class="time-group">
-              <div>
-                <label style="font-weight:normal;font-size:.9rem;">発生時刻</label>
-                <div style="display:flex;gap:5px;">
-                  <input type="time" id="occurrenceTime" style="flex:1;">
-                  <button type="button" class="btn btn-secondary" style="width:auto;padding:8px 12px;margin:0;font-size:.85rem;background:#17a2b8;" data-now="occurrenceTime">NOW</button>
-                </div>
+          <div class="row">
+            <div>
+              <label>発生日（YYYY-MM-DD HH:mm）</label>
+              <input id="occurAt" type="datetime-local"/>
+            </div>
+            <div>
+              <label>作業者</label>
+              <input id="mfgOperator" placeholder="氏名"/>
+            </div>
+          </div>
+          <label>異常分類</label>
+          <select id="mfgCategory">
+            <option value="品違い">品違い</option>
+            <option value="数量違い">数量違い</option>
+            <option value="ラベル不備">ラベル不備</option>
+            <option value="作業ミス">作業ミス</option>
+            <option value="その他">その他</option>
+          </select>
+          <label>異常内容（現象）</label>
+          <textarea id="mfgDetail" placeholder="現象を簡潔に…"></textarea>
+          <label>一次処置（現場）</label>
+          <textarea id="mfgAction" placeholder="隔離、手直し、差し替え 等"></textarea>
+
+          <label>写真（複数可／jpg,png）</label>
+          <input id="mfgPhotos" type="file" accept="image/*" multiple/>
+
+          <div class="toolbar" style="margin-top:10px">
+            <button id="btnMfgSubmit" class="btn ok">登録</button>
+            <span id="mfgMsg" class="muted"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 技術入力 -->
+      <div class="card">
+        <h3>② 技術／品管 追記</h3>
+        <div class="body">
+          <div class="row">
+            <div>
+              <label>対象（履歴から選択）</label>
+              <select id="techTarget"></select>
+            </div>
+            <div>
+              <label>処置者</label>
+              <select id="techHandler"></select>
+            </div>
+          </div>
+          <label>原因（推定／確定）</label>
+          <textarea id="techCause" placeholder="なぜ起きたか。4M・なぜなぜ等"></textarea>
+          <label>恒久対策／横展</label>
+          <textarea id="techCounter" placeholder="対策、再発防止、横展先 等"></textarea>
+
+          <label>写真追加</label>
+          <input id="techPhotos" type="file" accept="image/*" multiple/>
+
+          <div class="toolbar" style="margin-top:10px">
+            <button id="btnTechUpdate" class="btn brand">更新</button>
+            <span id="techMsg" class="muted"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- マスタ管理 -->
+      <div class="card">
+        <h3>③ マスタ管理</h3>
+        <div class="body">
+          <div class="grid grid-3">
+            <div>
+              <label>部署 追加</label>
+              <div class="row">
+                <input id="newDepartment" placeholder="例：出荷"/>
+                <button id="btnAddDept" class="btn small">追加</button>
               </div>
-              <div>
-                <label style="font-weight:normal;font-size:.9rem;">再開時刻</label>
-                <div style="display:flex;gap:5px;">
-                  <input type="time" id="restartTime" style="flex:1;">
-                  <button type="button" class="btn btn-secondary" style="width:auto;padding:8px 12px;margin:0;font-size:.85rem;background:#17a2b8;" data-now="restartTime">NOW</button>
-                </div>
+              <div id="departmentList" class="list" style="margin-top:8px"></div>
+            </div>
+            <div>
+              <label>ライン 追加</label>
+              <div class="row">
+                <select id="lineDept"></select>
+                <input id="newLine" placeholder="例：C1"/>
               </div>
+              <div class="toolbar" style="margin-top:6px">
+                <button id="btnAddLine" class="btn small">追加</button>
+              </div>
+              <div id="lineList" class="list" style="margin-top:8px"></div>
+            </div>
+            <div>
+              <label>処置者 追加</label>
+              <div class="row">
+                <select id="handlerDept"></select>
+                <input id="newHandler" placeholder="例：品質・中村"/>
+              </div>
+              <div class="toolbar" style="margin-top:6px">
+                <button id="btnAddHandler" class="btn small">追加</button>
+              </div>
+              <div id="handlerList" class="list" style="margin-top:8px"></div>
             </div>
           </div>
         </div>
+      </div>
 
-        <div style="background:#fff4e6;padding:15px;border-radius:6px;margin-bottom:20px;">
-          <h3 style="color:#f57c00;margin-bottom:15px;font-size:1.1rem;">📍 どこで</h3>
-          <div class="form-group"><label>部署 *</label><select id="department" required></select></div>
-          <div class="form-group"><label>ライン名 *</label><select id="lineName" required><option value="">部署を先に選択してください</option></select></div>
-          <div class="form-group"><label>処置者 *</label><select id="handler" required><option value="">部署を先に選択してください</option></select></div>
-        </div>
-
-        <div style="background:#f3e5f5;padding:15px;border-radius:6px;margin-bottom:20px;">
-          <h3 style="color:#8e24aa;margin-bottom:15px;font-size:1.1rem;">🔢 整理No</h3>
-          <div class="form-group"><label>整理No *</label><input type="text" id="serialNo" required placeholder="例: 2024-001"></div>
-        </div>
-
-        <div style="background:#e8f5e9;padding:15px;border-radius:6px;margin-bottom:20px;">
-          <h3 style="color:#2e7d32;margin-bottom:15px;font-size:1.1rem;">📝 何があった</h3>
-          
-          <div class="form-group word-suggestions">
-            <label>異常内容 *</label>
-            <textarea id="anomalyContent" required></textarea>
-            <!-- ワード候補 -->
-            <div id="anomalyWordSuggestions" class="word-suggestion-box">
-              <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
-              <div id="anomalyWords"></div>
-            </div>
-          </div>
-          
-          <div class="form-group word-suggestions">
-            <label>製造処置内容 *</label>
-            <textarea id="actionTaken" required></textarea>
-            <!-- ワード候補 -->
-            <div id="actionWordSuggestions" class="word-suggestion-box">
-              <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
-              <div id="actionWords"></div>
-            </div>
-          </div>
-          <div class="form-group"><label>遡り *</label>
-            <select id="traceback" required><option value="">選択</option><option value="有">有</option><option value="無">無</option></select>
-          </div>
-          <div class="form-group"><label>技術要請 *</label>
-            <select id="techRequest" required>
-              <option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option>
+      <!-- 履歴 -->
+      <div class="card" style="grid-column:1/-1">
+        <h3>④ 履歴</h3>
+        <div class="body">
+          <div class="toolbar">
+            <input id="qText" placeholder="キーワード検索（現象・対策・原因）"/>
+            <select id="qDept"></select>
+            <select id="qCategory">
+              <option value="">分類すべて</option>
+              <option>品違い</option><option>数量違い</option><option>ラベル不備</option><option>作業ミス</option><option>その他</option>
             </select>
+            <span class="right"></span>
+            <button id="btnExport" class="btn">CSV出力</button>
           </div>
-          <div class="form-group">
-            <label>写真</label>
-            <div class="photo-upload" onclick="document.getElementById('mfgPhotos').click()">
-              <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
-              <input type="file" id="mfgPhotos" accept="image/*" multiple>
-            </div>
-            <div id="mfgPhotoPreview" class="photo-preview"></div>
-          </div>
+          <div id="history" class="list"></div>
+          <div class="footer-info">最新50件を表示（検索条件により変動）</div>
         </div>
-        <button type="submit" class="btn btn-primary">登録</button>
-      </form>
-    </div>
-
-    <!-- 技術入力 -->
-    <div id="technical" class="tab-content">
-      <h2 style="margin-bottom:20px;color:#667eea;">技術部門 - 追加入力</h2>
-      
-      <div class="form-group">
-        <label>対象の案件選択 *</label>
-        <select id="selectSerialNo"><option value="">案件を選択してください</option></select>
-      </div>
-      
-      <!-- 類似案件自動表示 -->
-      <div id="similarCasesBox" class="similar-cases-box">
-        <div class="similar-cases-header">🔍 同じ整理Noの過去対応事例</div>
-        <div id="similarCasesContent"></div>
-        <button type="button" id="showMoreCases" class="show-more-btn" style="display:none;">他の類似案件を表示</button>
-      </div>
-      
-      <div id="selectedDataDisplay" style="background:#f8f9ff;padding:15px;border-radius:6px;margin-bottom:20px;display:none;">
-        <h3 style="color:#667eea;margin-bottom:10px;">製造部門入力内容</h3>
-        <div id="displayContent"></div>
-      </div>
-      
-      <form id="technicalForm">
-        <div class="form-group"><label>技術処置者 *</label><input type="text" id="techHandler"></div>
-        <div class="form-group"><label>命数有無 *</label><select id="lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
-        <div class="form-group"><label>保全単位</label><input type="text" id="maintenanceUnit"></div>
-        <div class="form-group"><label>何が悪くどうした</label><textarea id="rootCauseAction"></textarea></div>
-        <div class="form-group"><label>再発か新規か *</label><select id="recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
-        <div class="form-group">
-          <label>写真</label>
-          <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
-            <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
-            <input type="file" id="techPhotos" accept="image/*" multiple>
-          </div>
-          <div id="techPhotoPreview" class="photo-preview"></div>
-        </div>
-        <button type="submit" class="btn btn-primary">登録</button>
-      </form>
-    </div>
-
-    <!-- 履歴 -->
-    <div id="history" class="tab-content">
-      <h2 style="margin-bottom:20px;color:#667eea;">異常履歴</h2>
-      <div class="history-controls">
-        <div class="view-toggle"><button class="active" data-view="card">カード</button><button data-view="table">テーブル</button></div>
-        <button class="btn btn-export" style="flex:1;" id="btnExport">📥 CSV出力</button>
-      </div>
-      <div id="cardView" class="card-view"></div>
-      <div id="tableView" class="table-view"></div>
-    </div>
-
-    <!-- 分析 -->
-    <div id="analysis" class="tab-content">
-      <h2 style="margin-bottom:20px;color:#ff9800;">📊 異常データ分析</h2>
-      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
-        <h3 style="color:#ff9800;margin-bottom:15px;">📈 統計情報</h3>
-        <div id="statisticsDisplay" style="display:grid;gap:15px;"></div>
-      </div>
-      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
-        <h3 style="color:#ff9800;margin-bottom:15px;">📊 月別傾向分析</h3>
-        <div id="trendChart" style="min-height:300px;"></div>
-        <div id="trendAnalysis" style="margin-top:15px;"></div>
-      </div>
-      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
-        <h3 style="color:#ff9800;margin-bottom:15px;">🏢 部署・ライン別分析</h3>
-        <div id="departmentAnalysis" style="display:grid;gap:15px;"></div>
-      </div>
-      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
-        <h3 style="color:#ff9800;margin-bottom:15px;">🔄 再発・新規分析</h3>
-        <div id="recurrenceAnalysis"></div>
-      </div>
-    </div>
-
-    <!-- 管理 -->
-    <div id="master" class="tab-content">
-      <h2 style="margin-bottom:20px;color:#667eea;">⚙️ マスタ管理</h2>
-      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
-        <h3 style="color:#667eea;margin-bottom:15px;">部署管理</h3>
-        <div style="display:flex;gap:10px;margin-bottom:15px;">
-          <input type="text" id="newDepartment" placeholder="新しい部署名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
-          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;" id="btnAddDept">追加</button>
-        </div>
-        <div id="departmentList" style="display:grid;gap:10px;"></div>
-      </div>
-
-      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
-        <h3 style="color:#f57c00;margin-bottom:15px;">ライン名管理</h3>
-        <div class="form-group"><label>対象部署</label><select id="lineManageDept"><option value="">部署を選択</option></select></div>
-        <div style="display:flex;gap:10px;margin-bottom:15px;">
-          <input type="text" id="newLine" placeholder="新しいライン名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
-          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#f57c00;" id="btnAddLine">追加</button>
-        </div>
-        <div id="lineList" style="display:grid;gap:10px;"></div>
-      </div>
-
-      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
-        <h3 style="color:#2e7d32;margin-bottom:15px;">処置者管理</h3>
-        <div class="form-group"><label>対象部署</label><select id="handlerManageDept"><option value="">部署を選択</option></select></div>
-        <div style="display:flex;gap:10px;margin-bottom:15px;">
-          <input type="text" id="newHandler" placeholder="新しい処置者名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
-          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#2e7d32;" id="btnAddHandler">追加</button>
-        </div>
-        <div id="handlerList" style="display:grid;gap:10px;"></div>
       </div>
     </div>
   </div>
 
 <script type="module">
-  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
-  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
- import { getFirestore, collection, addDoc, getDoc, getDocs, onSnapshot, query, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, where, enableIndexedDbPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
-  import { getStorage, ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
+  // --- Firebase SDKs ---
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+  import { getDatabase, ref, child, get, set, push, update, remove, onValue, query, orderByChild, equalTo, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+  import { getStorage, ref as sRef, uploadBytes, getDownloadURL, listAll, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
 
+  // --- Firebase Config ---
   const firebaseConfig = {
-    apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
-    authDomain: "abnreport-fd733.firebaseapp.com",
-    projectId: "abnreport-fd733",
-    storageBucket: "abnreport-fd733.appspot.com",
-    messagingSenderId: "349748947315",
-    appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
+    // TODO: あなたの firebaseConfig に置き換え
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "YOUR_PROJECT",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    appId: "YOUR_APP_ID"
   };
 
+  // --- Init ---
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getFirestore(app);
+  const db = getDatabase(app);
   const storage = getStorage(app);
-  enableIndexedDbPersistence(db).catch(()=>{});
 
-  const gate = document.getElementById('authGate');
-  const appRoot = document.getElementById('appRoot');
-  const signOutBtn = document.getElementById('signOutBtn');
-  
-  document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
-    const email = (document.getElementById('authEmail').value||'').trim();
-    const pw = document.getElementById('authPassword').value;
+  // --- Refs helper ---
+  const R = {
+    anomalies:      () => ref(db, "anomalies"),
+    anomaly:        (id) => ref(db, `anomalies/${id}`),
+    masters: {
+      departments:  () => ref(db, "masters/department/items"),
+      lines:        () => ref(db, "masters/line/items"),
+      handlers:     () => ref(db, "masters/handler/items"),
+    },
+    storage: {
+      anomalyFolder: (id, folder) => sRef(storage, `anomalies/${id}/${folder}`),
+      anomalyFile:   (id, folder, filename) => sRef(storage, `anomalies/${id}/${folder}/${filename}`),
+    }
+  };
+
+  // --- DOM ---
+  const $ = (id)=>document.getElementById(id);
+  const el = {
+    authModal: $("authModal"), app: $("app"),
+    email: $("email"), password:$("password"), btnSignIn:$("btnSignIn"), btnRegister:$("btnRegister"), btnSignOut:$("btnSignOut"), authMsg:$("authMsg"), loginInfo:$("loginInfo"),
+    mfgDepartment:$("mfgDepartment"), mfgLine:$("mfgLine"), occurAt:$("occurAt"), mfgOperator:$("mfgOperator"), mfgCategory:$("mfgCategory"), mfgDetail:$("mfgDetail"), mfgAction:$("mfgAction"), mfgPhotos:$("mfgPhotos"), btnMfgSubmit:$("btnMfgSubmit"), mfgMsg:$("mfgMsg"),
+    techTarget:$("techTarget"), techHandler:$("techHandler"), techCause:$("techCause"), techCounter:$("techCounter"), techPhotos:$("techPhotos"), btnTechUpdate:$("btnTechUpdate"), techMsg:$("techMsg"),
+    newDepartment:$("newDepartment"), btnAddDept:$("btnAddDept"), departmentList:$("departmentList"),
+    lineDept:$("lineDept"), newLine:$("newLine"), btnAddLine:$("btnAddLine"), lineList:$("lineList"),
+    handlerDept:$("handlerDept"), newHandler:$("newHandler"), btnAddHandler:$("btnAddHandler"), handlerList:$("handlerList"),
+    qText:$("qText"), qDept:$("qDept"), qCategory:$("qCategory"), history:$("history"), btnExport:$("btnExport")
+  };
+
+  // --- State ---
+  let anomalyCache = []; // {_id, ...}
+  let masters = { departments:[], linesByDept:{}, handlersByDept:{} };
+
+  // --- Auth ---
+  el.btnSignIn.addEventListener("click", async ()=>{
+    el.authMsg.textContent = "サインイン中…";
     try{
-      await setPersistence(auth, browserLocalPersistence);
-      await signInWithEmailAndPassword(auth, email, pw);
-    }catch(e){
-      document.getElementById('authMsg').textContent = 'ログイン失敗: ' + (e.code||e.message);
-    }
+      const cred = await signInWithEmailAndPassword(auth, el.email.value, el.password.value);
+      el.authMsg.textContent = "OK";
+    }catch(e){ el.authMsg.textContent = "サインイン失敗：" + e.message; }
   });
-  signOutBtn.addEventListener('click', ()=> signOut(auth));
+  el.btnRegister.addEventListener("click", async ()=>{
+    el.authMsg.textContent = "登録中…";
+    try{
+      await createUserWithEmailAndPassword(auth, el.email.value, el.password.value);
+      el.authMsg.textContent = "登録完了。続けてサインインしました。";
+    }catch(e){ el.authMsg.textContent = "登録失敗：" + e.message; }
+  });
+  el.btnSignOut.addEventListener("click", async ()=>{ await signOut(auth); });
 
-  onAuthStateChanged(auth, (user)=>{
-    if (user){
-      gate.style.display='none';
-      appRoot.style.display='block';
-      signOutBtn.style.display='inline-block';
-      bootAfterLogin();
+  onAuthStateChanged(auth, async (user)=>{
+    if(user){
+      el.authModal.classList.add("hidden");
+      el.app.classList.remove("hidden");
+      el.loginInfo.textContent = user.email || user.uid;
+      await boot();
     }else{
-      appRoot.style.display='none';
-      gate.style.display='flex';
-      signOutBtn.style.display='none';
+      el.app.classList.add("hidden");
+      el.authModal.classList.remove("hidden");
+      anomalyCache = [];
     }
   });
 
-  let anomalyCache = [];
-  let mfgPhotos = [];
-  let techPhotos = [];
-  let currentView='card';
-  let mastersCache = null;
-
-  async function fetchMasters(){
-    const depSnap = await getDocs(collection(db,'masters','department','items'));
-    const lineSnap= await getDocs(collection(db,'masters','line','items'));
-    const hSnap   = await getDocs(collection(db,'masters','handler','items'));
-    const departments = depSnap.docs.map(d=>d.data().name).sort();
-    const lines = {};
-    lineSnap.forEach(d=>{
-      const {department,name} = d.data();
-      if (!lines[department]) lines[department]=[];
-      lines[department].push(name);
-    });
-    Object.keys(lines).forEach(k=> lines[k].sort());
-    const handlers = {};
-    hSnap.forEach(d=>{
-      const {department,name} = d.data();
-      if (!handlers[department]) handlers[department]=[];
-      handlers[department].push(name);
-    });
-    Object.keys(handlers).forEach(k=> handlers[k].sort());
-    return {departments, lines, handlers};
+  // --- Boot (after auth) ---
+  async function boot(){
+    await loadMasters();
+    bindMasterUI();
+    subscribeAnomalies();
   }
 
-  // ===== ワード候補機能（製造入力）=====
-  function extractCommonWords(field){
-    const words = {};
-    anomalyCache.forEach(item => {
-      const text = item[field] || '';
-      // 2文字以上の単語を抽出（句読点で分割）
-      const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
-      segments.forEach(seg => {
-        const trimmed = seg.trim();
-        if (trimmed.length >= 2 && trimmed.length <= 50) {
-          words[trimmed] = (words[trimmed] || 0) + 1;
-        }
-      });
+  // --- Masters ---
+  async function loadMasters(){
+    const [dep, line, h] = await Promise.all([
+      get(R.masters.departments()),
+      get(R.masters.lines()),
+      get(R.masters.handlers()),
+    ]);
+    const depObj = dep.val()||{};
+    const lineObj= line.val()||{};
+    const hObj   = h.val()  ||{};
+
+    const departments = Object.entries(depObj).map(([id,v])=>({id, name:v.name})).sort((a,b)=>a.name.localeCompare(b.name));
+    const linesByDept = {};
+    Object.entries(lineObj).forEach(([id,v])=>{
+      const d = v.department; (linesByDept[d] ||= []).push({id, name:v.name});
     });
-    
-    // 出現頻度順にソートして上位20件を返す
-    return Object.entries(words)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-      .map(([word]) => word);
+    Object.keys(linesByDept).forEach(k=> linesByDept[k].sort((a,b)=>a.name.localeCompare(b.name)));
+
+    const handlersByDept = {};
+    Object.entries(hObj).forEach(([id,v])=>{
+      const d = v.department; (handlersByDept[d] ||= []).push({id, name:v.name});
+    });
+    Object.keys(handlersByDept).forEach(k=> handlersByDept[k].sort((a,b)=>a.name.localeCompare(b.name)));
+
+    masters = { departments, linesByDept, handlersByDept };
+
+    // フォームへ反映
+    fillSelect(el.mfgDepartment, departments.map(x=>x.name));
+    fillSelect(el.lineDept,     departments.map(x=>x.name));
+    fillSelect(el.handlerDept,  departments.map(x=>x.name));
+    fillSelect(el.qDept,        ["部署すべて", ...departments.map(x=>x.name)]);
+
+    onDeptChangeForLines();
+    onDeptChangeForHandlers();
   }
-  
-  function showWordSuggestions(targetId, suggestionsBoxId, wordsContainerId, field){
-    const words = extractCommonWords(field);
-    const box = document.getElementById(suggestionsBoxId);
-    const container = document.getElementById(wordsContainerId);
-    
-    if (words.length === 0) {
-      box.classList.remove('active');
-      return;
+
+  function fillSelect(sel, arr){
+    const v = sel.value;
+    sel.innerHTML = arr.map(s=>`<option>${escapeHtml(s)}</option>`).join("");
+    if(arr.includes(v)) sel.value = v;
+  }
+
+  function onDeptChangeForLines(){
+    const d = el.mfgDepartment.value;
+    const arr = (masters.linesByDept[d]||[]).map(x=>x.name);
+    fillSelect(el.mfgLine, arr);
+    renderLineList(); // マスタ側
+  }
+  function onDeptChangeForHandlers(){
+    const d = el.handlerDept.value;
+    const arr = (masters.handlersByDept[d]||[]).map(x=>x.name);
+    fillSelect(el.techHandler, arr);
+    renderHandlerList();
+  }
+
+  el.mfgDepartment.addEventListener("change", onDeptChangeForLines);
+  el.handlerDept.addEventListener("change", onDeptChangeForHandlers);
+  el.lineDept.addEventListener("change", renderLineList);
+
+  // 部署追加／削除
+  el.btnAddDept.addEventListener("click", async ()=>{
+    const name = (el.newDepartment.value||"").trim();
+    if(!name) return;
+    await set(push(R.masters.departments()), { name });
+    el.newDepartment.value="";
+    await loadMasters();
+    renderDepartmentList();
+  });
+  function renderDepartmentList(){
+    const list = masters.departments;
+    el.departmentList.innerHTML = list.length
+      ? list.map(d => rowDeletable(d.name, ()=>deleteDepartmentByName(d.name))).join("")
+      : `<div class="muted">部署がありません</div>`;
+  }
+  async function deleteDepartmentByName(name){
+    const snap = await get(R.masters.departments());
+    const obj = snap.val()||{};
+    const target = Object.entries(obj).find(([,v])=>v.name===name);
+    if(!target) return;
+    await remove(child(R.masters.departments(), target[0]));
+    await loadMasters();
+    renderDepartmentList();
+  }
+
+  // ライン追加／削除
+  el.btnAddLine.addEventListener("click", async ()=>{
+    const dep = el.lineDept.value;
+    const name= (el.newLine.value||"").trim();
+    if(!dep || !name) return;
+    await set(push(R.masters.lines()), { department:dep, name });
+    el.newLine.value="";
+    await loadMasters();
+    renderLineList();
+  });
+  function renderLineList(){
+    const dep = el.lineDept.value;
+    const arr = masters.linesByDept[dep]||[];
+    el.lineList.innerHTML = arr.length
+      ? arr.map(x=>rowDeletable(x.name, ()=>deleteLineByName(dep, x.name))).join("")
+      : `<div class="muted">ラインがありません</div>`;
+  }
+  async function deleteLineByName(dep, name){
+    const snap = await get(R.masters.lines());
+    const obj = snap.val()||{};
+    const hit = Object.entries(obj).find(([,v])=> v.department===dep && v.name===name);
+    if(!hit) return;
+    await remove(child(R.masters.lines(), hit[0]));
+    await loadMasters();
+    renderLineList();
+  }
+
+  // 処置者追加／削除
+  el.btnAddHandler.addEventListener("click", async ()=>{
+    const dep = el.handlerDept.value;
+    const name= (el.newHandler.value||"").trim();
+    if(!dep || !name) return;
+    await set(push(R.masters.handlers()), { department:dep, name });
+    el.newHandler.value="";
+    await loadMasters();
+    renderHandlerList();
+  });
+  function renderHandlerList(){
+    const dep = el.handlerDept.value;
+    const arr = masters.handlersByDept[dep]||[];
+    el.handlerList.innerHTML = arr.length
+      ? arr.map(x=>rowDeletable(x.name, ()=>deleteHandlerByName(dep, x.name))).join("")
+      : `<div class="muted">処置者がありません</div>`;
+  }
+  async function deleteHandlerByName(dep, name){
+    const snap = await get(R.masters.handlers());
+    const obj = snap.val()||{};
+    const hit = Object.entries(obj).find(([,v])=> v.department===dep && v.name===name);
+    if(!hit) return;
+    await remove(child(R.masters.handlers(), hit[0]));
+    await loadMasters();
+    renderHandlerList();
+  }
+
+  function rowDeletable(text, onDel){
+    const id = "del_" + Math.random().toString(36).slice(2);
+    queueMicrotask(()=>{ const b=document.getElementById(id); if(b) b.onclick=onDel; });
+    return `<div class="item" style="justify-content:space-between;align-items:center">
+      <div>${escapeHtml(text)}</div>
+      <button id="${id}" class="btn small">削除</button>
+    </div>`;
+  }
+
+  // --- Anomalies: subscribe ---
+  function subscribeAnomalies(){
+    onValue(R.anomalies(), (snap)=>{
+      const obj = snap.val()||{};
+      anomalyCache = Object.entries(obj).map(([id,v])=>({_id:id, ...v}));
+      // 発生日時降順
+      anomalyCache.sort((a,b)=> (b.occurrenceDate||"").localeCompare(a.occurrenceDate||""));
+      renderHistory();
+      renderTechTargetSelect();
+    });
+  }
+
+  // --- Create (MFG submit) ---
+  el.btnMfgSubmit.addEventListener("click", async ()=>{
+    el.mfgMsg.textContent = "登録中…";
+    try{
+      const base = {
+        department: el.mfgDepartment.value || "",
+        line: el.mfgLine.value || "",
+        operator: (el.mfgOperator.value||"").trim(),
+        category: el.mfgCategory.value,
+        detail: (el.mfgDetail.value||"").trim(),
+        action: (el.mfgAction.value||"").trim(),
+        occurrenceDate: el.occurAt.value || toLocalDateTimeInput(new Date()),
+        status: "pending",
+        techRequest: "要請",
+        createdAt: serverTimestamp(),
+        createdBy: (auth.currentUser && auth.currentUser.uid) || ""
+      };
+      const newRef = push(R.anomalies());
+      const id = newRef.key;
+      await set(newRef, base);
+
+      // 写真アップロード
+      const files = Array.from(el.mfgPhotos.files || []);
+      if(files.length){
+        const urls = await uploadPhotos(id, "mfg", files);
+        await update(R.anomaly(id), { mfgPhotoUrls: urls });
+      }
+
+      el.mfgMsg.textContent = "登録しました";
+      clearMfgForm();
+    }catch(e){
+      console.error(e);
+      el.mfgMsg.textContent = "登録失敗：" + e.message;
     }
-    
-    container.innerHTML = words.map(word => 
-      `<span class="word-tag" data-word="${word}">${word}</span>`
-    ).join('');
-    
-    box.classList.add('active');
-    
-    // クリックで追加
-    container.querySelectorAll('.word-tag').forEach(tag => {
-      tag.addEventListener('click', () => {
-        const textarea = document.getElementById(targetId);
-        const word = tag.getAttribute('data-word');
-        const currentValue = textarea.value;
-        
-        // カーソル位置に挿入
-        const cursorPos = textarea.selectionStart;
-        const before = currentValue.substring(0, cursorPos);
-        const after = currentValue.substring(cursorPos);
-        
-        // 前の文字が空白でない場合は空白を追加
-        const needsSpace = before.length > 0 && !before.match(/[\s、。\n]$/);
-        const insertion = (needsSpace ? ' ' : '') + word;
-        
-        textarea.value = before + insertion + after;
-        textarea.focus();
-        textarea.selectionStart = textarea.selectionEnd = cursorPos + insertion.length;
-      });
-    });
-  }
-  
-  // フォーカス時にワード候補を表示
-  document.getElementById('anomalyContent').addEventListener('focus', () => {
-    showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
-  });
-  
-  document.getElementById('actionTaken').addEventListener('focus', () => {
-    showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
-  });
-  
-  // フォーカスアウト時に候補を非表示（遅延して、クリックイベントを優先）
-  document.getElementById('anomalyContent').addEventListener('blur', () => {
-    setTimeout(() => document.getElementById('anomalyWordSuggestions').classList.remove('active'), 200);
-  });
-  
-  document.getElementById('actionTaken').addEventListener('blur', () => {
-    setTimeout(() => document.getElementById('actionWordSuggestions').classList.remove('active'), 200);
   });
 
-  // ===== 類似案件表示機能（技術入力）=====
-  let allSimilarCases = [];
-  let showingAllCases = false;
-  
-  function showSimilarCases(selectedId){
-    const selected = anomalyCache.find(x => x._id === selectedId);
-    if (!selected || !selected.serialNo) {
-      document.getElementById('similarCasesBox').classList.remove('active');
-      return;
+  function clearMfgForm(){
+    el.mfgOperator.value=""; el.mfgDetail.value=""; el.mfgAction.value="";
+    el.mfgPhotos.value=""; el.occurAt.value="";
+  }
+
+  // --- Tech update ---
+  el.btnTechUpdate.addEventListener("click", async ()=>{
+    el.techMsg.textContent = "更新中…";
+    try{
+      const id = el.techTarget.value;
+      if(!id){ el.techMsg.textContent="対象を選択してください"; return; }
+      const updates = {
+        handler: el.techHandler.value || "",
+        cause: (el.techCause.value||"").trim(),
+        counter: (el.techCounter.value||"").trim(),
+        status: "closed",
+        updatedAt: serverTimestamp(),
+        updatedBy: (auth.currentUser && auth.currentUser.uid) || ""
+      };
+      await update(R.anomaly(id), updates);
+
+      const files = Array.from(el.techPhotos.files || []);
+      if(files.length){
+        const urls = await uploadPhotos(id, "tech", files);
+        const cur = (await get(R.anomaly(id))).val() || {};
+        const merged = [ ...(cur.techPhotoUrls||[]), ...urls ];
+        await update(R.anomaly(id), { techPhotoUrls: merged });
+      }
+      el.techMsg.textContent = "更新しました";
+      el.techCause.value=""; el.techCounter.value=""; el.techPhotos.value="";
+    }catch(e){
+      el.techMsg.textContent = "更新失敗：" + e.message;
     }
-    
-    // 同じ整理Noで技術対応済みのもの（選択中のものを除く）
-    allSimilarCases = anomalyCache
-      .filter(x => 
-        x._id !== selectedId && 
-        x.serialNo === selected.serialNo && 
-        x.status === 'complete' &&
-        x.techRequest === '要請'
-      )
-      .sort((a,b) => (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
-    
-    const box = document.getElementById('similarCasesBox');
-    const content = document.getElementById('similarCasesContent');
-    const showMoreBtn = document.getElementById('showMoreCases');
-    
-    if (allSimilarCases.length === 0) {
-      box.classList.remove('active');
-      return;
-    }
-    
-    // 最初は直近1件のみ表示
-    const casesToShow = showingAllCases ? allSimilarCases : allSimilarCases.slice(0, 1);
-    
-    content.innerHTML = casesToShow.map(item => `
-      <div class="similar-case-item">
-        <div class="similar-case-date">📅 ${item.occurrenceDate || ''} の対応事例</div>
-        <div class="similar-case-content">
-          <strong>異常内容:</strong> ${item.anomalyContent || '-'}<br>
-          <strong>製造処置:</strong> ${item.actionTaken || '-'}
-        </div>
-        <div class="similar-case-tech">
-          <strong>🔧 技術対応内容:</strong><br>
-          ${item.rootCauseAction ? `原因・対策: ${item.rootCauseAction}<br>` : ''}
-          ${item.maintenanceUnit ? `保全単位: ${item.maintenanceUnit}<br>` : ''}
-          ${item.recurrenceType ? `分類: ${item.recurrenceType}` : ''}
+  });
+
+  function renderTechTargetSelect(){
+    const options = anomalyCache
+      .filter(x=> x.status!=="closed")
+      .slice(0,100)
+      .map(x=> `<option value="${x._id}">[${escapeHtml(x.department)}/${escapeHtml(x.line)}] ${escapeHtml(x.category)} ${escapeHtml((x.detail||"").slice(0,24))}</option>`);
+    el.techTarget.innerHTML = `<option value="">未選択</option>` + options.join("");
+  }
+
+  // --- History ---
+  function renderHistory(){
+    const kw = (el.qText.value||"").trim().toLowerCase();
+    const dept = (el.qDept.value||"部署すべて");
+    const cat = el.qCategory.value || "";
+
+    const filtered = anomalyCache.filter(x=>{
+      const okDept = (dept==="部署すべて") || x.department===dept;
+      const okCat  = !cat || x.category===cat;
+      const text = [
+        x.detail||"", x.action||"", x.cause||"", x.counter||"",
+        x.department||"", x.line||"", x.operator||""
+      ].join(" ").toLowerCase();
+      const okKw = !kw || text.includes(kw);
+      return okDept && okCat && okKw;
+    }).slice(0,50);
+
+    el.history.innerHTML = filtered.map(renderItem).join("") || `<div class="muted">該当なし</div>`;
+
+    // 削除ボタン紐付け
+    filtered.forEach(it=>{
+      const btn = document.getElementById(`del_${it._id}`);
+      if(btn){ btn.onclick = ()=> deleteAnomaly(it._id); }
+    });
+  }
+
+  function renderItem(x){
+    const mThumbs = (x.mfgPhotoUrls||[]).map(u=>`<img src="${u}"/>`).join("");
+    const tThumbs = (x.techPhotoUrls||[]).map(u=>`<img src="${u}"/>`).join("");
+    const statusPill = `<span class="pill" style="border-color:${x.status==='closed'?'#10b981':'#f59e0b'};color:${x.status==='closed'?'#065f46':'#92400e'}">${x.status}</span>`;
+    return `<div class="item">
+      <div style="min-width:220px">
+        <div><strong>${escapeHtml(x.category||"-")}</strong> ${statusPill}</div>
+        <div class="muted">${escapeHtml(x.department||"-")} / ${escapeHtml(x.line||"-")}</div>
+        <div class="muted">${escapeHtml(formatDate(x.occurrenceDate))}</div>
+        <div class="toolbar" style="margin-top:6px">
+          <button id="del_${x._id}" class="btn small danger">削除</button>
         </div>
       </div>
-    `).join('');
-    
-    // 「他の案件を表示」ボタンの表示制御
-    if (allSimilarCases.length > 1 && !showingAllCases) {
-      showMoreBtn.style.display = 'block';
-      showMoreBtn.textContent = `他の類似案件を表示（あと${allSimilarCases.length - 1}件）`;
-    } else {
-      showMoreBtn.style.display = 'none';
+      <div style="flex:1">
+        <div><span class="pill">現象</span> ${escapeHtml(x.detail||"")}</div>
+        ${x.action? `<div style="margin-top:4px"><span class="pill">一次処置</span> ${escapeHtml(x.action)}</div>`:""}
+        ${x.cause?  `<div style="margin-top:4px"><span class="pill">原因</span> ${escapeHtml(x.cause)}</div>`:""}
+        ${x.counter?`<div style="margin-top:4px"><span class="pill">恒久対策</span> ${escapeHtml(x.counter)}</div>`:""}
+        <div class="hr"></div>
+        <div class="thumbs">${mThumbs}${tThumbs}</div>
+      </div>
+    </div>`;
+  }
+
+  // --- Delete (RTDB + Storage) ---
+  async function deleteAnomaly(id){
+    if(!confirm("この履歴を削除しますか？（写真も含めて削除）")) return;
+    try{
+      // Storage: mfg, tech 配下を削除
+      await deleteAllInFolder(R.storage.anomalyFolder(id,"mfg"));
+      await deleteAllInFolder(R.storage.anomalyFolder(id,"tech"));
+    }catch(e){
+      console.warn("Storage削除で警告:", e.message);
     }
-    
-    box.classList.add('active');
-  }
-  
-  document.getElementById('showMoreCases').addEventListener('click', () => {
-    showingAllCases = true;
-    const selectedId = document.getElementById('selectSerialNo').value;
-    if (selectedId) {
-      showSimilarCases(selectedId);
-    }
-  });
-
-  function setNowDateTo(id){
-    const now = new Date(); const hour=now.getHours();
-    if (hour>=0 && hour<6) now.setDate(now.getDate()-1);
-    const y=now.getFullYear(), m=String(now.getMonth()+1).padStart(2,'0'), d=String(now.getDate()).padStart(2,'0');
-    document.getElementById(id).value = `${y}-${m}-${d}`;
-  }
-  function setNowTimeTo(id){
-    const now=new Date(); const hh=String(now.getHours()).padStart(2,'0'), mm=String(now.getMinutes()).padStart(2,'0');
-    document.getElementById(id).value = `${hh}:${mm}`;
-  }
-  document.getElementById('btnNowDate').addEventListener('click', ()=>setNowDateTo('occurrenceDate'));
-  document.querySelectorAll('button[data-now]').forEach(b=> b.addEventListener('click', ()=> setNowTimeTo(b.getAttribute('data-now')) ));
-
-  function displayPhotos(previewId, arr){
-    const wrap = document.getElementById(previewId); wrap.innerHTML='';
-    arr.forEach((src,idx)=>{
-      const div=document.createElement('div'); div.className='photo-item';
-      div.innerHTML = `<img src="${src}"><button class="remove-btn" data-photo="${previewId}" data-index="${idx}">×</button>`;
-      wrap.appendChild(div);
-    });
-  }
-  function handlePhotoUpload(inputId, previewId, arrRef){
-    const input = document.getElementById(inputId);
-    input.addEventListener('change',(e)=>{
-      (Array.from(e.target.files||[])).forEach(file=>{
-        const r=new FileReader();
-        r.onload = ev=>{ arrRef.push({name:file.name, file, preview:ev.target.result}); displayPhotos(previewId, arrRef.map(x=>x.preview)); };
-        r.readAsDataURL(file);
-      });
-      input.value='';
-    });
-  }
-  handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
-  handlePhotoUpload('techPhotos','techPhotoPreview', techPhotos);
-  document.addEventListener('click',(e)=>{
-    const rm=e.target.closest('.remove-btn[data-photo]'); if(!rm) return;
-    const id=rm.getAttribute('data-photo'); const idx=Number(rm.getAttribute('data-index'));
-    if (id==='mfgPhotoPreview'){ mfgPhotos.splice(idx,1); displayPhotos(id, mfgPhotos.map(x=>x.preview)); }
-    if (id==='techPhotoPreview'){ techPhotos.splice(idx,1); displayPhotos(id, techPhotos.map(x=>x.preview)); }
-  });
-
-  function updateDepartmentSelect(selectId, departments){
-    const sel=document.getElementById(selectId); if(!sel) return;
-    const keep=sel.value;
-    sel.innerHTML='<option value="">選択してください</option>';
-    departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; sel.appendChild(o); });
-    if (departments.includes(keep)) sel.value=keep;
-  }
-  function refreshLineAndHandler(deptSelId, lineSelId, handlerSelId, lines, handlers){
-    const dept=document.getElementById(deptSelId).value;
-    const lineSel=document.getElementById(lineSelId), handlerSel=document.getElementById(handlerSelId);
-    lineSel.innerHTML='<option value="">選択してください</option>';
-    handlerSel.innerHTML='<option value="">選択してください</option>';
-    (lines[dept]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
-    (handlers[dept]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; handlerSel.appendChild(o); });
+    // RTDB
+    await remove(R.anomaly(id));
   }
 
-  function anomaliesRef(){ return collection(db,'anomalies'); }
+  async function deleteAllInFolder(folderRef){
+    const list = await listAll(folderRef);
+    // 子フォルダは今回なし想定。あっても再帰可能。
+    await Promise.all(list.items.map(it=> deleteObject(it)));
+  }
 
-  async function uploadPhotos(docId, kind, items){
-    const urls=[];
-    for (const it of items){
-      const path=`anomalies/${docId}/${kind}/${Date.now()}_${it.name}`;
-      const storageRef=ref(storage, path);
-      await uploadBytes(storageRef, it.file);
-      const url = await getDownloadURL(storageRef);
+  // --- Upload Photos ---
+  async function uploadPhotos(id, folder, files){
+    const urls = [];
+    for(const f of files){
+      const key = Date.now() + "_" + sanitizeFilename(f.name||"photo");
+      const r = R.storage.anomalyFile(id, folder, key);
+      await uploadBytes(r, f, { contentType:f.type || "application/octet-stream" });
+      const url = await getDownloadURL(r);
       urls.push(url);
     }
     return urls;
   }
 
-  function renderHistory(){
-    const items=[...anomalyCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
-    const cardWrap=document.getElementById('cardView');
-    if (!items.length){
-      cardWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
-    }else{
-      cardWrap.innerHTML = items.map((item)=>{
-        const status = item.status==='pending' ? {text:'技術入力待ち',cls:'status-pending'} :
-                      (item.techRequest==='完結' ? {text:'完了（製造完結）',cls:'status-complete'} : {text:'完了',cls:'status-complete'});
-        return `
-          <div class="anomaly-card ${item.status==='complete'?'complete':''}">
-            <div class="card-header">
-              <div class="card-id">${item.serialNo || '(No ID)'}</div>
-              <div class="card-status ${status.cls}">${status.text}</div>
-            </div>
-            <div class="card-body">
-              ${item.department?`<div class="card-field"><div class="field-label">部署</div><div class="field-value">${item.department}</div></div>`:''}
-              ${item.lineName?`<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${item.lineName}</div></div>`:''}
-              ${item.techRequest?`<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${item.techRequest==='要請'?'技術要請あり':'製造で完結'}</div></div>`:''}
-              <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${item.anomalyContent||''}</div></div>
-              <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${item.actionTaken||''}</div></div>
-              <div class="card-field"><div class="field-label">発生日時</div><div class="field-value">${item.occurrenceDate||''} ${item.occurrenceTime||''}</div></div>
-              <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${item.handler||''}</div></div>
-              ${item.status==='complete' && item.techRequest==='要請' ? `
-                <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${item.techHandler||'-'}</div></div>
-                <div class="card-field"><div class="field-label">保全単位</div><div class="field-value">${item.maintenanceUnit||'-'}</div></div>
-                <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction||'-'}</div></div>
-                <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${item.recurrenceType||'-'}</div></div>
-              `:''}
-              <div class="action-btns" style="margin-top:10px;">
-                <button class="btn-small btn-edit" data-edit="${item._id}">編集</button>
-                <button class="btn-small btn-delete" data-del="${item._id}">削除</button>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
+  // --- Search / Export ---
+  el.qText.addEventListener("input", renderHistory);
+  el.qDept.addEventListener("change", renderHistory);
+  el.qCategory.addEventListener("change", renderHistory);
+  el.btnExport.addEventListener("click", ()=> exportCsv());
 
-    const tableWrap=document.getElementById('tableView');
-    if (!items.length){
-      tableWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
-    }else{
-      tableWrap.innerHTML = `
-        <table>
-          <thead><tr>
-            <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th>
-            <th>発生日</th><th>処置者</th><th>状態</th><th>操作</th>
-          </tr></thead>
-          <tbody>
-            ${items.map(it=>{
-              const st = it.status==='complete'?'完了':'待ち';
-              const cls = it.status==='complete'?'status-complete':'status-pending';
-              return `
-                <tr>
-                  <td>${it.serialNo||''}</td>
-                  <td>${it.department||'-'}</td>
-                  <td>${it.lineName||'-'}</td>
-                  <td>${(it.anomalyContent||'').slice(0,30)}...</td>
-                  <td>${it.occurrenceDate||''}</td>
-                  <td>${it.handler||'-'}</td>
-                  <td><span class="card-status ${cls}">${st}</span></td>
-                  <td class="action-btns">
-                    <button class="btn-small btn-edit" data-edit="${it._id}">編集</button>
-                    <button class="btn-small btn-delete" data-del="${it._id}">削除</button>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      `;
-    }
+  function exportCsv(){
+    const rows = [["id","部署","ライン","分類","現象","一次処置","原因","恒久対策","発生日時","状態"]];
+    anomalyCache.forEach(x=>{
+      rows.push([x._id, x.department||"", x.line||"", x.category||"", cleanse(x.detail), cleanse(x.action), cleanse(x.cause), cleanse(x.counter), formatDate(x.occurrenceDate), x.status||""]);
+    });
+    const csv = rows.map(r=> r.map(csvCell).join(",")).join("\r\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "anomalies.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
-  function renderTechTargetSelect(){
-    const sel = document.getElementById('selectSerialNo');
-    sel.innerHTML = '<option value="">整理Noを選択してください</option>';
-    anomalyCache
-      .filter(x=>x.status==='pending' && x.techRequest==='要請')
-      .sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''))
-      .forEach(x=>{
-        const o=document.createElement('option');
-        o.value = x._id;
-        o.textContent = `[${x.serialNo}] ${x.occurrenceDate} - ${x.anomalyContent?.slice(0,30)||''}...`;
-        sel.appendChild(o);
-      });
+  // --- Helpers ---
+  function toLocalDateTimeInput(d){
+    const z = (n)=> String(n).padStart(2,"0");
+    return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
   }
-
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-      tab.classList.add('active');
-      const targetId = tab.getAttribute('data-tab');
-      document.getElementById(targetId).classList.add('active');
-    });
-  });
-
-  async function bootAfterLogin(){
-    mastersCache = await fetchMasters();
-    
-    updateDepartmentSelect('department', mastersCache.departments);
-    updateDepartmentSelect('lineManageDept', mastersCache.departments);
-    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
-
-    document.getElementById('department').addEventListener('change', ()=> {
-      refreshLineAndHandler('department','lineName','handler', mastersCache.lines, mastersCache.handlers);
-    });
-    
-    document.getElementById('lineManageDept').addEventListener('change', async ()=> {
-      await updateLineManageList();
-    });
-    
-    document.getElementById('handlerManageDept').addEventListener('change', async ()=> {
-      await updateHandlerManageList();
-    });
-
-    const q = query(anomaliesRef(), orderBy('createdAt','desc'));
-    onSnapshot(q, (snap)=>{
-      anomalyCache = snap.docs.map(d=> ({_id:d.id, ...d.data()}));
-      renderHistory();
-      renderTechTargetSelect();
-      updateAnalysis();
-    });
-
-    await updateDepartmentList();
-    setNowDateTo('occurrenceDate');
-  }
-
-  document.getElementById('manufacturingForm').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const techReq = document.getElementById('techRequest').value;
-    const base = {
-      department: document.getElementById('department').value,
-      lineName:   document.getElementById('lineName').value,
-      serialNo:   document.getElementById('serialNo').value,
-      occurrenceDate: document.getElementById('occurrenceDate').value,
-      occurrenceTime: document.getElementById('occurrenceTime').value || '',
-      restartTime:    document.getElementById('restartTime').value || '',
-      anomalyContent: document.getElementById('anomalyContent').value,
-      actionTaken:    document.getElementById('actionTaken').value,
-      traceback:      document.getElementById('traceback').value,
-      handler:        document.getElementById('handler').value,
-      techRequest:    techReq,
-      status:         techReq==='完結' ? 'complete':'pending',
-      createdAt:      serverTimestamp(),
-      techHandler:'', lifespan:'', maintenanceUnit:'', rootCauseAction:'', recurrenceType:'',
-      mfgPhotoUrls:[], techPhotoUrls:[]
-    };
-    const created = await addDoc(anomaliesRef(), base);
-    let urls=[];
-    if (mfgPhotos.length){
-      urls = await uploadPhotos(created.id, 'mfg', mfgPhotos);
-      await updateDoc(doc(db,'anomalies',created.id), { mfgPhotoUrls: urls });
-    }
-
-    e.target.reset(); mfgPhotos=[]; document.getElementById('mfgPhotoPreview').innerHTML='';
-    document.getElementById('lineName').innerHTML='<option value="">部署を先に選択してください</option>';
-    document.getElementById('handler').innerHTML='<option value="">部署を先に選択してください</option>';
-    alert('登録しました。');
-  });
-
-  document.getElementById('selectSerialNo').addEventListener('change', ()=>{
-    const id = document.getElementById('selectSerialNo').value;
-    const d = anomalyCache.find(it=> it._id===id);
-    const box=document.getElementById('selectedDataDisplay'), wrap=document.getElementById('displayContent');
-    
-    // 類似案件表示をリセット
-    showingAllCases = false;
-    
-    if (!d){ 
-      box.style.display='none'; 
-      wrap.innerHTML=''; 
-      document.getElementById('similarCasesBox').classList.remove('active');
-      return; 
-    }
-    
-    wrap.innerHTML = `
-      <div style="display:grid;gap:8px;">
-        <div><strong>整理No:</strong> ${d.serialNo}</div>
-        ${d.department?`<div><strong>部署:</strong> ${d.department}</div>`:''}
-        ${d.lineName?`<div><strong>ライン名:</strong> ${d.lineName}</div>`:''}
-        <div><strong>異常内容:</strong> ${d.anomalyContent||''}</div>
-        <div><strong>製造処置:</strong> ${d.actionTaken||''}</div>
-        <div><strong>発生日:</strong> ${d.occurrenceDate||''}</div>
-        <div><strong>処置者:</strong> ${d.handler||''}</div>
-      </div>
-    `;
-    box.style.display='block';
-    
-    // 類似案件を自動表示
-    showSimilarCases(id);
-  });
-
-  document.getElementById('technicalForm').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const id = document.getElementById('selectSerialNo').value;
-    const updates = {
-      techHandler: document.getElementById('techHandler').value,
-      lifespan: document.getElementById('lifespan').value,
-      maintenanceUnit: document.getElementById('maintenanceUnit').value,
-      rootCauseAction: document.getElementById('rootCauseAction').value,
-      recurrenceType: document.getElementById('recurrenceType').value,
-      status: 'complete',
-      completedAt: serverTimestamp()
-    };
-    if (techPhotos.length){
-      const urls = await uploadPhotos(id,'tech', techPhotos);
-      updates.techPhotoUrls = (anomalyCache.find(x=>x._id===id)?.techPhotoUrls||[]).concat(urls);
-    }
-    await updateDoc(doc(db,'anomalies',id), updates);
-    e.target.reset(); techPhotos=[]; document.getElementById('techPhotoPreview').innerHTML='';
-    document.getElementById('selectedDataDisplay').style.display='none';
-    document.getElementById('similarCasesBox').classList.remove('active');
-    showingAllCases = false;
-    alert('技術入力を登録しました。');
-  });
-
-  document.querySelectorAll('.view-toggle button').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      document.querySelectorAll('.view-toggle button').forEach(x=>x.classList.remove('active'));
-      b.classList.add('active'); currentView=b.dataset.view;
-      document.getElementById('cardView').style.display = currentView==='card'?'grid':'none';
-      document.getElementById('tableView').style.display = currentView==='table'?'block':'none';
-      renderHistory();
-    });
-  });
-
-  const editModalHtml = `
-    <div class="modal-content">
-      <div class="modal-title">✏️ 履歴レコード編集</div>
-      <div class="edit-tabs">
-        <button class="edit-tab active" data-edit-tab="mfg">製造</button>
-        <button class="edit-tab" data-edit-tab="tech">技術</button>
-      </div>
-      <div id="editMfg" class="edit-pane">
-        <div class="form-group"><label>発生日 *</label><input type="date" id="edit_occurrenceDate"></div>
-        <div class="form-group"><label>発生時刻 / 再開時刻</label><div class="time-group"><input type="time" id="edit_occurrenceTime"><input type="time" id="edit_restartTime"></div></div>
-        <div class="form-group"><label>部署 *</label><select id="edit_department"></select></div>
-        <div class="form-group"><label>ライン名 *</label><select id="edit_lineName"></select></div>
-        <div class="form-group"><label>処置者 *</label><select id="edit_handler"></select></div>
-        <div class="form-group"><label>整理No *</label><input type="text" id="edit_serialNo"></div>
-        <div class="form-group"><label>異常内容 *</label><textarea id="edit_anomalyContent"></textarea></div>
-        <div class="form-group"><label>製造処置内容 *</label><textarea id="edit_actionTaken"></textarea></div>
-        <div class="form-group"><label>遡り *</label><select id="edit_traceback"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
-        <div class="form-group"><label>技術要請 *</label><select id="edit_techRequest"><option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option></select></div>
-      </div>
-      <div id="editTech" class="edit-pane" style="display:none;">
-        <div class="form-group"><label>技術処置者</label><input type="text" id="edit_techHandler"></div>
-        <div class="form-group"><label>命数有無</label><select id="edit_lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
-        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit"></div>
-        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
-        <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn btn-cancel" id="btnEditCancel" style="flex:1;">キャンセル</button>
-        <button class="btn btn-primary" id="btnEditSave" style="flex:1;">保存</button>
-      </div>
-    </div>`;
-  const modal = document.createElement('div'); modal.className='modal'; modal.id='editModal'; modal.innerHTML=editModalHtml; document.body.appendChild(modal);
-
-  let editCurrentId=null, editMastersCache=null;
-  function openEdit(id){
-    const rec = anomalyCache.find(x=>x._id===id); if(!rec){ alert('対象が見つかりません'); return; }
-    editCurrentId=id;
-    (async ()=>{
-      editMastersCache = mastersCache || await fetchMasters();
-      const depSel = document.getElementById('edit_department'); depSel.innerHTML='';
-      editMastersCache.departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o); });
-      depSel.value = rec.department||'';
-      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
-      lineSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
-      hSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
-
-      lineSel.value = rec.lineName||'';
-      hSel.value = rec.handler||'';
-
-      document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate||'';
-      document.getElementById('edit_occurrenceTime').value = rec.occurrenceTime||'';
-      document.getElementById('edit_restartTime').value   = rec.restartTime||'';
-      document.getElementById('edit_serialNo').value      = rec.serialNo||'';
-      document.getElementById('edit_anomalyContent').value= rec.anomalyContent||'';
-      document.getElementById('edit_actionTaken').value   = rec.actionTaken||'';
-      document.getElementById('edit_traceback').value     = rec.traceback||'';
-      document.getElementById('edit_techRequest').value   = rec.techRequest||'';
-      document.getElementById('edit_techHandler').value   = rec.techHandler||'';
-      document.getElementById('edit_lifespan').value      = rec.lifespan||'';
-      document.getElementById('edit_maintenanceUnit').value= rec.maintenanceUnit||'';
-      document.getElementById('edit_rootCauseAction').value= rec.rootCauseAction||'';
-      document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
-      modal.classList.add('active'); modal.setAttribute('aria-hidden','false');
-    })();
-  }
-  document.addEventListener('change', (e)=>{
-    if (e.target.id==='edit_department' && editMastersCache){
-      const dep=e.target.value;
-      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
-      lineSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.lines[dep]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
-      hSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.handlers[dep]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
-    }
-  });
-  document.addEventListener('click', (e)=>{
-    const t=e.target;
-    if (t.matches('.edit-tab')){
-      document.querySelectorAll('.edit-tab').forEach(x=>x.classList.remove('active'));
-      t.classList.add('active');
-      document.getElementById('editMfg').style.display = t.dataset.editTab==='mfg'?'block':'none';
-      document.getElementById('editTech').style.display= t.dataset.editTab==='tech'?'block':'none';
-    }
-    const ed = t.closest('button.btn-edit[data-edit]'); if (ed){ openEdit(ed.getAttribute('data-edit')); }
-    const del= t.closest('button.btn-delete[data-del]'); if (del){ deleteRecord(del.getAttribute('data-del')); }
-  });
-  document.getElementById('btnEditCancel').addEventListener('click', ()=>{
-    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
-  });
-  document.getElementById('btnEditSave').addEventListener('click', async ()=>{
-    if (!editCurrentId) return;
-    const updates = {
-      occurrenceDate:  document.getElementById('edit_occurrenceDate').value||'',
-      occurrenceTime:  document.getElementById('edit_occurrenceTime').value||'',
-      restartTime:     document.getElementById('edit_restartTime').value||'',
-      department:      document.getElementById('edit_department').value||'',
-      lineName:        document.getElementById('edit_lineName').value||'',
-      handler:         document.getElementById('edit_handler').value||'',
-      serialNo:        document.getElementById('edit_serialNo').value||'',
-      anomalyContent:  document.getElementById('edit_anomalyContent').value||'',
-      actionTaken:     document.getElementById('edit_actionTaken').value||'',
-      traceback:       document.getElementById('edit_traceback').value||'',
-      techRequest:     document.getElementById('edit_techRequest').value||'',
-      techHandler:     document.getElementById('edit_techHandler').value||'',
-      lifespan:        document.getElementById('edit_lifespan').value||'',
-      maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
-      rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
-      recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
-    };
-    if (updates.techRequest==='完結'){
-      updates.status='complete';
-    }else{
-      const hasTech = (updates.techHandler||updates.lifespan||updates.maintenanceUnit||updates.rootCauseAction||updates.recurrenceType);
-      updates.status = hasTech ? 'complete' : 'pending';
-    }
-    await updateDoc(doc(db,'anomalies',editCurrentId), updates);
-    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
-    alert('更新しました。');
-  });
-
-  async function deleteRecord(id){
-  if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
-
-  // 1) ドキュメントを取得してURL配列を取り出す
-  let data = {};
-  try{
-    const snap = await getDoc(doc(db,'anomalies', id));
-    if (!snap.exists()){
-      alert('ドキュメントが見つかりません'); 
-      return;
-    }
-    data = snap.data() || {};
-  }catch(e){
-    alert('取得エラー: ' + (e.code||e.message));
-    return;
-  }
-
-  // 2) URL直指定で画像削除（失敗は記録するが続行）
-  const urls = []
-    .concat(data.mfgPhotoUrls || [])
-    .concat(data.techPhotoUrls || []);
-  const storageErrors = [];
-  for (const u of urls){
+  function formatDate(s){
+    if(!s) return "-";
+    // s はローカル入力の文字列 or ISO 文字列
     try{
-      await deleteObject(ref(storage, u)); // https:// or gs:// どちらでもOK
-    }catch(e){
-      storageErrors.push(`${u} : ${e.code||e.message}`);
-    }
+      if(typeof s==="string" && s.includes("T")) return s.replace("T"," ");
+      return String(s);
+    }catch{ return String(s); }
   }
+  function cleanse(t){ return (t||"").replace(/\r?\n/g," "); }
+  function csvCell(x){
+    const s = (x==null?"":String(x)).replace(/"/g,'""');
+    return `"${s}"`;
+  }
+  function sanitizeFilename(n){ return n.replace(/[^\w\-.]+/g,"_"); }
+  function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
 
-  // 3) 最後に Firestore ドキュメント削除（ここが本丸）
-  try{
-    await deleteDoc(doc(db,'anomalies', id));
-    if (storageErrors.length){
-      alert('レコードは削除しました（画像の一部は削除失敗）：\n' + storageErrors.join('\n'));
-    }
-    // onSnapshotでUIから消えます
-  }catch(e){
-    alert('レコード削除エラー: ' + (e.code||e.message));
-  }
-}
+  // 初期値（日付）
+  el.occurAt.value = toLocalDateTimeInput(new Date());
 
-
-  document.getElementById('btnExport').addEventListener('click', ()=>{
-    if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
-    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','命数有無','保全単位','原因対策','再発新規','状態','_id'];
-    const rows = anomalyCache.map(item=>[
-      item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
-      item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
-      item.techRequest==='要請'?'技術要請あり':item.techRequest==='完結'?'製造で完結':'',
-      item.techHandler||'',item.lifespan||'',item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',
-      item.status==='complete'?'完了':'技術入力待ち', item._id
-    ]);
-    let csv = '\uFEFF' + headers.join(',') + '\n';
-    rows.forEach(r=>{ csv += r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(',')+'\n'; });
-    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-    const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
-  });
-
-  async function updateDepartmentList(){
-    const list=document.getElementById('departmentList'); list.innerHTML='';
-    const snap=await getDocs(collection(db,'masters','department','items'));
-    const arr = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">部署が登録されていません</p>'; return; }
-    arr.forEach(row=>{
-      const div=document.createElement('div');
-      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #667eea;';
-      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
-        <button class="btn-small btn-delete" data-del-dept="${row.id}">削除</button>`;
-      list.appendChild(div);
-    });
-    mastersCache = await fetchMasters();
-    updateDepartmentSelect('department', mastersCache.departments);
-    updateDepartmentSelect('lineManageDept', mastersCache.departments);
-    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
-  }
-  document.getElementById('btnAddDept').addEventListener('click', async ()=>{
-    const name=(document.getElementById('newDepartment').value||'').trim();
-    if (!name){ alert('部署名を入力してください'); return; }
-    await addDoc(collection(db,'masters','department','items'), {name});
-    document.getElementById('newDepartment').value='';
-    updateDepartmentList();
-  });
-  document.addEventListener('click', async (e)=>{
-    const del=e.target.closest('button[data-del-dept]'); if (!del) return;
-    await deleteDoc(doc(db,'masters','department','items', del.getAttribute('data-del-dept')));
-    updateDepartmentList();
-  });
-
-  async function updateLineManageList(){
-    const dept=document.getElementById('lineManageDept').value;
-    const list=document.getElementById('lineList'); 
-    list.innerHTML='';
-    
-    if (!dept){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
-      return; 
-    }
-    
-    const snap=await getDocs(query(collection(db,'masters','line','items'), where('department','==',dept)));
-    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    
-    if (!arr.length){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; 
-      return; 
-    }
-    
-    arr.forEach(row=>{
-      const div=document.createElement('div');
-      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #f57c00;';
-      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
-        <button class="btn-small btn-delete" data-del-line="${row.id}">削除</button>`;
-      list.appendChild(div);
-    });
-  }
-  
-  document.getElementById('btnAddLine').addEventListener('click', async ()=>{
-    const dept=document.getElementById('lineManageDept').value;
-    const name=(document.getElementById('newLine').value||'').trim();
-    if (!dept){ alert('部署を選択してください'); return; }
-    if (!name){ alert('ライン名を入力してください'); return; }
-    
-    await addDoc(collection(db,'masters','line','items'), {department:dept, name});
-    document.getElementById('newLine').value='';
-    
-    mastersCache = await fetchMasters();
-    await updateLineManageList();
-  });
-  
-  document.addEventListener('click', async (e)=>{
-    const del=e.target.closest('button[data-del-line]'); if (!del) return;
-    await deleteDoc(doc(db,'masters','line','items', del.getAttribute('data-del-line')));
-    mastersCache = await fetchMasters();
-    await updateLineManageList();
-  });
-
-  async function updateHandlerManageList(){
-    const dept=document.getElementById('handlerManageDept').value;
-    const list=document.getElementById('handlerList'); 
-    list.innerHTML='';
-    
-    if (!dept){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
-      return; 
-    }
-    
-    const snap=await getDocs(query(collection(db,'masters','handler','items'), where('department','==',dept)));
-    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    
-    if (!arr.length){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; 
-      return; 
-    }
-    
-    arr.forEach(row=>{
-      const div=document.createElement('div');
-      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #2e7d32;';
-      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
-        <button class="btn-small btn-delete" data-del-handler="${row.id}">削除</button>`;
-      list.appendChild(div);
-    });
-  }
-  
-  document.getElementById('btnAddHandler').addEventListener('click', async ()=>{
-    const dept=document.getElementById('handlerManageDept').value;
-    const name=(document.getElementById('newHandler').value||'').trim();
-    if (!dept){ alert('部署を選択してください'); return; }
-    if (!name){ alert('処置者名を入力してください'); return; }
-    
-    await addDoc(collection(db,'masters','handler','items'), {department:dept, name});
-    document.getElementById('newHandler').value='';
-    
-    mastersCache = await fetchMasters();
-    await updateHandlerManageList();
-  });
-  
-  document.addEventListener('click', async (e)=>{
-    const del=e.target.closest('button[data-del-handler]'); if (!del) return;
-    await deleteDoc(doc(db,'masters','handler','items', del.getAttribute('data-del-handler')));
-    mastersCache = await fetchMasters();
-    await updateHandlerManageList();
-  });
-
-  function updateAnalysis(){ updateStatistics(); updateTrendAnalysis(); updateDepartmentAnalysis(); updateRecurrenceAnalysis(); }
-  
-  function updateStatistics(){
-    const total=anomalyCache.length;
-    const completed=anomalyCache.filter(x=>x.status==='complete').length;
-    const pending=total-completed;
-    const now=new Date();
-    const thisMonth=anomalyCache.filter(x=>{
-      const d=new Date(x.occurrenceDate); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
-    }).length;
-    let avg=0,cnt=0;
-    anomalyCache.forEach(x=>{
-      if (x.occurrenceTime && x.restartTime){
-        const [oh,om]=(x.occurrenceTime||'0:0').split(':').map(Number);
-        const [rh,rm]=(x.restartTime||'0:0').split(':').map(Number);
-        let m=(rh*60+rm)-(oh*60+om); if (m<0) m+=1440; avg+=m; cnt++;
-      }
-    });
-    avg = cnt?Math.round(avg/cnt):0;
-    const stats=document.getElementById('statisticsDisplay');
-    stats.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
-        <div class="stat-card">
-          <h4>総異常件数</h4><div class="stat-value">${total}</div><div class="stat-label">件</div>
-        </div>
-        <div class="stat-card" style="background:linear-gradient(135deg,#2e7d32 0%,#66bb6a 100%);">
-          <h4>対応完了</h4><div class="stat-value">${completed}</div><div class="stat-label">件 (${total?Math.round(completed/total*100):0}%)</div>
-        </div>
-        <div class="stat-card" style="background:linear-gradient(135deg,#f57c00 0%,#ffb74d 100%);">
-          <h4>対応待ち</h4><div class="stat-value">${pending}</div><div class="stat-label">件</div>
-        </div>
-        <div class="stat-card" style="background:linear-gradient(135deg,#c62828 0%,#ef5350 100%);">
-          <h4>今月の異常</h4><div class="stat-value">${thisMonth}</div><div class="stat-label">件</div>
-        </div>
-        <div class="stat-card" style="background:linear-gradient(135deg,#1976d2 0%,#42a5f5 100%);">
-          <h4>平均対応時間</h4><div class="stat-value">${avg}</div><div class="stat-label">分</div>
-        </div>
-      </div>`;
-  }
-  
-  function updateTrendAnalysis(){
-    const monthly={}; 
-    anomalyCache.forEach(x=>{
-      if (!x.occurrenceDate) return;
-      const d=new Date(x.occurrenceDate); 
-      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      monthly[k]=(monthly[k]||0)+1;
-    });
-    const months=Object.keys(monthly).sort();
-    const max=Math.max(...Object.values(monthly),1);
-    const chart=document.getElementById('trendChart');
-    chart.innerHTML = months.map(m=>{
-      const c=monthly[m]; const pct=(c/max)*100;
-      return `<div style="margin-bottom:15px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-          <span style="font-weight:bold;">${m}</span><span style="color:#666;">${c}件</span>
-        </div>
-        <div style="background:#e0e0e0;height:30px;border-radius:4px;overflow:hidden;">
-          <div class="chart-bar" style="width:${pct}%;">${c}件</div>
-        </div>
-      </div>`;
-    }).join('');
-    
-    const ana=document.getElementById('trendAnalysis');
-    if (months.length>=3){
-      const r3=months.slice(-3).map(m=>monthly[m]);
-      const avgR=r3.reduce((a,b)=>a+b,0)/3;
-      const prev=months.slice(-6,-3).map(m=>monthly[m]);
-      const avgP=prev.length?prev.reduce((a,b)=>a+b,0)/prev.length:avgR;
-      let trend='横ばい', cls='trend-stable';
-      if (avgR>avgP*1.2){ trend='増加傾向'; cls='trend-increase'; }
-      else if (avgR<avgP*0.8){ trend='減少傾向'; cls='trend-decrease'; }
-      ana.innerHTML = `<div class="analysis-insight">
-        <strong>📊 傾向分析:</strong> 直近3ヶ月の平均は<strong>${avgR.toFixed(1)}件/月</strong>で、
-        <span class="trend-badge ${cls}">${trend}</span>です。
-        ${trend==='増加傾向'?'⚠️ 異常発生が増えています。原因を特定し、対策が必要です。':''}
-        ${trend==='減少傾向'?'✅ 改善が見られます。現在の取り組みを継続しましょう。':''}
-      </div>`;
-    }else{
-      ana.innerHTML='<p style="color:#999;">データが不足しているため、傾向分析を表示できません</p>';
-    }
-  }
-  
-  function updateDepartmentAnalysis(){
-    const dept={}, line={};
-    anomalyCache.forEach(x=>{
-      if (x.department) dept[x.department]=(dept[x.department]||0)+1;
-      if (x.lineName) line[x.lineName]=(line[x.lineName]||0)+1;
-    });
-    const maxD=Math.max(...Object.values(dept),1), maxL=Math.max(...Object.values(line),1);
-    const div=document.getElementById('departmentAnalysis'); 
-    let html='<h4 style="color:#666;margin-bottom:10px;">部署別異常件数</h4>';
-    Object.entries(dept).sort((a,b)=>b[1]-a[1]).forEach(([k,c])=>{
-      const pct=(c/maxD)*100; 
-      html += `<div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-          <span>${k}</span><span style="color:#666;">${c}件</span>
-        </div>
-        <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
-          <div class="chart-bar" style="width:${pct}%;height:25px;font-size:.85rem;">${c}件</div>
-        </div>
-      </div>`;
-    });
-    html+='<h4 style="color:#666;margin:20px 0 10px;">ライン別異常件数</h4>';
-    Object.entries(line).sort((a,b)=>b[1]-a[1]).forEach(([k,c])=>{
-      const pct=(c/maxL)*100; 
-      html += `<div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-          <span>${k}</span><span style="color:#666;">${c}件</span>
-        </div>
-        <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
-          <div class="chart-bar" style="width:${pct}%;height:25px;font-size:.85rem;background:linear-gradient(90deg,#f57c00 0%,#ffb74d 100%);">${c}件</div>
-        </div>
-      </div>`;
-    });
-    div.innerHTML = html || '<p style="color:#999;">データがありません</p>';
-  }
-  
-  function updateRecurrenceAnalysis(){
-    const recCnt = anomalyCache.filter(x=>x.recurrenceType==='再発').length;
-    const newCnt = anomalyCache.filter(x=>x.recurrenceType==='新規').length;
-    const total=recCnt+newCnt; 
-    const div=document.getElementById('recurrenceAnalysis');
-    if (!total){ 
-      div.innerHTML='<p style="color:#999;">技術対応済みのデータがありません</p>'; 
-      return; 
-    }
-    const rate=(recCnt/total*100).toFixed(1);
-    div.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
-        <div style="text-align:center;padding:20px;background:#ffebee;border-radius:8px;">
-          <div style="font-size:3rem;font-weight:bold;color:#c62828;">${recCnt}</div>
-          <div style="color:#666;margin-top:5px;">再発件数</div>
-        </div>
-        <div style="text-align:center;padding:20px;background:#e8f5e9;border-radius:8px;">
-          <div style="font-size:3rem;font-weight:bold;color:#2e7d32;">${newCnt}</div>
-          <div style="color:#666;margin-top:5px;">新規件数</div>
-        </div>
-      </div>
-      <div class="analysis-insight">
-        <strong>🔄 再発率:</strong> ${rate}% (${recCnt}/${total}件)
-        ${rate>30?'<br>⚠️ 再発率が高めです。根本原因の追求と恒久対策が必要です。':''}
-        ${rate<20?'<br>✅ 再発率は良好です。現在の対策を継続しましょう。':''}
-      </div>`;
+  // マスタ一覧 初期描画フック
+  function bindMasterUI(){
+    renderDepartmentList();
+    renderLineList();
+    renderHandlerList();
   }
 </script>
 </body>
