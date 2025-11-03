@@ -1463,8 +1463,6 @@
                 </div>
                 <div class="date-selector">
                     <button id="undoBtn" class="btn btn-secondary" onclick="performUndo()" style="opacity: 0.5; cursor: not-allowed;" disabled title="戻せる操作がありません">↶ もとに戻す</button>
-                    <button class="btn btn-primary" onclick="showAddTaskModal('planned')">予定追加</button>
-                    <button class="btn btn-primary" onclick="showAddTaskModal('actual')">実績追加</button>
                     <button class="btn btn-recurring" onclick="showRecurringModal()">🔄 定期登録</button>
                     <button class="btn btn-delete-recurring" onclick="showDeleteRecurringModal()">🗑️ 定期解除</button>
                     <button id="manualSaveBtn" class="btn btn-success" onclick="manualSave()" title="タイムラインの変更を保存">💾 保存</button>
@@ -1482,6 +1480,10 @@
 
             <div style="text-align: center; margin: 20px 0 10px 0;">
                 <div id="currentDateDisplay" style="font-size: 24px; font-weight: bold; color: #667eea; padding: 10px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 8px; display: inline-block; min-width: 300px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);"></div>
+            </div>
+            <div style="text-align: center; margin: 10px 0 15px 0;">
+                <button class="btn btn-primary" onclick="showAddTaskModal('planned')" style="padding: 12px 30px; font-size: 16px; margin: 0 5px;">📝 予定追加</button>
+                <button class="btn btn-primary" onclick="showAddTaskModal('actual')" style="padding: 12px 30px; font-size: 16px; margin: 0 5px; background: #764ba2;">✅ 実績追加</button>
             </div>
 
             <div class="timeline-container">
@@ -1910,6 +1912,12 @@
         let isFirebaseConnected = false;
         let firebaseSyncTimer = null; // Firebase同期のタイマー
         let undoStack = []; // Undo用の履歴スタック
+        let isDraggingToCreate = false; // ドラッグして新規作成中
+        let dragCreateType = null; // 作成するタイプ(planned/actual)
+        let dragCreateStart = null; // ドラッグ開始位置
+        let dragCreateBar = null; // 作成中のバー要素
+        let dragCreateMember = null; // 作成先のメンバー
+        let dragCreatePreview = null; // プレビューバー
         const MAX_UNDO_STACK = 20; // 最大20回までUndo可能
         let draggedElement = null;
         let dragStartX = 0;
@@ -2545,7 +2553,7 @@
             
             // 期限超過タスクと期限が近いタスクを取得
             const overdueAndWarnings = tasks.filter(task => {
-                if (!task.deadline || task.progress >= 100) return false;
+                if (!task.deadline || task.completed) return false;
                 const deadlineTime = new Date(task.deadline).getTime();
                 const daysUntil = Math.ceil((deadlineTime - todayTime) / (1000 * 60 * 60 * 24));
                 // 期限超過（マイナス）または3日以内
@@ -2603,29 +2611,17 @@
         }
 
         function showAddTaskModal(type) {
-            currentModalType = type;
-            const modal = document.getElementById('taskModal');
-            const modalTitle = document.getElementById('modalTitle');
-            const colorTypeGroup = document.getElementById('colorTypeGroup');
+            // ドラッグモードを有効化
+            dragCreateType = type;
+            const message = type === "planned" ? "予定" : "実績";
+            showNotification("📍 タイムライン上でドラッグして" + message + "を作成してください");
             
-            if (type === 'planned') {
-                modalTitle.textContent = '予定タスク追加';
-                colorTypeGroup.style.display = 'none';
-            } else {
-                modalTitle.textContent = '実績タスク追加';
-                colorTypeGroup.style.display = 'block';
-            }
-            
-            const taskSelect = document.getElementById('modalTaskSelect');
-            taskSelect.innerHTML = '<option value="">-- タスクリストから選択 --</option>';
-            tasks.forEach(task => {
-                const option = document.createElement('option');
-                option.value = task.id;
-                option.textContent = `${task.name} (${task.assignee})`;
-                taskSelect.appendChild(option);
+            // タイムラインにドラッグ可能な視覚効果を追加
+            const timelineRows = document.querySelectorAll(".timeline-row");
+            timelineRows.forEach(row => {
+                row.style.cursor = "crosshair";
+                row.style.background = "linear-gradient(to right, rgba(102, 126, 234, 0.05) 0%, rgba(102, 126, 234, 0.1) 100%)";
             });
-            
-            modal.classList.add('show');
         }
 
         function closeModal() {
@@ -2639,6 +2635,145 @@
             selectedColorType = 'planned';
             document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('selected'));
             document.querySelector('.color-option.green').classList.add('selected');
+        }
+
+        // ドラッグ作成後のモーダルを開く
+        function openDragCreateModal(member, left, width, hours, type) {
+            const modal = document.createElement("div");
+            modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 5000;";
+            
+            const modalContent = document.createElement("div");
+            modalContent.style.cssText = "background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 500px; width: 90%;";
+            
+            const typeText = type === "planned" ? "予定" : "実績";
+            const typeColor = type === "planned" ? "#667eea" : "#764ba2";
+            
+            let taskOptions = '<option value="">-- 新規タスク --</option>';
+            tasks.forEach(task => {
+                taskOptions += '<option value="' + task.id + '">' + task.name + ' (' + task.assignee + ')</option>';
+            });
+            
+            // 実績の場合は種別選択を追加
+            let actualTypeSelector = '';
+            if (type !== "planned") {
+                actualTypeSelector = '<div style="margin-bottom: 15px;">' +
+                    '<label style="display: block; margin-bottom: 8px; font-weight: 600;">実績種別:</label>' +
+                    '<div style="display: flex; gap: 15px;">' +
+                    '<label style="display: flex; align-items: center; cursor: pointer;">' +
+                    '<input type="radio" name="actualType" value="actual-planned" checked style="margin-right: 5px;">' +
+                    '<span style="color: #28a745; font-weight: 600;">📋 計画通り</span>' +
+                    '</label>' +
+                    '<label style="display: flex; align-items: center; cursor: pointer;">' +
+                    '<input type="radio" name="actualType" value="actual-adhoc" style="margin-right: 5px;">' +
+                    '<span style="color: #dc3545; font-weight: 600;">🚨 トラブル</span>' +
+                    '</label>' +
+                    '</div>' +
+                    '</div>';
+            }
+            
+            modalContent.innerHTML = '<h3 style="margin-bottom: 20px; color: ' + typeColor + ';">' + typeText + 'を作成</h3>' +
+                '<div style="margin-bottom: 15px;">' +
+                '<strong>担当者:</strong> ' + member + '<br>' +
+                '<strong>工数:</strong> ' + hours.toFixed(1) + '時間' +
+                '</div>' +
+                actualTypeSelector +
+                '<div style="margin-bottom: 15px;">' +
+                '<label style="display: block; margin-bottom: 5px; font-weight: 600;">タスク選択:</label>' +
+                '<select id="dragTaskSelect" style="width: 100%; padding: 8px; border: 2px solid #e9ecef; border-radius: 5px;">' +
+                taskOptions +
+                '</select>' +
+                '</div>' +
+                '<div id="dragTaskNameGroup" style="margin-bottom: 15px;">' +
+                '<label style="display: block; margin-bottom: 5px; font-weight: 600;">タスク名:</label>' +
+                '<input type="text" id="dragTaskName" style="width: 100%; padding: 8px; border: 2px solid #e9ecef; border-radius: 5px;" placeholder="タスク名を入力">' +
+                '</div>' +
+                '<div style="display: flex; gap: 10px; justify-content: flex-end;">' +
+                '<button id="dragModalCancel" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">キャンセル</button>' +
+                '<button id="dragModalConfirm" style="padding: 10px 20px; background: ' + typeColor + '; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: 600;">作成</button>' +
+                '</div>';
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            const taskSelect = document.getElementById("dragTaskSelect");
+            const taskNameGroup = document.getElementById("dragTaskNameGroup");
+            const taskNameInput = document.getElementById("dragTaskName");
+            const cancelBtn = document.getElementById("dragModalCancel");
+            const confirmBtn = document.getElementById("dragModalConfirm");
+            
+            taskSelect.addEventListener("change", function() {
+                if (taskSelect.value) {
+                    taskNameGroup.style.display = "none";
+                } else {
+                    taskNameGroup.style.display = "block";
+                }
+            });
+            
+            function closeDragModal() {
+                modal.remove();
+                dragCreateType = null;
+                const timelineRows = document.querySelectorAll(".timeline-row");
+                timelineRows.forEach(row => {
+                    row.style.cursor = "";
+                    row.style.background = "";
+                });
+            }
+            
+            cancelBtn.addEventListener("click", closeDragModal);
+            modal.addEventListener("click", function(e) {
+                if (e.target === modal) closeDragModal();
+            });
+            
+            confirmBtn.addEventListener("click", function() {
+                const selectedTaskId = taskSelect.value ? parseInt(taskSelect.value) : null;
+                const taskName = selectedTaskId ? tasks.find(t => t.id === selectedTaskId).name : taskNameInput.value.trim();
+                
+                if (!taskName) {
+                    alert("タスクを選択するか、タスク名を入力してください");
+                    return;
+                }
+                
+                // 実績の場合は種別を取得
+                let actualType = type;
+                if (type !== "planned") {
+                    const selectedRadio = document.querySelector('input[name="actualType"]:checked');
+                    if (selectedRadio) {
+                        actualType = selectedRadio.value;
+                    }
+                }
+                
+                const newItem = {
+                    id: Date.now(),
+                    taskId: selectedTaskId,
+                    taskName: taskName,
+                    assignee: member,
+                    left: left,
+                    width: width,
+                    hours: parseFloat(hours.toFixed(1)),
+                    type: actualType,
+                    date: formatDate(currentDate)
+                };
+                
+                timelineItems.push(newItem);
+                
+                if (type !== "planned" && selectedTaskId) {
+                    const task = tasks.find(t => t.id === selectedTaskId);
+                    if (task) {
+                        task.actualHours = (task.actualHours || 0) + newItem.hours;
+                        if (task.plannedHours > 0) {
+                            task.progress = Math.min(100, Math.round((task.actualHours / task.plannedHours) * 100));
+                        }
+                    }
+                }
+                
+                saveData();
+                renderTimeline();
+                renderTaskList();
+                updateAnalytics();
+                
+                showNotification("✅ " + typeText + "を作成しました");
+                closeDragModal();
+            });
         }
 
         function handleTaskSelection() {
@@ -2871,24 +3006,78 @@
                 row.dataset.member = member;
                 
                 // 空白部分クリックでタスク追加
-                row.addEventListener('click', function(e) {
+                // ドラッグで新規作成
+                row.addEventListener("mousedown", function(e) {
                     // タスクバーやボタンをクリックした場合は無視
-                    if (e.target.closest('.task-bar') || e.target.closest('button')) {
+                    if (e.target.closest(".task-bar") || e.target.closest("button")) {
                         return;
                     }
                     
-                    // クリック位置から時間を計算
-                    const rect = row.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const rowWidth = rect.width;
-                    const percentX = (x / rowWidth) * 100;
-                    
-                    // 8:00-24:00の範囲で時間を計算（16時間）
-                    const startHour = 8 + (percentX / 100) * 16;
-                    const roundedHour = Math.floor(startHour * 2) / 2; // 30分単位に丸める
-                    
-                    // クイック追加モーダルを開く
-                    openQuickAddModal(member, roundedHour);
+                    // ドラッグ作成モードが有効な場合のみ
+                    if (dragCreateType) {
+                        isDraggingToCreate = true;
+                        dragCreateMember = member;
+                        
+                        // ドラッグ開始位置を記録
+                        const rect = row.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        dragCreateStart = (x / rect.width) * 100;
+                        
+                        // 仮のバーを作成
+                        dragCreateBar = document.createElement("div");
+                        dragCreateBar.className = "task-bar";
+                        dragCreateBar.style.position = "absolute";
+                        dragCreateBar.style.left = dragCreateStart + "%";
+                        dragCreateBar.style.width = "0%";
+                        dragCreateBar.style.height = dragCreateType === "planned" ? "30%" : "30%";
+                        dragCreateBar.style.top = dragCreateType === "planned" ? "10%" : "60%";
+                        dragCreateBar.style.background = dragCreateType === "planned" ? "rgba(102, 126, 234, 0.5)" : "rgba(118, 75, 162, 0.5)";
+                        dragCreateBar.style.border = "2px dashed #667eea";
+                        dragCreateBar.style.borderRadius = "4px";
+                        dragCreateBar.style.pointerEvents = "none";
+                        dragCreateBar.style.zIndex = "1000";
+                        row.appendChild(dragCreateBar);
+                        
+                        e.preventDefault();
+                    }
+                });
+                
+                row.addEventListener("mousemove", function(e) {
+                    if (isDraggingToCreate && dragCreateBar) {
+                        const rect = row.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const currentPercent = (x / rect.width) * 100;
+                        
+                        if (currentPercent > dragCreateStart) {
+                            dragCreateBar.style.width = (currentPercent - dragCreateStart) + "%";
+                        }
+                    }
+                });
+                
+                row.addEventListener("mouseup", function(e) {
+                    if (isDraggingToCreate && dragCreateBar) {
+                        const rect = row.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const endPercent = (x / rect.width) * 100;
+                        
+                        // 最小幅のチェック（1%以上）
+                        if (endPercent - dragCreateStart >= 1) {
+                            // 時間を計算
+                            const startHour = 8 + (dragCreateStart / 100) * 16;
+                            const endHour = 8 + (endPercent / 100) * 16;
+                            const hours = endHour - startHour;
+                            
+                            // 入力モーダルを開く
+                            openDragCreateModal(dragCreateMember, dragCreateStart, endPercent - dragCreateStart, hours, dragCreateType);
+                        }
+                        
+                        // クリーンアップ
+                        if (dragCreateBar && dragCreateBar.parentNode) {
+                            dragCreateBar.parentNode.removeChild(dragCreateBar);
+                        }
+                        isDraggingToCreate = false;
+                        dragCreateBar = null;
+                    }
                 });
 
                 const memberItems = timelineItems.filter(item => 
