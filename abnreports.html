@@ -265,10 +265,53 @@
       
       <form id="technicalForm">
         <div class="form-group"><label>技術処置者 *</label><input type="text" id="techHandler"></div>
+        
+        <div class="form-group">
+          <label>発見タイミング *</label>
+          <select id="discoveryTiming" required>
+            <option value="">選択</option>
+            <option value="運転中">運転中</option>
+            <option value="頭出し">頭出し</option>
+            <option value="初物">初物</option>
+            <option value="終物">終物</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        
+        <div class="form-group" id="previousCheckGroup" style="display:none;">
+          <label>前回終物確認（発見タイミングが初物の場合）</label>
+          <select id="previousCheck">
+            <option value="">選択</option>
+            <option value="不要">不要</option>
+            <option value="未">未</option>
+            <option value="確認済">確認済</option>
+          </select>
+        </div>
+        
         <div class="form-group"><label>命数有無 *</label><select id="lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        
+        <div class="form-group">
+          <label>命数到達 *</label>
+          <select id="lifespanReached" required>
+            <option value="">選択</option>
+            <option value="至">至</option>
+            <option value="不達">不達</option>
+          </select>
+        </div>
+        
         <div class="form-group"><label>保全単位</label><input type="text" id="maintenanceUnit"></div>
         <div class="form-group"><label>何が悪くどうした</label><textarea id="rootCauseAction"></textarea></div>
         <div class="form-group"><label>再発か新規か *</label><select id="recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+        
+        <div class="form-group">
+          <label>肯定 *</label>
+          <select id="affirmation" required>
+            <option value="">選択</option>
+            <option value="有">有</option>
+            <option value="無">無</option>
+          </select>
+        </div>
+        
         <div class="form-group">
           <label>写真</label>
           <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
@@ -354,6 +397,15 @@
       <h3 class="modal-title">📷 写真一覧</h3>
       <div id="photoModalContent" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin:20px 0;"></div>
       <button class="btn btn-cancel" id="btnPhotoClose">閉じる</button>
+    </div>
+  </div>
+
+  <!-- 類似案件詳細モーダル -->
+  <div id="similarCaseDetailModal" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:900px;">
+      <h3 class="modal-title">📋 類似案件の詳細</h3>
+      <div id="similarCaseDetailContent" style="margin:20px 0;"></div>
+      <button class="btn btn-cancel" id="btnSimilarCaseDetailClose">閉じる</button>
     </div>
   </div>
 
@@ -606,6 +658,46 @@
   // ===== 類似案件表示機能（技術入力）=====
   let allSimilarCases = [];
   let showingAllCases = false;
+  let allSimilarCases = [];
+  
+  // テキストの類似度を計算する関数（簡易版）
+  function calculateSimilarity(text1, text2) {
+    if (!text1 || !text2) return 0;
+    
+    // 両方のテキストを正規化
+    const normalize = (text) => {
+      return text
+        .toLowerCase()
+        .replace(/[\s\u3000]/g, '') // 空白を除去
+        .replace(/[、。，．]/g, ''); // 句読点を除去
+    };
+    
+    const t1 = normalize(text1);
+    const t2 = normalize(text2);
+    
+    if (t1 === t2) return 100;
+    if (t1.length === 0 || t2.length === 0) return 0;
+    
+    // 共通する文字数をカウント
+    let matches = 0;
+    const minLen = Math.min(t1.length, t2.length);
+    const maxLen = Math.max(t1.length, t2.length);
+    
+    // 2文字以上の共通部分文字列を探す
+    for (let len = minLen; len >= 2; len--) {
+      for (let i = 0; i <= t1.length - len; i++) {
+        const substr = t1.substring(i, i + len);
+        if (t2.includes(substr)) {
+          matches += len;
+          break;
+        }
+      }
+      if (matches > 0) break;
+    }
+    
+    // 類似度を0-100のスコアで返す
+    return Math.round((matches / maxLen) * 100);
+  }
   
   function showSimilarCases(selectedId){
     const selected = anomalyCache.find(x => x._id === selectedId);
@@ -615,14 +707,33 @@
     }
     
     // 同じ整理Noで技術対応済みのもの（選択中のものを除く）
-    allSimilarCases = anomalyCache
+    const sameSeriaCases = anomalyCache
       .filter(x => 
         x._id !== selectedId && 
         x.serialNo === selected.serialNo && 
         x.status === 'complete' &&
         x.techRequest === '要請'
-      )
-      .sort((a,b) => (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+      );
+    
+    // 異常内容の類似度を計算
+    const casesWithSimilarity = sameSeriaCases.map(item => {
+      const similarity = calculateSimilarity(
+        selected.anomalyContent || '',
+        item.anomalyContent || ''
+      );
+      return { ...item, similarity };
+    });
+    
+    // 類似度30%以上のものを抽出し、類似度と日付でソート
+    allSimilarCases = casesWithSimilarity
+      .filter(x => x.similarity >= 30)
+      .sort((a, b) => {
+        // 類似度が高い順、同じなら日付が新しい順
+        if (b.similarity !== a.similarity) {
+          return b.similarity - a.similarity;
+        }
+        return (b.occurrenceDate || '').localeCompare(a.occurrenceDate || '');
+      });
     
     const box = document.getElementById('similarCasesBox');
     const content = document.getElementById('similarCasesContent');
@@ -633,22 +744,41 @@
       return;
     }
     
+    // ヘッダーを更新
+    const header = box.querySelector('.similar-cases-header');
+    if (header) {
+      header.textContent = `🔍 類似する過去対応事例（整理No: ${selected.serialNo}）`;
+    }
+    
     // 最初は直近1件のみ表示
     const casesToShow = showingAllCases ? allSimilarCases : allSimilarCases.slice(0, 1);
     
-    content.innerHTML = casesToShow.map(item => `
+    content.innerHTML = casesToShow.map((item, index) => `
       <div class="similar-case-item">
-        <div class="similar-case-date">📅 ${item.occurrenceDate || ''} の対応事例</div>
+        <div class="similar-case-date">
+          📅 ${item.occurrenceDate || ''} の対応事例
+          <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:12px;font-size:.8rem;margin-left:8px;">
+            類似度 ${item.similarity}%
+          </span>
+        </div>
         <div class="similar-case-content">
           <strong>異常内容:</strong> ${item.anomalyContent || '-'}<br>
           <strong>製造処置:</strong> ${item.actionTaken || '-'}
         </div>
         <div class="similar-case-tech">
           <strong>🔧 技術対応内容:</strong><br>
+          ${item.techHandler ? `技術処置者: ${item.techHandler}<br>` : ''}
           ${item.rootCauseAction ? `原因・対策: ${item.rootCauseAction}<br>` : ''}
           ${item.maintenanceUnit ? `保全単位: ${item.maintenanceUnit}<br>` : ''}
+          ${item.lifespan ? `命数有無: ${item.lifespan}<br>` : ''}
           ${item.recurrenceType ? `分類: ${item.recurrenceType}` : ''}
         </div>
+        <button 
+          class="btn-small" 
+          style="background:#2196f3;color:#fff;margin-top:10px;width:100%;" 
+          onclick="showSimilarCaseDetail('${item._id}')">
+          📋 詳細を見る
+        </button>
       </div>
     `).join('');
     
@@ -796,10 +926,32 @@
       tableWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
     }else{
       tableWrap.innerHTML = `
-        <table>
+        <div style="overflow-x:auto;">
+        <table style="min-width:2000px;">
           <thead><tr>
-            <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th>
-            <th>発生日</th><th>処置者</th><th>写真</th><th>状態</th><th>操作</th>
+            <th>整理No</th>
+            <th>部署</th>
+            <th>ライン</th>
+            <th>発生日</th>
+            <th>発生時刻</th>
+            <th>再開時刻</th>
+            <th>異常内容</th>
+            <th>処置内容</th>
+            <th>遡り</th>
+            <th>処置者</th>
+            <th>技術要請</th>
+            <th>技術処置者</th>
+            <th>発見タイミング</th>
+            <th>前回終物確認</th>
+            <th>命数有無</th>
+            <th>命数到達</th>
+            <th>保全単位</th>
+            <th>原因対策</th>
+            <th>再発新規</th>
+            <th>肯定</th>
+            <th>写真</th>
+            <th>状態</th>
+            <th>操作</th>
           </tr></thead>
           <tbody>
             ${items.map(it=>{
@@ -808,12 +960,26 @@
               const photoCount = (it.mfgPhotoUrls?.length||0)+(it.techPhotoUrls?.length||0);
               return `
                 <tr>
-                  <td>${it.serialNo||''}</td>
+                  <td>${it.serialNo||'-'}</td>
                   <td>${it.department||'-'}</td>
                   <td>${it.lineName||'-'}</td>
-                  <td>${(it.anomalyContent||'').slice(0,30)}...</td>
-                  <td>${it.occurrenceDate||''}</td>
+                  <td>${it.occurrenceDate||'-'}</td>
+                  <td>${it.occurrenceTime||'-'}</td>
+                  <td>${it.restartTime||'-'}</td>
+                  <td style="min-width:150px;">${(it.anomalyContent||'-').slice(0,50)}${(it.anomalyContent||'').length>50?'...':''}</td>
+                  <td style="min-width:150px;">${(it.actionTaken||'-').slice(0,50)}${(it.actionTaken||'').length>50?'...':''}</td>
+                  <td>${it.traceback||'-'}</td>
                   <td>${it.handler||'-'}</td>
+                  <td>${it.techRequest==='要請'?'技術要請':it.techRequest==='完結'?'製造完結':'-'}</td>
+                  <td>${it.techHandler||'-'}</td>
+                  <td>${it.discoveryTiming||'-'}</td>
+                  <td>${it.previousCheck||'-'}</td>
+                  <td>${it.lifespan||'-'}</td>
+                  <td>${it.lifespanReached||'-'}</td>
+                  <td>${it.maintenanceUnit||'-'}</td>
+                  <td style="min-width:150px;">${(it.rootCauseAction||'-').slice(0,50)}${(it.rootCauseAction||'').length>50?'...':''}</td>
+                  <td>${it.recurrenceType||'-'}</td>
+                  <td>${it.affirmation||'-'}</td>
                   <td>${photoCount ? `<button class="btn-small" style="background:#2196f3;color:#fff;" data-photos="${it._id}">📷 ${photoCount}</button>` : '-'}</td>
                   <td><span class="card-status ${cls}">${st}</span></td>
                   <td class="action-btns">
@@ -825,6 +991,7 @@
             }).join('')}
           </tbody>
         </table>
+        </div>
       `;
     }
   }
@@ -871,6 +1038,18 @@
     document.getElementById('handlerManageDept').addEventListener('change', async ()=> {
       await updateHandlerManageList();
     });
+    
+    // 発見タイミング変更時の処理
+    document.getElementById('discoveryTiming').addEventListener('change', ()=> {
+      const timing = document.getElementById('discoveryTiming').value;
+      const previousCheckGroup = document.getElementById('previousCheckGroup');
+      if (timing === '初物') {
+        previousCheckGroup.style.display = 'block';
+      } else {
+        previousCheckGroup.style.display = 'none';
+        document.getElementById('previousCheck').value = '';
+      }
+    });
 
     const q = query(anomaliesRef(), orderBy('createdAt','desc'));
     onSnapshot(q, (snap)=>{
@@ -903,6 +1082,7 @@
       status:         techReq==='完結' ? 'complete':'pending',
       createdAt:      serverTimestamp(),
       techHandler:'', lifespan:'', maintenanceUnit:'', rootCauseAction:'', recurrenceType:'',
+      discoveryTiming:'', previousCheck:'', lifespanReached:'', affirmation:'',
       mfgPhotoUrls:[], techPhotoUrls:[]
     };
     const created = await addDoc(anomaliesRef(), base);
@@ -955,10 +1135,14 @@
     const id = document.getElementById('selectSerialNo').value;
     const updates = {
       techHandler: document.getElementById('techHandler').value,
+      discoveryTiming: document.getElementById('discoveryTiming').value,
+      previousCheck: document.getElementById('previousCheck').value || '',
       lifespan: document.getElementById('lifespan').value,
+      lifespanReached: document.getElementById('lifespanReached').value,
       maintenanceUnit: document.getElementById('maintenanceUnit').value,
       rootCauseAction: document.getElementById('rootCauseAction').value,
       recurrenceType: document.getElementById('recurrenceType').value,
+      affirmation: document.getElementById('affirmation').value,
       status: 'complete',
       completedAt: serverTimestamp()
     };
@@ -971,6 +1155,7 @@
     document.getElementById('selectedDataDisplay').style.display='none';
     document.getElementById('similarCasesBox').classList.remove('active');
     showingAllCases = false;
+    document.getElementById('previousCheckGroup').style.display='none';
     alert('技術入力を登録しました。');
   });
 
@@ -1005,10 +1190,42 @@
       </div>
       <div id="editTech" class="edit-pane" style="display:none;">
         <div class="form-group"><label>技術処置者</label><input type="text" id="edit_techHandler"></div>
+        <div class="form-group"><label>発見タイミング</label>
+          <select id="edit_discoveryTiming">
+            <option value="">選択</option>
+            <option value="運転中">運転中</option>
+            <option value="頭出し">頭出し</option>
+            <option value="初物">初物</option>
+            <option value="終物">終物</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group"><label>前回終物確認</label>
+          <select id="edit_previousCheck">
+            <option value="">選択</option>
+            <option value="不要">不要</option>
+            <option value="未">未</option>
+            <option value="確認済">確認済</option>
+          </select>
+        </div>
         <div class="form-group"><label>命数有無</label><select id="edit_lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>命数到達</label>
+          <select id="edit_lifespanReached">
+            <option value="">選択</option>
+            <option value="至">至</option>
+            <option value="不達">不達</option>
+          </select>
+        </div>
         <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit"></div>
         <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
         <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+        <div class="form-group"><label>肯定</label>
+          <select id="edit_affirmation">
+            <option value="">選択</option>
+            <option value="有">有</option>
+            <option value="無">無</option>
+          </select>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-cancel" id="btnEditCancel" style="flex:1;">キャンセル</button>
@@ -1044,10 +1261,14 @@
       document.getElementById('edit_traceback').value     = rec.traceback||'';
       document.getElementById('edit_techRequest').value   = rec.techRequest||'';
       document.getElementById('edit_techHandler').value   = rec.techHandler||'';
+      document.getElementById('edit_discoveryTiming').value = rec.discoveryTiming||'';
+      document.getElementById('edit_previousCheck').value = rec.previousCheck||'';
       document.getElementById('edit_lifespan').value      = rec.lifespan||'';
+      document.getElementById('edit_lifespanReached').value = rec.lifespanReached||'';
       document.getElementById('edit_maintenanceUnit').value= rec.maintenanceUnit||'';
       document.getElementById('edit_rootCauseAction').value= rec.rootCauseAction||'';
       document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
+      document.getElementById('edit_affirmation').value   = rec.affirmation||'';
       modal.classList.add('active'); modal.setAttribute('aria-hidden','false');
     })();
   }
@@ -1091,10 +1312,14 @@
       traceback:       document.getElementById('edit_traceback').value||'',
       techRequest:     document.getElementById('edit_techRequest').value||'',
       techHandler:     document.getElementById('edit_techHandler').value||'',
+      discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
+      previousCheck:   document.getElementById('edit_previousCheck').value||'',
       lifespan:        document.getElementById('edit_lifespan').value||'',
+      lifespanReached: document.getElementById('edit_lifespanReached').value||'',
       maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
       rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
       recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
+      affirmation:     document.getElementById('edit_affirmation').value||'',
     };
     if (updates.techRequest==='完結'){
       updates.status='complete';
@@ -1186,14 +1411,129 @@
     modal.setAttribute('aria-hidden', 'true');
   });
 
+  // グローバル関数として定義（HTMLのonclick属性から呼び出せるように）
+  window.showSimilarCaseDetail = function(caseId) {
+    const item = anomalyCache.find(x => x._id === caseId);
+    if (!item) return;
+    
+    const modal = document.getElementById('similarCaseDetailModal');
+    const content = document.getElementById('similarCaseDetailContent');
+    
+    // 類似度を計算（選択中の案件と比較）
+    const selectedId = document.getElementById('selectSerialNo').value;
+    const selected = anomalyCache.find(x => x._id === selectedId);
+    const similarity = selected ? calculateSimilarity(
+      selected.anomalyContent || '',
+      item.anomalyContent || ''
+    ) : 0;
+    
+    content.innerHTML = `
+      <div style="background:#f8f9ff;padding:20px;border-radius:8px;margin-bottom:20px;">
+        <h4 style="color:#667eea;margin-bottom:15px;display:flex;justify-content:space-between;align-items:center;">
+          <span>📋 基本情報</span>
+          <span style="background:#4caf50;color:#fff;padding:4px 12px;border-radius:12px;font-size:.9rem;">
+            類似度 ${similarity}%
+          </span>
+        </h4>
+        <div style="display:grid;gap:12px;">
+          <div><strong>整理No:</strong> ${item.serialNo || '-'}</div>
+          <div><strong>部署:</strong> ${item.department || '-'}</div>
+          <div><strong>ライン名:</strong> ${item.lineName || '-'}</div>
+          <div><strong>発生日:</strong> ${item.occurrenceDate || '-'} ${item.occurrenceTime || ''}</div>
+          <div><strong>再開時刻:</strong> ${item.restartTime || '-'}</div>
+          <div><strong>処置者:</strong> ${item.handler || '-'}</div>
+        </div>
+      </div>
+      
+      <div style="background:#fff4e6;padding:20px;border-radius:8px;margin-bottom:20px;">
+        <h4 style="color:#f57c00;margin-bottom:15px;">🔧 製造部門の対応</h4>
+        <div style="display:grid;gap:12px;">
+          <div>
+            <strong>異常内容:</strong><br>
+            <div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;white-space:pre-wrap;">
+              ${item.anomalyContent || '-'}
+            </div>
+          </div>
+          <div>
+            <strong>製造処置内容:</strong><br>
+            <div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;white-space:pre-wrap;">
+              ${item.actionTaken || '-'}
+            </div>
+          </div>
+          <div><strong>遡り:</strong> ${item.traceback || '-'}</div>
+          <div><strong>技術要請:</strong> ${item.techRequest === '要請' ? '技術要請あり' : '製造で完結'}</div>
+        </div>
+      </div>
+      
+      ${item.status === 'complete' && item.techRequest === '要請' ? `
+        <div style="background:#e8f5e9;padding:20px;border-radius:8px;margin-bottom:20px;">
+          <h4 style="color:#2e7d32;margin-bottom:15px;">⚙️ 技術部門の対応</h4>
+          <div style="display:grid;gap:12px;">
+            <div><strong>技術処置者:</strong> ${item.techHandler || '-'}</div>
+            <div><strong>発見タイミング:</strong> ${item.discoveryTiming || '-'}</div>
+            <div><strong>前回終物確認:</strong> ${item.previousCheck || '-'}</div>
+            <div><strong>命数有無:</strong> ${item.lifespan || '-'}</div>
+            <div><strong>命数到達:</strong> ${item.lifespanReached || '-'}</div>
+            <div><strong>保全単位:</strong> ${item.maintenanceUnit || '-'}</div>
+            <div>
+              <strong>原因・対策:</strong><br>
+              <div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;white-space:pre-wrap;">
+                ${item.rootCauseAction || '-'}
+              </div>
+            </div>
+            <div><strong>再発/新規:</strong> ${item.recurrenceType || '-'}</div>
+            <div><strong>肯定:</strong> ${item.affirmation || '-'}</div>
+          </div>
+        </div>
+      ` : ''}
+      
+      ${(item.mfgPhotoUrls?.length || item.techPhotoUrls?.length) ? `
+        <div style="background:#e3f2fd;padding:20px;border-radius:8px;">
+          <h4 style="color:#1976d2;margin-bottom:15px;">📷 写真</h4>
+          <button 
+            class="btn btn-primary" 
+            style="background:#1976d2;width:auto;padding:12px 24px;margin:0;"
+            onclick="showPhotos('${item._id}')">
+            📷 写真を表示 (${(item.mfgPhotoUrls?.length||0)+(item.techPhotoUrls?.length||0)}枚)
+          </button>
+        </div>
+      ` : ''}
+    `;
+    
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+  };
+
+  document.getElementById('btnSimilarCaseDetailClose').addEventListener('click', ()=>{
+    const modal = document.getElementById('similarCaseDetailModal');
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+  });
+
+  // モーダル背景クリックで閉じる
+  document.getElementById('photoModal').addEventListener('click', (e)=>{
+    if (e.target.id === 'photoModal') {
+      document.getElementById('photoModal').classList.remove('active');
+      document.getElementById('photoModal').setAttribute('aria-hidden', 'true');
+    }
+  });
+
+  document.getElementById('similarCaseDetailModal').addEventListener('click', (e)=>{
+    if (e.target.id === 'similarCaseDetailModal') {
+      document.getElementById('similarCaseDetailModal').classList.remove('active');
+      document.getElementById('similarCaseDetailModal').setAttribute('aria-hidden', 'true');
+    }
+  });
+
   document.getElementById('btnExport').addEventListener('click', ()=>{
     if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
-    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','命数有無','保全単位','原因対策','再発新規','状態','_id'];
+    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','発見タイミング','前回終物確認','命数有無','命数到達','保全単位','原因対策','再発新規','肯定','状態','_id'];
     const rows = anomalyCache.map(item=>[
       item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
       item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
       item.techRequest==='要請'?'技術要請あり':item.techRequest==='完結'?'製造で完結':'',
-      item.techHandler||'',item.lifespan||'',item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',
+      item.techHandler||'',item.discoveryTiming||'',item.previousCheck||'',item.lifespan||'',item.lifespanReached||'',
+      item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',item.affirmation||'',
       item.status==='complete'?'完了':'技術入力待ち', item._id
     ]);
     let csv = '\uFEFF' + headers.join(',') + '\n';
