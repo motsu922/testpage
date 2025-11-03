@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>出荷作業 異常履歴 管理（abnreports_firebase_v2 完全版 / プロジェクト情報反映）</title>
+<title>出荷作業 異常履歴 管理（abnreports_firebase_v2／管理マスタだれでも編集可版）</title>
 <style>
   :root{
     --ink:#111827; --muted:#6b7280; --border:#e5e7eb; --bg:#f7f7fb; --brand:#2563eb;
@@ -352,8 +352,8 @@
 
     <!-- 管理 -->
     <section id="tab-admin" class="card hidden">
-      <h3>マスタ保守（管理者）</h3>
-      <div class="bar muted" id="adminNote">権限：管理者のみ書き込み可</div>
+      <h3>マスタ保守（サインイン済みなら誰でも編集可）</h3>
+      <div class="bar muted" id="adminNote">権限：サインイン済みは書き込み可</div>
 
       <div class="row">
         <div class="col-4">
@@ -416,10 +416,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
-  serverTimestamp, Timestamp, query, where, orderBy, limit, startAt, endAt
+  serverTimestamp, Timestamp, query, where, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
-  getStorage, ref as sRef, uploadBytes, deleteObject, listAll, getDownloadURL
+  getStorage, ref as sRef, uploadBytes, deleteObject, listAll
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
 import {
   getFunctions, httpsCallable
@@ -441,9 +441,9 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-const functions = getFunctions(app, "asia-northeast1"); // 同一リージョン推奨
+const functions = getFunctions(app, "asia-northeast1");
 
-/** ====== DOM util / 以降のアプリ本体ロジックは前回と同一 ====== **/
+/** ====== DOM util ====== **/
 const $ = (q)=>document.querySelector(q);
 const $$ = (q)=>document.querySelectorAll(q);
 const el = (tag,attrs={},children=[])=>{
@@ -461,7 +461,7 @@ const el = (tag,attrs={},children=[])=>{
 
 /** ====== 状態 ====== **/
 let currentUser=null;
-let rolesCache=null;
+let rolesCache=null; // 既存の権限判定（履歴編集には引き続き使用）
 let masters={ departments:[], lines:[], operators:[] };
 let histItems=[];
 let currentView="cards";
@@ -472,7 +472,7 @@ $("#btnSignIn").addEventListener("click", async()=>{
   const pass=$("#password").value;
   $("#authMsg").textContent = "";
   try{
-    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    await signInWithEmailAndPassword(auth, email, pass);
     if(!/@miyama-unitec\.co\.jp$/i.test(email)){
       throw new Error("社内ドメイン以外は許可されていません");
     }
@@ -481,9 +481,7 @@ $("#btnSignIn").addEventListener("click", async()=>{
   }
 });
 
-$("#btnSignOut").addEventListener("click", async()=>{
-  await signOut(auth);
-});
+$("#btnSignOut").addEventListener("click", async()=>{ await signOut(auth); });
 
 onAuthStateChanged(auth, async(u)=>{
   currentUser=u;
@@ -506,7 +504,6 @@ onAuthStateChanged(auth, async(u)=>{
 
   await refreshTechTargets();
   await doHistSearch();
-
   refreshAnalytics();
 });
 
@@ -767,7 +764,7 @@ $("#btnTechSave").addEventListener("click", async()=>{
 
   const techEngineer=$("#tech_engineer").value;
   const life=$("#tech_life").value;
-  const unit=$("#tech_unit").value||null;
+  const unit=$("#tech_unit").value||null; // 任意
   const what=$("#tech_what").value;
   const repeat=$("#tech_repeat").value;
 
@@ -832,6 +829,7 @@ async function doHistSearch(){
 }
 
 function renderHist(){
+  // 異常レコードの編集権限は従来通り：管理者 or 作成者 or 同一部署
   const canEdit = (x)=> rolesCache?.role==="admin" || x.createdBy===currentUser?.uid || (rolesCache?.dept && rolesCache.dept===x.ownerDept);
 
   if(currentView==="cards"){
@@ -1047,9 +1045,10 @@ function drawBar(canvasId, labels, values){
     const x = pad + i*(bw+gap) + gap/2;
     const h = (H-pad*2) * (v/max);
     const y = H-pad - h;
+    ctx.fillStyle="#4b5563";
     ctx.fillRect(x,y,bw,h);
   });
-  ctx.font="12px sans-serif";
+  ctx.fillStyle="#111"; ctx.font="12px sans-serif";
   labels.forEach((t,i)=>{
     const x = pad + i*(bw+gap) + gap/2 + bw/2;
     ctx.save(); ctx.translate(x,H-pad+12); ctx.rotate(-Math.PI/6); ctx.textAlign="right"; ctx.fillText(String(t),0,0); ctx.restore();
@@ -1089,13 +1088,14 @@ function refreshAnalytics(){
 }
 $("#btnAnalRefresh").addEventListener("click", refreshAnalytics);
 
-/** ====== 管理 ====== **/
+/** ====== 管理（誰でも書込可：サインイン必須） ====== **/
 function adminGuardWrite(){
-  if(rolesCache?.role!=="admin"){ alert("管理者権限が必要です"); return false; }
+  if(!currentUser){ alert("サインインが必要です"); return false; }
   return true;
 }
 async function reloadAdminLists(){
   await loadMasters();
+  // 部署
   $("#dept_list").innerHTML="";
   masters.departments.forEach(d=>{
     const li=el("li",{},[
@@ -1109,6 +1109,7 @@ async function reloadAdminLists(){
     });
     $("#dept_list").appendChild(li);
   });
+  // ライン
   const f1=$("#line_dept_filter").value;
   $("#line_list").innerHTML="";
   masters.lines.filter(x=>!f1||x.dept===f1).forEach(d=>{
@@ -1123,6 +1124,7 @@ async function reloadAdminLists(){
     });
     $("#line_list").appendChild(li);
   });
+  // 処置者
   const f2=$("#op_dept_filter").value;
   $("#op_list").innerHTML="";
   masters.operators.filter(x=>!f2||x.dept===f2).forEach(d=>{
