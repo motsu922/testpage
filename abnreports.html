@@ -189,7 +189,14 @@
 
         <div style="background:#f3e5f5;padding:15px;border-radius:6px;margin-bottom:20px;">
           <h3 style="color:#8e24aa;margin-bottom:15px;font-size:1.1rem;">🔢 整理No</h3>
-          <div class="form-group"><label>整理No *</label><input type="text" id="serialNo" required placeholder="例: 2024-001"></div>
+          <div class="form-group word-suggestions">
+            <label>整理No *</label>
+            <input type="text" id="serialNo" required placeholder="例: 2024-001" list="serialNoList">
+            <datalist id="serialNoList"></datalist>
+            <div id="serialNoInfo" style="margin-top:8px;padding:8px;background:#f3e5f5;border-radius:4px;font-size:.85rem;color:#8e24aa;display:none;">
+              <strong>💡 ヒント:</strong> この整理Noの過去データ: <span id="serialNoCount">0</span>件
+            </div>
+          </div>
         </div>
 
         <div style="background:#e8f5e9;padding:15px;border-radius:6px;margin-bottom:20px;">
@@ -341,6 +348,15 @@
     </div>
   </div>
 
+  <!-- 写真表示モーダル -->
+  <div id="photoModal" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:800px;">
+      <h3 class="modal-title">📷 写真一覧</h3>
+      <div id="photoModalContent" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin:20px 0;"></div>
+      <button class="btn btn-cancel" id="btnPhotoClose">閉じる</button>
+    </div>
+  </div>
+
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
@@ -420,9 +436,22 @@
   }
 
   // ===== ワード候補機能（製造入力）=====
-  function extractCommonWords(field){
+  function extractCommonWords(field, filterSerialNo = null){
     const words = {};
-    anomalyCache.forEach(item => {
+    
+    // フィルタリング対象を決定
+    let targetData = anomalyCache;
+    if (filterSerialNo && filterSerialNo.trim() !== '') {
+      // 整理Noが入力されている場合、同じ整理Noのデータのみを対象
+      targetData = anomalyCache.filter(item => item.serialNo === filterSerialNo.trim());
+      
+      // 同じ整理Noのデータが少ない（3件未満）場合は全データも参照
+      if (targetData.length < 3) {
+        targetData = anomalyCache;
+      }
+    }
+    
+    targetData.forEach(item => {
       const text = item[field] || '';
       // 2文字以上の単語を抽出（句読点で分割）
       const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
@@ -441,8 +470,32 @@
       .map(([word]) => word);
   }
   
+  function updateSerialNoList(){
+    // 整理Noの一覧を取得（重複を除去して頻度順にソート）
+    const serialNoCounts = {};
+    anomalyCache.forEach(item => {
+      if (item.serialNo && item.serialNo.trim() !== '') {
+        const no = item.serialNo.trim();
+        serialNoCounts[no] = (serialNoCounts[no] || 0) + 1;
+      }
+    });
+    
+    // 頻度順にソート
+    const sortedSerialNos = Object.entries(serialNoCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([no, count]) => ({no, count}));
+    
+    // datalistを更新
+    const datalist = document.getElementById('serialNoList');
+    datalist.innerHTML = sortedSerialNos.map(({no, count}) => 
+      `<option value="${no}">${no} (${count}件)</option>`
+    ).join('');
+  }
+  
   function showWordSuggestions(targetId, suggestionsBoxId, wordsContainerId, field){
-    const words = extractCommonWords(field);
+    // 整理Noを取得
+    const serialNo = document.getElementById('serialNo').value.trim();
+    const words = extractCommonWords(field, serialNo);
     const box = document.getElementById(suggestionsBoxId);
     const container = document.getElementById(wordsContainerId);
     
@@ -450,6 +503,21 @@
       box.classList.remove('active');
       return;
     }
+    
+    // 整理Noでフィルタされているかどうかを表示
+    let headerText = '💡 よく使われる表現（クリックで追加）';
+    if (serialNo !== '') {
+      const filteredCount = anomalyCache.filter(item => item.serialNo === serialNo).length;
+      if (filteredCount >= 3) {
+        headerText = `💡 整理No「${serialNo}」の過去の表現（${filteredCount}件）`;
+      } else if (filteredCount > 0) {
+        headerText = `💡 よく使われる表現（整理No「${serialNo}」は${filteredCount}件のみ）`;
+      }
+    }
+    
+    // ヘッダーを更新
+    const header = box.querySelector('.word-suggestion-header');
+    if (header) header.textContent = headerText;
     
     container.innerHTML = words.map(word => 
       `<span class="word-tag" data-word="${word}">${word}</span>`
@@ -487,6 +555,43 @@
   
   document.getElementById('actionTaken').addEventListener('focus', () => {
     showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
+  });
+  
+  // 整理No入力時に候補ワードを更新
+  document.getElementById('serialNo').addEventListener('input', () => {
+    // 過去データ件数を表示
+    const serialNo = document.getElementById('serialNo').value.trim();
+    const infoBox = document.getElementById('serialNoInfo');
+    const countSpan = document.getElementById('serialNoCount');
+    
+    if (serialNo !== '') {
+      const count = anomalyCache.filter(item => item.serialNo === serialNo).length;
+      countSpan.textContent = count;
+      infoBox.style.display = count > 0 ? 'block' : 'none';
+    } else {
+      infoBox.style.display = 'none';
+    }
+    
+    // 異常内容と処置内容のテキストエリアがフォーカスされている場合は候補を更新
+    const activeElement = document.activeElement;
+    if (activeElement.id === 'anomalyContent') {
+      showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
+    } else if (activeElement.id === 'actionTaken') {
+      showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
+    }
+  });
+  
+  // 整理Noの変更時、候補が開いている場合は更新
+  document.getElementById('serialNo').addEventListener('change', () => {
+    const anomalyBox = document.getElementById('anomalyWordSuggestions');
+    const actionBox = document.getElementById('actionWordSuggestions');
+    
+    if (anomalyBox.classList.contains('active')) {
+      showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
+    }
+    if (actionBox.classList.contains('active')) {
+      showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
+    }
   });
   
   // フォーカスアウト時に候補を非表示（遅延して、クリックイベントを優先）
@@ -666,6 +771,16 @@
                 <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction||'-'}</div></div>
                 <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${item.recurrenceType||'-'}</div></div>
               `:''}
+              ${(item.mfgPhotoUrls?.length || item.techPhotoUrls?.length) ? `
+                <div class="card-field">
+                  <div class="field-label">写真</div>
+                  <div class="field-value">
+                    <button class="btn-small" style="background:#2196f3;color:#fff;" data-photos="${item._id}">
+                      📷 写真 (${(item.mfgPhotoUrls?.length||0)+(item.techPhotoUrls?.length||0)}枚)
+                    </button>
+                  </div>
+                </div>
+              `:''}
               <div class="action-btns" style="margin-top:10px;">
                 <button class="btn-small btn-edit" data-edit="${item._id}">編集</button>
                 <button class="btn-small btn-delete" data-del="${item._id}">削除</button>
@@ -684,12 +799,13 @@
         <table>
           <thead><tr>
             <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th>
-            <th>発生日</th><th>処置者</th><th>状態</th><th>操作</th>
+            <th>発生日</th><th>処置者</th><th>写真</th><th>状態</th><th>操作</th>
           </tr></thead>
           <tbody>
             ${items.map(it=>{
               const st = it.status==='complete'?'完了':'待ち';
               const cls = it.status==='complete'?'status-complete':'status-pending';
+              const photoCount = (it.mfgPhotoUrls?.length||0)+(it.techPhotoUrls?.length||0);
               return `
                 <tr>
                   <td>${it.serialNo||''}</td>
@@ -698,6 +814,7 @@
                   <td>${(it.anomalyContent||'').slice(0,30)}...</td>
                   <td>${it.occurrenceDate||''}</td>
                   <td>${it.handler||'-'}</td>
+                  <td>${photoCount ? `<button class="btn-small" style="background:#2196f3;color:#fff;" data-photos="${it._id}">📷 ${photoCount}</button>` : '-'}</td>
                   <td><span class="card-status ${cls}">${st}</span></td>
                   <td class="action-btns">
                     <button class="btn-small btn-edit" data-edit="${it._id}">編集</button>
@@ -761,6 +878,7 @@
       renderHistory();
       renderTechTargetSelect();
       updateAnalysis();
+      updateSerialNoList(); // 整理Noリストを更新
     });
 
     await updateDepartmentList();
@@ -953,6 +1071,7 @@
     }
     const ed = t.closest('button.btn-edit[data-edit]'); if (ed){ openEdit(ed.getAttribute('data-edit')); }
     const del= t.closest('button.btn-delete[data-del]'); if (del){ deleteRecord(del.getAttribute('data-del')); }
+    const photos = t.closest('button[data-photos]'); if (photos){ showPhotos(photos.getAttribute('data-photos')); }
   });
   document.getElementById('btnEditCancel').addEventListener('click', ()=>{
     modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
@@ -990,17 +1109,82 @@
 
   async function deleteRecord(id){
     if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
-    const baseRef = ref(storage, `anomalies/${id}`);
+    const item = anomalyCache.find(a => a._id === id);
     try{
-      const all = await listAll(baseRef);
-      for (const f of all.items){ await deleteObject(f); }
-      for (const p of all.prefixes){
-        const all2 = await listAll(p);
-        for (const f2 of all2.items){ await deleteObject(f2); }
+      // 製造写真を削除
+      if (item.mfgPhotoUrls && Array.isArray(item.mfgPhotoUrls)){
+        for (const url of item.mfgPhotoUrls){
+          try{
+            const photoRef = ref(storage, url);
+            await deleteObject(photoRef);
+          }catch(e){
+            console.log('Failed to delete mfg photo:', e);
+          }
+        }
       }
-    }catch(err){}
+      // 技術写真を削除
+      if (item.techPhotoUrls && Array.isArray(item.techPhotoUrls)){
+        for (const url of item.techPhotoUrls){
+          try{
+            const photoRef = ref(storage, url);
+            await deleteObject(photoRef);
+          }catch(e){
+            console.log('Failed to delete tech photo:', e);
+          }
+        }
+      }
+    }catch(err){
+      console.log('Error deleting photos:', err);
+    }
     await deleteDoc(doc(db,'anomalies',id));
+    alert('削除しました');
   }
+
+  function showPhotos(id){
+    const item = anomalyCache.find(a => a._id === id);
+    if (!item) return;
+    
+    const modal = document.getElementById('photoModal');
+    const content = document.getElementById('photoModalContent');
+    
+    let html = '';
+    
+    if (item.mfgPhotoUrls && item.mfgPhotoUrls.length > 0){
+      html += '<div style="grid-column:1/-1;"><h4 style="color:#667eea;margin-bottom:10px;">製造部門の写真</h4></div>';
+      item.mfgPhotoUrls.forEach(url => {
+        html += `
+          <div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+            <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
+          </div>
+        `;
+      });
+    }
+    
+    if (item.techPhotoUrls && item.techPhotoUrls.length > 0){
+      html += '<div style="grid-column:1/-1;margin-top:20px;"><h4 style="color:#f57c00;margin-bottom:10px;">技術部門の写真</h4></div>';
+      item.techPhotoUrls.forEach(url => {
+        html += `
+          <div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+            <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
+          </div>
+        `;
+      });
+    }
+    
+    if (!html){
+      html = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999;">写真がありません</div>';
+    }
+    
+    content.innerHTML = html;
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+
+  document.getElementById('btnPhotoClose').addEventListener('click', ()=>{
+    const modal = document.getElementById('photoModal');
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden', 'true');
+  });
 
   document.getElementById('btnExport').addEventListener('click', ()=>{
     if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
