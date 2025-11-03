@@ -2,1177 +2,1292 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>出荷作業 異常履歴 管理（abnreports_firebase_v2／管理マスタだれでも編集可版）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>異常履歴入力ツール（Firebase連携版）</title>
 <style>
-  :root{
-    --ink:#111827; --muted:#6b7280; --border:#e5e7eb; --bg:#f7f7fb; --brand:#2563eb;
-    --ok:#0ea5e9; --warn:#f59e0b; --good:#16a34a; --bad:#dc2626;
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f5}
+  .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.1)}
+  .header h1{font-size:1.5rem;margin-bottom:5px}
+  .container{max-width:900px;margin:0 auto;padding:10px}
+  .tabs{display:flex;background:#fff;margin:15px 0 0;border-radius:8px 8px 0 0;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
+  .tab{flex:1;padding:15px;text-align:center;cursor:pointer;background:#f8f9fa;border:none;font-size:1rem;font-weight:bold;transition:.3s;color:#666}
+  .tab.active{background:#fff;color:#667eea;border-bottom:3px solid #667eea}
+  .tab-content{display:none;background:#fff;padding:20px;border-radius:0 0 8px 8px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
+  .tab-content.active{display:block}
+  .form-group{margin-bottom:20px}
+  .form-group label{display:block;margin-bottom:8px;font-weight:bold;color:#333;font-size:.95rem}
+  .form-group input,.form-group textarea,.form-group select{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:6px;font-size:1rem;transition:border-color .3s}
+  .form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:#667eea}
+  .form-group textarea{min-height:100px;resize:vertical}
+  .time-group{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .photo-upload{border:2px dashed #e0e0e0;border-radius:6px;padding:20px;text-align:center;cursor:pointer;transition:.3s}
+  .photo-upload:hover{border-color:#667eea;background:#f8f9ff}
+  .photo-upload input[type=file]{display:none}
+  .photo-preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-top:15px}
+  .photo-item{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
+  .photo-item img{width:100%;height:100%;object-fit:cover}
+  .photo-item .remove-btn{position:absolute;top:5px;right:5px;background:rgba(255,59,48,.9);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:1}
+  .btn{width:100%;padding:15px;border:none;border-radius:6px;font-size:1rem;font-weight:bold;cursor:pointer;transition:.3s;margin-top:10px}
+  .btn-primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
+  .btn-secondary{background:#6c757d;color:#fff}
+  .btn-export{background:#28a745;color:#fff}
+  .history-controls{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap}
+  .view-toggle{display:flex;gap:5px}
+  .view-toggle button{padding:8px 15px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
+  .view-toggle button.active{background:#667eea;color:#fff}
+  .card-view{display:grid;gap:15px}
+  .anomaly-card{background:#fff;border-radius:8px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,.1);border-left:4px solid #667eea}
+  .anomaly-card.complete{border-left-color:#28a745}
+  .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e0e0e0}
+  .card-id{font-size:1.2rem;font-weight:bold;color:#667eea}
+  .card-status{padding:4px 12px;border-radius:12px;font-size:.85rem;font-weight:bold}
+  .status-pending{background:#fff3cd;color:#856404}
+  .status-complete{background:#d4edda;color:#155724}
+  .card-body{display:grid;gap:8px}
+  .card-field{display:grid;grid-template-columns:120px 1fr;gap:10px}
+  .field-label{font-weight:bold;color:#666}
+  .field-value{color:#333}
+  .table-view{overflow-x:auto;display:none}
+  .table-view.active{display:block}
+  table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+  th,td{padding:12px;text-align:left;border-bottom:1px solid #e0e0e0}
+  th{background:#667eea;color:#fff;font-weight:bold;position:sticky;top:0}
+  tr:hover{background:#f8f9ff}
+  .action-btns{display:flex;gap:6px;flex-wrap:wrap}
+  .btn-small{padding:6px 10px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
+  .btn-edit{background:#ffc107;color:#000}
+  .btn-delete{background:#dc3545;color:#fff}
+  .empty-state{text-align:center;padding:40px 20px;color:#999}
+  .empty-state-icon{font-size:3rem;margin-bottom:15px}
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
+  .modal.active{display:flex}
+  .modal-content{background:#fff;padding:20px;border-radius:8px;max-width:680px;width:95%;max-height:90vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .modal-title{font-size:1.1rem;font-weight:bold;margin-bottom:10px;color:#333}
+  .edit-tabs{display:flex;gap:8px;margin:8px 0 16px}
+  .edit-tab{flex:1;padding:10px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
+  .edit-tab.active{background:#667eea;color:#fff}
+  .modal-actions{display:flex;gap:10px;margin-top:10px}
+  .btn-cancel{background:#9e9e9e;color:#fff}
+  @media (max-width:600px){
+    .card-field{grid-template-columns:1fr;gap:5px}
+    .time-group{grid-template-columns:1fr}
+    table{font-size:.85rem}
+    th,td{padding:8px}
   }
-  *{ box-sizing:border-box; -webkit-tap-highlight-color:rgba(0,0,0,.05); }
-  html,body{ height:100%; }
-  body{
-    margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif;
-    color:var(--ink); background:var(--bg);
-  }
-  header{
-    position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid var(--border);
-    display:flex; align-items:center; gap:12px; padding:10px 14px;
-  }
-  header h1{ font-size:16px; margin:0; font-weight:700; }
-  .grow{ flex:1; }
-  .tag{ font-size:12px; padding:2px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; }
-  button, .btn{
-    appearance:none; border:1px solid var(--border); background:#fff; color:var(--ink);
-    border-radius:10px; padding:10px 14px; cursor:pointer; font-weight:600;
-  }
-  button.primary{ background:var(--brand); color:#fff; border-color:var(--brand); }
-  button.ghost{ background:transparent; }
-  button.small{ padding:6px 10px; font-size:12px; border-radius:8px; }
-  .container{ max-width:1200px; margin:18px auto; padding:0 12px; }
-  nav.tabs{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-  nav.tabs button{
-    border-radius:999px; padding:8px 14px; font-weight:700; border:1px solid var(--border); background:#fff;
-  }
-  nav.tabs button.active{ background:#111827; color:#fff; border-color:#111827; }
-  .card{
-    background:#fff; border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:14px;
-    box-shadow:0 1px 0 rgba(0,0,0,.03);
-  }
-  .row{ display:grid; grid-template-columns:repeat(12,1fr); gap:10px; }
-  .col-12{ grid-column:span 12; } .col-6{ grid-column:span 6; } .col-4{ grid-column:span 4; } .col-3{ grid-column:span 3; } .col-2{ grid-column:span 2; }
-  @media (max-width:900px){ .col-6,.col-4,.col-3,.col-2{ grid-column:span 12; } }
-
-  label{ display:block; font-size:12px; color:var(--muted); margin:6px 0 6px; }
-  input[type="text"],input[type="date"],input[type="time"],select,textarea{
-    width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#fff;
-    font-size:14px;
-  }
-  textarea{ min-height:96px; resize:vertical; }
-
-  .pillbar{ display:flex; gap:8px; flex-wrap:wrap; margin-top:6px; }
-  .pill{ border:1px solid var(--border); padding:5px 10px; border-radius:999px; font-size:12px; cursor:pointer; background:#fafafa; }
-  .thumbs{ display:flex; gap:10px; flex-wrap:wrap; }
-  .thumb{ position:relative; width:90px; height:90px; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
-  .thumb img{ width:100%; height:100%; object-fit:cover; }
-  .thumb .del{ position:absolute; right:4px; top:4px; background:#000; color:#fff; border:none; border-radius:6px; padding:2px 6px; font-size:11px; opacity:.8; }
-  .bar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .badge{ display:inline-block; padding:3px 8px; border-radius:999px; font-size:11px; font-weight:700; }
-  .badge.pending{ background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; }
-  .badge.complete{ background:#ecfdf5; color:#065f46; border:1px solid #bbf7d0; }
-  .badge.req{ background:#eff6ff; color:#1e40af; border:1px solid #bfdbfe; }
-  .grid-cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-  @media (max-width:1100px){ .grid-cards{ grid-template-columns:repeat(2,1fr); } }
-  @media (max-width:720px){ .grid-cards{ grid-template-columns:1fr; } }
-  table{ width:100%; border-collapse:separate; border-spacing:0; }
-  th,td{ padding:10px 8px; border-bottom:1px solid var(--border); text-align:left; font-size:13px; vertical-align:top; }
-  th{ position:sticky; top:0; background:#fff; z-index:1; }
-  .scroll{ overflow:auto; max-height:60vh; border:1px solid var(--border); border-radius:12px; background:#fff; }
-  .right{ text-align:right; }
-  .muted{ color:var(--muted); font-size:12px; }
-  .hidden{ display:none !important; }
-  .footbar{
-    position:sticky; bottom:0; background:rgba(255,255,255,.9); backdrop-filter:saturate(180%) blur(6px);
-    border-top:1px solid var(--border); padding:8px 12px; display:flex; gap:8px; justify-content:flex-end;
-  }
-  dialog.modal{ border:none; border-radius:16px; width:min(920px,95vw); }
-  dialog::backdrop{ background:rgba(0,0,0,.3); }
-  canvas.chart{ width:100%; height:260px; background:#fff; border:1px solid var(--border); border-radius:12px; }
-  .hint{ font-size:12px; color:#64748b; }
+  #authGate{position:fixed;inset:0;background:#f5f5f5;display:flex;align-items:center;justify-content:center;z-index:2000}
+  #authCard{background:#fff;max-width:380px;width:92%;padding:24px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+  #signOutBtn{position:fixed;right:12px;top:12px;background:#ef5350;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;z-index:1500}
+  
+  /* ワード候補スタイル */
+  .word-suggestions{position:relative;}
+  .word-suggestion-box{position:absolute;z-index:100;background:#fff;border:2px solid #667eea;border-radius:8px;padding:10px;max-height:300px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15);display:none;width:100%;margin-top:5px;}
+  .word-suggestion-box.active{display:block;}
+  .word-suggestion-header{font-size:.85rem;color:#667eea;font-weight:bold;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #e0e0e0;}
+  .word-tag{display:inline-block;background:#f0f7ff;color:#667eea;padding:6px 12px;margin:3px;border-radius:16px;cursor:pointer;font-size:.85rem;transition:.2s;border:1px solid #e3f2fd;}
+  .word-tag:hover{background:#667eea;color:#fff;transform:translateY(-2px);box-shadow:0 2px 8px rgba(102,126,234,.3);}
+  
+  /* 類似案件表示スタイル */
+  .similar-cases-box{background:#fff4e6;border:2px solid #f57c00;border-radius:8px;padding:15px;margin-bottom:20px;display:none;}
+  .similar-cases-box.active{display:block;}
+  .similar-cases-header{color:#f57c00;font-weight:bold;margin-bottom:15px;font-size:1rem;display:flex;align-items:center;gap:8px;}
+  .similar-case-item{background:#fff;border-left:3px solid #f57c00;border-radius:6px;padding:12px;margin-bottom:10px;}
+  .similar-case-item:last-child{margin-bottom:0;}
+  .similar-case-date{font-weight:bold;color:#f57c00;margin-bottom:8px;font-size:.95rem;}
+  .similar-case-content{font-size:.9rem;color:#333;line-height:1.5;margin-bottom:8px;}
+  .similar-case-tech{margin-top:8px;padding-top:8px;border-top:1px solid #ffe0b2;font-size:.9rem;color:#666;}
+  .similar-case-tech strong{color:#f57c00;}
+  .show-more-btn{width:100%;padding:10px;background:#fff;color:#f57c00;border:2px solid #f57c00;border-radius:6px;font-weight:bold;cursor:pointer;transition:.2s;margin-top:10px;}
+  .show-more-btn:hover{background:#f57c00;color:#fff;}
+  
+  /* 統計カードスタイル */
+  .stat-card{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;}
+  .stat-card h4{font-size:.9rem;margin-bottom:10px;opacity:.9;}
+  .stat-value{font-size:2.5rem;font-weight:bold;margin-bottom:5px;}
+  .stat-label{font-size:.85rem;opacity:.8;}
+  .chart-bar{background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);height:30px;display:flex;align-items:center;padding:0 10px;color:#fff;font-weight:bold;border-radius:4px;transition:.3s;}
+  .analysis-insight{border-left:4px solid #2196f3;padding:15px;border-radius:6px;background:#e3f2fd;line-height:1.6;}
+  .trend-badge{display:inline-block;padding:3px 12px;border-radius:12px;font-weight:bold;margin:0 5px;}
+  .trend-increase{background:#ffebee;color:#c62828;}
+  .trend-decrease{background:#e8f5e9;color:#2e7d32;}
+  .trend-stable{background:#fff3e0;color:#ef6c00;}
 </style>
 </head>
 <body>
-
-<header>
-  <h1>異常履歴 管理</h1>
-  <span id="envTag" class="tag">未認証</span>
-  <div class="grow"></div>
-  <span id="whoami" class="muted">-</span>
-  <button id="btnSignOut" class="ghost small">サインアウト</button>
-</header>
-
-<div class="container">
-  <!-- 認証ゲート -->
-  <section id="gate" class="card">
-    <h2>サインイン</h2>
-    <div class="row">
-      <div class="col-6">
+  <button id="signOutBtn" style="display:none;">サインアウト</button>
+  <div id="authGate">
+    <div id="authCard">
+      <h2 style="margin-bottom:10px;color:#667eea;">🔐 サインイン</h2>
+      <p style="color:#666;margin-bottom:15px;">社内メールでログインしてください</p>
+      <div class="form-group">
         <label>メールアドレス</label>
-        <input type="text" id="email" placeholder="user@miyama-unitec.co.jp" autocomplete="username"/>
+        <input type="email" id="authEmail" placeholder="user@miyama-unitec.co.jp">
       </div>
-      <div class="col-6">
+      <div class="form-group">
         <label>パスワード</label>
-        <input type="password" id="password" placeholder="●●●●●●" autocomplete="current-password"/>
+        <input type="password" id="authPassword" placeholder="••••••••">
       </div>
-      <div class="col-12 bar">
-        <button id="btnSignIn" class="primary">サインイン</button>
-        <span class="hint">社内メール（@miyama-unitec.co.jp）のみ許可</span>
-      </div>
-      <div class="col-12"><div id="authMsg" class="muted"></div></div>
+      <button class="btn btn-primary" id="authLoginBtn">ログイン</button>
+      <p id="authMsg" style="color:#c62828;margin-top:10px;"></p>
     </div>
-  </section>
+  </div>
 
-  <!-- アプリ本体 -->
-  <section id="app" class="hidden">
-    <nav class="tabs">
-      <button data-tab="mfg" class="active">製造入力</button>
-      <button data-tab="tech">技術入力</button>
-      <button data-tab="hist">履歴</button>
-      <button data-tab="anal">分析</button>
-      <button data-tab="admin">管理</button>
-    </nav>
+  <div class="header">
+    <h1>📋 異常履歴入力ツール</h1>
+    <p>Firebase連携版（Auth / Firestore / Storage）</p>
+  </div>
+
+  <div class="container" style="display:none" id="appRoot">
+    <div class="tabs">
+      <button class="tab active" data-tab="manufacturing">製造入力</button>
+      <button class="tab" data-tab="technical">技術入力</button>
+      <button class="tab" data-tab="history">履歴</button>
+      <button class="tab" data-tab="analysis">📊 分析</button>
+      <button class="tab" data-tab="master">⚙️ 管理</button>
+    </div>
 
     <!-- 製造入力 -->
-    <section id="tab-mfg" class="card">
-      <h3>一次登録（製造）</h3>
-      <div class="row">
-        <div class="col-4">
-          <label>発生日*</label>
-          <input type="date" id="mfg_date"/>
-        </div>
-        <div class="col-4">
-          <label>発生時刻</label>
-          <div class="bar">
-            <input type="time" id="mfg_time_start" step="60"/>
-            <button class="small" data-now="#mfg_time_start">NOW</button>
+    <div id="manufacturing" class="tab-content active">
+      <h2 style="margin-bottom:20px;color:#667eea;">製造部門 - 異常報告</h2>
+      <form id="manufacturingForm">
+        <div style="background:#f0f7ff;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#667eea;margin-bottom:15px;font-size:1.1rem;">📅 いつ</h3>
+          <div class="form-group">
+            <label>発生日 *</label>
+            <div style="display:flex;gap:10px;">
+              <input type="date" id="occurrenceDate" required style="flex:1;">
+              <button type="button" class="btn btn-secondary" style="width:auto;padding:12px 20px;margin:0;background:#17a2b8;" id="btnNowDate">📅 NOW</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>時刻</label>
+            <div class="time-group">
+              <div>
+                <label style="font-weight:normal;font-size:.9rem;">発生時刻</label>
+                <div style="display:flex;gap:5px;">
+                  <input type="time" id="occurrenceTime" style="flex:1;">
+                  <button type="button" class="btn btn-secondary" style="width:auto;padding:8px 12px;margin:0;font-size:.85rem;background:#17a2b8;" data-now="occurrenceTime">NOW</button>
+                </div>
+              </div>
+              <div>
+                <label style="font-weight:normal;font-size:.9rem;">再開時刻</label>
+                <div style="display:flex;gap:5px;">
+                  <input type="time" id="restartTime" style="flex:1;">
+                  <button type="button" class="btn btn-secondary" style="width:auto;padding:8px 12px;margin:0;font-size:.85rem;background:#17a2b8;" data-now="restartTime">NOW</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="col-4">
-          <label>再開時刻</label>
-          <div class="bar">
-            <input type="time" id="mfg_time_end" step="60"/>
-            <button class="small" data-now="#mfg_time_end">NOW</button>
+
+        <div style="background:#fff4e6;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#f57c00;margin-bottom:15px;font-size:1.1rem;">📍 どこで</h3>
+          <div class="form-group"><label>部署 *</label><select id="department" required></select></div>
+          <div class="form-group"><label>ライン名 *</label><select id="lineName" required><option value="">部署を先に選択してください</option></select></div>
+          <div class="form-group"><label>処置者 *</label><select id="handler" required><option value="">部署を先に選択してください</option></select></div>
+        </div>
+
+        <div style="background:#f3e5f5;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#8e24aa;margin-bottom:15px;font-size:1.1rem;">🔢 整理No</h3>
+          <div class="form-group"><label>整理No *</label><input type="text" id="serialNo" required placeholder="例: 2024-001"></div>
+        </div>
+
+        <div style="background:#e8f5e9;padding:15px;border-radius:6px;margin-bottom:20px;">
+          <h3 style="color:#2e7d32;margin-bottom:15px;font-size:1.1rem;">📝 何があった</h3>
+          
+          <div class="form-group word-suggestions">
+            <label>異常内容 *</label>
+            <textarea id="anomalyContent" required></textarea>
+            <!-- ワード候補 -->
+            <div id="anomalyWordSuggestions" class="word-suggestion-box">
+              <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
+              <div id="anomalyWords"></div>
+            </div>
+          </div>
+          
+          <div class="form-group word-suggestions">
+            <label>製造処置内容 *</label>
+            <textarea id="actionTaken" required></textarea>
+            <!-- ワード候補 -->
+            <div id="actionWordSuggestions" class="word-suggestion-box">
+              <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
+              <div id="actionWords"></div>
+            </div>
+          </div>
+          <div class="form-group"><label>遡り *</label>
+            <select id="traceback" required><option value="">選択</option><option value="有">有</option><option value="無">無</option></select>
+          </div>
+          <div class="form-group"><label>技術要請 *</label>
+            <select id="techRequest" required>
+              <option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>写真</label>
+            <div class="photo-upload" onclick="document.getElementById('mfgPhotos').click()">
+              <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
+              <input type="file" id="mfgPhotos" accept="image/*" multiple>
+            </div>
+            <div id="mfgPhotoPreview" class="photo-preview"></div>
           </div>
         </div>
-
-        <div class="col-4">
-          <label>部署*</label>
-          <select id="mfg_dept"></select>
-        </div>
-        <div class="col-4">
-          <label>ライン*</label>
-          <select id="mfg_line"></select>
-        </div>
-        <div class="col-4">
-          <label>処置者*</label>
-          <select id="mfg_operator"></select>
-        </div>
-
-        <div class="col-4">
-          <label>整理No*</label>
-          <input type="text" id="mfg_serial" placeholder="例：A379"/>
-        </div>
-        <div class="col-4">
-          <label>遡り*</label>
-          <select id="mfg_backtrack">
-            <option value="false">無</option>
-            <option value="true">有</option>
-          </select>
-        </div>
-        <div class="col-4">
-          <label>技術要請*</label>
-          <select id="mfg_request">
-            <option value="要請">要請</option>
-            <option value="完結">完結</option>
-          </select>
-        </div>
-
-        <div class="col-12">
-          <label>異常内容*</label>
-          <textarea id="mfg_abn" placeholder="異常内容を入力"></textarea>
-          <div class="pillbar" id="abn_suggest"></div>
-        </div>
-        <div class="col-12">
-          <label>製造処置内容*</label>
-          <textarea id="mfg_action" placeholder="処置内容を入力"></textarea>
-          <div class="pillbar" id="act_suggest"></div>
-        </div>
-
-        <div class="col-12">
-          <label>写真（複数可）</label>
-          <input type="file" id="mfg_photos" accept="image/*" multiple/>
-          <div class="thumbs" id="mfg_thumbs"></div>
-          <div class="muted">長辺1600pxに自動縮小して保存</div>
-        </div>
-
-        <div class="col-12 footbar">
-          <button id="btnMfgReset" class="ghost">リセット</button>
-          <button id="btnMfgSave" class="primary">登録</button>
-        </div>
-      </div>
-    </section>
+        <button type="submit" class="btn btn-primary">登録</button>
+      </form>
+    </div>
 
     <!-- 技術入力 -->
-    <section id="tab-tech" class="card hidden">
-      <h3>追記（技術）</h3>
-      <div class="bar">
-        <button id="btnTechReload" class="small">対象更新</button>
-        <span class="muted">対象：<b>status=pending</b> かつ <b>技術要請=要請</b></span>
+    <div id="technical" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#667eea;">技術部門 - 追加入力</h2>
+      
+      <div class="form-group">
+        <label>対象の案件選択 *</label>
+        <select id="selectSerialNo"><option value="">案件を選択してください</option></select>
       </div>
-      <div class="row">
-        <div class="col-4">
-          <label>対象案件</label>
-          <select id="tech_target"></select>
-        </div>
-        <div class="col-8 bar" style="align-items:flex-end">
-          <button id="btnShowMfgSummary" class="small">製造内容を表示</button>
-          <button id="btnSimilarOne" class="small">直近の類似（整理No＋ライン）</button>
-          <button id="btnSimilarAll" class="small">全件</button>
-        </div>
-
-        <div class="col-12" id="mfgSummary" class="hidden"></div>
-        <div class="col-12" id="similarBox" class="hidden"></div>
-
-        <div class="col-4">
-          <label>技術処置者*</label>
-          <select id="tech_engineer"></select>
-        </div>
-        <div class="col-4">
-          <label>命数有無*</label>
-          <select id="tech_life">
-            <option value="true">有</option>
-            <option value="false">無</option>
-          </select>
-        </div>
-        <div class="col-4">
-          <label>保全単位（任意）</label>
-          <input type="text" id="tech_unit" placeholder="例：金型一式/ユニット 等"/>
-        </div>
-
-        <div class="col-12">
-          <label>何が悪く、どうした*</label>
-          <textarea id="tech_what" placeholder="技術的原因と対処"></textarea>
-        </div>
-        <div class="col-4">
-          <label>再発／新規*</label>
-          <select id="tech_repeat">
-            <option value="新規">新規</option>
-            <option value="再発">再発</option>
-          </select>
-        </div>
-        <div class="col-8">
-          <label>写真（複数可）</label>
-          <input type="file" id="tech_photos" accept="image/*" multiple/>
-          <div class="thumbs" id="tech_thumbs"></div>
-        </div>
-
-        <div class="col-12 footbar">
-          <button id="btnTechClear" class="ghost">入力クリア</button>
-          <button id="btnTechSave" class="primary">保存して完結</button>
-        </div>
+      
+      <!-- 類似案件自動表示 -->
+      <div id="similarCasesBox" class="similar-cases-box">
+        <div class="similar-cases-header">🔍 同じ整理Noの過去対応事例</div>
+        <div id="similarCasesContent"></div>
+        <button type="button" id="showMoreCases" class="show-more-btn" style="display:none;">他の類似案件を表示</button>
       </div>
-    </section>
+      
+      <div id="selectedDataDisplay" style="background:#f8f9ff;padding:15px;border-radius:6px;margin-bottom:20px;display:none;">
+        <h3 style="color:#667eea;margin-bottom:10px;">製造部門入力内容</h3>
+        <div id="displayContent"></div>
+      </div>
+      
+      <form id="technicalForm">
+        <div class="form-group"><label>技術処置者 *</label><input type="text" id="techHandler"></div>
+        <div class="form-group"><label>命数有無 *</label><select id="lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="maintenanceUnit"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="rootCauseAction"></textarea></div>
+        <div class="form-group"><label>再発か新規か *</label><select id="recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+        <div class="form-group">
+          <label>写真</label>
+          <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
+            <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
+            <input type="file" id="techPhotos" accept="image/*" multiple>
+          </div>
+          <div id="techPhotoPreview" class="photo-preview"></div>
+        </div>
+        <button type="submit" class="btn btn-primary">登録</button>
+      </form>
+    </div>
 
     <!-- 履歴 -->
-    <section id="tab-hist" class="card hidden">
-      <h3>履歴</h3>
-      <div class="row">
-        <div class="col-2">
-          <label>開始日</label><input type="date" id="f_date_from"/>
-        </div>
-        <div class="col-2">
-          <label>終了日</label><input type="date" id="f_date_to"/>
-        </div>
-        <div class="col-2">
-          <label>部署</label><select id="f_dept"></select>
-        </div>
-        <div class="col-2">
-          <label>ライン</label><select id="f_line"></select>
-        </div>
-        <div class="col-2">
-          <label>状態</label>
-          <select id="f_status">
-            <option value="">すべて</option>
-            <option value="pending">pending</option>
-            <option value="complete">complete</option>
-          </select>
-        </div>
-        <div class="col-2">
-          <label>整理No</label><input type="text" id="f_serial" placeholder="部分一致"/>
-        </div>
-
-        <div class="col-12 bar">
-          <button id="btnHistSearch" class="small">検索</button>
-          <button id="btnToggleView" class="small">カード/テーブル切替</button>
-          <button id="btnExportCsv" class="small">CSV出力（BOM付き）</button>
-          <span class="muted">表示件数：<span id="histCount">0</span></span>
-        </div>
-
-        <div class="col-12" id="histCards" class="grid-cards"></div>
-        <div class="col-12 hidden" id="histTableWrap">
-          <div class="scroll">
-            <table id="histTable">
-              <thead></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
+    <div id="history" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#667eea;">異常履歴</h2>
+      <div class="history-controls">
+        <div class="view-toggle"><button class="active" data-view="card">カード</button><button data-view="table">テーブル</button></div>
+        <button class="btn btn-export" style="flex:1;" id="btnExport">📥 CSV出力</button>
       </div>
-    </section>
+      <div id="cardView" class="card-view"></div>
+      <div id="tableView" class="table-view"></div>
+    </div>
 
     <!-- 分析 -->
-    <section id="tab-anal" class="card hidden">
-      <h3>分析（簡易）</h3>
-      <div class="row">
-        <div class="col-3 card">
-          <div class="muted">総件数</div>
-          <div id="kpi_total" style="font-size:28px;font-weight:800;">-</div>
-        </div>
-        <div class="col-3 card">
-          <div class="muted">pending</div>
-          <div id="kpi_pending" style="font-size:28px;font-weight:800;">-</div>
-        </div>
-        <div class="col-3 card">
-          <div class="muted">complete</div>
-          <div id="kpi_complete" style="font-size:28px;font-weight:800;">-</div>
-        </div>
-        <div class="col-3 card">
-          <div class="muted">再発率</div>
-          <div id="kpi_repeat" style="font-size:28px;font-weight:800;">-</div>
-        </div>
-
-        <div class="col-12">
-          <label>直近12ヶ月 件数推移</label>
-          <canvas id="chartMonthly" class="chart"></canvas>
-        </div>
-        <div class="col-12">
-          <label>部署別 件数</label>
-          <canvas id="chartDept" class="chart"></canvas>
-        </div>
-        <div class="col-12">
-          <label>ライン別 件数（上位）</label>
-          <canvas id="chartLine" class="chart"></canvas>
-        </div>
-        <div class="col-12 bar">
-          <button id="btnAnalRefresh" class="small">再集計</button>
-          <span class="muted">※画面内の履歴データを元に集計します</span>
-        </div>
+    <div id="analysis" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#ff9800;">📊 異常データ分析</h2>
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#ff9800;margin-bottom:15px;">📈 統計情報</h3>
+        <div id="statisticsDisplay" style="display:grid;gap:15px;"></div>
       </div>
-    </section>
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#ff9800;margin-bottom:15px;">📊 月別傾向分析</h3>
+        <div id="trendChart" style="min-height:300px;"></div>
+        <div id="trendAnalysis" style="margin-top:15px;"></div>
+      </div>
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#ff9800;margin-bottom:15px;">🏢 部署・ライン別分析</h3>
+        <div id="departmentAnalysis" style="display:grid;gap:15px;"></div>
+      </div>
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+        <h3 style="color:#ff9800;margin-bottom:15px;">🔄 再発・新規分析</h3>
+        <div id="recurrenceAnalysis"></div>
+      </div>
+    </div>
 
     <!-- 管理 -->
-    <section id="tab-admin" class="card hidden">
-      <h3>マスタ保守（サインイン済みなら誰でも編集可）</h3>
-      <div class="bar muted" id="adminNote">権限：サインイン済みは書き込み可</div>
-
-      <div class="row">
-        <div class="col-4">
-          <div class="card">
-            <h4>部署</h4>
-            <div class="bar"><input type="text" id="dept_new" placeholder="部署名"/><button id="btnDeptAdd" class="small">追加</button></div>
-            <ul id="dept_list"></ul>
-          </div>
+    <div id="master" class="tab-content">
+      <h2 style="margin-bottom:20px;color:#667eea;">⚙️ マスタ管理</h2>
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#667eea;margin-bottom:15px;">部署管理</h3>
+        <div style="display:flex;gap:10px;margin-bottom:15px;">
+          <input type="text" id="newDepartment" placeholder="新しい部署名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;" id="btnAddDept">追加</button>
         </div>
-        <div class="col-4">
-          <div class="card">
-            <h4>ライン</h4>
-            <div class="bar">
-              <select id="line_dept_filter"></select>
-            </div>
-            <div class="bar"><input type="text" id="line_new" placeholder="ライン名"/><button id="btnLineAdd" class="small">追加</button></div>
-            <ul id="line_list"></ul>
-          </div>
-        </div>
-        <div class="col-4">
-          <div class="card">
-            <h4>処置者</h4>
-            <div class="bar">
-              <select id="op_dept_filter"></select>
-            </div>
-            <div class="bar"><input type="text" id="op_new" placeholder="氏名"/><button id="btnOpAdd" class="small">追加</button></div>
-            <ul id="op_list"></ul>
-          </div>
-        </div>
+        <div id="departmentList" style="display:grid;gap:10px;"></div>
       </div>
-    </section>
-  </section>
-</div>
 
-<!-- 編集モーダル -->
-<dialog id="editModal" class="modal">
-  <form method="dialog">
-    <h3>編集</h3>
-    <div class="bar">
-      <button id="editTabMfg" type="button" class="small">製造</button>
-      <button id="editTabTech" type="button" class="small">技術</button>
-      <span class="muted" id="editId"></span>
-      <div class="grow"></div>
-      <button id="btnEditClose" class="ghost">閉じる</button>
-    </div>
-    <div id="editBody" style="max-height:70vh; overflow:auto;"></div>
-    <div class="footbar">
-      <button id="btnDelete" type="button" class="ghost">削除</button>
-      <button id="btnEditSave" type="button" class="primary">保存</button>
-    </div>
-  </form>
-</dialog>
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
+        <h3 style="color:#f57c00;margin-bottom:15px;">ライン名管理</h3>
+        <div class="form-group"><label>対象部署</label><select id="lineManageDept"><option value="">部署を選択</option></select></div>
+        <div style="display:flex;gap:10px;margin-bottom:15px;">
+          <input type="text" id="newLine" placeholder="新しいライン名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#f57c00;" id="btnAddLine">追加</button>
+        </div>
+        <div id="lineList" style="display:grid;gap:10px;"></div>
+      </div>
 
-<!-- Firebase SDKs -->
+      <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+        <h3 style="color:#2e7d32;margin-bottom:15px;">処置者管理</h3>
+        <div class="form-group"><label>対象部署</label><select id="handlerManageDept"><option value="">部署を選択</option></select></div>
+        <div style="display:flex;gap:10px;margin-bottom:15px;">
+          <input type="text" id="newHandler" placeholder="新しい処置者名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#2e7d32;" id="btnAddHandler">追加</button>
+        </div>
+        <div id="handlerList" style="display:grid;gap:10px;"></div>
+      </div>
+    </div>
+  </div>
+
 <script type="module">
-/** ====== 依存CDN ====== **/
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import {
-  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import {
-  getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc,
-  serverTimestamp, Timestamp, query, where, orderBy, limit
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
-import {
-  getStorage, ref as sRef, uploadBytes, deleteObject, listAll
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
-import {
-  getFunctions, httpsCallable
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
+  import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, where, enableIndexedDbPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+  import { getStorage, ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
 
-/** ====== dayjs（日付補助） ====== **/
-import dayjs from "https://cdn.jsdelivr.net/npm/dayjs@1.11.11/+esm";
-
-/** ====== Firebase 設定（反映済み） ====== **/
-const firebaseConfig = {
-  apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
-  authDomain: "abnreport-fd733.firebaseapp.com",
-  projectId: "abnreport-fd733",
-  storageBucket: "abnreport-fd733.appspot.com",
-  messagingSenderId: "349748947315",
-  appId: "1:349748947315:web:010cb671d2a95bcf1f7d06",
-};
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
-const functions = getFunctions(app, "asia-northeast1");
-
-/** ====== DOM util ====== **/
-const $ = (q)=>document.querySelector(q);
-const $$ = (q)=>document.querySelectorAll(q);
-const el = (tag,attrs={},children=[])=>{
-  const e=document.createElement(tag);
-  Object.entries(attrs).forEach(([k,v])=>{
-    if(k==="class") e.className=v;
-    else if(k==="html") e.innerHTML=v;
-    else e.setAttribute(k,v);
-  });
-  (Array.isArray(children)?children:[children]).filter(Boolean).forEach(c=>{
-    if(typeof c==="string") e.appendChild(document.createTextNode(c)); else e.appendChild(c);
-  });
-  return e;
-};
-
-/** ====== 状態 ====== **/
-let currentUser=null;
-let rolesCache=null; // 既存の権限判定（履歴編集には引き続き使用）
-let masters={ departments:[], lines:[], operators:[] };
-let histItems=[];
-let currentView="cards";
-
-/** ====== 認証 ====== **/
-$("#btnSignIn").addEventListener("click", async()=>{
-  const email=$("#email").value.trim();
-  const pass=$("#password").value;
-  $("#authMsg").textContent = "";
-  try{
-    await signInWithEmailAndPassword(auth, email, pass);
-    if(!/@miyama-unitec\.co\.jp$/i.test(email)){
-      throw new Error("社内ドメイン以外は許可されていません");
-    }
-  }catch(e){
-    $("#authMsg").textContent = "サインイン失敗：" + (e?.message||e);
-  }
-});
-
-$("#btnSignOut").addEventListener("click", async()=>{ await signOut(auth); });
-
-onAuthStateChanged(auth, async(u)=>{
-  currentUser=u;
-  if(!u){
-    $("#envTag").textContent="未認証";
-    $("#whoami").textContent="-";
-    $("#gate").classList.remove("hidden");
-    $("#app").classList.add("hidden");
-    return;
-  }
-  $("#envTag").textContent="認証済";
-  $("#whoami").textContent=`${u.email||u.uid}`;
-  $("#gate").classList.add("hidden");
-  $("#app").classList.remove("hidden");
-
-  rolesCache = await fetchRole(u.uid);
-  await loadMasters();
-  mountMastersToInputs();
-  setDefaultMfgDateWithNightCorrection();
-
-  await refreshTechTargets();
-  await doHistSearch();
-  refreshAnalytics();
-});
-
-async function fetchRole(uid){
-  const snap=await getDoc(doc(db,"roles",uid));
-  return snap.exists()? snap.data() : { role:"user", dept:"" };
-}
-
-/** ====== ナビ ====== **/
-$$("nav.tabs button").forEach(btn=>{
-  btn.addEventListener("click",()=>{
-    $$("nav.tabs button").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-    const tab=btn.dataset.tab;
-    ["mfg","tech","hist","anal","admin"].forEach(t=>{
-      const sec=$("#tab-"+t);
-      if(t===tab) sec.classList.remove("hidden"); else sec.classList.add("hidden");
-    });
-  });
-});
-
-/** ====== マスタ ====== **/
-async function loadMasters(){
-  masters.departments = (await getDocs(collection(db,"masters","departments","items"))).docs.map(d=>({id:d.id, ...d.data()}));
-  masters.lines       = (await getDocs(collection(db,"masters","lines","items"))).docs.map(d=>({id:d.id, ...d.data()}));
-  masters.operators   = (await getDocs(collection(db,"masters","operators","items"))).docs.map(d=>({id:d.id, ...d.data()}));
-}
-
-function mountMastersToInputs(){
-  const deptSel = (el)=>el.innerHTML = ["<option value=''>選択</option>", ...masters.departments.map(d=>`<option>${d.name}</option>`)].join("");
-  deptSel($("#mfg_dept")); deptSel($("#f_dept")); deptSel($("#line_dept_filter")); deptSel($("#op_dept_filter"));
-
-  const mountByDept=()=>{
-    const dept=$("#mfg_dept").value;
-    $("#mfg_line").innerHTML = ["<option value=''>選択</option>", ...masters.lines.filter(x=>x.dept===dept).map(x=>`<option>${x.name}</option>`)].join("");
-    $("#mfg_operator").innerHTML = ["<option value=''>選択</option>", ...masters.operators.filter(x=>x.dept===dept).map(x=>`<option>${x.name}</option>`)].join("");
+  const firebaseConfig = {
+    apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
+    authDomain: "abnreport-fd733.firebaseapp.com",
+    projectId: "abnreport-fd733",
+    storageBucket: "abnreport-fd733.appspot.com",
+    messagingSenderId: "349748947315",
+    appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
   };
-  $("#mfg_dept").onchange=mountByDept; mountByDept();
 
-  const mountFilterLine=()=>{
-    const d=$("#f_dept").value;
-    $("#f_line").innerHTML = ["<option value=''>すべて</option>", ...masters.lines.filter(x=>!d||x.dept===d).map(x=>`<option>${x.name}</option>`)].join("");
-  };
-  $("#f_dept").onchange=mountFilterLine; mountFilterLine();
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+  enableIndexedDbPersistence(db).catch(()=>{});
 
-  $("#tech_engineer").innerHTML = ["<option value=''>選択</option>", ...masters.operators.map(x=>`<option>${x.name}</option>`)].join("");
-}
-
-/** ====== 深夜補正 ====== **/
-function setDefaultMfgDateWithNightCorrection(){
-  const now=dayjs();
-  const adjust = now.hour()<5 ? now.subtract(1,"day") : now;
-  $("#mfg_date").value = adjust.format("YYYY-MM-DD");
-}
-$$("[data-now]").forEach(b=>{
-  b.addEventListener("click",()=>{
-    const sel=b.getAttribute("data-now");
-    const t=dayjs().format("HH:mm");
-    $(sel).value=t;
-  });
-});
-
-/** ====== 頻出フレーズ（90日） ====== **/
-async function loadSuggestions(){
-  const since=Timestamp.fromDate(dayjs().subtract(90,"day").toDate());
-  const q=query(collection(db,"anomalies"), where("createdAt",">=",since), orderBy("createdAt","desc"), limit(500));
-  const snap=await getDocs(q);
-  const abnWords={}, actWords={};
-  for(const d of snap.docs){
-    const x=d.data();
-    (x["異常内容"]||"").split(/[、。,.・\s]+/).forEach(w=>{ if(w && w.length>=2) abnWords[w]=(abnWords[w]||0)+1; });
-    (x["製造処置内容"]||"").split(/[、。,.・\s]+/).forEach(w=>{ if(w && w.length>=2) actWords[w]=(actWords[w]||0)+1; });
-  }
-  const top = (obj)=> Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,20).map(([w])=>w);
-  mountPills("#abn_suggest", top(abnWords), "#mfg_abn");
-  mountPills("#act_suggest", top(actWords), "#mfg_action");
-}
-function mountPills(selector, arr, targetSel){
-  const box=$(selector); box.innerHTML="";
-  arr.forEach(w=>{
-    const p=el("span",{class:"pill"},w);
-    p.addEventListener("click",()=>{
-      const t=$(targetSel);
-      t.value = (t.value.trim()+" "+w).trim();
-    });
-    box.appendChild(p);
-  });
-}
-loadSuggestions().catch(console.warn);
-
-/** ====== 画像縮小保存 ====== **/
-async function filesToResizedBlobs(fileList, max=1600){
-  const outputs=[];
-  for(const file of fileList){
-    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=URL.createObjectURL(file); });
-    const {width:W,height:H}=img;
-    const scale = Math.min(1, max/Math.max(W,H));
-    const w=Math.round(W*scale), h=Math.round(H*scale);
-    const canvas=document.createElement("canvas"); canvas.width=w; canvas.height=h;
-    const ctx=canvas.getContext("2d");
-    ctx.drawImage(img,0,0,w,h);
-    const blob=await new Promise(r=>canvas.toBlob(r,"image/jpeg",0.85));
-    outputs.push({ blob, name:file.name.replace(/\.[^.]+$/,"")+".jpg" });
-  }
-  return outputs;
-}
-
-/** ====== 製造：登録 ====== **/
-const mfgState={ mfgPhotos:[] };
-$("#mfg_photos").addEventListener("change", async(e)=>{
-  const files=[...e.target.files];
-  const blobs=await filesToResizedBlobs(files,1600);
-  mfgState.mfgPhotos.push(...blobs);
-  renderThumbs("#mfg_thumbs", mfgState.mfgPhotos, (idx)=>{ mfgState.mfgPhotos.splice(idx,1); renderThumbs("#mfg_thumbs", mfgState.mfgPhotos,()=>{}); });
-});
-function renderThumbs(sel, arr, onDel){
-  const box=$(sel); box.innerHTML="";
-  arr.forEach((it,idx)=>{
-    const url=URL.createObjectURL(it.blob);
-    const t=el("div",{class:"thumb"},[
-      el("img",{src:url}),
-      el("button",{class:"del",type:"button"}, "×")
-    ]);
-    t.querySelector(".del").addEventListener("click",()=>onDel(idx));
-    box.appendChild(t);
-  });
-}
-$("#btnMfgReset").addEventListener("click", ()=>{
-  ["#mfg_time_start","#mfg_time_end","#mfg_dept","#mfg_line","#mfg_operator","#mfg_serial",
-   "#mfg_abn","#mfg_action"].forEach(s=>$(s).value="");
-  $("#mfg_backtrack").value="false"; $("#mfg_request").value="要請";
-  mfgState.mfgPhotos=[]; $("#mfg_thumbs").innerHTML="";
-  setDefaultMfgDateWithNightCorrection();
-});
-
-$("#btnMfgSave").addEventListener("click", async()=>{
-  const required = (v)=>v && String(v).trim().length>0;
-  const data={
-    "発生日": $("#mfg_date").value,
-    "発生時刻": $("#mfg_time_start").value || "",
-    "再開時刻": $("#mfg_time_end").value || "",
-    "部署": $("#mfg_dept").value || "",
-    "ownerDept": $("#mfg_dept").value || "",
-    "ライン": $("#mfg_line").value || "",
-    "処置者": $("#mfg_operator").value || "",
-    "整理No": $("#mfg_serial").value || "",
-    "異常内容": $("#mfg_abn").value || "",
-    "製造処置内容": $("#mfg_action").value || "",
-    "遡り": $("#mfg_backtrack").value==="true",
-    "技術要請": $("#mfg_request").value,
-    "status": $("#mfg_request").value==="完結" ? "complete" : "pending",
-    "createdAt": serverTimestamp(),
-    "updatedAt": serverTimestamp(),
-    "createdBy": currentUser?.uid || "",
-    "createdByEmail": currentUser?.email || "",
-    "mfgPhotoCount": 0,
-    "techPhotoCount": 0,
-    "技術処置者": null,
-    "命数有無": null,
-    "保全単位": null,
-    "何が悪くどうした": null,
-    "再発新規": null
-  };
-  const must=[
-    data["発生日"], data["部署"], data["ライン"], data["処置者"],
-    data["整理No"], data["異常内容"], data["製造処置内容"], data["技術要請"]
-  ].every(required);
-  if(!must){ alert("必須項目が未入力です"); return; }
-
-  const ref = await addDoc(collection(db,"anomalies"), data);
-  if(mfgState.mfgPhotos.length){
-    const folder=`anomalies/${ref.id}/mfg`;
-    for(const item of mfgState.mfgPhotos){
-      const path = `${folder}/${Date.now()}_${item.name}`;
-      await uploadBytes(sRef(storage,path), item.blob);
+  const gate = document.getElementById('authGate');
+  const appRoot = document.getElementById('appRoot');
+  const signOutBtn = document.getElementById('signOutBtn');
+  
+  document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
+    const email = (document.getElementById('authEmail').value||'').trim();
+    const pw = document.getElementById('authPassword').value;
+    try{
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithEmailAndPassword(auth, email, pw);
+    }catch(e){
+      document.getElementById('authMsg').textContent = 'ログイン失敗: ' + (e.code||e.message);
     }
-    await updateDoc(ref, { mfgPhotoCount: mfgState.mfgPhotos.length, updatedAt: serverTimestamp() });
-  }
-  alert("登録しました");
-  $("#btnMfgReset").click();
-  await refreshTechTargets();
-  await doHistSearch();
-});
-
-/** ====== 技術：対象・保存 ====== **/
-async function refreshTechTargets(){
-  const qy=query(collection(db,"anomalies"),
-    where("status","==","pending"),
-    where("技術要請","==","要請"),
-    orderBy("発生日","desc"),
-    limit(200)
-  );
-  const snap=await getDocs(qy);
-  const arr=snap.docs.map(d=>({id:d.id, ...d.data()}));
-  $("#tech_target").innerHTML = ["<option value=''>選択</option>",
-    ...arr.map(x=>`<option value="${x.id}">${x["発生日"]} / ${x["部署"]}/${x["ライン"]} / ${x["整理No"]}</option>`)].join("");
-}
-$("#btnTechReload").addEventListener("click",refreshTechTargets);
-
-$("#btnShowMfgSummary").addEventListener("click", async()=>{
-  const id=$("#tech_target").value; if(!id){ alert("対象を選択"); return; }
-  const x=(await getDoc(doc(db,"anomalies",id))).data();
-  const box=$("#mfgSummary");
-  box.innerHTML = `
-    <div class="card">
-      <div><b>${x["発生日"]}</b> ${x["発生時刻"]||""} - ${x["再開時刻"]||""}</div>
-      <div>${x["部署"]} / ${x["ライン"]} / ${x["処置者"]}</div>
-      <div class="muted">整理No: ${x["整理No"]} / 技術要請: ${x["技術要請"]}</div>
-      <div><b>異常</b>：${escapeHtml(x["異常内容"]||"")}</div>
-      <div><b>製造処置</b>：${escapeHtml(x["製造処置内容"]||"")}</div>
-    </div>`;
-  box.classList.remove("hidden");
-});
-
-$("#btnSimilarOne").addEventListener("click", ()=>showSimilar(true));
-$("#btnSimilarAll").addEventListener("click", ()=>showSimilar(false));
-
-async function showSimilar(onlyOne){
-  const id=$("#tech_target").value; if(!id){ alert("対象を選択"); return; }
-  const cur=(await getDoc(doc(db,"anomalies",id))).data();
-  const qy=query(collection(db,"anomalies"),
-    where("整理No","==",cur["整理No"]),
-    where("ライン","==",cur["ライン"]),
-    where("status","==","complete"),
-    orderBy("updatedAt","desc"),
-    ...(onlyOne?[limit(1)]:[])
-  );
-  const snap=await getDocs(qy);
-  const box=$("#similarBox"); box.innerHTML="";
-  if(snap.empty){ box.innerHTML="<div class='muted'>該当なし</div>"; box.classList.remove("hidden"); return; }
-  snap.docs.forEach(d=>{
-    const x=d.data();
-    const section=el("div",{class:"card"},[
-      el("div",{html:`<b>${x["発生日"]}</b> ${x["部署"]}/${x["ライン"]} / 整理No:${x["整理No"]}`}),
-      el("div",{class:"muted"},`status: ${x.status}`),
-      el("div",{html:`<b>異常</b>：${escapeHtml(x["異常内容"]||"")}`}),
-      el("div",{html:`<b>製造処置</b>：${escapeHtml(x["製造処置内容"]||"")}`}),
-      el("div",{html:`<b>技術</b>：${escapeHtml(x["何が悪くどうした"]||"-")}`})
-    ]);
-    box.appendChild(section);
   });
-  box.classList.remove("hidden");
-}
+  signOutBtn.addEventListener('click', ()=> signOut(auth));
 
-const techState={ photos:[] };
-$("#tech_photos").addEventListener("change", async(e)=>{
-  const blobs=await filesToResizedBlobs([...e.target.files],1600);
-  techState.photos.push(...blobs);
-  renderThumbs("#tech_thumbs", techState.photos, (idx)=>{ techState.photos.splice(idx,1); renderThumbs("#tech_thumbs", techState.photos,()=>{}); });
-});
-$("#btnTechClear").addEventListener("click", ()=>{
-  $("#tech_unit").value=""; $("#tech_what").value=""; $("#tech_repeat").value="新規";
-  $("#tech_engineer").value=""; techState.photos=[]; $("#tech_thumbs").innerHTML="";
-});
-
-$("#btnTechSave").addEventListener("click", async()=>{
-  const id=$("#tech_target").value; if(!id){ alert("対象選択"); return; }
-
-  const techEngineer=$("#tech_engineer").value;
-  const life=$("#tech_life").value;
-  const unit=$("#tech_unit").value||null; // 任意
-  const what=$("#tech_what").value;
-  const repeat=$("#tech_repeat").value;
-
-  const valid = !!(techEngineer && (life==="true"||life==="false") && what && repeat);
-  if(!valid){ alert("必須項目が未入力です（技術処置者/命数有無/何が悪くどうした/再発新規）"); return; }
-
-  const ref=doc(db,"anomalies",id);
-  await updateDoc(ref,{
-    "技術処置者": techEngineer,
-    "命数有無": life==="true",
-    "保全単位": unit,
-    "何が悪くどうした": what,
-    "再発新規": repeat,
-    "status": "complete",
-    "updatedAt": serverTimestamp()
-  });
-
-  if(techState.photos.length){
-    const folder=`anomalies/${id}/tech`;
-    for(const item of techState.photos){
-      const path = `${folder}/${Date.now()}_${item.name}`;
-      await uploadBytes(sRef(storage,path), item.blob);
+  onAuthStateChanged(auth, (user)=>{
+    if (user){
+      gate.style.display='none';
+      appRoot.style.display='block';
+      signOutBtn.style.display='inline-block';
+      bootAfterLogin();
+    }else{
+      appRoot.style.display='none';
+      gate.style.display='flex';
+      signOutBtn.style.display='none';
     }
-    await updateDoc(ref, { techPhotoCount: techState.photos.length, updatedAt: serverTimestamp() });
+  });
+
+  let anomalyCache = [];
+  let mfgPhotos = [];
+  let techPhotos = [];
+  let currentView='card';
+  let mastersCache = null;
+
+  async function fetchMasters(){
+    const depSnap = await getDocs(collection(db,'masters','department','items'));
+    const lineSnap= await getDocs(collection(db,'masters','line','items'));
+    const hSnap   = await getDocs(collection(db,'masters','handler','items'));
+    const departments = depSnap.docs.map(d=>d.data().name).sort();
+    const lines = {};
+    lineSnap.forEach(d=>{
+      const {department,name} = d.data();
+      if (!lines[department]) lines[department]=[];
+      lines[department].push(name);
+    });
+    Object.keys(lines).forEach(k=> lines[k].sort());
+    const handlers = {};
+    hSnap.forEach(d=>{
+      const {department,name} = d.data();
+      if (!handlers[department]) handlers[department]=[];
+      handlers[department].push(name);
+    });
+    Object.keys(handlers).forEach(k=> handlers[k].sort());
+    return {departments, lines, handlers};
   }
 
-  alert("保存しました（完結）");
-  $("#btnTechClear").click();
-  await refreshTechTargets();
-  await doHistSearch();
-});
-
-/** ====== 履歴 ====== **/
-$("#btnHistSearch").addEventListener("click", doHistSearch);
-$("#btnToggleView").addEventListener("click", ()=>{
-  currentView = currentView==="cards" ? "table" : "cards";
-  renderHist();
-});
-$("#btnExportCsv").addEventListener("click", exportCsv);
-
-async function doHistSearch(){
-  const from=$("#f_date_from").value; const to=$("#f_date_to").value;
-  let qy=query(collection(db,"anomalies"), orderBy("発生日","desc"), limit(500));
-
-  const snap=await getDocs(qy);
-  histItems = snap.docs.map(d=>({id:d.id, ...d.data()}))
-    .filter(x=>{
-      let ok=true;
-      if(from) ok = ok && x["発生日"]>=from;
-      if(to) ok   = ok && x["発生日"]<=to;
-      const d=$("#f_dept").value, l=$("#f_line").value, st=$("#f_status").value, sn=$("#f_serial").value.trim();
-      if(d) ok = ok && x["部署"]===d;
-      if(l) ok = ok && x["ライン"]===l;
-      if(st) ok= ok && x["status"]===st;
-      if(sn) ok= ok && String(x["整理No"]||"").includes(sn);
-      return ok;
+  // ===== ワード候補機能（製造入力）=====
+  function extractCommonWords(field){
+    const words = {};
+    anomalyCache.forEach(item => {
+      const text = item[field] || '';
+      // 2文字以上の単語を抽出（句読点で分割）
+      const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
+      segments.forEach(seg => {
+        const trimmed = seg.trim();
+        if (trimmed.length >= 2 && trimmed.length <= 50) {
+          words[trimmed] = (words[trimmed] || 0) + 1;
+        }
+      });
     });
-
-  $("#histCount").textContent=histItems.length;
-  renderHist();
-  refreshAnalytics();
-}
-
-function renderHist(){
-  // 異常レコードの編集権限は従来通り：管理者 or 作成者 or 同一部署
-  const canEdit = (x)=> rolesCache?.role==="admin" || x.createdBy===currentUser?.uid || (rolesCache?.dept && rolesCache.dept===x.ownerDept);
-
-  if(currentView==="cards"){
-    $("#histTableWrap").classList.add("hidden");
-    const box=$("#histCards"); box.className="grid-cards"; box.innerHTML="";
-    histItems.forEach(x=>{
-      const badge=el("span",{class:"badge "+(x.status==="complete"?"complete":"pending")}, x.status);
-      const y=el("div",{class:"card"},[
-        el("div",{class:"bar"},[
-          el("div",{html:`<b>${x["発生日"]}</b> ${x["発生時刻"]||""} - ${x["再開時刻"]||""}`}),
-          el("div",{class:"muted"},`${x["部署"]}/${x["ライン"]} / 整理No:${x["整理No"]}`),
-          el("div",{class:"grow"}),
-          badge
-        ]),
-        el("div",{html:`<b>異常</b>：${escapeHtml(x["異常内容"]||"")}`}),
-        el("div",{html:`<b>製造処置</b>：${escapeHtml(x["製造処置内容"]||"")}`}),
-        el("div",{html:`<b>技術</b>：${escapeHtml(x["何が悪くどうした"]||"-")}`}),
-        el("div",{class:"bar"},[
-          el("span",{class:"muted"}, `処置者:${x["処置者"]} / 技術:${x["技術処置者"]||"-"}`),
-          el("div",{class:"grow"}),
-          ...(canEdit(x)?[
-            el("button",{class:"small",type:"button"}, "編集"),
-            el("button",{class:"small ghost",type:"button"}, "削除"),
-          ]:[])
-        ])
-      ]);
-      if(canEdit(x)){
-        y.querySelectorAll("button")[0]?.addEventListener("click",()=>openEdit(x.id));
-        y.querySelectorAll("button")[1]?.addEventListener("click",()=>confirmDelete(x.id));
-      }
-      $("#histCards").appendChild(y);
-    });
-    $("#histCards").classList.remove("hidden");
-  }else{
-    $("#histCards").classList.add("hidden");
-    $("#histTableWrap").classList.remove("hidden");
-    const thead=$("#histTable thead"), tbody=$("#histTable tbody");
-    thead.innerHTML = `<tr>
-      <th>発生日</th><th>時刻</th><th>部署</th><th>ライン</th><th>整理No</th>
-      <th>異常</th><th>製造処置</th><th>技術</th><th>状態</th><th>操作</th>
-    </tr>`;
-    tbody.innerHTML="";
-    histItems.forEach(x=>{
-      const tr=el("tr",{},[
-        el("td",{},x["発生日"]||""),
-        el("td",{},`${x["発生時刻"]||""}-${x["再開時刻"]||""}`),
-        el("td",{},x["部署"]||""),
-        el("td",{},x["ライン"]||""),
-        el("td",{},x["整理No"]||""),
-        el("td",{},(x["異常内容"]||"").slice(0,50)),
-        el("td",{},(x["製造処置内容"]||"").slice(0,50)),
-        el("td",{},(x["何が悪くどうした"]||"-").slice(0,40)),
-        el("td",{},x.status),
-        el("td",{}, "")
-      ]);
-      const cell=tr.lastChild;
-      const can= rolesCache?.role==="admin" || x.createdBy===currentUser?.uid || (rolesCache?.dept && rolesCache.dept===x.ownerDept);
-      if(can){
-        const eb=el("button",{class:"small",type:"button"},"編集");
-        const db=el("button",{class:"small ghost",type:"button"},"削除");
-        eb.addEventListener("click",()=>openEdit(x.id));
-        db.addEventListener("click",()=>confirmDelete(x.id));
-        cell.appendChild(eb); cell.appendChild(db);
-      }else{
-        cell.textContent="-";
-      }
-      tbody.appendChild(tr);
+    
+    // 出現頻度順にソートして上位20件を返す
+    return Object.entries(words)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([word]) => word);
+  }
+  
+  function showWordSuggestions(targetId, suggestionsBoxId, wordsContainerId, field){
+    const words = extractCommonWords(field);
+    const box = document.getElementById(suggestionsBoxId);
+    const container = document.getElementById(wordsContainerId);
+    
+    if (words.length === 0) {
+      box.classList.remove('active');
+      return;
+    }
+    
+    container.innerHTML = words.map(word => 
+      `<span class="word-tag" data-word="${word}">${word}</span>`
+    ).join('');
+    
+    box.classList.add('active');
+    
+    // クリックで追加
+    container.querySelectorAll('.word-tag').forEach(tag => {
+      tag.addEventListener('click', () => {
+        const textarea = document.getElementById(targetId);
+        const word = tag.getAttribute('data-word');
+        const currentValue = textarea.value;
+        
+        // カーソル位置に挿入
+        const cursorPos = textarea.selectionStart;
+        const before = currentValue.substring(0, cursorPos);
+        const after = currentValue.substring(cursorPos);
+        
+        // 前の文字が空白でない場合は空白を追加
+        const needsSpace = before.length > 0 && !before.match(/[\s、。\n]$/);
+        const insertion = (needsSpace ? ' ' : '') + word;
+        
+        textarea.value = before + insertion + after;
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = cursorPos + insertion.length;
+      });
     });
   }
-}
+  
+  // フォーカス時にワード候補を表示
+  document.getElementById('anomalyContent').addEventListener('focus', () => {
+    showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
+  });
+  
+  document.getElementById('actionTaken').addEventListener('focus', () => {
+    showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
+  });
+  
+  // フォーカスアウト時に候補を非表示（遅延して、クリックイベントを優先）
+  document.getElementById('anomalyContent').addEventListener('blur', () => {
+    setTimeout(() => document.getElementById('anomalyWordSuggestions').classList.remove('active'), 200);
+  });
+  
+  document.getElementById('actionTaken').addEventListener('blur', () => {
+    setTimeout(() => document.getElementById('actionWordSuggestions').classList.remove('active'), 200);
+  });
 
-function exportCsv(){
-  const cols = ["_id","createdAt","updatedAt","発生日","発生時刻","再開時刻","部署","ownerDept","ライン","整理No","異常内容","製造処置内容","遡り","技術要請","処置者","技術処置者","命数有無","保全単位","何が悪くどうした","再発新規","status","createdBy","createdByEmail","mfgPhotoCount","techPhotoCount"];
-  const rows = histItems.map(x=>cols.map(k=>{
-    const v = x[k]; if(v==null) return "";
-    if(v?.seconds) return dayjs(v.toDate()).format("YYYY-MM-DD HH:mm:ss");
-    return String(v).replace(/"/g,'""');
-  }));
-  const header = cols.join(",");
-  const body = rows.map(r=> r.map(v=>`"${v}"`).join(",")).join("\r\n");
-  const bom = "\ufeff";
-  const blob = new Blob([bom+header+"\r\n"+body], {type:"text/csv;charset=utf-8;"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=`anomalies_${dayjs().format("YYYYMMDD_HHmmss")}.csv`;
-  a.click();
-}
-
-/** ====== 編集 ====== **/
-async function openEdit(id){
-  const snap=await getDoc(doc(db,"anomalies",id));
-  if(!snap.exists()){ alert("存在しません"); return; }
-  const x=snap.data();
-
-  $("#editId").textContent=id;
-  const view=`
-    <div class="row">
-      <div class="col-6">
-        <h4>製造</h4>
-        <label>発生日*</label><input type="date" id="e_date" value="${x["発生日"]||""}">
-        <label>発生時刻</label><input type="time" id="e_time_s" value="${x["発生時刻"]||""}">
-        <label>再開時刻</label><input type="time" id="e_time_e" value="${x["再開時刻"]||""}">
-        <label>部署*</label><input type="text" id="e_dept" value="${x["部署"]||""}">
-        <label>ライン*</label><input type="text" id="e_line" value="${x["ライン"]||""}">
-        <label>処置者*</label><input type="text" id="e_op" value="${x["処置者"]||""}">
-        <label>整理No*</label><input type="text" id="e_serial" value="${x["整理No"]||""}">
-        <label>遡り*</label>
-          <select id="e_back"><option value="false"${x["遡り"]? "": " selected"}>無</option><option value="true"${x["遡り"]? " selected": ""}>有</option></select>
-        <label>技術要請*</label>
-          <select id="e_req"><option${x["技術要請"]==="要請"?" selected":""}>要請</option><option${x["技術要請"]==="完結"?" selected":""}>完結</option></select>
-        <label>異常内容*</label><textarea id="e_abn">${escapeHtml(x["異常内容"]||"")}</textarea>
-        <label>製造処置内容*</label><textarea id="e_act">${escapeHtml(x["製造処置内容"]||"")}</textarea>
-      </div>
-      <div class="col-6">
-        <h4>技術</h4>
-        <label>技術処置者</label><input type="text" id="e_t_eng" value="${x["技術処置者"]||""}">
-        <label>命数有無</label>
-          <select id="e_t_life"><option value="">未設定</option><option value="true"${x["命数有無"]===true?" selected":""}>有</option><option value="false"${x["命数有無"]===false?" selected":""}>無</option></select>
-        <label>保全単位</label><input type="text" id="e_t_unit" value="${x["保全単位"]||""}">
-        <label>何が悪くどうした</label><textarea id="e_t_what">${escapeHtml(x["何が悪くどうした"]||"")}</textarea>
-        <label>再発/新規</label>
-          <select id="e_t_rep"><option value="">未設定</option><option${x["再発新規"]==="新規"?" selected":""}>新規</option><option${x["再発新規"]==="再発"?" selected":""}>再発</option></select>
-        <div class="bar" style="margin-top:10px">
-          <span class="muted">状態: </span><span class="badge ${x.status==="complete"?"complete":"pending"}">${x.status}</span>
+  // ===== 類似案件表示機能（技術入力）=====
+  let allSimilarCases = [];
+  let showingAllCases = false;
+  
+  function showSimilarCases(selectedId){
+    const selected = anomalyCache.find(x => x._id === selectedId);
+    if (!selected || !selected.serialNo) {
+      document.getElementById('similarCasesBox').classList.remove('active');
+      return;
+    }
+    
+    // 同じ整理Noで技術対応済みのもの（選択中のものを除く）
+    allSimilarCases = anomalyCache
+      .filter(x => 
+        x._id !== selectedId && 
+        x.serialNo === selected.serialNo && 
+        x.status === 'complete' &&
+        x.techRequest === '要請'
+      )
+      .sort((a,b) => (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+    
+    const box = document.getElementById('similarCasesBox');
+    const content = document.getElementById('similarCasesContent');
+    const showMoreBtn = document.getElementById('showMoreCases');
+    
+    if (allSimilarCases.length === 0) {
+      box.classList.remove('active');
+      return;
+    }
+    
+    // 最初は直近1件のみ表示
+    const casesToShow = showingAllCases ? allSimilarCases : allSimilarCases.slice(0, 1);
+    
+    content.innerHTML = casesToShow.map(item => `
+      <div class="similar-case-item">
+        <div class="similar-case-date">📅 ${item.occurrenceDate || ''} の対応事例</div>
+        <div class="similar-case-content">
+          <strong>異常内容:</strong> ${item.anomalyContent || '-'}<br>
+          <strong>製造処置:</strong> ${item.actionTaken || '-'}
+        </div>
+        <div class="similar-case-tech">
+          <strong>🔧 技術対応内容:</strong><br>
+          ${item.rootCauseAction ? `原因・対策: ${item.rootCauseAction}<br>` : ''}
+          ${item.maintenanceUnit ? `保全単位: ${item.maintenanceUnit}<br>` : ''}
+          ${item.recurrenceType ? `分類: ${item.recurrenceType}` : ''}
         </div>
       </div>
-    </div>
-  `;
-  $("#editBody").innerHTML=view;
-  $("#editModal").showModal();
-
-  $("#btnEditSave").onclick = async()=>{
-    const data={
-      "発生日": $("#e_date").value,
-      "発生時刻": $("#e_time_s").value || "",
-      "再開時刻": $("#e_time_e").value || "",
-      "部署": $("#e_dept").value || "",
-      "ownerDept": $("#e_dept").value || "",
-      "ライン": $("#e_line").value || "",
-      "処置者": $("#e_op").value || "",
-      "整理No": $("#e_serial").value || "",
-      "遡り": $("#e_back").value==="true",
-      "技術要請": $("#e_req").value,
-      "異常内容": $("#e_abn").value || "",
-      "製造処置内容": $("#e_act").value || "",
-      "技術処置者": ($("#e_t_eng").value||"") || null,
-      "命数有無": (()=>{
-        const v=$("#e_t_life").value;
-        if(v==="true") return true; if(v==="false") return false; return null;
-      })(),
-      "保全単位": ($("#e_t_unit").value||"") || null,
-      "何が悪くどうした": ($("#e_t_what").value||"") || null,
-      "再発新規": (()=>{
-        const v=$("#e_t_rep").value; return v? v : null;
-      })(),
-      "updatedAt": serverTimestamp()
-    };
-    let status="pending";
-    if(data["技術要請"]==="完結"){
-      status="complete";
-    }else{
-      const filled = !!(data["技術処置者"] && (data["命数有無"]===true || data["命数有無"]===false) && data["何が悪くどうした"] && data["再発新規"]);
-      status = filled ? "complete" : "pending";
+    `).join('');
+    
+    // 「他の案件を表示」ボタンの表示制御
+    if (allSimilarCases.length > 1 && !showingAllCases) {
+      showMoreBtn.style.display = 'block';
+      showMoreBtn.textContent = `他の類似案件を表示（あと${allSimilarCases.length - 1}件）`;
+    } else {
+      showMoreBtn.style.display = 'none';
     }
-    data["status"]=status;
-    await updateDoc(doc(db,"anomalies",id), data);
-    alert("保存しました");
-    $("#editModal").close();
-    await doHistSearch();
-    await refreshTechTargets();
-  };
-
-  $("#btnDelete").onclick = ()=>confirmDelete(id,true);
-}
-
-function confirmDelete(id, inModal=false){
-  if(!confirm("画像を含めて完全に削除します。よろしいですか？")) return;
-  deleteWithAssets(id).then(async(ok)=>{
-    if(ok) { if(inModal) $("#editModal").close(); await doHistSearch(); alert("削除しました"); }
-  }).catch(e=>alert("削除に失敗："+e.message));
-}
-
-/** ====== 画像→DB 削除 ====== **/
-async function deleteWithAssets(docId){
-  try{
-    const call=httpsCallable(functions,"deleteAnomalyWithAssets");
-    const res=await call({docId});
-    if(res?.data?.ok) return true;
-  }catch(e){
-    console.warn("Callable未導入 or 失敗、クライアントで削除に切替:", e.message);
+    
+    box.classList.add('active');
   }
-  for(const folder of ["mfg","tech"]){
-    const base = sRef(storage, `anomalies/${docId}/${folder}`);
+  
+  document.getElementById('showMoreCases').addEventListener('click', () => {
+    showingAllCases = true;
+    const selectedId = document.getElementById('selectSerialNo').value;
+    if (selectedId) {
+      showSimilarCases(selectedId);
+    }
+  });
+
+  function setNowDateTo(id){
+    const now = new Date(); const hour=now.getHours();
+    if (hour>=0 && hour<6) now.setDate(now.getDate()-1);
+    const y=now.getFullYear(), m=String(now.getMonth()+1).padStart(2,'0'), d=String(now.getDate()).padStart(2,'0');
+    document.getElementById(id).value = `${y}-${m}-${d}`;
+  }
+  function setNowTimeTo(id){
+    const now=new Date(); const hh=String(now.getHours()).padStart(2,'0'), mm=String(now.getMinutes()).padStart(2,'0');
+    document.getElementById(id).value = `${hh}:${mm}`;
+  }
+  document.getElementById('btnNowDate').addEventListener('click', ()=>setNowDateTo('occurrenceDate'));
+  document.querySelectorAll('button[data-now]').forEach(b=> b.addEventListener('click', ()=> setNowTimeTo(b.getAttribute('data-now')) ));
+
+  function displayPhotos(previewId, arr){
+    const wrap = document.getElementById(previewId); wrap.innerHTML='';
+    arr.forEach((src,idx)=>{
+      const div=document.createElement('div'); div.className='photo-item';
+      div.innerHTML = `<img src="${src}"><button class="remove-btn" data-photo="${previewId}" data-index="${idx}">×</button>`;
+      wrap.appendChild(div);
+    });
+  }
+  function handlePhotoUpload(inputId, previewId, arrRef){
+    const input = document.getElementById(inputId);
+    input.addEventListener('change',(e)=>{
+      (Array.from(e.target.files||[])).forEach(file=>{
+        const r=new FileReader();
+        r.onload = ev=>{ arrRef.push({name:file.name, file, preview:ev.target.result}); displayPhotos(previewId, arrRef.map(x=>x.preview)); };
+        r.readAsDataURL(file);
+      });
+      input.value='';
+    });
+  }
+  handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
+  handlePhotoUpload('techPhotos','techPhotoPreview', techPhotos);
+  document.addEventListener('click',(e)=>{
+    const rm=e.target.closest('.remove-btn[data-photo]'); if(!rm) return;
+    const id=rm.getAttribute('data-photo'); const idx=Number(rm.getAttribute('data-index'));
+    if (id==='mfgPhotoPreview'){ mfgPhotos.splice(idx,1); displayPhotos(id, mfgPhotos.map(x=>x.preview)); }
+    if (id==='techPhotoPreview'){ techPhotos.splice(idx,1); displayPhotos(id, techPhotos.map(x=>x.preview)); }
+  });
+
+  function updateDepartmentSelect(selectId, departments){
+    const sel=document.getElementById(selectId); if(!sel) return;
+    const keep=sel.value;
+    sel.innerHTML='<option value="">選択してください</option>';
+    departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; sel.appendChild(o); });
+    if (departments.includes(keep)) sel.value=keep;
+  }
+  function refreshLineAndHandler(deptSelId, lineSelId, handlerSelId, lines, handlers){
+    const dept=document.getElementById(deptSelId).value;
+    const lineSel=document.getElementById(lineSelId), handlerSel=document.getElementById(handlerSelId);
+    lineSel.innerHTML='<option value="">選択してください</option>';
+    handlerSel.innerHTML='<option value="">選択してください</option>';
+    (lines[dept]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+    (handlers[dept]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; handlerSel.appendChild(o); });
+  }
+
+  function anomaliesRef(){ return collection(db,'anomalies'); }
+
+  async function uploadPhotos(docId, kind, items){
+    const urls=[];
+    for (const it of items){
+      const path=`anomalies/${docId}/${kind}/${Date.now()}_${it.name}`;
+      const storageRef=ref(storage, path);
+      await uploadBytes(storageRef, it.file);
+      const url = await getDownloadURL(storageRef);
+      urls.push(url);
+    }
+    return urls;
+  }
+
+  function renderHistory(){
+    const items=[...anomalyCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+    const cardWrap=document.getElementById('cardView');
+    if (!items.length){
+      cardWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
+    }else{
+      cardWrap.innerHTML = items.map((item)=>{
+        const status = item.status==='pending' ? {text:'技術入力待ち',cls:'status-pending'} :
+                      (item.techRequest==='完結' ? {text:'完了（製造完結）',cls:'status-complete'} : {text:'完了',cls:'status-complete'});
+        return `
+          <div class="anomaly-card ${item.status==='complete'?'complete':''}">
+            <div class="card-header">
+              <div class="card-id">${item.serialNo || '(No ID)'}</div>
+              <div class="card-status ${status.cls}">${status.text}</div>
+            </div>
+            <div class="card-body">
+              ${item.department?`<div class="card-field"><div class="field-label">部署</div><div class="field-value">${item.department}</div></div>`:''}
+              ${item.lineName?`<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${item.lineName}</div></div>`:''}
+              ${item.techRequest?`<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${item.techRequest==='要請'?'技術要請あり':'製造で完結'}</div></div>`:''}
+              <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${item.anomalyContent||''}</div></div>
+              <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${item.actionTaken||''}</div></div>
+              <div class="card-field"><div class="field-label">発生日時</div><div class="field-value">${item.occurrenceDate||''} ${item.occurrenceTime||''}</div></div>
+              <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${item.handler||''}</div></div>
+              ${item.status==='complete' && item.techRequest==='要請' ? `
+                <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${item.techHandler||'-'}</div></div>
+                <div class="card-field"><div class="field-label">保全単位</div><div class="field-value">${item.maintenanceUnit||'-'}</div></div>
+                <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction||'-'}</div></div>
+                <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${item.recurrenceType||'-'}</div></div>
+              `:''}
+              <div class="action-btns" style="margin-top:10px;">
+                <button class="btn-small btn-edit" data-edit="${item._id}">編集</button>
+                <button class="btn-small btn-delete" data-del="${item._id}">削除</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    const tableWrap=document.getElementById('tableView');
+    if (!items.length){
+      tableWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
+    }else{
+      tableWrap.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th>
+            <th>発生日</th><th>処置者</th><th>状態</th><th>操作</th>
+          </tr></thead>
+          <tbody>
+            ${items.map(it=>{
+              const st = it.status==='complete'?'完了':'待ち';
+              const cls = it.status==='complete'?'status-complete':'status-pending';
+              return `
+                <tr>
+                  <td>${it.serialNo||''}</td>
+                  <td>${it.department||'-'}</td>
+                  <td>${it.lineName||'-'}</td>
+                  <td>${(it.anomalyContent||'').slice(0,30)}...</td>
+                  <td>${it.occurrenceDate||''}</td>
+                  <td>${it.handler||'-'}</td>
+                  <td><span class="card-status ${cls}">${st}</span></td>
+                  <td class="action-btns">
+                    <button class="btn-small btn-edit" data-edit="${it._id}">編集</button>
+                    <button class="btn-small btn-delete" data-del="${it._id}">削除</button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+  }
+
+  function renderTechTargetSelect(){
+    const sel = document.getElementById('selectSerialNo');
+    sel.innerHTML = '<option value="">整理Noを選択してください</option>';
+    anomalyCache
+      .filter(x=>x.status==='pending' && x.techRequest==='要請')
+      .sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''))
+      .forEach(x=>{
+        const o=document.createElement('option');
+        o.value = x._id;
+        o.textContent = `[${x.serialNo}] ${x.occurrenceDate} - ${x.anomalyContent?.slice(0,30)||''}...`;
+        sel.appendChild(o);
+      });
+  }
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      const targetId = tab.getAttribute('data-tab');
+      document.getElementById(targetId).classList.add('active');
+    });
+  });
+
+  async function bootAfterLogin(){
+    mastersCache = await fetchMasters();
+    
+    updateDepartmentSelect('department', mastersCache.departments);
+    updateDepartmentSelect('lineManageDept', mastersCache.departments);
+    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
+
+    document.getElementById('department').addEventListener('change', ()=> {
+      refreshLineAndHandler('department','lineName','handler', mastersCache.lines, mastersCache.handlers);
+    });
+    
+    document.getElementById('lineManageDept').addEventListener('change', async ()=> {
+      await updateLineManageList();
+    });
+    
+    document.getElementById('handlerManageDept').addEventListener('change', async ()=> {
+      await updateHandlerManageList();
+    });
+
+    const q = query(anomaliesRef(), orderBy('createdAt','desc'));
+    onSnapshot(q, (snap)=>{
+      anomalyCache = snap.docs.map(d=> ({_id:d.id, ...d.data()}));
+      renderHistory();
+      renderTechTargetSelect();
+      updateAnalysis();
+    });
+
+    await updateDepartmentList();
+    setNowDateTo('occurrenceDate');
+  }
+
+  document.getElementById('manufacturingForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const techReq = document.getElementById('techRequest').value;
+    const base = {
+      department: document.getElementById('department').value,
+      lineName:   document.getElementById('lineName').value,
+      serialNo:   document.getElementById('serialNo').value,
+      occurrenceDate: document.getElementById('occurrenceDate').value,
+      occurrenceTime: document.getElementById('occurrenceTime').value || '',
+      restartTime:    document.getElementById('restartTime').value || '',
+      anomalyContent: document.getElementById('anomalyContent').value,
+      actionTaken:    document.getElementById('actionTaken').value,
+      traceback:      document.getElementById('traceback').value,
+      handler:        document.getElementById('handler').value,
+      techRequest:    techReq,
+      status:         techReq==='完結' ? 'complete':'pending',
+      createdAt:      serverTimestamp(),
+      techHandler:'', lifespan:'', maintenanceUnit:'', rootCauseAction:'', recurrenceType:'',
+      mfgPhotoUrls:[], techPhotoUrls:[]
+    };
+    const created = await addDoc(anomaliesRef(), base);
+    let urls=[];
+    if (mfgPhotos.length){
+      urls = await uploadPhotos(created.id, 'mfg', mfgPhotos);
+      await updateDoc(doc(db,'anomalies',created.id), { mfgPhotoUrls: urls });
+    }
+
+    e.target.reset(); mfgPhotos=[]; document.getElementById('mfgPhotoPreview').innerHTML='';
+    document.getElementById('lineName').innerHTML='<option value="">部署を先に選択してください</option>';
+    document.getElementById('handler').innerHTML='<option value="">部署を先に選択してください</option>';
+    alert('登録しました。');
+  });
+
+  document.getElementById('selectSerialNo').addEventListener('change', ()=>{
+    const id = document.getElementById('selectSerialNo').value;
+    const d = anomalyCache.find(it=> it._id===id);
+    const box=document.getElementById('selectedDataDisplay'), wrap=document.getElementById('displayContent');
+    
+    // 類似案件表示をリセット
+    showingAllCases = false;
+    
+    if (!d){ 
+      box.style.display='none'; 
+      wrap.innerHTML=''; 
+      document.getElementById('similarCasesBox').classList.remove('active');
+      return; 
+    }
+    
+    wrap.innerHTML = `
+      <div style="display:grid;gap:8px;">
+        <div><strong>整理No:</strong> ${d.serialNo}</div>
+        ${d.department?`<div><strong>部署:</strong> ${d.department}</div>`:''}
+        ${d.lineName?`<div><strong>ライン名:</strong> ${d.lineName}</div>`:''}
+        <div><strong>異常内容:</strong> ${d.anomalyContent||''}</div>
+        <div><strong>製造処置:</strong> ${d.actionTaken||''}</div>
+        <div><strong>発生日:</strong> ${d.occurrenceDate||''}</div>
+        <div><strong>処置者:</strong> ${d.handler||''}</div>
+      </div>
+    `;
+    box.style.display='block';
+    
+    // 類似案件を自動表示
+    showSimilarCases(id);
+  });
+
+  document.getElementById('technicalForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('selectSerialNo').value;
+    const updates = {
+      techHandler: document.getElementById('techHandler').value,
+      lifespan: document.getElementById('lifespan').value,
+      maintenanceUnit: document.getElementById('maintenanceUnit').value,
+      rootCauseAction: document.getElementById('rootCauseAction').value,
+      recurrenceType: document.getElementById('recurrenceType').value,
+      status: 'complete',
+      completedAt: serverTimestamp()
+    };
+    if (techPhotos.length){
+      const urls = await uploadPhotos(id,'tech', techPhotos);
+      updates.techPhotoUrls = (anomalyCache.find(x=>x._id===id)?.techPhotoUrls||[]).concat(urls);
+    }
+    await updateDoc(doc(db,'anomalies',id), updates);
+    e.target.reset(); techPhotos=[]; document.getElementById('techPhotoPreview').innerHTML='';
+    document.getElementById('selectedDataDisplay').style.display='none';
+    document.getElementById('similarCasesBox').classList.remove('active');
+    showingAllCases = false;
+    alert('技術入力を登録しました。');
+  });
+
+  document.querySelectorAll('.view-toggle button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('.view-toggle button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active'); currentView=b.dataset.view;
+      document.getElementById('cardView').style.display = currentView==='card'?'grid':'none';
+      document.getElementById('tableView').style.display = currentView==='table'?'block':'none';
+      renderHistory();
+    });
+  });
+
+  const editModalHtml = `
+    <div class="modal-content">
+      <div class="modal-title">✏️ 履歴レコード編集</div>
+      <div class="edit-tabs">
+        <button class="edit-tab active" data-edit-tab="mfg">製造</button>
+        <button class="edit-tab" data-edit-tab="tech">技術</button>
+      </div>
+      <div id="editMfg" class="edit-pane">
+        <div class="form-group"><label>発生日 *</label><input type="date" id="edit_occurrenceDate"></div>
+        <div class="form-group"><label>発生時刻 / 再開時刻</label><div class="time-group"><input type="time" id="edit_occurrenceTime"><input type="time" id="edit_restartTime"></div></div>
+        <div class="form-group"><label>部署 *</label><select id="edit_department"></select></div>
+        <div class="form-group"><label>ライン名 *</label><select id="edit_lineName"></select></div>
+        <div class="form-group"><label>処置者 *</label><select id="edit_handler"></select></div>
+        <div class="form-group"><label>整理No *</label><input type="text" id="edit_serialNo"></div>
+        <div class="form-group"><label>異常内容 *</label><textarea id="edit_anomalyContent"></textarea></div>
+        <div class="form-group"><label>製造処置内容 *</label><textarea id="edit_actionTaken"></textarea></div>
+        <div class="form-group"><label>遡り *</label><select id="edit_traceback"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>技術要請 *</label><select id="edit_techRequest"><option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option></select></div>
+      </div>
+      <div id="editTech" class="edit-pane" style="display:none;">
+        <div class="form-group"><label>技術処置者</label><input type="text" id="edit_techHandler"></div>
+        <div class="form-group"><label>命数有無</label><select id="edit_lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
+        <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btnEditCancel" style="flex:1;">キャンセル</button>
+        <button class="btn btn-primary" id="btnEditSave" style="flex:1;">保存</button>
+      </div>
+    </div>`;
+  const modal = document.createElement('div'); modal.className='modal'; modal.id='editModal'; modal.innerHTML=editModalHtml; document.body.appendChild(modal);
+
+  let editCurrentId=null, editMastersCache=null;
+  function openEdit(id){
+    const rec = anomalyCache.find(x=>x._id===id); if(!rec){ alert('対象が見つかりません'); return; }
+    editCurrentId=id;
+    (async ()=>{
+      editMastersCache = mastersCache || await fetchMasters();
+      const depSel = document.getElementById('edit_department'); depSel.innerHTML='';
+      editMastersCache.departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o); });
+      depSel.value = rec.department||'';
+      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
+      lineSel.innerHTML='<option value="">選択してください</option>';
+      (editMastersCache.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+      hSel.innerHTML='<option value="">選択してください</option>';
+      (editMastersCache.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
+
+      lineSel.value = rec.lineName||'';
+      hSel.value = rec.handler||'';
+
+      document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate||'';
+      document.getElementById('edit_occurrenceTime').value = rec.occurrenceTime||'';
+      document.getElementById('edit_restartTime').value   = rec.restartTime||'';
+      document.getElementById('edit_serialNo').value      = rec.serialNo||'';
+      document.getElementById('edit_anomalyContent').value= rec.anomalyContent||'';
+      document.getElementById('edit_actionTaken').value   = rec.actionTaken||'';
+      document.getElementById('edit_traceback').value     = rec.traceback||'';
+      document.getElementById('edit_techRequest').value   = rec.techRequest||'';
+      document.getElementById('edit_techHandler').value   = rec.techHandler||'';
+      document.getElementById('edit_lifespan').value      = rec.lifespan||'';
+      document.getElementById('edit_maintenanceUnit').value= rec.maintenanceUnit||'';
+      document.getElementById('edit_rootCauseAction').value= rec.rootCauseAction||'';
+      document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
+      modal.classList.add('active'); modal.setAttribute('aria-hidden','false');
+    })();
+  }
+  document.addEventListener('change', (e)=>{
+    if (e.target.id==='edit_department' && editMastersCache){
+      const dep=e.target.value;
+      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
+      lineSel.innerHTML='<option value="">選択してください</option>';
+      (editMastersCache.lines[dep]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+      hSel.innerHTML='<option value="">選択してください</option>';
+      (editMastersCache.handlers[dep]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
+    }
+  });
+  document.addEventListener('click', (e)=>{
+    const t=e.target;
+    if (t.matches('.edit-tab')){
+      document.querySelectorAll('.edit-tab').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      document.getElementById('editMfg').style.display = t.dataset.editTab==='mfg'?'block':'none';
+      document.getElementById('editTech').style.display= t.dataset.editTab==='tech'?'block':'none';
+    }
+    const ed = t.closest('button.btn-edit[data-edit]'); if (ed){ openEdit(ed.getAttribute('data-edit')); }
+    const del= t.closest('button.btn-delete[data-del]'); if (del){ deleteRecord(del.getAttribute('data-del')); }
+  });
+  document.getElementById('btnEditCancel').addEventListener('click', ()=>{
+    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
+  });
+  document.getElementById('btnEditSave').addEventListener('click', async ()=>{
+    if (!editCurrentId) return;
+    const updates = {
+      occurrenceDate:  document.getElementById('edit_occurrenceDate').value||'',
+      occurrenceTime:  document.getElementById('edit_occurrenceTime').value||'',
+      restartTime:     document.getElementById('edit_restartTime').value||'',
+      department:      document.getElementById('edit_department').value||'',
+      lineName:        document.getElementById('edit_lineName').value||'',
+      handler:         document.getElementById('edit_handler').value||'',
+      serialNo:        document.getElementById('edit_serialNo').value||'',
+      anomalyContent:  document.getElementById('edit_anomalyContent').value||'',
+      actionTaken:     document.getElementById('edit_actionTaken').value||'',
+      traceback:       document.getElementById('edit_traceback').value||'',
+      techRequest:     document.getElementById('edit_techRequest').value||'',
+      techHandler:     document.getElementById('edit_techHandler').value||'',
+      lifespan:        document.getElementById('edit_lifespan').value||'',
+      maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
+      rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
+      recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
+    };
+    if (updates.techRequest==='完結'){
+      updates.status='complete';
+    }else{
+      const hasTech = (updates.techHandler||updates.lifespan||updates.maintenanceUnit||updates.rootCauseAction||updates.recurrenceType);
+      updates.status = hasTech ? 'complete' : 'pending';
+    }
+    await updateDoc(doc(db,'anomalies',editCurrentId), updates);
+    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
+    alert('更新しました。');
+  });
+
+  async function deleteRecord(id){
+    if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
+    const baseRef = ref(storage, `anomalies/${id}`);
     try{
-      const r = await listAll(base);
-      for(const item of r.items){ await deleteObject(item); }
-    }catch(_){}
+      const all = await listAll(baseRef);
+      for (const f of all.items){ await deleteObject(f); }
+      for (const p of all.prefixes){
+        const all2 = await listAll(p);
+        for (const f2 of all2.items){ await deleteObject(f2); }
+      }
+    }catch(err){}
+    await deleteDoc(doc(db,'anomalies',id));
   }
-  await deleteDoc(doc(db,"anomalies",docId));
-  return true;
-}
 
-/** ====== 簡易チャート ====== **/
-function drawBar(canvasId, labels, values){
-  const c=$(canvasId); const ctx=c.getContext("2d");
-  const W=c.width = c.clientWidth; const H=c.height = c.clientHeight;
-  ctx.clearRect(0,0,W,H);
-  const pad=40, n=values.length, max=Math.max(1, ...values);
-  const bw = Math.max(10, (W-pad*2)/n*0.6);
-  const gap = (W-pad*2)/n - bw;
-  ctx.strokeStyle="#ddd"; ctx.beginPath(); ctx.moveTo(pad, H-pad); ctx.lineTo(W-pad,H-pad); ctx.stroke();
-  values.forEach((v,i)=>{
-    const x = pad + i*(bw+gap) + gap/2;
-    const h = (H-pad*2) * (v/max);
-    const y = H-pad - h;
-    ctx.fillStyle="#4b5563";
-    ctx.fillRect(x,y,bw,h);
+  document.getElementById('btnExport').addEventListener('click', ()=>{
+    if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
+    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','命数有無','保全単位','原因対策','再発新規','状態','_id'];
+    const rows = anomalyCache.map(item=>[
+      item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
+      item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
+      item.techRequest==='要請'?'技術要請あり':item.techRequest==='完結'?'製造で完結':'',
+      item.techHandler||'',item.lifespan||'',item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',
+      item.status==='complete'?'完了':'技術入力待ち', item._id
+    ]);
+    let csv = '\uFEFF' + headers.join(',') + '\n';
+    rows.forEach(r=>{ csv += r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(',')+'\n'; });
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
   });
-  ctx.fillStyle="#111"; ctx.font="12px sans-serif";
-  labels.forEach((t,i)=>{
-    const x = pad + i*(bw+gap) + gap/2 + bw/2;
-    ctx.save(); ctx.translate(x,H-pad+12); ctx.rotate(-Math.PI/6); ctx.textAlign="right"; ctx.fillText(String(t),0,0); ctx.restore();
-  });
-}
 
-function refreshAnalytics(){
-  const total = histItems.length;
-  const pending = histItems.filter(x=>x.status==="pending").length;
-  const complete = histItems.filter(x=>x.status==="complete").length;
-  const rep = histItems.filter(x=>x["再発新規"]==="再発").length;
-  $("#kpi_total").textContent=total;
-  $("#kpi_pending").textContent=pending;
-  $("#kpi_complete").textContent=complete;
-  $("#kpi_repeat").textContent = total? Math.round(rep/total*100)+"%" : "-";
-
-  const mapMonth={};
-  const months=[];
-  for(let i=11;i>=0;i--){
-    const m=dayjs().subtract(i,"month").format("YYYY-MM");
-    months.push(m); mapMonth[m]=0;
+  async function updateDepartmentList(){
+    const list=document.getElementById('departmentList'); list.innerHTML='';
+    const snap=await getDocs(collection(db,'masters','department','items'));
+    const arr = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
+    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">部署が登録されていません</p>'; return; }
+    arr.forEach(row=>{
+      const div=document.createElement('div');
+      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #667eea;';
+      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
+        <button class="btn-small btn-delete" data-del-dept="${row.id}">削除</button>`;
+      list.appendChild(div);
+    });
+    mastersCache = await fetchMasters();
+    updateDepartmentSelect('department', mastersCache.departments);
+    updateDepartmentSelect('lineManageDept', mastersCache.departments);
+    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
   }
-  histItems.forEach(x=>{
-    const m=(x["発生日"]||"").slice(0,7);
-    if(mapMonth[m]!=null) mapMonth[m]++;
+  document.getElementById('btnAddDept').addEventListener('click', async ()=>{
+    const name=(document.getElementById('newDepartment').value||'').trim();
+    if (!name){ alert('部署名を入力してください'); return; }
+    await addDoc(collection(db,'masters','department','items'), {name});
+    document.getElementById('newDepartment').value='';
+    updateDepartmentList();
   });
-  drawBar("#chartMonthly", months, months.map(m=>mapMonth[m]));
+  document.addEventListener('click', async (e)=>{
+    const del=e.target.closest('button[data-del-dept]'); if (!del) return;
+    await deleteDoc(doc(db,'masters','department','items', del.getAttribute('data-del-dept')));
+    updateDepartmentList();
+  });
 
-  const byDept={};
-  histItems.forEach(x=>{ const k=x["部署"]||"-"; byDept[k]=(byDept[k]||0)+1; });
-  const deptLabels=Object.keys(byDept); const deptVals=deptLabels.map(k=>byDept[k]);
-  drawBar("#chartDept", deptLabels, deptVals);
-
-  const byLine={}; histItems.forEach(x=>{ const k=x["ライン"]||"-"; byLine[k]=(byLine[k]||0)+1; });
-  const sorted=Object.entries(byLine).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  drawBar("#chartLine", sorted.map(([k])=>k), sorted.map(([,v])=>v));
-}
-$("#btnAnalRefresh").addEventListener("click", refreshAnalytics);
-
-/** ====== 管理（誰でも書込可：サインイン必須） ====== **/
-function adminGuardWrite(){
-  if(!currentUser){ alert("サインインが必要です"); return false; }
-  return true;
-}
-async function reloadAdminLists(){
-  await loadMasters();
-  // 部署
-  $("#dept_list").innerHTML="";
-  masters.departments.forEach(d=>{
-    const li=el("li",{},[
-      `${d.name} `,
-      el("button",{class:"small ghost",type:"button"},"削除")
-    ]);
-    li.querySelector("button").addEventListener("click", async()=>{
-      if(!adminGuardWrite()) return;
-      await deleteDoc(doc(db,"masters","departments","items",d.id));
-      await reloadAdminLists(); mountMastersToInputs();
+  async function updateLineManageList(){
+    const dept=document.getElementById('lineManageDept').value;
+    const list=document.getElementById('lineList'); 
+    list.innerHTML='';
+    
+    if (!dept){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
+      return; 
+    }
+    
+    const snap=await getDocs(query(collection(db,'masters','line','items'), where('department','==',dept)));
+    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
+    
+    if (!arr.length){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; 
+      return; 
+    }
+    
+    arr.forEach(row=>{
+      const div=document.createElement('div');
+      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #f57c00;';
+      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
+        <button class="btn-small btn-delete" data-del-line="${row.id}">削除</button>`;
+      list.appendChild(div);
     });
-    $("#dept_list").appendChild(li);
+  }
+  
+  document.getElementById('btnAddLine').addEventListener('click', async ()=>{
+    const dept=document.getElementById('lineManageDept').value;
+    const name=(document.getElementById('newLine').value||'').trim();
+    if (!dept){ alert('部署を選択してください'); return; }
+    if (!name){ alert('ライン名を入力してください'); return; }
+    
+    await addDoc(collection(db,'masters','line','items'), {department:dept, name});
+    document.getElementById('newLine').value='';
+    
+    mastersCache = await fetchMasters();
+    await updateLineManageList();
   });
-  // ライン
-  const f1=$("#line_dept_filter").value;
-  $("#line_list").innerHTML="";
-  masters.lines.filter(x=>!f1||x.dept===f1).forEach(d=>{
-    const li=el("li",{},[
-      `${d.dept} / ${d.name} `,
-      el("button",{class:"small ghost",type:"button"},"削除")
-    ]);
-    li.querySelector("button").addEventListener("click", async()=>{
-      if(!adminGuardWrite()) return;
-      await deleteDoc(doc(db,"masters","lines","items",d.id));
-      await reloadAdminLists(); mountMastersToInputs();
+  
+  document.addEventListener('click', async (e)=>{
+    const del=e.target.closest('button[data-del-line]'); if (!del) return;
+    await deleteDoc(doc(db,'masters','line','items', del.getAttribute('data-del-line')));
+    mastersCache = await fetchMasters();
+    await updateLineManageList();
+  });
+
+  async function updateHandlerManageList(){
+    const dept=document.getElementById('handlerManageDept').value;
+    const list=document.getElementById('handlerList'); 
+    list.innerHTML='';
+    
+    if (!dept){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
+      return; 
+    }
+    
+    const snap=await getDocs(query(collection(db,'masters','handler','items'), where('department','==',dept)));
+    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
+    
+    if (!arr.length){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; 
+      return; 
+    }
+    
+    arr.forEach(row=>{
+      const div=document.createElement('div');
+      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #2e7d32;';
+      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
+        <button class="btn-small btn-delete" data-del-handler="${row.id}">削除</button>`;
+      list.appendChild(div);
     });
-    $("#line_list").appendChild(li);
+  }
+  
+  document.getElementById('btnAddHandler').addEventListener('click', async ()=>{
+    const dept=document.getElementById('handlerManageDept').value;
+    const name=(document.getElementById('newHandler').value||'').trim();
+    if (!dept){ alert('部署を選択してください'); return; }
+    if (!name){ alert('処置者名を入力してください'); return; }
+    
+    await addDoc(collection(db,'masters','handler','items'), {department:dept, name});
+    document.getElementById('newHandler').value='';
+    
+    mastersCache = await fetchMasters();
+    await updateHandlerManageList();
   });
-  // 処置者
-  const f2=$("#op_dept_filter").value;
-  $("#op_list").innerHTML="";
-  masters.operators.filter(x=>!f2||x.dept===f2).forEach(d=>{
-    const li=el("li",{},[
-      `${d.dept} / ${d.name} `,
-      el("button",{class:"small ghost",type:"button"},"削除")
-    ]);
-    li.querySelector("button").addEventListener("click", async()=>{
-      if(!adminGuardWrite()) return;
-      await deleteDoc(doc(db,"masters","operators","items",d.id));
-      await reloadAdminLists(); mountMastersToInputs();
+  
+  document.addEventListener('click', async (e)=>{
+    const del=e.target.closest('button[data-del-handler]'); if (!del) return;
+    await deleteDoc(doc(db,'masters','handler','items', del.getAttribute('data-del-handler')));
+    mastersCache = await fetchMasters();
+    await updateHandlerManageList();
+  });
+
+  function updateAnalysis(){ updateStatistics(); updateTrendAnalysis(); updateDepartmentAnalysis(); updateRecurrenceAnalysis(); }
+  
+  function updateStatistics(){
+    const total=anomalyCache.length;
+    const completed=anomalyCache.filter(x=>x.status==='complete').length;
+    const pending=total-completed;
+    const now=new Date();
+    const thisMonth=anomalyCache.filter(x=>{
+      const d=new Date(x.occurrenceDate); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+    }).length;
+    let avg=0,cnt=0;
+    anomalyCache.forEach(x=>{
+      if (x.occurrenceTime && x.restartTime){
+        const [oh,om]=(x.occurrenceTime||'0:0').split(':').map(Number);
+        const [rh,rm]=(x.restartTime||'0:0').split(':').map(Number);
+        let m=(rh*60+rm)-(oh*60+om); if (m<0) m+=1440; avg+=m; cnt++;
+      }
     });
-    $("#op_list").appendChild(li);
-  });
-}
-$("#line_dept_filter").addEventListener("change", reloadAdminLists);
-$("#op_dept_filter").addEventListener("change", reloadAdminLists);
-
-$("#btnDeptAdd").addEventListener("click", async()=>{
-  if(!adminGuardWrite()) return;
-  const name=$("#dept_new").value.trim(); if(!name) return;
-  const ref=doc(collection(db,"masters","departments","items"));
-  await setDoc(ref,{ name });
-  $("#dept_new").value=""; await reloadAdminLists(); mountMastersToInputs();
-});
-$("#btnLineAdd").addEventListener("click", async()=>{
-  if(!adminGuardWrite()) return;
-  const dept=$("#line_dept_filter").value; if(!dept){ alert("部署を選択"); return; }
-  const name=$("#line_new").value.trim(); if(!name) return;
-  const ref=doc(collection(db,"masters","lines","items"));
-  await setDoc(ref,{ name, dept });
-  $("#line_new").value=""; await reloadAdminLists(); mountMastersToInputs();
-});
-$("#btnOpAdd").addEventListener("click", async()=>{
-  if(!adminGuardWrite()) return;
-  const dept=$("#op_dept_filter").value; if(!dept){ alert("部署を選択"); return; }
-  const name=$("#op_new").value.trim(); if(!name) return;
-  const ref=doc(collection(db,"masters","operators","items"));
-  await setDoc(ref,{ name, dept });
-  $("#op_new").value=""; await reloadAdminLists(); mountMastersToInputs();
-});
-
-/** ====== ユーティリティ ====== **/
-function escapeHtml(s){ return String(s||"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
-
-reloadAdminLists().catch(console.warn);
-
+    avg = cnt?Math.round(avg/cnt):0;
+    const stats=document.getElementById('statisticsDisplay');
+    stats.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
+        <div class="stat-card">
+          <h4>総異常件数</h4><div class="stat-value">${total}</div><div class="stat-label">件</div>
+        </div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#2e7d32 0%,#66bb6a 100%);">
+          <h4>対応完了</h4><div class="stat-value">${completed}</div><div class="stat-label">件 (${total?Math.round(completed/total*100):0}%)</div>
+        </div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#f57c00 0%,#ffb74d 100%);">
+          <h4>対応待ち</h4><div class="stat-value">${pending}</div><div class="stat-label">件</div>
+        </div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#c62828 0%,#ef5350 100%);">
+          <h4>今月の異常</h4><div class="stat-value">${thisMonth}</div><div class="stat-label">件</div>
+        </div>
+        <div class="stat-card" style="background:linear-gradient(135deg,#1976d2 0%,#42a5f5 100%);">
+          <h4>平均対応時間</h4><div class="stat-value">${avg}</div><div class="stat-label">分</div>
+        </div>
+      </div>`;
+  }
+  
+  function updateTrendAnalysis(){
+    const monthly={}; 
+    anomalyCache.forEach(x=>{
+      if (!x.occurrenceDate) return;
+      const d=new Date(x.occurrenceDate); 
+      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      monthly[k]=(monthly[k]||0)+1;
+    });
+    const months=Object.keys(monthly).sort();
+    const max=Math.max(...Object.values(monthly),1);
+    const chart=document.getElementById('trendChart');
+    chart.innerHTML = months.map(m=>{
+      const c=monthly[m]; const pct=(c/max)*100;
+      return `<div style="margin-bottom:15px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+          <span style="font-weight:bold;">${m}</span><span style="color:#666;">${c}件</span>
+        </div>
+        <div style="background:#e0e0e0;height:30px;border-radius:4px;overflow:hidden;">
+          <div class="chart-bar" style="width:${pct}%;">${c}件</div>
+        </div>
+      </div>`;
+    }).join('');
+    
+    const ana=document.getElementById('trendAnalysis');
+    if (months.length>=3){
+      const r3=months.slice(-3).map(m=>monthly[m]);
+      const avgR=r3.reduce((a,b)=>a+b,0)/3;
+      const prev=months.slice(-6,-3).map(m=>monthly[m]);
+      const avgP=prev.length?prev.reduce((a,b)=>a+b,0)/prev.length:avgR;
+      let trend='横ばい', cls='trend-stable';
+      if (avgR>avgP*1.2){ trend='増加傾向'; cls='trend-increase'; }
+      else if (avgR<avgP*0.8){ trend='減少傾向'; cls='trend-decrease'; }
+      ana.innerHTML = `<div class="analysis-insight">
+        <strong>📊 傾向分析:</strong> 直近3ヶ月の平均は<strong>${avgR.toFixed(1)}件/月</strong>で、
+        <span class="trend-badge ${cls}">${trend}</span>です。
+        ${trend==='増加傾向'?'⚠️ 異常発生が増えています。原因を特定し、対策が必要です。':''}
+        ${trend==='減少傾向'?'✅ 改善が見られます。現在の取り組みを継続しましょう。':''}
+      </div>`;
+    }else{
+      ana.innerHTML='<p style="color:#999;">データが不足しているため、傾向分析を表示できません</p>';
+    }
+  }
+  
+  function updateDepartmentAnalysis(){
+    const dept={}, line={};
+    anomalyCache.forEach(x=>{
+      if (x.department) dept[x.department]=(dept[x.department]||0)+1;
+      if (x.lineName) line[x.lineName]=(line[x.lineName]||0)+1;
+    });
+    const maxD=Math.max(...Object.values(dept),1), maxL=Math.max(...Object.values(line),1);
+    const div=document.getElementById('departmentAnalysis'); 
+    let html='<h4 style="color:#666;margin-bottom:10px;">部署別異常件数</h4>';
+    Object.entries(dept).sort((a,b)=>b[1]-a[1]).forEach(([k,c])=>{
+      const pct=(c/maxD)*100; 
+      html += `<div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+          <span>${k}</span><span style="color:#666;">${c}件</span>
+        </div>
+        <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
+          <div class="chart-bar" style="width:${pct}%;height:25px;font-size:.85rem;">${c}件</div>
+        </div>
+      </div>`;
+    });
+    html+='<h4 style="color:#666;margin:20px 0 10px;">ライン別異常件数</h4>';
+    Object.entries(line).sort((a,b)=>b[1]-a[1]).forEach(([k,c])=>{
+      const pct=(c/maxL)*100; 
+      html += `<div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
+          <span>${k}</span><span style="color:#666;">${c}件</span>
+        </div>
+        <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
+          <div class="chart-bar" style="width:${pct}%;height:25px;font-size:.85rem;background:linear-gradient(90deg,#f57c00 0%,#ffb74d 100%);">${c}件</div>
+        </div>
+      </div>`;
+    });
+    div.innerHTML = html || '<p style="color:#999;">データがありません</p>';
+  }
+  
+  function updateRecurrenceAnalysis(){
+    const recCnt = anomalyCache.filter(x=>x.recurrenceType==='再発').length;
+    const newCnt = anomalyCache.filter(x=>x.recurrenceType==='新規').length;
+    const total=recCnt+newCnt; 
+    const div=document.getElementById('recurrenceAnalysis');
+    if (!total){ 
+      div.innerHTML='<p style="color:#999;">技術対応済みのデータがありません</p>'; 
+      return; 
+    }
+    const rate=(recCnt/total*100).toFixed(1);
+    div.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <div style="text-align:center;padding:20px;background:#ffebee;border-radius:8px;">
+          <div style="font-size:3rem;font-weight:bold;color:#c62828;">${recCnt}</div>
+          <div style="color:#666;margin-top:5px;">再発件数</div>
+        </div>
+        <div style="text-align:center;padding:20px;background:#e8f5e9;border-radius:8px;">
+          <div style="font-size:3rem;font-weight:bold;color:#2e7d32;">${newCnt}</div>
+          <div style="color:#666;margin-top:5px;">新規件数</div>
+        </div>
+      </div>
+      <div class="analysis-insight">
+        <strong>🔄 再発率:</strong> ${rate}% (${recCnt}/${total}件)
+        ${rate>30?'<br>⚠️ 再発率が高めです。根本原因の追求と恒久対策が必要です。':''}
+        ${rate<20?'<br>✅ 再発率は良好です。現在の対策を継続しましょう。':''}
+      </div>`;
+  }
 </script>
-
 </body>
 </html>
