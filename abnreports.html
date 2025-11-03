@@ -3,28 +3,25 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>異常履歴入力ツール（編集対応版・LINE機能なし）</title>
+<title>異常履歴入力ツール（Firebase連携版 / LINE機能なし）</title>
 <style>
+  /* --- 既存UI準拠（省略なし） --- */
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f5}
-
   .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.1)}
   .header h1{font-size:1.5rem;margin-bottom:5px}
-
-  .container{max-width:800px;margin:0 auto;padding:10px}
+  .container{max-width:900px;margin:0 auto;padding:10px}
   .tabs{display:flex;background:#fff;margin:15px 0 0;border-radius:8px 8px 0 0;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
   .tab{flex:1;padding:15px;text-align:center;cursor:pointer;background:#f8f9fa;border:none;font-size:1rem;font-weight:bold;transition:.3s;color:#666}
   .tab.active{background:#fff;color:#667eea;border-bottom:3px solid #667eea}
   .tab-content{display:none;background:#fff;padding:20px;border-radius:0 0 8px 8px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
   .tab-content.active{display:block}
-
   .form-group{margin-bottom:20px}
   .form-group label{display:block;margin-bottom:8px;font-weight:bold;color:#333;font-size:.95rem}
   .form-group input,.form-group textarea,.form-group select{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:6px;font-size:1rem;transition:border-color .3s}
   .form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:#667eea}
   .form-group textarea{min-height:100px;resize:vertical}
   .time-group{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-
   .photo-upload{border:2px dashed #e0e0e0;border-radius:6px;padding:20px;text-align:center;cursor:pointer;transition:.3s}
   .photo-upload:hover{border-color:#667eea;background:#f8f9ff}
   .photo-upload input[type=file]{display:none}
@@ -32,19 +29,15 @@
   .photo-item{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
   .photo-item img{width:100%;height:100%;object-fit:cover}
   .photo-item .remove-btn{position:absolute;top:5px;right:5px;background:rgba(255,59,48,.9);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:1}
-
   .btn{width:100%;padding:15px;border:none;border-radius:6px;font-size:1rem;font-weight:bold;cursor:pointer;transition:.3s;margin-top:10px}
   .btn-primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
-  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(102,126,234,.4)}
   .btn-secondary{background:#6c757d;color:#fff}
   .btn-export{background:#28a745;color:#fff}
   .btn-import{background:#17a2b8;color:#fff}
-
   .history-controls{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap}
   .view-toggle{display:flex;gap:5px}
   .view-toggle button{padding:8px 15px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
   .view-toggle button.active{background:#667eea;color:#fff}
-
   .card-view{display:grid;gap:15px}
   .anomaly-card{background:#fff;border-radius:8px;padding:15px;box-shadow:0 2px 8px rgba(0,0,0,.1);border-left:4px solid #667eea}
   .anomaly-card.complete{border-left-color:#28a745}
@@ -57,23 +50,19 @@
   .card-field{display:grid;grid-template-columns:120px 1fr;gap:10px}
   .field-label{font-weight:bold;color:#666}
   .field-value{color:#333}
-
   .table-view{overflow-x:auto;display:none}
   .table-view.active{display:block}
   table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
   th,td{padding:12px;text-align:left;border-bottom:1px solid #e0e0e0}
   th{background:#667eea;color:#fff;font-weight:bold;position:sticky;top:0}
   tr:hover{background:#f8f9ff}
-
   .action-btns{display:flex;gap:6px;flex-wrap:wrap}
   .btn-small{padding:6px 10px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
   .btn-edit{background:#ffc107;color:#000}
   .btn-delete{background:#dc3545;color:#fff}
-
   .empty-state{text-align:center;padding:40px 20px;color:#999}
   .empty-state-icon{font-size:3rem;margin-bottom:15px}
-
-  /* 編集モーダル */
+  /* modal */
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#fff;padding:20px;border-radius:8px;max-width:680px;width:95%;max-height:90vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.2)}
@@ -83,22 +72,43 @@
   .edit-tab.active{background:#667eea;color:#fff}
   .modal-actions{display:flex;gap:10px;margin-top:10px}
   .btn-cancel{background:#9e9e9e;color:#fff}
-
   @media (max-width:600px){
     .card-field{grid-template-columns:1fr;gap:5px}
     .time-group{grid-template-columns:1fr}
     table{font-size:.85rem}
     th,td{padding:8px}
   }
+  /* auth */
+  #authGate{position:fixed;inset:0;background:#f5f5f5;display:flex;align-items:center;justify-content:center;z-index:2000}
+  #authCard{background:#fff;max-width:380px;width:92%;padding:24px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+  #signOutBtn{position:fixed;right:12px;top:12px;background:#ef5350;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;z-index:1500}
 </style>
 </head>
 <body>
-  <div class="header">
-    <h1>📋 異常履歴入力ツール</h1>
-    <p>製造・技術部門連携システム（履歴から編集対応／LINE機能なし）</p>
+  <button id="signOutBtn" style="display:none;">サインアウト</button>
+  <div id="authGate">
+    <div id="authCard">
+      <h2 style="margin-bottom:10px;color:#667eea;">🔐 サインイン</h2>
+      <p style="color:#666;margin-bottom:15px;">社内メールでログインしてください（メール/パスワード）</p>
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="authEmail" placeholder="user@miyama-unitec.co.jp">
+      </div>
+      <div class="form-group">
+        <label>パスワード</label>
+        <input type="password" id="authPassword" placeholder="••••••••">
+      </div>
+      <button class="btn btn-primary" id="authLoginBtn">ログイン</button>
+      <p id="authMsg" style="color:#c62828;margin-top:10px;"></p>
+    </div>
   </div>
 
-  <div class="container">
+  <div class="header">
+    <h1>📋 異常履歴入力ツール</h1>
+    <p>Firebase連携（Auth / Firestore / Storage）版</p>
+  </div>
+
+  <div class="container" style="display:none" id="appRoot">
     <div class="tabs">
       <button class="tab active" data-tab="manufacturing">製造入力</button>
       <button class="tab" data-tab="technical">技術入力</button>
@@ -110,10 +120,7 @@
     <!-- 製造入力 -->
     <div id="manufacturing" class="tab-content active">
       <h2 style="margin-bottom:20px;color:#667eea;">製造部門 - 異常報告</h2>
-      <p style="margin-bottom:20px;color:#666;">いつ・どこで・どの整理Noで・何があった を入力してください</p>
-
       <form id="manufacturingForm">
-        <!-- いつ -->
         <div style="background:#f0f7ff;padding:15px;border-radius:6px;margin-bottom:20px;">
           <h3 style="color:#667eea;margin-bottom:15px;font-size:1.1rem;">📅 いつ</h3>
           <div class="form-group">
@@ -122,9 +129,7 @@
               <input type="date" id="occurrenceDate" required style="flex:1;">
               <button type="button" class="btn btn-secondary" style="width:auto;padding:12px 20px;margin:0;background:#17a2b8;" id="btnNowDate">📅 NOW</button>
             </div>
-            <p style="font-size:.85rem;color:#666;margin-top:5px;">※勤務時間: 8:00〜翌6:00 (0:00〜6:00の異常は前日扱い)</p>
           </div>
-
           <div class="form-group">
             <label>時刻</label>
             <div class="time-group">
@@ -146,75 +151,39 @@
           </div>
         </div>
 
-        <!-- どこで -->
         <div style="background:#fff4e6;padding:15px;border-radius:6px;margin-bottom:20px;">
           <h3 style="color:#f57c00;margin-bottom:15px;font-size:1.1rem;">📍 どこで</h3>
-          <div class="form-group">
-            <label>部署 *</label>
-            <select id="department" required></select>
-          </div>
-          <div class="form-group">
-            <label>ライン名 *</label>
-            <select id="lineName" required>
-              <option value="">部署を先に選択してください</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>処置者 *</label>
-            <select id="handler" required>
-              <option value="">部署を先に選択してください</option>
-            </select>
-          </div>
+          <div class="form-group"><label>部署 *</label><select id="department" required></select></div>
+          <div class="form-group"><label>ライン名 *</label><select id="lineName" required><option value="">部署を先に選択してください</option></select></div>
+          <div class="form-group"><label>処置者 *</label><select id="handler" required><option value="">部署を先に選択してください</option></select></div>
         </div>
 
-        <!-- どの整理Noで -->
         <div style="background:#f3e5f5;padding:15px;border-radius:6px;margin-bottom:20px;">
           <h3 style="color:#8e24aa;margin-bottom:15px;font-size:1.1rem;">🔢 どの整理Noで</h3>
-          <div class="form-group">
-            <label>整理No *</label>
-            <input type="text" id="serialNo" required placeholder="例: 2024-001">
-          </div>
+          <div class="form-group"><label>整理No *</label><input type="text" id="serialNo" required placeholder="例: 2024-001"></div>
         </div>
 
-        <!-- 何があった -->
         <div style="background:#e8f5e9;padding:15px;border-radius:6px;margin-bottom:20px;">
           <h3 style="color:#2e7d32;margin-bottom:15px;font-size:1.1rem;">📝 何があった</h3>
-          <div class="form-group">
-            <label>異常内容 *</label>
-            <textarea id="anomalyContent" required placeholder="発生した異常の詳細を記載してください"></textarea>
+          <div class="form-group"><label>異常内容 *</label><textarea id="anomalyContent" required></textarea></div>
+          <div class="form-group"><label>製造処置内容 *</label><textarea id="actionTaken" required></textarea></div>
+          <div class="form-group"><label>遡り *</label>
+            <select id="traceback" required><option value="">選択</option><option value="有">有</option><option value="無">無</option></select>
           </div>
-          <div class="form-group">
-            <label>製造処置内容 *</label>
-            <textarea id="actionTaken" required placeholder="実施した処置内容を記載してください"></textarea>
-          </div>
-          <div class="form-group">
-            <label>遡り *</label>
-            <select id="traceback" required>
-              <option value="">選択してください</option>
-              <option value="有">有</option>
-              <option value="無">無</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>技術要請 *</label>
+          <div class="form-group"><label>技術要請 *</label>
             <select id="techRequest" required>
-              <option value="">選択してください</option>
-              <option value="要請">技術要請あり（技術部門の入力が必要）</option>
-              <option value="完結">製造で完結（技術入力不要）</option>
+              <option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option>
             </select>
           </div>
-
           <div class="form-group">
             <label>写真</label>
             <div class="photo-upload" onclick="document.getElementById('mfgPhotos').click()">
-              <div style="font-size:2rem;">📸</div>
-              <p>写真をアップロード（複数可）</p>
+              <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
               <input type="file" id="mfgPhotos" accept="image/*" multiple>
             </div>
             <div id="mfgPhotoPreview" class="photo-preview"></div>
           </div>
         </div>
-
         <button type="submit" class="btn btn-primary">登録</button>
       </form>
     </div>
@@ -222,55 +191,24 @@
     <!-- 技術入力 -->
     <div id="technical" class="tab-content">
       <h2 style="margin-bottom:20px;color:#667eea;">技術部門 - 追加入力</h2>
-
       <div class="form-group">
         <label>対象の案件選択 *</label>
-        <select id="selectSerialNo">
-          <option value="">案件を選択してください</option>
-        </select>
-        <p style="margin-top:5px;font-size:.85rem;color:#666;">※[品番] 日付 - 異常内容 の形式で表示されます</p>
+        <select id="selectSerialNo"><option value="">案件を選択してください</option></select>
       </div>
-
       <div id="selectedDataDisplay" style="background:#f8f9ff;padding:15px;border-radius:6px;margin-bottom:20px;display:none;">
         <h3 style="color:#667eea;margin-bottom:10px;">製造部門入力内容</h3>
         <div id="displayContent"></div>
       </div>
-
-      <!-- 技術フォーム -->
       <form id="technicalForm">
-        <div class="form-group">
-          <label>技術処置者 *</label>
-          <input type="text" id="techHandler" placeholder="技術処置者名を入力">
-        </div>
-        <div class="form-group">
-          <label>命数有無 *</label>
-          <select id="lifespan">
-            <option value="">選択してください</option>
-            <option value="有">有</option>
-            <option value="無">無</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>保全単位 *</label>
-          <input type="text" id="maintenanceUnit" placeholder="例: モーター、ベアリング">
-        </div>
-        <div class="form-group">
-          <label>何が悪くどうした *</label>
-          <textarea id="rootCauseAction" placeholder="原因と対策を記載してください"></textarea>
-        </div>
-        <div class="form-group">
-          <label>再発か新規か *</label>
-          <select id="recurrenceType">
-            <option value="">選択してください</option>
-            <option value="再発">再発</option>
-            <option value="新規">新規</option>
-          </select>
-        </div>
+        <div class="form-group"><label>技術処置者 *</label><input type="text" id="techHandler"></div>
+        <div class="form-group"><label>命数有無 *</label><select id="lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="maintenanceUnit"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="rootCauseAction"></textarea></div>
+        <div class="form-group"><label>再発か新規か *</label><select id="recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
         <div class="form-group">
           <label>写真</label>
           <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
-            <div style="font-size:2rem;">📸</div>
-            <p>写真をアップロード（複数可）</p>
+            <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
             <input type="file" id="techPhotos" accept="image/*" multiple>
           </div>
           <div id="techPhotoPreview" class="photo-preview"></div>
@@ -283,13 +221,8 @@
     <div id="history" class="tab-content">
       <h2 style="margin-bottom:20px;color:#667eea;">異常履歴</h2>
       <div class="history-controls">
-        <div class="view-toggle">
-          <button class="active" data-view="card">カード</button>
-          <button data-view="table">テーブル</button>
-        </div>
+        <div class="view-toggle"><button class="active" data-view="card">カード</button><button data-view="table">テーブル</button></div>
         <button class="btn btn-export" style="flex:1;" id="btnExport">📥 CSV出力</button>
-        <button class="btn btn-import" style="flex:1;" id="btnImport">📤 CSVインポート</button>
-        <input type="file" id="csvImport" accept=".csv" style="display:none;">
       </div>
       <div id="cardView" class="card-view"></div>
       <div id="tableView" class="table-view"></div>
@@ -323,7 +256,7 @@
       <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
         <h3 style="color:#667eea;margin-bottom:15px;">部署管理</h3>
         <div style="display:flex;gap:10px;margin-bottom:15px;">
-          <input type="text" id="newDepartment" placeholder="新しい部署名を入力" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <input type="text" id="newDepartment" placeholder="新しい部署名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
           <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;" id="btnAddDept">追加</button>
         </div>
         <div id="departmentList" style="display:grid;gap:10px;"></div>
@@ -331,12 +264,9 @@
 
       <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:20px;">
         <h3 style="color:#f57c00;margin-bottom:15px;">ライン名管理</h3>
-        <div class="form-group">
-          <label>対象部署</label>
-          <select id="lineManageDept"><option value="">部署を選択してください</option></select>
-        </div>
+        <div class="form-group"><label>対象部署</label><select id="lineManageDept"><option value="">部署を選択</option></select></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;">
-          <input type="text" id="newLine" placeholder="新しいライン名を入力" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <input type="text" id="newLine" placeholder="新しいライン名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
           <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#f57c00;" id="btnAddLine">追加</button>
         </div>
         <div id="lineList" style="display:grid;gap:10px;"></div>
@@ -344,12 +274,9 @@
 
       <div style="background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
         <h3 style="color:#2e7d32;margin-bottom:15px;">処置者管理</h3>
-        <div class="form-group">
-          <label>対象部署</label>
-          <select id="handlerManageDept"><option value="">部署を選択してください</option></select>
-        </div>
+        <div class="form-group"><label>対象部署</label><select id="handlerManageDept"><option value="">部署を選択</option></select></div>
         <div style="display:flex;gap:10px;margin-bottom:15px;">
-          <input type="text" id="newHandler" placeholder="新しい処置者名を入力" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <input type="text" id="newHandler" placeholder="新しい処置者名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
           <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#2e7d32;" id="btnAddHandler">追加</button>
         </div>
         <div id="handlerList" style="display:grid;gap:10px;"></div>
@@ -357,607 +284,534 @@
     </div>
   </div>
 
-  <!-- 編集モーダル -->
-  <div id="editModal" class="modal" aria-hidden="true">
+<!-- Firebase & App -->
+<script type="module">
+  // ===== Firebase SDK =====
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
+  import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, updateDoc, doc, deleteDoc, serverTimestamp, where, enableIndexedDbPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+  import { getStorage, ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
+
+  // ===== Config（自プロジェクトの値を貼る）=====
+  const firebaseConfig = {
+    // TODO: 自分の firebaseConfig を貼り付け
+    apiKey: "YOUR_KEY",
+    authDomain: "YOUR_APP.firebaseapp.com",
+    projectId: "YOUR_APP",
+    storageBucket: "YOUR_APP.appspot.com",
+    messagingSenderId: "XXXX",
+    appId: "1:XXXX:web:XXXX"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+
+  // オフライン（任意）
+  enableIndexedDbPersistence(db).catch(()=>{ /* Safariなど未対応時は無視 */ });
+
+  // ===== Auth Gate =====
+  const gate = document.getElementById('authGate');
+  const appRoot = document.getElementById('appRoot');
+  const signOutBtn = document.getElementById('signOutBtn');
+  document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
+    const email = (document.getElementById('authEmail').value||'').trim();
+    const pw = document.getElementById('authPassword').value;
+    try{
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithEmailAndPassword(auth, email, pw);
+    }catch(e){
+      document.getElementById('authMsg').textContent = 'ログイン失敗: ' + (e.code||e.message);
+    }
+  });
+  signOutBtn.addEventListener('click', ()=> signOut(auth));
+
+  onAuthStateChanged(auth, (user)=>{
+    if (user){
+      gate.style.display='none';
+      appRoot.style.display='block';
+      signOutBtn.style.display='inline-block';
+      bootAfterLogin();
+    }else{
+      appRoot.style.display='none';
+      gate.style.display='flex';
+      signOutBtn.style.display='none';
+    }
+  });
+
+  // ===== App State =====
+  let anomalyCache = []; // Firestoreスナップショットのキャッシュ
+  let mfgPhotos = [];
+  let techPhotos = [];
+  let currentView='card';
+  let editingId=null;
+
+  // ===== Masters（Firestore: /masters/department, /masters/line, /masters/handler）=====
+  async function ensureMasterDocs(){
+    // 初回用：存在しない場合に最低限のコレクションを作る
+    const mrefs = ['department','line','handler'].map(id=>doc(db,'masters',id));
+    // 特に事前作成不要。UI操作で都度 add する方針なので処理なし
+  }
+
+  // 部署/ライン/処置者の取得（全件）
+  async function fetchMasters(){
+    const depSnap = await getDocs(collection(db,'masters','department','items'));
+    const lineSnap= await getDocs(collection(db,'masters','line','items'));
+    const hSnap   = await getDocs(collection(db,'masters','handler','items'));
+    const departments = depSnap.docs.map(d=>d.data().name).sort();
+    // lines: {dept:[...]}
+    const lines = {};
+    lineSnap.forEach(d=>{
+      const {department,name} = d.data();
+      if (!lines[department]) lines[department]=[];
+      lines[department].push(name);
+    });
+    Object.keys(lines).forEach(k=> lines[k].sort());
+    // handlers: {dept:[...]}
+    const handlers = {};
+    hSnap.forEach(d=>{
+      const {department,name} = d.data();
+      if (!handlers[department]) handlers[department]=[];
+      handlers[department].push(name);
+    });
+    Object.keys(handlers).forEach(k=> handlers[k].sort());
+    return {departments, lines, handlers};
+  }
+
+  // ===== UI helpers =====
+  function setNowDateTo(id){
+    const now = new Date(); const hour=now.getHours();
+    if (hour>=0 && hour<6) now.setDate(now.getDate()-1);
+    const y=now.getFullYear(), m=String(now.getMonth()+1).padStart(2,'0'), d=String(now.getDate()).padStart(2,'0');
+    document.getElementById(id).value = `${y}-${m}-${d}`;
+  }
+  function setNowTimeTo(id){
+    const now=new Date(); const hh=String(now.getHours()).padStart(2,'0'), mm=String(now.getMinutes()).padStart(2,'0');
+    document.getElementById(id).value = `${hh}:${mm}`;
+  }
+  document.getElementById('btnNowDate').addEventListener('click', ()=>setNowDateTo('occurrenceDate'));
+  document.querySelectorAll('button[data-now]').forEach(b=> b.addEventListener('click', ()=> setNowTimeTo(b.getAttribute('data-now')) ));
+
+  function displayPhotos(previewId, arr){
+    const wrap = document.getElementById(previewId); wrap.innerHTML='';
+    arr.forEach((src,idx)=>{
+      const div=document.createElement('div'); div.className='photo-item';
+      div.innerHTML = `<img src="${src}"><button class="remove-btn" data-photo="${previewId}" data-index="${idx}">×</button>`;
+      wrap.appendChild(div);
+    });
+  }
+  function handlePhotoUpload(inputId, previewId, arrRef){
+    const input = document.getElementById(inputId);
+    input.addEventListener('change',(e)=>{
+      (Array.from(e.target.files||[])).forEach(file=>{
+        const r=new FileReader();
+        r.onload = ev=>{ arrRef.push({name:file.name, file, preview:ev.target.result}); displayPhotos(previewId, arrRef.map(x=>x.preview)); };
+        r.readAsDataURL(file);
+      });
+      input.value='';
+    });
+  }
+  handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
+  handlePhotoUpload('techPhotos','techPhotoPreview', techPhotos);
+  document.addEventListener('click',(e)=>{
+    const rm=e.target.closest('.remove-btn[data-photo]'); if(!rm) return;
+    const id=rm.getAttribute('data-photo'); const idx=Number(rm.getAttribute('data-index'));
+    if (id==='mfgPhotoPreview'){ mfgPhotos.splice(idx,1); displayPhotos(id, mfgPhotos.map(x=>x.preview)); }
+    if (id==='techPhotoPreview'){ techPhotos.splice(idx,1); displayPhotos(id, techPhotos.map(x=>x.preview)); }
+  });
+
+  // マスタセレクト更新
+  function updateDepartmentSelect(selectId, departments){
+    const sel=document.getElementById(selectId); if(!sel) return;
+    const keep=sel.value;
+    sel.innerHTML='<option value="">選択してください</option>';
+    departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; sel.appendChild(o); });
+    if (departments.includes(keep)) sel.value=keep;
+  }
+  function refreshLineAndHandler(deptSelId, lineSelId, handlerSelId, lines, handlers){
+    const dept=document.getElementById(deptSelId).value;
+    const lineSel=document.getElementById(lineSelId), handlerSel=document.getElementById(handlerSelId);
+    lineSel.innerHTML='<option value="">選択してください</option>';
+    handlerSel.innerHTML='<option value="">選択してください</option>';
+    (lines[dept]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+    (handlers[dept]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; handlerSel.appendChild(o); });
+  }
+
+  // ===== Firestore: anomalies CRUD =====
+  function anomaliesRef(){ return collection(db,'anomalies'); }
+
+  async function uploadPhotos(docId, kind, items){
+    // kind: 'mfg' | 'tech'
+    const urls=[];
+    for (const it of items){
+      const path=`anomalies/${docId}/${kind}/${Date.now()}_${it.name}`;
+      const storageRef=ref(storage, path);
+      await uploadBytes(storageRef, it.file);
+      const url = await getDownloadURL(storageRef);
+      urls.push(url);
+    }
+    return urls;
+  }
+
+  function renderHistory(){
+    // カード or テーブル
+    const items=[...anomalyCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+    // card
+    const cardWrap=document.getElementById('cardView');
+    if (!items.length){
+      cardWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
+    }else{
+      cardWrap.innerHTML = items.map((item,idx)=>{
+        const status = item.status==='pending' ? {text:'技術入力待ち',cls:'status-pending'} :
+                      (item.techRequest==='完結' ? {text:'完了（製造完結）',cls:'status-complete'} : {text:'完了',cls:'status-complete'});
+        return `
+          <div class="anomaly-card ${item.status==='complete'?'complete':''}">
+            <div class="card-header">
+              <div class="card-id">${item.serialNo || '(No ID)'}</div>
+              <div class="card-status ${status.cls}">${status.text}</div>
+            </div>
+            <div class="card-body">
+              ${item.department?`<div class="card-field"><div class="field-label">部署</div><div class="field-value">${item.department}</div></div>`:''}
+              ${item.lineName?`<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${item.lineName}</div></div>`:''}
+              ${item.techRequest?`<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${item.techRequest==='要請'?'技術要請あり':'製造で完結'}</div></div>`:''}
+              <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${item.anomalyContent||''}</div></div>
+              <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${item.actionTaken||''}</div></div>
+              <div class="card-field"><div class="field-label">発生日時</div><div class="field-value">${item.occurrenceDate||''} ${item.occurrenceTime||''}</div></div>
+              <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${item.handler||''}</div></div>
+              ${item.status==='complete' && item.techRequest==='要請' ? `
+                <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${item.techHandler||'-'}</div></div>
+                <div class="card-field"><div class="field-label">保全単位</div><div class="field-value">${item.maintenanceUnit||'-'}</div></div>
+                <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction||'-'}</div></div>
+                <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${item.recurrenceType||'-'}</div></div>
+              `:''}
+              <div class="action-btns" style="margin-top:10px;">
+                <button class="btn-small btn-edit" data-edit="${item._id}">編集</button>
+                <button class="btn-small btn-delete" data-del="${item._id}">削除</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // table
+    const tableWrap=document.getElementById('tableView');
+    if (!items.length){
+      tableWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
+    }else{
+      tableWrap.innerHTML = `
+        <table>
+          <thead><tr>
+            <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th>
+            <th>発生日</th><th>処置者</th><th>状態</th><th>操作</th>
+          </tr></thead>
+          <tbody>
+            ${items.map(it=>{
+              const st = it.status==='complete'?'完了':'待ち';
+              const cls = it.status==='complete'?'status-complete':'status-pending';
+              return `
+                <tr>
+                  <td>${it.serialNo||''}</td>
+                  <td>${it.department||'-'}</td>
+                  <td>${it.lineName||'-'}</td>
+                  <td>${(it.anomalyContent||'').slice(0,30)}...</td>
+                  <td>${it.occurrenceDate||''}</td>
+                  <td>${it.handler||'-'}</td>
+                  <td><span class="card-status ${cls}">${st}</span></td>
+                  <td class="action-btns">
+                    <button class="btn-small btn-edit" data-edit="${it._id}">編集</button>
+                    <button class="btn-small btn-delete" data-del="${it._id}">削除</button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+  }
+
+  function renderTechTargetSelect(){
+    const sel = document.getElementById('selectSerialNo');
+    sel.innerHTML = '<option value="">整理Noを選択してください</option>';
+    anomalyCache
+      .filter(x=>x.status==='pending' && x.techRequest==='要請')
+      .sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''))
+      .forEach(x=>{
+        const o=document.createElement('option');
+        o.value = x._id;
+        o.textContent = `[${x.serialNo}] ${x.occurrenceDate} - ${x.anomalyContent?.slice(0,30)||''}...`;
+        sel.appendChild(o);
+      });
+  }
+
+  // ===== 起動後処理 =====
+  async function bootAfterLogin(){
+    await ensureMasterDocs();
+    const masters = await fetchMasters();
+    updateDepartmentSelect('department', masters.departments);
+    updateDepartmentSelect('lineManageDept', masters.departments);
+    updateDepartmentSelect('handlerManageDept', masters.departments);
+
+    document.getElementById('department').addEventListener('change', ()=> refreshLineAndHandler('department','lineName','handler', masters.lines, masters.handlers));
+    document.getElementById('lineManageDept').addEventListener('change', ()=> updateLineManageList(masters));
+    document.getElementById('handlerManageDept').addEventListener('change', ()=> updateHandlerManageList(masters));
+
+    // Firestore リアルタイム購読
+    const q = query(anomaliesRef(), orderBy('createdAt','desc'));
+    onSnapshot(q, (snap)=>{
+      anomalyCache = snap.docs.map(d=> ({_id:d.id, ...d.data()}));
+      renderHistory();
+      renderTechTargetSelect();
+      updateAnalysis();
+    });
+
+    // 初期日付
+    setNowDateTo('occurrenceDate');
+  }
+
+  // ===== 製造：登録 =====
+  document.getElementById('manufacturingForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const techReq = document.getElementById('techRequest').value;
+    const base = {
+      department: document.getElementById('department').value,
+      lineName:   document.getElementById('lineName').value,
+      serialNo:   document.getElementById('serialNo').value,
+      occurrenceDate: document.getElementById('occurrenceDate').value,
+      occurrenceTime: document.getElementById('occurrenceTime').value || '',
+      restartTime:    document.getElementById('restartTime').value || '',
+      anomalyContent: document.getElementById('anomalyContent').value,
+      actionTaken:    document.getElementById('actionTaken').value,
+      traceback:      document.getElementById('traceback').value,
+      handler:        document.getElementById('handler').value,
+      techRequest:    techReq,
+      status:         techReq==='完結' ? 'complete':'pending',
+      createdAt:      serverTimestamp(),
+      techHandler:'', lifespan:'', maintenanceUnit:'', rootCauseAction:'', recurrenceType:'',
+      mfgPhotoUrls:[], techPhotoUrls:[]
+    };
+    // まず空ドキュメント作成 → docId 確保
+    const created = await addDoc(anomaliesRef(), base);
+    // 画像があればアップロード → URL保存
+    let urls=[];
+    if (mfgPhotos.length){
+      urls = await uploadPhotos(created.id, 'mfg', mfgPhotos);
+      await updateDoc(doc(db,'anomalies',created.id), { mfgPhotoUrls: urls });
+    }
+
+    // リセット
+    e.target.reset(); mfgPhotos=[]; document.getElementById('mfgPhotoPreview').innerHTML='';
+    document.getElementById('lineName').innerHTML='<option value="">部署を先に選択してください</option>';
+    document.getElementById('handler').innerHTML='<option value="">部署を先に選択してください</option>';
+    alert('登録しました。');
+  });
+
+  // ===== 技術：対象選択と登録 =====
+  document.getElementById('selectSerialNo').addEventListener('change', ()=>{
+    const id = document.getElementById('selectSerialNo').value;
+    const d = anomalyCache.find(it=> it._id===id);
+    const box=document.getElementById('selectedDataDisplay'), wrap=document.getElementById('displayContent');
+    if (!d){ box.style.display='none'; wrap.innerHTML=''; return; }
+    wrap.innerHTML = `
+      <div style="display:grid;gap:8px;">
+        <div><strong>整理No:</strong> ${d.serialNo}</div>
+        ${d.department?`<div><strong>部署:</strong> ${d.department}</div>`:''}
+        ${d.lineName?`<div><strong>ライン名:</strong> ${d.lineName}</div>`:''}
+        <div><strong>異常内容:</strong> ${d.anomalyContent||''}</div>
+        <div><strong>製造処置:</strong> ${d.actionTaken||''}</div>
+        <div><strong>発生日:</strong> ${d.occurrenceDate||''}</div>
+        <div><strong>処置者:</strong> ${d.handler||''}</div>
+      </div>
+    `;
+    box.style.display='block';
+  });
+
+  document.getElementById('technicalForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const id = document.getElementById('selectSerialNo').value;
+    const updates = {
+      techHandler: document.getElementById('techHandler').value,
+      lifespan: document.getElementById('lifespan').value,
+      maintenanceUnit: document.getElementById('maintenanceUnit').value,
+      rootCauseAction: document.getElementById('rootCauseAction').value,
+      recurrenceType: document.getElementById('recurrenceType').value,
+      status: 'complete',
+      completedAt: serverTimestamp()
+    };
+    // 写真
+    if (techPhotos.length){
+      const urls = await uploadPhotos(id,'tech', techPhotos);
+      updates.techPhotoUrls = (anomalyCache.find(x=>x._id===id)?.techPhotoUrls||[]).concat(urls);
+    }
+    await updateDoc(doc(db,'anomalies',id), updates);
+    e.target.reset(); techPhotos=[]; document.getElementById('techPhotoPreview').innerHTML='';
+    document.getElementById('selectedDataDisplay').style.display='none';
+    alert('技術入力を登録しました。');
+  });
+
+  // ===== 履歴：ビュー切替 / 編集 / 削除 =====
+  document.querySelectorAll('.view-toggle button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('.view-toggle button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active'); currentView=b.dataset.view;
+      document.getElementById('cardView').style.display = currentView==='card'?'grid':'none';
+      document.getElementById('tableView').style.display = currentView==='table'?'block':'none';
+      renderHistory();
+    });
+  });
+
+  // 編集モーダル（これまで通りのUIだがFirestore更新に切替）
+  const editModalHtml = `
     <div class="modal-content">
       <div class="modal-title">✏️ 履歴レコード編集</div>
       <div class="edit-tabs">
         <button class="edit-tab active" data-edit-tab="mfg">製造</button>
         <button class="edit-tab" data-edit-tab="tech">技術</button>
       </div>
-
-      <!-- 製造編集 -->
       <div id="editMfg" class="edit-pane">
-        <div class="form-group">
-          <label>発生日 *</label>
-          <input type="date" id="edit_occurrenceDate">
-        </div>
-        <div class="form-group">
-          <label>発生時刻 / 再開時刻</label>
-          <div class="time-group">
-            <input type="time" id="edit_occurrenceTime">
-            <input type="time" id="edit_restartTime">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>部署 *</label>
-          <select id="edit_department"></select>
-        </div>
-        <div class="form-group">
-          <label>ライン名 *</label>
-          <select id="edit_lineName"></select>
-        </div>
-        <div class="form-group">
-          <label>処置者 *</label>
-          <select id="edit_handler"></select>
-        </div>
-        <div class="form-group">
-          <label>整理No *</label>
-          <input type="text" id="edit_serialNo">
-        </div>
-        <div class="form-group">
-          <label>異常内容 *</label>
-          <textarea id="edit_anomalyContent"></textarea>
-        </div>
-        <div class="form-group">
-          <label>製造処置内容 *</label>
-          <textarea id="edit_actionTaken"></textarea>
-        </div>
-        <div class="form-group">
-          <label>遡り *</label>
-          <select id="edit_traceback">
-            <option value="">選択してください</option>
-            <option value="有">有</option>
-            <option value="無">無</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>技術要請 *</label>
-          <select id="edit_techRequest">
-            <option value="">選択してください</option>
-            <option value="要請">技術要請あり（技術部門の入力が必要）</option>
-            <option value="完結">製造で完結（技術入力不要）</option>
-          </select>
-        </div>
+        <div class="form-group"><label>発生日 *</label><input type="date" id="edit_occurrenceDate"></div>
+        <div class="form-group"><label>発生時刻 / 再開時刻</label><div class="time-group"><input type="time" id="edit_occurrenceTime"><input type="time" id="edit_restartTime"></div></div>
+        <div class="form-group"><label>部署 *</label><select id="edit_department"></select></div>
+        <div class="form-group"><label>ライン名 *</label><select id="edit_lineName"></select></div>
+        <div class="form-group"><label>処置者 *</label><select id="edit_handler"></select></div>
+        <div class="form-group"><label>整理No *</label><input type="text" id="edit_serialNo"></div>
+        <div class="form-group"><label>異常内容 *</label><textarea id="edit_anomalyContent"></textarea></div>
+        <div class="form-group"><label>製造処置内容 *</label><textarea id="edit_actionTaken"></textarea></div>
+        <div class="form-group"><label>遡り *</label><select id="edit_traceback"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>技術要請 *</label><select id="edit_techRequest"><option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option></select></div>
       </div>
-
-      <!-- 技術編集 -->
       <div id="editTech" class="edit-pane" style="display:none;">
-        <div class="form-group">
-          <label>技術処置者</label>
-          <input type="text" id="edit_techHandler">
-        </div>
-        <div class="form-group">
-          <label>命数有無</label>
-          <select id="edit_lifespan">
-            <option value="">選択してください</option>
-            <option value="有">有</option>
-            <option value="無">無</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>保全単位</label>
-          <input type="text" id="edit_maintenanceUnit">
-        </div>
-        <div class="form-group">
-          <label>何が悪くどうした</label>
-          <textarea id="edit_rootCauseAction"></textarea>
-        </div>
-        <div class="form-group">
-          <label>再発か新規か</label>
-          <select id="edit_recurrenceType">
-            <option value="">選択してください</option>
-            <option value="再発">再発</option>
-            <option value="新規">新規</option>
-          </select>
-        </div>
+        <div class="form-group"><label>技術処置者</label><input type="text" id="edit_techHandler"></div>
+        <div class="form-group"><label>命数有無</label><select id="edit_lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
+        <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
       </div>
-
       <div class="modal-actions">
         <button class="btn btn-cancel" id="btnEditCancel" style="flex:1;">キャンセル</button>
         <button class="btn btn-primary" id="btnEditSave" style="flex:1;">保存</button>
       </div>
-    </div>
-  </div>
+    </div>`;
+  const modal = document.createElement('div'); modal.className='modal'; modal.id='editModal'; modal.innerHTML=editModalHtml; document.body.appendChild(modal);
 
-<script>
-  let anomalyData = [];
-  let mfgPhotos = [];
-  let techPhotos = [];
-  let currentView = 'card';
-  let editingId = null;
+  // 編集開く/タブ切替
+  let editCurrentId=null, mastersCache=null;
+  function openEdit(id){
+    const rec = anomalyCache.find(x=>x._id===id); if(!rec){ alert('対象が見つかりません'); return; }
+    editCurrentId=id;
+    (async ()=>{
+      mastersCache = mastersCache || await fetchMasters();
+      // 部署
+      const depSel = document.getElementById('edit_department'); depSel.innerHTML='';
+      mastersCache.departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o); });
+      depSel.value = rec.department||'';
+      // ライン/処置者
+      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
+      lineSel.innerHTML='<option value="">選択してください</option>';
+      (mastersCache.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+      hSel.innerHTML='<option value="">選択してください</option>';
+      (mastersCache.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
 
-  // マスタ
-  let masterData = {
-    departments: ['製造1課','製造2課','組立課'],
-    lines: {'製造1課':['ライン1','ライン2'],'製造2課':['ラインA','ラインB'],'組立課':['組立1','組立2']},
-    handlers: {'製造1課':['山田太郎','佐藤花子'],'製造2課':['鈴木一郎','田中美咲'],'組立課':['高橋健太','伊藤愛']}
-  };
-
-  // ==== 初期化 ====
-  function saveData(){ localStorage.setItem('anomalyData', JSON.stringify(anomalyData)); }
-  function saveMaster(){ localStorage.setItem('masterData', JSON.stringify(masterData)); }
-
-  function loadData(){
-    try{
-      const saved = localStorage.getItem('anomalyData');
-      if (saved) anomalyData = JSON.parse(saved);
-    }catch(e){ console.warn('load anomalyData error', e); }
-    try{
-      const savedM = localStorage.getItem('masterData');
-      if (savedM) masterData = JSON.parse(savedM);
-      else saveMaster();
-    }catch(e){ console.warn('load masterData error', e); }
-
-    // 既存データの無効IDは画面に出さない（任意）
-    anomalyData = anomalyData.filter(it => it && it.id !== undefined && it.id !== null && it.id !== '');
-
-    updateHistory();
-    updateSerialNoSelect();
-    updateAllDepartmentSelects();
+      // 値
+      document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate||'';
+      document.getElementById('edit_occurrenceTime').value = rec.occurrenceTime||'';
+      document.getElementById('edit_restartTime').value   = rec.restartTime||'';
+      document.getElementById('edit_serialNo').value      = rec.serialNo||'';
+      document.getElementById('edit_anomalyContent').value= rec.anomalyContent||'';
+      document.getElementById('edit_actionTaken').value   = rec.actionTaken||'';
+      document.getElementById('edit_traceback').value     = rec.traceback||'';
+      document.getElementById('edit_techRequest').value   = rec.techRequest||'';
+      document.getElementById('edit_techHandler').value   = rec.techHandler||'';
+      document.getElementById('edit_lifespan').value      = rec.lifespan||'';
+      document.getElementById('edit_maintenanceUnit').value= rec.maintenanceUnit||'';
+      document.getElementById('edit_rootCauseAction').value= rec.rootCauseAction||'';
+      document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
+      modal.classList.add('active'); modal.setAttribute('aria-hidden','false');
+    })();
   }
-
-  // 部署系セレクト更新
-  function updateAllDepartmentSelects(){
-    updateDepartmentSelect('department');
-    updateDepartmentSelect('lineManageDept');
-    updateDepartmentSelect('handlerManageDept');
-    updateDepartmentList();
-  }
-  function updateDepartmentSelect(selectId){
-    const sel = document.getElementById(selectId);
-    if (!sel) return;
-    const keep = sel.value;
-    sel.innerHTML = '<option value="">選択してください</option>';
-    masterData.departments.forEach(d=>{
-      const o = document.createElement('option'); o.value = o.textContent = d; sel.appendChild(o);
-    });
-    if (keep && masterData.departments.includes(keep)) sel.value = keep;
-  }
-
-  // 製造フォーム：部署変更でライン・処置者
-  function refreshLineAndHandler(deptSelId, lineSelId, handlerSelId){
-    const dept = document.getElementById(deptSelId).value;
-    const lineSel = document.getElementById(lineSelId);
-    const handlerSel = document.getElementById(handlerSelId);
-    lineSel.innerHTML = '<option value="">選択してください</option>';
-    handlerSel.innerHTML = '<option value="">選択してください</option>';
-    (masterData.lines[dept]||[]).forEach(l=>{
-      const o = document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o);
-    });
-    (masterData.handlers[dept]||[]).forEach(h=>{
-      const o = document.createElement('option'); o.value=o.textContent=h; handlerSel.appendChild(o);
-    });
-  }
-
-  // ==== タブ ====
-  document.querySelectorAll('.tab').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{
-      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
-      btn.classList.add('active');
-      const id = btn.dataset.tab;
-      document.getElementById(id).classList.add('active');
-      if (id==='history') updateHistory();
-      else if (id==='technical') updateSerialNoSelect();
-      else if (id==='analysis') updateAnalysis();
-    });
+  document.addEventListener('change', (e)=>{
+    if (e.target.id==='edit_department' && mastersCache){
+      const dep=e.target.value;
+      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
+      lineSel.innerHTML='<option value="">選択してください</option>';
+      (mastersCache.lines[dep]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+      hSel.innerHTML='<option value="">選択してください</option>';
+      (mastersCache.handlers[dep]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
+    }
   });
-
-  // ==== NOW ====
-  function setNowDateTo(id){
-    const now = new Date();
-    const hour = now.getHours();
-    if (hour>=0 && hour<6) now.setDate(now.getDate()-1);
-    const y = now.getFullYear();
-    const m = String(now.getMonth()+1).padStart(2,'0');
-    const d = String(now.getDate()).padStart(2,'0');
-    document.getElementById(id).value = `${y}-${m}-${d}`;
-  }
-  function setNowTimeTo(id){
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2,'0');
-    const mm = String(now.getMinutes()).padStart(2,'0');
-    document.getElementById(id).value = `${hh}:${mm}`;
-  }
-  document.getElementById('btnNowDate').addEventListener('click', ()=>setNowDateTo('occurrenceDate'));
-  document.querySelectorAll('button[data-now]').forEach(b=>{
-    b.addEventListener('click', ()=> setNowTimeTo(b.getAttribute('data-now')));
-  });
-
-  // ==== 写真プレビュー ====
-  function handlePhotoUpload(inputId, previewId, arrRef){
-    const input = document.getElementById(inputId);
-    input.addEventListener('change', (e)=>{
-      const files = Array.from(e.target.files||[]);
-      files.forEach(file=>{
-        const r = new FileReader();
-        r.onload = ev=>{ arrRef.push(ev.target.result); displayPhotos(previewId, arrRef); };
-        r.readAsDataURL(file);
-      });
-      input.value = '';
-    });
-  }
-  function displayPhotos(previewId, arr){
-    const wrap = document.getElementById(previewId);
-    wrap.innerHTML = '';
-    arr.forEach((src,idx)=>{
-      const div = document.createElement('div');
-      div.className='photo-item';
-      div.innerHTML = `<img src="${src}"><button class="remove-btn" data-photo="${previewId}" data-index="${idx}">×</button>`;
-      wrap.appendChild(div);
-    });
-  }
   document.addEventListener('click', (e)=>{
-    const rm = e.target.closest('.remove-btn[data-photo]');
-    if (!rm) return;
-    const id = rm.getAttribute('data-photo');
-    const idx = Number(rm.getAttribute('data-index'));
-    if (id==='mfgPhotoPreview'){ mfgPhotos.splice(idx,1); displayPhotos(id,mfgPhotos); }
-    else if (id==='techPhotoPreview'){ techPhotos.splice(idx,1); displayPhotos(id,techPhotos); }
-  });
-
-  handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
-  handlePhotoUpload('techPhotos','techPhotoPreview', techPhotos);
-
-  // ==== 製造フォーム登録 ====
-  document.getElementById('department').addEventListener('change', ()=>refreshLineAndHandler('department','lineName','handler'));
-  document.getElementById('manufacturingForm').addEventListener('submit', (e)=>{
-    e.preventDefault();
-    const techReq = document.getElementById('techRequest').value;
-
-    const rec = {
-      id: Date.now() + Math.random(),
-      department: document.getElementById('department').value,
-      lineName: document.getElementById('lineName').value,
-      serialNo: document.getElementById('serialNo').value,
-      occurrenceDate: document.getElementById('occurrenceDate').value,
-      occurrenceTime: document.getElementById('occurrenceTime').value,
-      restartTime: document.getElementById('restartTime').value,
-      anomalyContent: document.getElementById('anomalyContent').value,
-      actionTaken: document.getElementById('actionTaken').value,
-      traceback: document.getElementById('traceback').value,
-      handler: document.getElementById('handler').value,
-      techRequest: techReq,
-      mfgPhotos:[...mfgPhotos],
-      status: techReq==='完結' ? 'complete' : 'pending',
-      createdAt: new Date().toISOString()
-    };
-    anomalyData.push(rec);
-    saveData();
-
-    // リセット
-    e.target.reset();
-    mfgPhotos = [];
-    document.getElementById('mfgPhotoPreview').innerHTML='';
-    document.getElementById('lineName').innerHTML='<option value="">部署を先に選択してください</option>';
-    document.getElementById('handler').innerHTML='<option value="">部署を先に選択してください</option>';
-
-    updateHistory();
-    updateSerialNoSelect();
-    alert('登録しました。');
-  });
-
-  // ==== 技術フォーム ====
-  function updateSerialNoSelect(){
-    const sel = document.getElementById('selectSerialNo');
-    sel.innerHTML = '<option value="">整理Noを選択してください</option>';
-    anomalyData
-      .filter(x=>x.status==='pending' && x.techRequest==='要請')
-      .sort((a,b)=> new Date(b.occurrenceDate)-new Date(a.occurrenceDate))
-      .forEach(x=>{
-        const o = document.createElement('option');
-        o.value = x.id;
-        o.textContent = `[${x.serialNo}] ${x.occurrenceDate} - ${x.anomalyContent.substring(0,30)}...`;
-        sel.appendChild(o);
-      });
-  }
-
-  document.getElementById('selectSerialNo').addEventListener('change', ()=>{
-    const id = document.getElementById('selectSerialNo').value;
-    const d = anomalyData.find(it=> String(it.id)===String(id));
-    const wrap = document.getElementById('displayContent');
-    const box = document.getElementById('selectedDataDisplay');
-
-    if (!d){ box.style.display='none'; wrap.innerHTML=''; return; }
-
-    wrap.innerHTML = `
-      <div style="display:grid;gap:10px;">
-        <div><strong>整理No（品番）:</strong> ${d.serialNo}</div>
-        ${d.department?`<div><strong>部署:</strong> ${d.department}</div>`:''}
-        ${d.lineName?`<div><strong>ライン名:</strong> ${d.lineName}</div>`:''}
-        <div><strong>異常内容:</strong> ${d.anomalyContent}</div>
-        <div><strong>製造処置:</strong> ${d.actionTaken}</div>
-        <div><strong>発生日:</strong> ${d.occurrenceDate}</div>
-        <div><strong>処置者:</strong> ${d.handler}</div>
-      </div>
-    `;
-    box.style.display='block';
-  });
-
-  document.getElementById('technicalForm').addEventListener('submit',(e)=>{
-    e.preventDefault();
-    const id = document.getElementById('selectSerialNo').value;
-    const ix = anomalyData.findIndex(it=> String(it.id)===String(id));
-    if (ix<0){ alert('対象が見つかりません'); return; }
-
-    const tgt = anomalyData[ix];
-    tgt.techHandler = document.getElementById('techHandler').value;
-    tgt.lifespan = document.getElementById('lifespan').value;
-    tgt.maintenanceUnit = document.getElementById('maintenanceUnit').value;
-    tgt.rootCauseAction = document.getElementById('rootCauseAction').value;
-    tgt.recurrenceType = document.getElementById('recurrenceType').value;
-    tgt.techPhotos = [...techPhotos];
-    // 技術要請だった案件が技術入力で完了
-    tgt.status = 'complete';
-    tgt.completedAt = new Date().toISOString();
-
-    saveData();
-    e.target.reset();
-    techPhotos=[];
-    document.getElementById('techPhotoPreview').innerHTML='';
-    document.getElementById('selectedDataDisplay').style.display='none';
-    updateSerialNoSelect();
-    updateHistory();
-    alert('技術入力を登録しました。');
-  });
-
-  // ==== 履歴描画 ====
-  function cardStatus(item){
-    if (item.status==='pending') return {text:'技術入力待ち', cls:'status-pending'};
-    if (item.status==='complete' && item.techRequest==='完結') return {text:'完了（製造完結）', cls:'status-complete'};
-    return {text:'完了', cls:'status-complete'};
-  }
-
-  function updateHistory(){
-    if (currentView==='card') updateCardView(); else updateTableView();
-  }
-
-  function updateCardView(){
-    const wrap = document.getElementById('cardView');
-    if (!anomalyData.length){
-      wrap.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
-      return;
-    }
-    wrap.innerHTML = anomalyData.map((item,idx)=>{
-      const st = cardStatus(item);
-      return `
-        <div class="anomaly-card ${item.status==='complete'?'complete':''}">
-          <div class="card-header">
-            <div class="card-id">${item.serialNo}</div>
-            <div class="card-status ${st.cls}">${st.text}</div>
-          </div>
-          <div class="card-body">
-            ${item.department?`<div class="card-field"><div class="field-label">部署</div><div class="field-value">${item.department}</div></div>`:''}
-            ${item.lineName?`<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${item.lineName}</div></div>`:''}
-            ${item.techRequest?`<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${item.techRequest==='要請'?'技術要請あり':'製造で完結'}</div></div>`:''}
-            <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${item.anomalyContent}</div></div>
-            <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${item.actionTaken}</div></div>
-            <div class="card-field"><div class="field-label">発生日時</div><div class="field-value">${item.occurrenceDate} ${item.occurrenceTime||''}</div></div>
-            <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${item.handler}</div></div>
-            ${item.status==='complete' && item.techRequest==='要請' ? `
-              <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${item.techHandler||'-'}</div></div>
-              <div class="card-field"><div class="field-label">保全単位</div><div class="field-value">${item.maintenanceUnit||'-'}</div></div>
-              <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction||'-'}</div></div>
-              <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${item.recurrenceType||'-'}</div></div>
-            `:''}
-            <div class="action-btns" style="margin-top:10px;">
-              <button class="btn-small btn-edit" data-edit="${item.id}">編集</button>
-              <button class="btn-small btn-delete" data-del="${item.id}" data-idx="${idx}">削除</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  function updateTableView(){
-    const wrap = document.getElementById('tableView');
-    if (!anomalyData.length){
-      wrap.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
-      return;
-    }
-    wrap.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>整理No</th><th>部署</th><th>ライン</th><th>異常内容</th>
-            <th>発生日</th><th>処置者</th><th>状態</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${anomalyData.map((it,idx)=>{
-            const st = it.status==='complete'?'完了':'待ち';
-            const cls = it.status==='complete'?'status-complete':'status-pending';
-            return `
-              <tr>
-                <td>${it.serialNo}</td>
-                <td>${it.department||'-'}</td>
-                <td>${it.lineName||'-'}</td>
-                <td>${(it.anomalyContent||'').substring(0,30)}...</td>
-                <td>${it.occurrenceDate}</td>
-                <td>${it.handler||'-'}</td>
-                <td><span class="card-status ${cls}">${st}</span></td>
-                <td class="action-btns">
-                  <button class="btn-small btn-edit" data-edit="${it.id}">編集</button>
-                  <button class="btn-small btn-delete" data-del="${it.id}" data-idx="${idx}">削除</button>
-                </td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
-    `;
-  }
-
-  // ビュー切替
-  document.querySelectorAll('.view-toggle button').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      document.querySelectorAll('.view-toggle button').forEach(x=>x.classList.remove('active'));
-      b.classList.add('active');
-      currentView = b.dataset.view;
-      document.getElementById('cardView').style.display = currentView==='card'?'grid':'none';
-      document.getElementById('tableView').style.display = currentView==='table'?'block':'none';
-      updateHistory();
-    });
-  });
-
-  // ==== 編集モーダル ====
-  function openEditModal(id){
-    editingId = id;
-    const rec = anomalyData.find(x=> String(x.id)===String(id));
-    if (!rec){ alert('対象が見つかりません'); return; }
-
-    // 製造パートのプルダウン準備
-    fillDeptLineHandlerForEdit(rec);
-
-    // 値セット（製造）
-    document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate || '';
-    document.getElementById('edit_occurrenceTime').value = rec.occurrenceTime || '';
-    document.getElementById('edit_restartTime').value   = rec.restartTime || '';
-    document.getElementById('edit_serialNo').value      = rec.serialNo || '';
-    document.getElementById('edit_anomalyContent').value= rec.anomalyContent || '';
-    document.getElementById('edit_actionTaken').value   = rec.actionTaken || '';
-    document.getElementById('edit_traceback').value     = rec.traceback || '';
-    document.getElementById('edit_techRequest').value   = rec.techRequest || '';
-
-    // 値セット（技術）
-    document.getElementById('edit_techHandler').value     = rec.techHandler || '';
-    document.getElementById('edit_lifespan').value        = rec.lifespan || '';
-    document.getElementById('edit_maintenanceUnit').value = rec.maintenanceUnit || '';
-    document.getElementById('edit_rootCauseAction').value = rec.rootCauseAction || '';
-    document.getElementById('edit_recurrenceType').value  = rec.recurrenceType || '';
-
-    // タブ状態
-    document.querySelectorAll('.edit-tab').forEach(t=>t.classList.remove('active'));
-    document.querySelector('.edit-tab[data-edit-tab="mfg"]').classList.add('active');
-    document.getElementById('editMfg').style.display='block';
-    document.getElementById('editTech').style.display='none';
-
-    document.getElementById('editModal').classList.add('active');
-    document.getElementById('editModal').setAttribute('aria-hidden','false');
-  }
-
-  function fillDeptLineHandlerForEdit(rec){
-    const depSel = document.getElementById('edit_department');
-    depSel.innerHTML = '';
-    masterData.departments.forEach(d=>{
-      const o = document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o);
-    });
-    depSel.value = rec.department || '';
-
-    // ライン・処置者
-    const lineSel = document.getElementById('edit_lineName');
-    const hSel = document.getElementById('edit_handler');
-    lineSel.innerHTML = '<option value="">選択してください</option>';
-    hSel.innerHTML = '<option value="">選択してください</option>';
-    (masterData.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option');o.value=o.textContent=l; lineSel.appendChild(o); });
-    (masterData.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option');o.value=o.textContent=h; hSel.appendChild(o); });
-
-    lineSel.value = rec.lineName || '';
-    hSel.value = rec.handler || '';
-  }
-
-  // 編集タブ切替
-  document.querySelectorAll('.edit-tab').forEach(t=>{
-    t.addEventListener('click', ()=>{
+    const t=e.target;
+    if (t.matches('.edit-tab')){
       document.querySelectorAll('.edit-tab').forEach(x=>x.classList.remove('active'));
       t.classList.add('active');
-      const which = t.dataset.editTab;
-      document.getElementById('editMfg').style.display = (which==='mfg')?'block':'none';
-      document.getElementById('editTech').style.display= (which==='tech')?'block':'none';
-    });
-  });
-
-  // 編集内：部署変更
-  document.getElementById('edit_department').addEventListener('change', ()=>{
-    const dep = document.getElementById('edit_department').value;
-    const lineSel = document.getElementById('edit_lineName');
-    const hSel = document.getElementById('edit_handler');
-    lineSel.innerHTML = '<option value="">選択してください</option>';
-    hSel.innerHTML = '<option value="">選択してください</option>';
-    (masterData.lines[dep]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
-    (masterData.handlers[dep]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
-  });
-
-  // 保存
-  document.getElementById('btnEditSave').addEventListener('click', ()=>{
-    if (editingId==null) return;
-    const ix = anomalyData.findIndex(x=> String(x.id)===String(editingId));
-    if (ix<0){ alert('対象が見つかりません'); return; }
-
-    const rec = anomalyData[ix];
-
-    // 製造
-    rec.occurrenceDate  = document.getElementById('edit_occurrenceDate').value || rec.occurrenceDate;
-    rec.occurrenceTime  = document.getElementById('edit_occurrenceTime').value || '';
-    rec.restartTime     = document.getElementById('edit_restartTime').value || '';
-    rec.department      = document.getElementById('edit_department').value || '';
-    rec.lineName        = document.getElementById('edit_lineName').value || '';
-    rec.handler         = document.getElementById('edit_handler').value || '';
-    rec.serialNo        = document.getElementById('edit_serialNo').value || rec.serialNo;
-    rec.anomalyContent  = document.getElementById('edit_anomalyContent').value || '';
-    rec.actionTaken     = document.getElementById('edit_actionTaken').value || '';
-    rec.traceback       = document.getElementById('edit_traceback').value || '';
-    rec.techRequest     = document.getElementById('edit_techRequest').value || rec.techRequest;
-
-    // 技術
-    rec.techHandler     = document.getElementById('edit_techHandler').value || '';
-    rec.lifespan        = document.getElementById('edit_lifespan').value || '';
-    rec.maintenanceUnit = document.getElementById('edit_maintenanceUnit').value || '';
-    rec.rootCauseAction = document.getElementById('edit_rootCauseAction').value || '';
-    rec.recurrenceType  = document.getElementById('edit_recurrenceType').value || '';
-
-    // ステータス整合
-    if (rec.techRequest==='完結'){
-      rec.status = 'complete';
-    }else{
-      // 要請：技術側主要フィールドのいずれかが入っていれば完了扱い
-      const hasTech = (rec.techHandler||rec.lifespan||rec.maintenanceUnit||rec.rootCauseAction||rec.recurrenceType);
-      rec.status = hasTech ? 'complete' : 'pending';
+      document.getElementById('editMfg').style.display = t.dataset.editTab==='mfg'?'block':'none';
+      document.getElementById('editTech').style.display= t.dataset.editTab==='tech'?'block':'none';
     }
-
-    saveData();
-    closeEditModal();
-    updateHistory();
-    updateSerialNoSelect();
+    const ed = t.closest('button.btn-edit[data-edit]'); if (ed){ openEdit(ed.getAttribute('data-edit')); }
+    const del= t.closest('button.btn-delete[data-del]'); if (del){ deleteRecord(del.getAttribute('data-del')); }
+  });
+  document.getElementById('btnEditCancel').addEventListener('click', ()=>{
+    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
+  });
+  document.getElementById('btnEditSave').addEventListener('click', async ()=>{
+    if (!editCurrentId) return;
+    const updates = {
+      occurrenceDate:  document.getElementById('edit_occurrenceDate').value||'',
+      occurrenceTime:  document.getElementById('edit_occurrenceTime').value||'',
+      restartTime:     document.getElementById('edit_restartTime').value||'',
+      department:      document.getElementById('edit_department').value||'',
+      lineName:        document.getElementById('edit_lineName').value||'',
+      handler:         document.getElementById('edit_handler').value||'',
+      serialNo:        document.getElementById('edit_serialNo').value||'',
+      anomalyContent:  document.getElementById('edit_anomalyContent').value||'',
+      actionTaken:     document.getElementById('edit_actionTaken').value||'',
+      traceback:       document.getElementById('edit_traceback').value||'',
+      techRequest:     document.getElementById('edit_techRequest').value||'',
+      techHandler:     document.getElementById('edit_techHandler').value||'',
+      lifespan:        document.getElementById('edit_lifespan').value||'',
+      maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
+      rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
+      recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
+    };
+    // ステータス整合
+    if (updates.techRequest==='完結'){
+      updates.status='complete';
+    }else{
+      const hasTech = (updates.techHandler||updates.lifespan||updates.maintenanceUnit||updates.rootCauseAction||updates.recurrenceType);
+      updates.status = hasTech ? 'complete' : 'pending';
+    }
+    await updateDoc(doc(db,'anomalies',editCurrentId), updates);
+    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
     alert('更新しました。');
   });
 
-  function closeEditModal(){
-    editingId = null;
-    document.getElementById('editModal').classList.remove('active');
-    document.getElementById('editModal').setAttribute('aria-hidden','true');
+  async function deleteRecord(id){
+    if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
+    // 画像フォルダ削除
+    const baseRef = ref(storage, `anomalies/${id}`);
+    try{
+      const all = await listAll(baseRef);
+      for (const f of all.items){ await deleteObject(f); }
+      for (const p of all.prefixes){
+        const all2 = await listAll(p);
+        for (const f2 of all2.items){ await deleteObject(f2); }
+      }
+    }catch(err){ /* ない場合は無視 */ }
+    await deleteDoc(doc(db,'anomalies',id));
   }
-  document.getElementById('btnEditCancel').addEventListener('click', closeEditModal);
 
-  // 履歴：編集／削除 クリック委譲
-  document.addEventListener('click', (e)=>{
-    const ed = e.target.closest('button.btn-edit[data-edit]');
-    if (ed){ openEditModal(ed.getAttribute('data-edit')); return; }
-    const del = e.target.closest('button.btn-delete[data-del]');
-    if (del){
-      const id = del.getAttribute('data-del');
-      const idx = Number(del.getAttribute('data-idx'));
-      if (!confirm('このレコードを削除してもよろしいですか？')) return;
-      const before = anomalyData.length;
-      anomalyData = anomalyData.filter(x=> String(x.id)!==String(id));
-      if (anomalyData.length===before && !Number.isNaN(idx)) anomalyData.splice(idx,1);
-      saveData(); updateHistory(); updateSerialNoSelect();
-      return;
-    }
-  });
-
-  // CSV出力／インポート
+  // ===== CSVエクスポート =====
   document.getElementById('btnExport').addEventListener('click', ()=>{
-    if (!anomalyData.length){ alert('エクスポートするデータがありません'); return; }
-    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','命数有無','保全単位','原因対策','再発新規','状態','id'];
-    const rows = anomalyData.map(item=>[
-      item.serialNo,item.department||'',item.lineName||'',item.occurrenceDate,item.occurrenceTime||'',item.restartTime||'',
-      item.anomalyContent,item.actionTaken,item.traceback,item.handler,
+    if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
+    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','命数有無','保全単位','原因対策','再発新規','状態','_id'];
+    const rows = anomalyCache.map(item=>[
+      item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
+      item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
       item.techRequest==='要請'?'技術要請あり':item.techRequest==='完結'?'製造で完結':'',
       item.techHandler||'',item.lifespan||'',item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',
-      item.status==='complete'?'完了':'技術入力待ち', item.id
+      item.status==='complete'?'完了':'技術入力待ち', item._id
     ]);
     let csv = '\uFEFF' + headers.join(',') + '\n';
     rows.forEach(r=>{ csv += r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(',')+'\n'; });
@@ -966,228 +820,160 @@
     a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
   });
 
-  document.getElementById('btnImport').addEventListener('click', ()=> document.getElementById('csvImport').click());
-  document.getElementById('csvImport').addEventListener('change', (event)=>{
-    const file = event.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev)=>{
-      try{
-        const text = ev.target.result;
-        const lines = text.split('\n').filter(l=>l.trim());
-        if (lines.length<2){ alert('CSVが空です'); return; }
-        const dataLines = lines.slice(1);
-        let cnt=0;
-        dataLines.forEach((line,i)=>{
-          const vals = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g)?.map(v=>v.replace(/^"|"$/g,'').replace(/""/g,'"')) || [];
-          if (vals.length>=17){
-            let techRequest = '';
-            if (vals[10]==='技術要請あり') techRequest = '要請';
-            else if (vals[10]==='製造で完結') techRequest = '完結';
-            const idv = vals[17] || (Date.now()+i);
-            const rec = {
-              id:idv, serialNo:vals[0], department:vals[1]||'', lineName:vals[2]||'',
-              occurrenceDate:vals[3], occurrenceTime:vals[4]||'', restartTime:vals[5]||'',
-              anomalyContent:vals[6], actionTaken:vals[7], traceback:vals[8], handler:vals[9],
-              techRequest, techHandler:vals[11]||'', lifespan:vals[12]||'', maintenanceUnit:vals[13]||'',
-              rootCauseAction:vals[14]||'', recurrenceType:vals[15]||'',
-              status: vals[16]==='完了'?'complete':'pending', mfgPhotos:[], techPhotos:[], createdAt:new Date().toISOString()
-            };
-            anomalyData.push(rec); cnt++;
-          }
-        });
-        saveData(); updateHistory(); updateSerialNoSelect();
-        alert(`${cnt}件インポートしました`);
-      }catch(err){ console.error(err); alert('CSV読み込みに失敗しました'); }
-      event.target.value='';
-    };
-    reader.readAsText(file, 'UTF-8');
-  });
-
-  // ==== 管理：部署/ライン/処置者 ====
-  function updateDepartmentList(){
-    const list = document.getElementById('departmentList');
-    list.innerHTML='';
-    if (!masterData.departments.length){
-      list.innerHTML='<p style="color:#999;text-align:center;">部署が登録されていません</p>'; return;
-    }
-    masterData.departments.forEach(dept=>{
-      const div = document.createElement('div');
-      div.className='master-item';
+  // ===== マスタ管理（Firestore）=====
+  async function updateDepartmentList(){
+    const list=document.getElementById('departmentList'); list.innerHTML='';
+    const snap=await getDocs(collection(db,'masters','department','items'));
+    const arr = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
+    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">部署が登録されていません</p>'; return; }
+    arr.forEach(row=>{
+      const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #667eea;';
-      div.innerHTML = `<span class="master-item-name" style="font-weight:500;color:#333">${dept}</span>
-        <button class="btn-small btn-delete" data-del-dept="${dept}">削除</button>`;
+      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
+        <button class="btn-small btn-delete" data-del-dept="${row.id}">削除</button>`;
       list.appendChild(div);
     });
+    // 入力セレクト更新
+    const masters = await fetchMasters();
+    updateDepartmentSelect('department', masters.departments);
+    updateDepartmentSelect('lineManageDept', masters.departments);
+    updateDepartmentSelect('handlerManageDept', masters.departments);
   }
-  document.getElementById('btnAddDept').addEventListener('click', ()=>{
-    const input = document.getElementById('newDepartment');
-    const name = (input.value||'').trim();
+  document.getElementById('btnAddDept').addEventListener('click', async ()=>{
+    const name=(document.getElementById('newDepartment').value||'').trim();
     if (!name){ alert('部署名を入力してください'); return; }
-    if (masterData.departments.includes(name)){ alert('既に登録済です'); return; }
-    masterData.departments.push(name);
-    masterData.lines[name]=[]; masterData.handlers[name]=[];
-    saveMaster(); updateAllDepartmentSelects(); input.value='';
+    await addDoc(collection(db,'masters','department','items'), {name});
+    document.getElementById('newDepartment').value='';
+    updateDepartmentList();
   });
-  document.addEventListener('click', (e)=>{
-    const del = e.target.closest('button[data-del-dept]');
-    if (!del) return;
-    const name = del.getAttribute('data-del-dept');
-    if (!confirm(`「${name}」を削除しますか？ 関連ライン/処置者も削除されます。`)) return;
-    masterData.departments = masterData.departments.filter(d=>d!==name);
-    delete masterData.lines[name]; delete masterData.handlers[name];
-    saveMaster(); updateAllDepartmentSelects();
+  document.addEventListener('click', async (e)=>{
+    const del=e.target.closest('button[data-del-dept]'); if (!del) return;
+    await deleteDoc(doc(db,'masters','department','items', del.getAttribute('data-del-dept')));
+    updateDepartmentList();
   });
 
-  function updateLineManageList(){
-    const dept = document.getElementById('lineManageDept').value;
-    const list = document.getElementById('lineList');
-    list.innerHTML='';
+  async function updateLineManageList(masters){
+    const dept=document.getElementById('lineManageDept').value;
+    const list=document.getElementById('lineList'); list.innerHTML='';
     if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
-    const arr = masterData.lines[dept]||[];
+    const snap=await getDocs(query(collection(db,'masters','line','items'), where('department','==',dept)));
+    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
     if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; return; }
-    arr.forEach(line=>{
-      const div = document.createElement('div');
-      div.className='master-item';
+    arr.forEach(row=>{
+      const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #f57c00;';
-      div.innerHTML = `<span class="master-item-name" style="font-weight:500;color:#333">${line}</span>
-        <button class="btn-small btn-delete" data-del-line="${line}" data-dept="${dept}">削除</button>`;
+      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
+        <button class="btn-small btn-delete" data-del-line="${row.id}">削除</button>`;
       list.appendChild(div);
     });
   }
-  document.getElementById('lineManageDept').addEventListener('change', updateLineManageList);
-  document.getElementById('btnAddLine').addEventListener('click', ()=>{
-    const dept = document.getElementById('lineManageDept').value;
-    const name = (document.getElementById('newLine').value||'').trim();
+  document.getElementById('btnAddLine').addEventListener('click', async ()=>{
+    const dept=document.getElementById('lineManageDept').value;
+    const name=(document.getElementById('newLine').value||'').trim();
     if (!dept){ alert('部署を選択してください'); return; }
     if (!name){ alert('ライン名を入力してください'); return; }
-    if (!masterData.lines[dept]) masterData.lines[dept]=[];
-    if (masterData.lines[dept].includes(name)){ alert('既に登録済です'); return; }
-    masterData.lines[dept].push(name); saveMaster(); updateLineManageList(); document.getElementById('newLine').value='';
+    await addDoc(collection(db,'masters','line','items'), {department:dept, name});
+    document.getElementById('newLine').value='';
+    updateLineManageList();
   });
-  document.addEventListener('click', (e)=>{
-    const del = e.target.closest('button[data-del-line]');
-    if (!del) return;
-    const line = del.getAttribute('data-del-line'); const dept = del.getAttribute('data-dept');
-    if (!confirm(`「${line}」を削除しますか？`)) return;
-    masterData.lines[dept] = (masterData.lines[dept]||[]).filter(l=>l!==line);
-    saveMaster(); updateLineManageList();
+  document.addEventListener('click', async (e)=>{
+    const del=e.target.closest('button[data-del-line]'); if (!del) return;
+    await deleteDoc(doc(db,'masters','line','items', del.getAttribute('data-del-line')));
+    updateLineManageList();
   });
 
-  function updateHandlerManageList(){
-    const dept = document.getElementById('handlerManageDept').value;
-    const list = document.getElementById('handlerList');
-    list.innerHTML='';
+  async function updateHandlerManageList(masters){
+    const dept=document.getElementById('handlerManageDept').value;
+    const list=document.getElementById('handlerList'); list.innerHTML='';
     if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
-    const arr = masterData.handlers[dept]||[];
+    const snap=await getDocs(query(collection(db,'masters','handler','items'), where('department','==',dept)));
+    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
     if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; return; }
-    arr.forEach(h=>{
-      const div = document.createElement('div');
-      div.className='master-item';
+    arr.forEach(row=>{
+      const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #2e7d32;';
-      div.innerHTML = `<span class="master-item-name" style="font-weight:500;color:#333">${h}</span>
-        <button class="btn-small btn-delete" data-del-handler="${h}" data-dept="${dept}">削除</button>`;
+      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
+        <button class="btn-small btn-delete" data-del-handler="${row.id}">削除</button>`;
       list.appendChild(div);
     });
   }
-  document.getElementById('handlerManageDept').addEventListener('change', updateHandlerManageList);
-  document.getElementById('btnAddHandler').addEventListener('click', ()=>{
-    const dept = document.getElementById('handlerManageDept').value;
-    const name = (document.getElementById('newHandler').value||'').trim();
+  document.getElementById('btnAddHandler').addEventListener('click', async ()=>{
+    const dept=document.getElementById('handlerManageDept').value;
+    const name=(document.getElementById('newHandler').value||'').trim();
     if (!dept){ alert('部署を選択してください'); return; }
     if (!name){ alert('処置者名を入力してください'); return; }
-    if (!masterData.handlers[dept]) masterData.handlers[dept]=[];
-    if (masterData.handlers[dept].includes(name)){ alert('既に登録済です'); return; }
-    masterData.handlers[dept].push(name); saveMaster(); updateHandlerManageList(); document.getElementById('newHandler').value='';
+    await addDoc(collection(db,'masters','handler','items'), {department:dept, name});
+    document.getElementById('newHandler').value='';
+    updateHandlerManageList();
   });
-  document.addEventListener('click', (e)=>{
-    const del = e.target.closest('button[data-del-handler]');
-    if (!del) return;
-    const h = del.getAttribute('data-del-handler'); const dept = del.getAttribute('data-dept');
-    if (!confirm(`「${h}」を削除しますか？`)) return;
-    masterData.handlers[dept] = (masterData.handlers[dept]||[]).filter(x=>x!==h);
-    saveMaster(); updateHandlerManageList();
+  document.addEventListener('click', async (e)=>{
+    const del=e.target.closest('button[data-del-handler]'); if (!del) return;
+    await deleteDoc(doc(db,'masters','handler','items', del.getAttribute('data-del-handler')));
+    updateHandlerManageList();
   });
 
-  // ==== 分析 ====
+  // ===== 分析（既存ロジックをキャッシュに対して実行）=====
   function updateAnalysis(){ updateStatistics(); updateTrendAnalysis(); updateDepartmentAnalysis(); updateRecurrenceAnalysis(); }
   function updateStatistics(){
-    const total = anomalyData.length;
-    const completed = anomalyData.filter(x=>x.status==='complete').length;
-    const pending = total - completed;
-    const now = new Date();
-    const thisMonth = anomalyData.filter(x=>{
+    const total=anomalyCache.length;
+    const completed=anomalyCache.filter(x=>x.status==='complete').length;
+    const pending=total-completed;
+    const now=new Date();
+    const thisMonth=anomalyCache.filter(x=>{
       const d=new Date(x.occurrenceDate); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
     }).length;
-    let avg=0, cnt=0;
-    anomalyData.forEach(x=>{
+    let avg=0,cnt=0;
+    anomalyCache.forEach(x=>{
       if (x.occurrenceTime && x.restartTime){
-        const [oh,om]=x.occurrenceTime.split(':').map(Number);
-        const [rh,rm]=x.restartTime.split(':').map(Number);
-        let m=(rh*60+rm)-(oh*60+om); if (m<0) m+=1440;
-        avg+=m; cnt++;
+        const [oh,om]=(x.occurrenceTime||'0:0').split(':').map(Number);
+        const [rh,rm]=(x.restartTime||'0:0').split(':').map(Number);
+        let m=(rh*60+rm)-(oh*60+om); if (m<0) m+=1440; avg+=m; cnt++;
       }
     });
     avg = cnt?Math.round(avg/cnt):0;
-    const stats = document.getElementById('statisticsDisplay');
+    const stats=document.getElementById('statisticsDisplay');
     stats.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;">
         <div class="stat-card" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;">
-          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">総異常件数</h4>
-          <div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${total}</div>
-          <div style="font-size:.85rem;opacity:.8;">件</div>
+          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">総異常件数</h4><div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${total}</div><div style="font-size:.85rem;opacity:.8;">件</div>
         </div>
         <div class="stat-card" style="background:linear-gradient(135deg,#2e7d32 0%,#66bb6a 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;">
-          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">対応完了</h4>
-          <div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${completed}</div>
-          <div style="font-size:.85rem;opacity:.8;">件 (${total?Math.round(completed/total*100):0}%)</div>
+          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">対応完了</h4><div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${completed}</div><div style="font-size:.85rem;opacity:.8;">件 (${total?Math.round(completed/total*100):0}%)</div>
         </div>
         <div class="stat-card" style="background:linear-gradient(135deg,#f57c00 0%,#ffb74d 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;">
-          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">対応待ち</h4>
-          <div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${pending}</div>
-          <div style="font-size:.85rem;opacity:.8;">件</div>
+          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">対応待ち</h4><div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${pending}</div><div style="font-size:.85rem;opacity:.8;">件</div>
         </div>
         <div class="stat-card" style="background:linear-gradient(135deg,#c62828 0%,#ef5350 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;">
-          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">今月の異常</h4>
-          <div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${thisMonth}</div>
-          <div style="font-size:.85rem;opacity:.8;">件</div>
+          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">今月の異常</h4><div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${thisMonth}</div><div style="font-size:.85rem;opacity:.8;">件</div>
         </div>
         <div class="stat-card" style="background:linear-gradient(135deg,#1976d2 0%,#42a5f5 100%);color:#fff;padding:20px;border-radius:8px;text-align:center;">
-          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">平均対応時間</h4>
-          <div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${avg}</div>
-          <div style="font-size:.85rem;opacity:.8;">分</div>
+          <h4 style="font-size:.9rem;margin-bottom:10px;opacity:.9;">平均対応時間</h4><div style="font-size:2.5rem;font-weight:bold;margin-bottom:5px;">${avg}</div><div style="font-size:.85rem;opacity:.8;">分</div>
         </div>
-      </div>
-    `;
+      </div>`;
   }
   function updateTrendAnalysis(){
-    const monthly = {};
-    anomalyData.forEach(x=>{
-      const d=new Date(x.occurrenceDate);
-      const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const monthly={}; anomalyCache.forEach(x=>{
+      if (!x.occurrenceDate) return;
+      const d=new Date(x.occurrenceDate); const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       monthly[k]=(monthly[k]||0)+1;
     });
-    const months = Object.keys(monthly).sort();
-    const max = Math.max(...Object.values(monthly),1);
-    const chart = document.getElementById('trendChart');
+    const months=Object.keys(monthly).sort();
+    const max=Math.max(...Object.values(monthly),1);
+    const chart=document.getElementById('trendChart');
     chart.innerHTML = months.map(m=>{
-      const c = monthly[m]; const pct = (c/max)*100;
-      return `
-        <div style="margin-bottom:15px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
-            <span style="font-weight:bold;">${m}</span><span style="color:#666;">${c}件</span>
-          </div>
-          <div style="background:#e0e0e0;height:30px;border-radius:4px;overflow:hidden;">
-            <div style="background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);height:30px;width:${pct}%;display:flex;align-items:center;padding:0 10px;color:#fff;font-weight:bold;">${c}件</div>
-          </div>
-        </div>
-      `;
+      const c=monthly[m]; const pct=(c/max)*100;
+      return `<div style="margin-bottom:15px;">
+        <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span style="font-weight:bold;">${m}</span><span style="color:#666;">${c}件</span></div>
+        <div style="background:#e0e0e0;height:30px;border-radius:4px;overflow:hidden;">
+          <div style="background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);height:30px;width:${pct}%;display:flex;align-items:center;padding:0 10px;color:#fff;font-weight:bold;">${c}件</div>
+        </div></div>`;
     }).join('');
-    const ana = document.getElementById('trendAnalysis');
+    const ana=document.getElementById('trendAnalysis');
     if (months.length>=3){
-      const r3 = months.slice(-3).map(m=>monthly[m]);
-      const avgR = r3.reduce((a,b)=>a+b,0)/3;
-      const prev = months.slice(-6,-3).map(m=>monthly[m]);
-      const avgP = prev.length? prev.reduce((a,b)=>a+b,0)/prev.length : avgR;
+      const r3=months.slice(-3).map(m=>monthly[m]);
+      const avgR=r3.reduce((a,b)=>a+b,0)/3;
+      const prev=months.slice(-6,-3).map(m=>monthly[m]);
+      const avgP=prev.length?prev.reduce((a,b)=>a+b,0)/prev.length:avgR;
       let trend='横ばい', cls='background:#fff3e0;color:#ef6c00;';
       if (avgR>avgP*1.2){ trend='増加傾向'; cls='background:#ffebee;color:#c62828;'; }
       else if (avgR<avgP*0.8){ trend='減少傾向'; cls='background:#e8f5e9;color:#2e7d32;'; }
@@ -1196,75 +982,52 @@
         <span style="display:inline-block;padding:5px 15px;border-radius:20px;font-weight:bold;${cls}">${trend}</span>
       </div>`;
     }else{
-      ana.innerHTML = '<p style="color:#999;">データ不足のため傾向分析を表示できません</p>';
+      ana.innerHTML='<p style="color:#999;">データ不足のため傾向分析を表示できません</p>';
     }
   }
   function updateDepartmentAnalysis(){
     const dept={}, line={};
-    anomalyData.forEach(x=>{
+    anomalyCache.forEach(x=>{
       if (x.department) dept[x.department]=(dept[x.department]||0)+1;
       if (x.lineName) line[x.lineName]=(line[x.lineName]||0)+1;
     });
-    const maxD = Math.max(...Object.values(dept),1);
-    const maxL = Math.max(...Object.values(line),1);
-    const div = document.getElementById('departmentAnalysis');
-    let html = '<h4 style="color:#666;margin-bottom:10px;">部署別異常件数</h4>';
+    const maxD=Math.max(...Object.values(dept),1), maxL=Math.max(...Object.values(line),1);
+    const div=document.getElementById('departmentAnalysis'); let html='<h4 style="color:#666;margin-bottom:10px;">部署別異常件数</h4>';
     Object.entries(dept).sort((a,b)=>b[1]-a[1]).forEach(([k,c])=>{
-      const pct=(c/maxD)*100;
-      html += `<div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span>${k}</span><span style="color:#666;">${c}件</span></div>
-        <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
-          <div style="background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);height:25px;width:${pct}%;font-size:.85rem;color:#fff;display:flex;align-items:center;padding:0 8px;">${c}件</div>
-        </div>
-      </div>`;
+      const pct=(c/maxD)*100; html += `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span>${k}</span><span style="color:#666;">${c}件</span></div><div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;"><div style="background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);height:25px;width:${pct}%;font-size:.85rem;color:#fff;display:flex;align-items:center;padding:0 8px;">${c}件</div></div></div>`;
     });
-    html += '<h4 style="color:#666;margin:20px 0 10px;">ライン別異常件数</h4>';
+    html+='<h4 style="color:#666;margin:20px 0 10px;">ライン別異常件数</h4>';
     Object.entries(line).sort((a,b)=>b[1]-a[1]).forEach(([k,c])=>{
-      const pct=(c/maxL)*100;
-      html += `<div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span>${k}</span><span style="color:#666;">${c}件</span></div>
-        <div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;">
-          <div style="background:linear-gradient(90deg,#f57c00 0%,#ffb74d 100%);height:25px;width:${pct}%;font-size:.85rem;color:#fff;display:flex;align-items:center;padding:0 8px;">${c}件</div>
-        </div>
-      </div>`;
+      const pct=(c/maxL)*100; html += `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span>${k}</span><span style="color:#666;">${c}件</span></div><div style="background:#e0e0e0;height:25px;border-radius:4px;overflow:hidden;"><div style="background:linear-gradient(90deg,#f57c00 0%,#ffb74d 100%);height:25px;width:${pct}%;font-size:.85rem;color:#fff;display:flex;align-items:center;padding:0 8px;">${c}件</div></div></div>`;
     });
     div.innerHTML = html || '<p style="color:#999;">データがありません</p>';
   }
   function updateRecurrenceAnalysis(){
-    const recCnt = anomalyData.filter(x=>x.recurrenceType==='再発').length;
-    const newCnt = anomalyData.filter(x=>x.recurrenceType==='新規').length;
-    const total = recCnt+newCnt;
-    const div = document.getElementById('recurrenceAnalysis');
+    const recCnt = anomalyCache.filter(x=>x.recurrenceType==='再発').length;
+    const newCnt = anomalyCache.filter(x=>x.recurrenceType==='新規').length;
+    const total=recCnt+newCnt; const div=document.getElementById('recurrenceAnalysis');
     if (!total){ div.innerHTML='<p style="color:#999;">技術対応済みのデータがありません</p>'; return; }
-    const rate = (recCnt/total*100).toFixed(1);
+    const rate=(recCnt/total*100).toFixed(1);
     div.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
-        <div style="text-align:center;padding:20px;background:#ffebee;border-radius:8px;">
-          <div style="font-size:3rem;font-weight:bold;color:#c62828;">${recCnt}</div>
-          <div style="color:#666;margin-top:5px;">再発件数</div>
-        </div>
-        <div style="text-align:center;padding:20px;background:#e8f5e9;border-radius:8px;">
-          <div style="font-size:3rem;font-weight:bold;color:#2e7d32;">${newCnt}</div>
-          <div style="color:#666;margin-top:5px;">新規件数</div>
-        </div>
+        <div style="text-align:center;padding:20px;background:#ffebee;border-radius:8px;"><div style="font-size:3rem;font-weight:bold;color:#c62828;">${recCnt}</div><div style="color:#666;margin-top:5px;">再発件数</div></div>
+        <div style="text-align:center;padding:20px;background:#e8f5e9;border-radius:8px;"><div style="font-size:3rem;font-weight:bold;color:#2e7d32;">${newCnt}</div><div style="color:#666;margin-top:5px;">新規件数</div></div>
       </div>
       <div style="border-left:4px solid #2196f3;padding:15px;border-radius:6px;background:#e3f2fd;">
         <strong>🔄 再発率:</strong> ${rate}% (${recCnt}/${total}件)
         ${rate>30 ? '<br>⚠️ 再発率が高めです。根本原因の追求と恒久対策が必要です。' : ''}
         ${rate<20 ? '<br>✅ 再発率は良好です。現在の対策を継続しましょう。' : ''}
-      </div>
-    `;
+      </div>`;
   }
 
-  // ==== 起動時処理 ====
-  document.addEventListener('DOMContentLoaded', ()=>{
-    // 製造：部署セレクト初期化
-    updateDepartmentSelect('department');
-    // 初期日付セット
-    setNowDateTo('occurrenceDate');
-    // 画像プレビュー初期化済
+  // ===== クリック委譲（削除は上に実装済み）=====
+  document.addEventListener('click',(e)=>{
+    const rm = e.target.closest('.remove-btn[data-photo]'); /* handled earlier */
+  });
 
-    loadData();
+  // 初期化
+  document.addEventListener('DOMContentLoaded', ()=>{
+    // nothing extra here; bootAfterLogin() はログイン後に呼ばれる
   });
 </script>
 </body>
