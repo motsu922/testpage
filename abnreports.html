@@ -293,14 +293,14 @@
   import { getStorage, ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
 
   // ===== Config（自プロジェクトの値を貼る）=====
-const firebaseConfig = {
-  apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
-  authDomain: "abnreport-fd733.firebaseapp.com",
-  projectId: "abnreport-fd733",
-  storageBucket: "abnreport-fd733.appspot.com", // ← ここを修正
-  messagingSenderId: "349748947315",
-  appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
-};
+  const firebaseConfig = {
+    apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
+    authDomain: "abnreport-fd733.firebaseapp.com",
+    projectId: "abnreport-fd733",
+    storageBucket: "abnreport-fd733.appspot.com",
+    messagingSenderId: "349748947315",
+    appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
+  };
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
@@ -340,16 +340,16 @@ const firebaseConfig = {
   });
 
   // ===== App State =====
-  let anomalyCache = []; // Firestoreスナップショットのキャッシュ
+  let anomalyCache = [];
   let mfgPhotos = [];
   let techPhotos = [];
   let currentView='card';
   let editingId=null;
+  let mastersCache = null;
 
   // ===== Masters（Firestore: /masters/department, /masters/line, /masters/handler）=====
   async function ensureMasterDocs(){
     // 初回用：存在しない場合に最低限のコレクションを作る
-    const mrefs = ['department','line','handler'].map(id=>doc(db,'masters',id));
     // 特に事前作成不要。UI操作で都度 add する方針なので処理なし
   }
 
@@ -545,17 +545,38 @@ const firebaseConfig = {
       });
   }
 
+  // ===== タブ切替 =====
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      const targetId = tab.getAttribute('data-tab');
+      document.getElementById(targetId).classList.add('active');
+    });
+  });
+
   // ===== 起動後処理 =====
   async function bootAfterLogin(){
     await ensureMasterDocs();
-    const masters = await fetchMasters();
-    updateDepartmentSelect('department', masters.departments);
-    updateDepartmentSelect('lineManageDept', masters.departments);
-    updateDepartmentSelect('handlerManageDept', masters.departments);
+    mastersCache = await fetchMasters();
+    
+    updateDepartmentSelect('department', mastersCache.departments);
+    updateDepartmentSelect('lineManageDept', mastersCache.departments);
+    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
 
-    document.getElementById('department').addEventListener('change', ()=> refreshLineAndHandler('department','lineName','handler', masters.lines, masters.handlers));
-    document.getElementById('lineManageDept').addEventListener('change', ()=> updateLineManageList(masters));
-    document.getElementById('handlerManageDept').addEventListener('change', ()=> updateHandlerManageList(masters));
+    // 部署選択時の更新
+    document.getElementById('department').addEventListener('change', ()=> {
+      refreshLineAndHandler('department','lineName','handler', mastersCache.lines, mastersCache.handlers);
+    });
+    
+    document.getElementById('lineManageDept').addEventListener('change', async ()=> {
+      await updateLineManageList();
+    });
+    
+    document.getElementById('handlerManageDept').addEventListener('change', async ()=> {
+      await updateHandlerManageList();
+    });
 
     // Firestore リアルタイム購読
     const q = query(anomaliesRef(), orderBy('createdAt','desc'));
@@ -566,7 +587,8 @@ const firebaseConfig = {
       updateAnalysis();
     });
 
-    // 初期日付
+    // 初期表示
+    await updateDepartmentList();
     setNowDateTo('occurrenceDate');
   }
 
@@ -661,7 +683,7 @@ const firebaseConfig = {
     });
   });
 
-  // 編集モーダル（これまで通りのUIだがFirestore更新に切替）
+  // 編集モーダル
   const editModalHtml = `
     <div class="modal-content">
       <div class="modal-title">✏️ 履歴レコード編集</div>
@@ -696,22 +718,25 @@ const firebaseConfig = {
   const modal = document.createElement('div'); modal.className='modal'; modal.id='editModal'; modal.innerHTML=editModalHtml; document.body.appendChild(modal);
 
   // 編集開く/タブ切替
-  let editCurrentId=null, mastersCache=null;
+  let editCurrentId=null, editMastersCache=null;
   function openEdit(id){
     const rec = anomalyCache.find(x=>x._id===id); if(!rec){ alert('対象が見つかりません'); return; }
     editCurrentId=id;
     (async ()=>{
-      mastersCache = mastersCache || await fetchMasters();
+      editMastersCache = mastersCache || await fetchMasters();
       // 部署
       const depSel = document.getElementById('edit_department'); depSel.innerHTML='';
-      mastersCache.departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o); });
+      editMastersCache.departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o); });
       depSel.value = rec.department||'';
       // ライン/処置者
       const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
       lineSel.innerHTML='<option value="">選択してください</option>';
-      (mastersCache.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+      (editMastersCache.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
       hSel.innerHTML='<option value="">選択してください</option>';
-      (mastersCache.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
+      (editMastersCache.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
+
+      lineSel.value = rec.lineName||'';
+      hSel.value = rec.handler||'';
 
       // 値
       document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate||'';
@@ -731,13 +756,13 @@ const firebaseConfig = {
     })();
   }
   document.addEventListener('change', (e)=>{
-    if (e.target.id==='edit_department' && mastersCache){
+    if (e.target.id==='edit_department' && editMastersCache){
       const dep=e.target.value;
       const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
       lineSel.innerHTML='<option value="">選択してください</option>';
-      (mastersCache.lines[dep]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
+      (editMastersCache.lines[dep]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
       hSel.innerHTML='<option value="">選択してください</option>';
-      (mastersCache.handlers[dep]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
+      (editMastersCache.handlers[dep]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
     }
   });
   document.addEventListener('click', (e)=>{
@@ -833,10 +858,10 @@ const firebaseConfig = {
       list.appendChild(div);
     });
     // 入力セレクト更新
-    const masters = await fetchMasters();
-    updateDepartmentSelect('department', masters.departments);
-    updateDepartmentSelect('lineManageDept', masters.departments);
-    updateDepartmentSelect('handlerManageDept', masters.departments);
+    mastersCache = await fetchMasters();
+    updateDepartmentSelect('department', mastersCache.departments);
+    updateDepartmentSelect('lineManageDept', mastersCache.departments);
+    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
   }
   document.getElementById('btnAddDept').addEventListener('click', async ()=>{
     const name=(document.getElementById('newDepartment').value||'').trim();
@@ -851,13 +876,24 @@ const firebaseConfig = {
     updateDepartmentList();
   });
 
-  async function updateLineManageList(masters){
+  async function updateLineManageList(){
     const dept=document.getElementById('lineManageDept').value;
-    const list=document.getElementById('lineList'); list.innerHTML='';
-    if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
+    const list=document.getElementById('lineList'); 
+    list.innerHTML='';
+    
+    if (!dept){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
+      return; 
+    }
+    
     const snap=await getDocs(query(collection(db,'masters','line','items'), where('department','==',dept)));
     const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; return; }
+    
+    if (!arr.length){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; 
+      return; 
+    }
+    
     arr.forEach(row=>{
       const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #f57c00;';
@@ -866,28 +902,46 @@ const firebaseConfig = {
       list.appendChild(div);
     });
   }
+  
   document.getElementById('btnAddLine').addEventListener('click', async ()=>{
     const dept=document.getElementById('lineManageDept').value;
     const name=(document.getElementById('newLine').value||'').trim();
     if (!dept){ alert('部署を選択してください'); return; }
     if (!name){ alert('ライン名を入力してください'); return; }
+    
     await addDoc(collection(db,'masters','line','items'), {department:dept, name});
     document.getElementById('newLine').value='';
-    updateLineManageList();
+    
+    // mastersCache を再取得
+    mastersCache = await fetchMasters();
+    await updateLineManageList();
   });
+  
   document.addEventListener('click', async (e)=>{
     const del=e.target.closest('button[data-del-line]'); if (!del) return;
     await deleteDoc(doc(db,'masters','line','items', del.getAttribute('data-del-line')));
-    updateLineManageList();
+    mastersCache = await fetchMasters();
+    await updateLineManageList();
   });
 
-  async function updateHandlerManageList(masters){
+  async function updateHandlerManageList(){
     const dept=document.getElementById('handlerManageDept').value;
-    const list=document.getElementById('handlerList'); list.innerHTML='';
-    if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
+    const list=document.getElementById('handlerList'); 
+    list.innerHTML='';
+    
+    if (!dept){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
+      return; 
+    }
+    
     const snap=await getDocs(query(collection(db,'masters','handler','items'), where('department','==',dept)));
     const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; return; }
+    
+    if (!arr.length){ 
+      list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; 
+      return; 
+    }
+    
     arr.forEach(row=>{
       const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #2e7d32;';
@@ -896,19 +950,26 @@ const firebaseConfig = {
       list.appendChild(div);
     });
   }
+  
   document.getElementById('btnAddHandler').addEventListener('click', async ()=>{
     const dept=document.getElementById('handlerManageDept').value;
     const name=(document.getElementById('newHandler').value||'').trim();
     if (!dept){ alert('部署を選択してください'); return; }
     if (!name){ alert('処置者名を入力してください'); return; }
+    
     await addDoc(collection(db,'masters','handler','items'), {department:dept, name});
     document.getElementById('newHandler').value='';
-    updateHandlerManageList();
+    
+    // mastersCache を再取得
+    mastersCache = await fetchMasters();
+    await updateHandlerManageList();
   });
+  
   document.addEventListener('click', async (e)=>{
     const del=e.target.closest('button[data-del-handler]'); if (!del) return;
     await deleteDoc(doc(db,'masters','handler','items', del.getAttribute('data-del-handler')));
-    updateHandlerManageList();
+    mastersCache = await fetchMasters();
+    await updateHandlerManageList();
   });
 
   // ===== 分析（既存ロジックをキャッシュに対して実行）=====
@@ -1018,16 +1079,6 @@ const firebaseConfig = {
         ${rate<20 ? '<br>✅ 再発率は良好です。現在の対策を継続しましょう。' : ''}
       </div>`;
   }
-
-  // ===== クリック委譲（削除は上に実装済み）=====
-  document.addEventListener('click',(e)=>{
-    const rm = e.target.closest('.remove-btn[data-photo]'); /* handled earlier */
-  });
-
-  // 初期化
-  document.addEventListener('DOMContentLoaded', ()=>{
-    // nothing extra here; bootAfterLogin() はログイン後に呼ばれる
-  });
 </script>
 </body>
 </html>
