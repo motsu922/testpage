@@ -3,259 +3,174 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>異常履歴 集計・解析ダッシュボード（ダーク・大型モニター）</title>
+<title>異常履歴 集計・解析ダッシュボード</title>
 <link rel="preconnect" href="https://fonts.gstatic.com">
 <style>
   :root{
-    /* --- Dark Theme Palette --- */
-    --bg:#0b0f19;           /* 背景：漆黒寄り */
-    --card:#111827;         /* カード：濃紺グレー */
-    --ink:#e5e7eb;          /* 文字：明灰 */
-    --muted:#9ca3af;        /* 補助文字 */
-    --border:#1f2937;       /* 枠線 */
-    --brand:#60a5fa;        /* 青系アクセント */
-    --accent:#f59e0b;       /* 黄橙アクセント */
-    --ok:#22c55e;           /* 完了 */
-    --warn:#f59e0b;         /* 警告 */
-    --ng:#ef4444;           /* 注意 */
-    --cardGlow:0 8px 30px rgba(0,0,0,.35);
-
-    /* レイアウト計測 */
-    --header-h: 64px;
-    --wrap-max: 2560px;          /* 4Kにも耐える */
-    --grid-gap: 16px;
-
-    /* 壁掛け用スケール（1.0～1.3くらいで微調整） */
-    --scale: 1.00;
+    --bg:#f5f7fb; --card:#ffffff; --ink:#1f2937; --muted:#6b7280;
+    --brand:#6366f1; --accent:#f59e0b; --ok:#16a34a; --warn:#f59e0b; --ng:#dc2626; --border:#e5e7eb;
   }
-
   *{box-sizing:border-box}
-  html,body{height:100%}
-  body{
-    margin:0;background:var(--bg);color:var(--ink);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif;
-    -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
-  }
-
-  /* ===== Top Bar ===== */
-  .topbar{
-    position:sticky;top:0;z-index:50;height:var(--header-h);
-    display:flex;align-items:center;justify-content:space-between;gap:12px;
-    padding:12px 16px;border-bottom:1px solid var(--border);
-    background:linear-gradient(135deg,#0b1022 0%, #0f172a 100%);
-    box-shadow:0 6px 18px rgba(0,0,0,.4);
-  }
-  .title{display:flex;align-items:baseline;gap:12px}
-  .title h1{margin:0;font-size:20px;letter-spacing:.2px}
-  .title .sub{color:var(--muted);font-size:12px}
-
-  .toolbar{display:flex;align-items:center;gap:10px}
-  .btn, .chip{
-    display:inline-flex;align-items:center;gap:.5rem;
-    border:1px solid var(--border);background:#0f172a;color:var(--ink);
-    padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:700;font-size:13px;
-    transition:.2s;
-  }
-  .btn:hover{border-color:#334155;background:#111b2e}
-  .btn.primary{border-color:#1d4ed8;background:#0b2a66}
-  .btn.danger{border-color:#7f1d1d;background:#3f1010}
-  .btn.ghost{background:#0b1327}
-  .btn[aria-pressed="true"]{outline:2px solid var(--brand);outline-offset:2px}
-
-  .range{appearance:none;width:160px;height:4px;border-radius:4px;background:#1f2a44;outline:none}
-  .range::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:var(--brand);cursor:pointer}
-
-  /* ===== App Wrap ===== */
-  .wrap{
-    max-width:var(--wrap-max);margin:0 auto;padding:16px;transform-origin: top left;
-    transform: scale(var(--scale));
-  }
-
-  /* ===== KPI Row ===== */
-  .kpis{
-    display:grid;grid-template-columns:repeat(5, 1fr);gap:var(--grid-gap);margin-top:16px;
-  }
-  .kpi{
-    background:linear-gradient(135deg,#0f172a 0%, #111827 100%);
-    border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:var(--cardGlow);
-  }
-  .kpi .label{color:var(--muted);font-size:12px;margin-bottom:6px}
-  .kpi .val{font-size:32px;font-weight:800;letter-spacing:.5px}
-  .kpi.ok{box-shadow:0 0 0 1px rgba(34,197,94,.15), 0 10px 30px rgba(34,197,94,.08)}
-  .kpi.warn{box-shadow:0 0 0 1px rgba(245,158,11,.15), 0 10px 30px rgba(245,158,11,.08)}
-  .kpi.ng{box-shadow:0 0 0 1px rgba(239,68,68,.15), 0 10px 30px rgba(239,68,68,.08)}
-
-  /* ===== Grid Charts (3 cols x 2 rows, one screen) ===== */
-  .grid{
-    margin-top:var(--grid-gap);
-    display:grid;grid-template-columns:repeat(3,1fr);
-    grid-auto-rows: 320px; /* 高さ：大型モニタ一画面で収まる想定 */
-    gap:var(--grid-gap);
-  }
-  .card{
-    background:var(--card);border:1px solid var(--border);border-radius:14px;
-    box-shadow:var(--cardGlow);padding:14px;display:flex;flex-direction:column;min-height:0;
-  }
-  .chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-  .chart-header h4{margin:0;font-size:14px;color:#cbd5e1}
-  .muted{color:var(--muted);font-size:12px}
-
-  .chart-wrap{position:relative;inset:0;flex:1;min-height:0}
-  canvas{width:100% !important;height:100% !important}
-
-  /* ===== Details Table (toggle) ===== */
-  .details{margin-top:var(--grid-gap)}
-  .tablewrap{border:1px solid var(--border);border-radius:14px;background:var(--card);box-shadow:var(--cardGlow);overflow:auto;max-height:420px}
-  table{width:100%;border-collapse:collapse}
-  th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;font-size:13px}
-  th{position:sticky;top:0;background:#0f172a;color:#cbd5e1;z-index:1}
-  tr:hover{background:#0f1422}
-
-  /* ===== Filters Drawer (collapsible) ===== */
-  .filters{
-    margin-top:16px;display:none; /* 通常は隠す：プレゼン重視 */
-    grid-template-columns: repeat(6, 1fr);gap:10px;
-  }
-  .filters.active{display:grid}
-  .filters .field{display:flex;flex-direction:column;gap:6px}
-  .filters label{font-size:12px;color:#cbd5e1}
-  .filters input,.filters select{
-    background:#0b1327;border:1px solid #1f2a44;color:#e5e7eb;border-radius:10px;padding:10px;font-size:13px
-  }
-
-  /* ===== Auth Gate ===== */
-  #authGate{
-    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#030712;
-  }
-  #authCard{
-    width:min(380px,92%);background:#0b1327;border:1px solid #1f2a44;color:#e5e7eb;border-radius:14px;padding:20px;
-    box-shadow:0 20px 60px rgba(0,0,0,.6)
-  }
-  #authCard h2{margin:0 0 8px;color:#93c5fd}
-  #authCard .muted{color:#93a0b5}
-  #authCard input{width:100%;padding:12px;border-radius:10px;border:1px solid #1f2a44;background:#0a1226;color:#e5e7eb}
-  #authMsg{color:#fca5a5;min-height:1.2em;margin-top:6px}
-
-  /* ===== Responsive (fallback) ===== */
-  @media (max-width:1600px){
-    .kpis{grid-template-columns:repeat(5,1fr)}
-    .grid{grid-template-columns:repeat(2,1fr)}
-  }
-  @media (max-width:1100px){
-    .grid{grid-template-columns:1fr}
-  }
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif}
+  .topbar{position:sticky;top:0;z-index:20;background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%);color:#fff;padding:14px 18px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+  .topbar h1{font-size:1.1rem;margin:0}
+  .wrap{display:grid;grid-template-columns:300px 1fr;gap:16px;max-width:1400px;margin:18px auto;padding:0 16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 4px 18px rgba(0,0,0,.04)}
+  .panel{padding:16px}
+  .panel h3{margin:0 0 10px;color:#374151;font-size:1rem}
+  .filters .row{display:grid;gap:10px;margin-bottom:12px}
+  .filters label{font-size:.9rem;color:#374151;font-weight:600;margin-bottom:6px;display:block}
+  .filters input,.filters select{width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:.95rem}
+  .filters .btn{display:inline-flex;align-items:center;gap:.4rem;padding:10px 12px;border:none;border-radius:8px;cursor:pointer;font-weight:700}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-ghost{background:#eef2ff;color:#3730a3}
+  .btn-danger{background:#fee2e2;color:#991b1b}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .kpi{padding:16px;border-radius:12px;background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%);color:#fff}
+  .kpi h4{margin:0 0 6px;font-size:.9rem;opacity:.9}
+  .kpi .val{font-size:1.8rem;font-weight:800}
+  .kpi.ok{background:linear-gradient(135deg,#16a34a 0%,#22c55e 100%)}
+  .kpi.warn{background:linear-gradient(135deg,#f59e0b 0%,#fbbf24 100%)}
+  .kpi.ng{background:linear-gradient(135deg,#dc2626 0%,#ef4444 100%)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .chart-card{padding:16px}
+  .chart-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .chart-header h4{margin:0;font-size:1rem}
+  .muted{color:var(--muted);font-size:.9rem}
+  .tablewrap{margin-top:16px}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;font-size:.92rem;vertical-align:top}
+  th{background:#eef2ff}
+  tr:hover{background:#f9fafb}
+  .signout{background:#f87171;color:#fff;border:none;border-radius:8px;padding:8px 10px;cursor:pointer}
+  #authGate{position:fixed;inset:0;background:rgba(0,0,0,.04);display:flex;align-items:center;justify-content:center;z-index:50}
+  #authCard{background:#fff;max-width:380px;width:92%;padding:20px;border-radius:12px;border:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.12)}
+  #authCard h2{margin:0 0 8px;color:#4f46e5}
+  #authCard .form-group{margin-bottom:10px}
+  #authCard input{width:100%;padding:10px;border:2px solid var(--border);border-radius:8px}
+  #authMsg{color:#b91c1c;margin-top:6px;min-height:1.2em}
+  @media (max-width:1100px){ .kpis{grid-template-columns:repeat(3,1fr)} .grid{grid-template-columns:1fr} .wrap{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
-  <!-- Top bar -->
   <div class="topbar">
-    <div class="title">
-      <h1>📊 異常履歴 集計・解析（Dark）</h1>
-      <span class="sub">大型モニター最適化・一画面</span>
-    </div>
-    <div class="toolbar">
-      <label class="muted" for="scale">表示倍率</label>
-      <input id="scale" class="range" type="range" min="0.85" max="1.30" step="0.01" value="1.00" />
-      <button id="btnToggleFilters" class="btn ghost" aria-pressed="false">🧰 フィルタ</button>
-      <button id="btnPresenter" class="btn" aria-pressed="false" title="フィルタ/明細を隠して発表向けに最適化">🖥️ プレゼン表示</button>
-      <button id="btnFullscreen" class="btn primary" title="全画面">⛶ 全画面</button>
-      <button id="btnSignOut" class="btn danger" style="display:none;">サインアウト</button>
+    <h1>📊 異常履歴 集計・解析ダッシュボード</h1>
+    <div>
+      <button id="btnSignOut" class="signout" style="display:none;">サインアウト</button>
     </div>
   </div>
 
-  <!-- Auth gate -->
+  <!-- 認証ゲート -->
   <div id="authGate">
     <div id="authCard">
       <h2>🔐 サインイン</h2>
       <p class="muted" style="margin-bottom:10px;">社内メールでログインしてください</p>
-      <div class="field" style="margin-bottom:8px;">
+      <div class="form-group">
         <input type="email" id="authEmail" placeholder="user@miyama-unitec.co.jp">
       </div>
-      <div class="field">
+      <div class="form-group">
         <input type="password" id="authPassword" placeholder="••••••••">
       </div>
-      <div style="display:flex;gap:10px;margin-top:10px;">
-        <button id="btnLogin" class="btn primary" style="flex:1;">ログイン</button>
-      </div>
+      <button id="btnLogin" class="btn btn-primary" style="width:100%;margin-top:4px;">ログイン</button>
       <div id="authMsg"></div>
     </div>
   </div>
 
-  <!-- App -->
-  <div id="app" style="display:none;">
-    <div class="wrap" id="wrap">
-      <!-- KPI -->
-      <div class="kpis" id="kpis">
-        <div class="kpi"><div class="label">総異常件数</div><div class="val" id="kpiTotal">0</div></div>
-        <div class="kpi ok"><div class="label">完了</div><div class="val" id="kpiDone">0</div></div>
-        <div class="kpi warn"><div class="label">対応待ち</div><div class="val" id="kpiPending">0</div></div>
-        <div class="kpi ng"><div class="label">今月の異常</div><div class="val" id="kpiThisMonth">0</div></div>
-        <div class="kpi" style="box-shadow:0 0 0 1px rgba(14,165,233,.15), 0 10px 30px rgba(14,165,233,.08)">
-          <div class="label">平均対応時間</div><div class="val"><span id="kpiAvgMin">0</span> 分</div>
+  <div class="wrap" id="app" style="display:none;">
+    <!-- フィルタ -->
+    <div class="card panel filters">
+      <h3>🔎 フィルタ</h3>
+      <div class="row">
+        <label>日付範囲（発生日）</label>
+        <input type="date" id="dateFrom">
+        <input type="date" id="dateTo">
+      </div>
+      <div class="row">
+        <label>部署</label>
+        <select id="fDepartment"><option value="">すべて</option></select>
+      </div>
+      <div class="row">
+        <label>ライン</label>
+        <select id="fLine"><option value="">すべて</option></select>
+      </div>
+      <div class="row">
+        <label>技術要請</label>
+        <select id="fTechReq">
+          <option value="">すべて</option>
+          <option value="要請">技術要請</option>
+          <option value="完結">製造で完結</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>状態</label>
+        <select id="fStatus">
+          <option value="">すべて</option>
+          <option value="pending">技術入力待ち</option>
+          <option value="complete">完了</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>再発/新規</label>
+        <select id="fRecur">
+          <option value="">すべて</option>
+          <option value="再発">再発</option>
+          <option value="新規">新規</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>キーワード（異常内容・原因対策を検索）</label>
+        <input type="text" id="fKeyword" placeholder="例: バリ, QR, 品違い など">
+      </div>
+      <div class="row" style="display:flex;gap:8px;">
+        <button id="btnReload" class="btn btn-primary">再読込</button>
+        <button id="btnClear" class="btn btn-ghost">リセット</button>
+        <button id="btnExport" class="btn btn-ghost">CSV出力（明細）</button>
+      </div>
+      <div class="row muted">※ まず全件を読み込み、フィルタはローカルで適用します（高速）</div>
+    </div>
+
+    <!-- 右ペイン -->
+    <div class="col">
+      <div class="kpis">
+        <div class="kpi"><h4>総異常件数</h4><div class="val" id="kpiTotal">0</div></div>
+        <div class="kpi ok"><h4>完了</h4><div class="val"><span id="kpiDone">0</span></div></div>
+        <div class="kpi warn"><h4>対応待ち</h4><div class="val"><span id="kpiPending">0</span></div></div>
+        <div class="kpi ng"><h4>今月の異常</h4><div class="val" id="kpiThisMonth">0</div></div>
+        <div class="kpi" style="background:linear-gradient(135deg,#0ea5e9 0%,#38bdf8 100%);">
+          <h4>平均対応時間</h4><div class="val"><span id="kpiAvgMin">0</span>分</div>
         </div>
       </div>
 
-      <!-- フィルタ（通常非表示） -->
-      <div class="filters" id="filters">
-        <div class="field"><label>日付(From)</label><input type="date" id="dateFrom"></div>
-        <div class="field"><label>日付(To)</label><input type="date" id="dateTo"></div>
-        <div class="field"><label>部署</label><select id="fDepartment"><option value="">すべて</option></select></div>
-        <div class="field"><label>ライン</label><select id="fLine"><option value="">すべて</option></select></div>
-        <div class="field"><label>技術要請</label>
-          <select id="fTechReq"><option value="">すべて</option><option value="要請">技術要請</option><option value="完結">製造で完結</option></select>
-        </div>
-        <div class="field"><label>状態</label>
-          <select id="fStatus"><option value="">すべて</option><option value="pending">技術入力待ち</option><option value="complete">完了</option></select>
-        </div>
-        <div class="field"><label>再発/新規</label>
-          <select id="fRecur"><option value="">すべて</option><option value="再発">再発</option><option value="新規">新規</option></select>
-        </div>
-        <div class="field" style="grid-column:span 3;">
-          <label>キーワード（異常内容・原因対策）</label>
-          <input id="fKeyword" type="text" placeholder="例: バリ, QR, 品違い など">
-        </div>
-        <div class="field" style="grid-column:span 3;display:flex;gap:10px;align-items:flex-end;">
-          <button id="btnReload" class="btn">再読込</button>
-          <button id="btnClear" class="btn ghost">リセット</button>
-          <button id="btnExport" class="btn ghost">CSV出力（明細）</button>
-        </div>
-      </div>
-
-      <!-- Charts Grid -->
-      <div class="grid" id="grid">
-        <div class="card">
+      <div class="grid">
+        <div class="card chart-card">
           <div class="chart-header"><h4>📈 月次トレンド</h4><span class="muted" id="trendCaption"></span></div>
-          <div class="chart-wrap"><canvas id="chartTrend"></canvas></div>
+          <canvas id="chartTrend" height="180"></canvas>
         </div>
-        <div class="card">
-          <div class="chart-header"><h4>🏢 部署別件数（Top10）</h4><span class="muted"></span></div>
-          <div class="chart-wrap"><canvas id="chartDept"></canvas></div>
+        <div class="card chart-card">
+          <div class="chart-header"><h4>🏢 部署別件数</h4><span class="muted">トップ10</span></div>
+          <canvas id="chartDept" height="180"></canvas>
         </div>
-        <div class="card">
-          <div class="chart-header"><h4>🛠 ライン別件数（Top10）</h4><span class="muted"></span></div>
-          <div class="chart-wrap"><canvas id="chartLine"></canvas></div>
+        <div class="card chart-card">
+          <div class="chart-header"><h4>🛠 ライン別件数</h4><span class="muted">トップ10</span></div>
+          <canvas id="chartLine" height="180"></canvas>
         </div>
-        <div class="card">
+        <div class="card chart-card">
           <div class="chart-header"><h4>🔄 再発 / 新規</h4><span class="muted">割合</span></div>
-          <div class="chart-wrap"><canvas id="chartRecurrence"></canvas></div>
+          <canvas id="chartRecurrence" height="180"></canvas>
         </div>
-        <div class="card">
-          <div class="chart-header"><h4>📊 パレート（頻出語）</h4><span class="muted">上位20語</span></div>
-          <div class="chart-wrap"><canvas id="chartPareto"></canvas></div>
+        <div class="card chart-card">
+          <div class="chart-header"><h4>📊 パレート（異常内容の頻出語）</h4><span class="muted">上位20語</span></div>
+          <canvas id="chartPareto" height="220"></canvas>
         </div>
-        <div class="card">
+        <div class="card chart-card">
           <div class="chart-header"><h4>⏱ 対応時間ヒストグラム</h4><span class="muted">分単位</span></div>
-          <div class="chart-wrap"><canvas id="chartDuration"></canvas></div>
+          <canvas id="chartDuration" height="220"></canvas>
         </div>
       </div>
 
-      <!-- Details -->
-      <div class="details" id="details">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <h4 class="muted" style="margin:0;">📄 明細（フィルタ後 上位500件）</h4>
-          <button id="btnToggleDetails" class="btn ghost" aria-pressed="true">隠す/表示</button>
-        </div>
-        <div class="tablewrap" id="tableWrap">
+      <div class="card panel tablewrap">
+        <h3>📄 明細（フィルタ適用後 上位500件表示）</h3>
+        <div style="overflow:auto;">
           <table id="tbl">
             <thead>
               <tr>
@@ -273,7 +188,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script type="module">
-  /* ===== Firebase SDK ===== */
+  // ===== Firebase SDK =====
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
   import { getFirestore, collection, getDocs, enableIndexedDbPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
@@ -292,33 +207,12 @@
   const db = getFirestore(app);
   enableIndexedDbPersistence(db).catch(()=>{});
 
-  /* ===== Chart.js Dark Defaults ===== */
-  Chart.defaults.color = '#d1d5db';
-  Chart.defaults.borderColor = '#334155';
-  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
-  const COLORS = {
-    line:'#60a5fa',
-    bar:'#93c5fd',
-    bar2:'#fbbf24',
-    ok:'#22c55e',
-    warn:'#f59e0b',
-    ng:'#ef4444'
-  };
-
-  /* ===== UI ===== */
+  // ===== UI Elements =====
   const gate = document.getElementById('authGate');
   const appRoot = document.getElementById('app');
   const btnLogin = document.getElementById('btnLogin');
   const btnSignOut = document.getElementById('btnSignOut');
   const authMsg = document.getElementById('authMsg');
-  const scaleCtl = document.getElementById('scale');
-  const wrap = document.getElementById('wrap');
-  const btnToggleFilters = document.getElementById('btnToggleFilters');
-  const filters = document.getElementById('filters');
-  const btnPresenter = document.getElementById('btnPresenter');
-  const btnFullscreen = document.getElementById('btnFullscreen');
-  const btnToggleDetails = document.getElementById('btnToggleDetails');
-  const tableWrap = document.getElementById('tableWrap');
 
   btnLogin.addEventListener('click', async ()=>{
     const email = document.getElementById('authEmail').value.trim();
@@ -333,50 +227,16 @@
   btnSignOut.addEventListener('click', ()=> signOut(auth));
 
   onAuthStateChanged(auth, user=>{
-    if (user){ gate.style.display='none'; appRoot.style.display='block'; btnSignOut.style.display='inline-flex'; boot(); }
+    if (user){ gate.style.display='none'; appRoot.style.display='grid'; btnSignOut.style.display='inline-block'; boot(); }
     else{ appRoot.style.display='none'; gate.style.display='flex'; btnSignOut.style.display='none'; }
   });
 
-  // 表示倍率（壁掛け距離に合わせてスケーリング）
-  scaleCtl.addEventListener('input', (e)=>{
-    document.documentElement.style.setProperty('--scale', e.target.value);
-  });
-
-  // フィルタ表示切替
-  btnToggleFilters.addEventListener('click', ()=>{
-    const on = filters.classList.toggle('active');
-    btnToggleFilters.setAttribute('aria-pressed', on ? 'true' : 'false');
-  });
-
-  // プレゼンモード（フィルタ/明細隠し）
-  btnPresenter.addEventListener('click', ()=>{
-    const pressed = btnPresenter.getAttribute('aria-pressed') === 'true';
-    const next = !pressed;
-    btnPresenter.setAttribute('aria-pressed', next?'true':'false');
-    // トグル：フィルタ非表示・明細隠し
-    filters.classList.remove('active');
-    tableWrap.style.display = next ? 'none' : 'block';
-  });
-
-  // 明細表示切替（個別）
-  btnToggleDetails.addEventListener('click', ()=>{
-    const vis = tableWrap.style.display !== 'none';
-    tableWrap.style.display = vis ? 'none' : 'block';
-    btnToggleDetails.setAttribute('aria-pressed', vis ? 'false' : 'true');
-  });
-
-  // 全画面
-  btnFullscreen.addEventListener('click', ()=>{
-    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
-    else document.exitFullscreen().catch(()=>{});
-  });
-
-  /* ===== Data ===== */
-  let ALL = [];
-  let filtered = [];
+  // ===== Data Cache =====
+  let ALL = []; // 全件キャッシュ
+  let filtered = []; // フィルタ後
   let charts = {};
 
-  // Filters
+  // ===== Filters =====
   const fDepartment = document.getElementById('fDepartment');
   const fLine       = document.getElementById('fLine');
   const fTechReq    = document.getElementById('fTechReq');
@@ -394,6 +254,7 @@
   document.getElementById('btnReload').addEventListener('click', async ()=>{ await loadAll(); applyFilters(); });
   document.getElementById('btnExport').addEventListener('click', ()=> exportCSV(filtered));
 
+  // ===== Boot =====
   async function boot(){
     await loadAll();
     populateMasterFilters(ALL);
@@ -412,6 +273,7 @@
     fLine.innerHTML       = '<option value="">すべて</option>'+lines.map(x=>`<option>${x}</option>`).join('');
   }
 
+  // ===== Apply Filters =====
   function applyFilters(){
     const kw = (fKeyword.value||'').trim().toLowerCase();
     const dFrom = dateFrom.value? new Date(dateFrom.value) : null;
@@ -428,7 +290,7 @@
         if (!d) return false;
         if (dFrom && d < dFrom) return false;
         if (dTo){
-          const end = new Date(dTo); end.setDate(end.getDate()+1);
+          const end = new Date(dTo); end.setDate(end.getDate()+1); // inclusive
           if (d >= end) return false;
         }
       }
@@ -444,7 +306,7 @@
     renderTable(filtered);
   }
 
-  /* ===== KPI ===== */
+  // ===== KPI =====
   function renderKPI(rows){
     const total = rows.length;
     const done  = rows.filter(r=>r.status==='complete').length;
@@ -469,8 +331,11 @@
     document.getElementById('kpiAvgMin').textContent = avg;
   }
 
-  /* ===== Charts ===== */
-  function destroyCharts(){ for (const k in charts){ try{ charts[k].destroy(); }catch{} } charts = {}; }
+  // ===== Charts =====
+  function destroyCharts(){
+    for (const k in charts){ try{ charts[k].destroy(); }catch{} }
+    charts = {};
+  }
 
   function renderCharts(rows){
     destroyCharts();
@@ -485,54 +350,54 @@
     const trendVals = months.map(m=>monthly[m]);
     charts.trend = new Chart(document.getElementById('chartTrend'),{
       type:'line',
-      data:{ labels:months, datasets:[{ label:'件数', data:trendVals, borderColor:COLORS.line, backgroundColor:'rgba(96,165,250,.2)', tension:.25, fill:true }] },
-      options:{ responsive:true, plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#1f2937'}},y:{grid:{color:'#1f2937'}}} }
+      data:{ labels:months, datasets:[{ label:'件数', data:trendVals, tension:.25 }] },
+      options:{ responsive:true, plugins:{legend:{display:false}} }
     });
     document.getElementById('trendCaption').textContent = months.length? `${months[0]} ～ ${months[months.length-1]}` : '';
 
-    // 部署別Top10
+    // 部署別（トップ10）
     const byDept = topN(groupCount(rows, r=>r.department||'未設定'), 10);
     charts.dept = new Chart(document.getElementById('chartDept'),{
       type:'bar',
-      data:{ labels:byDept.labels, datasets:[{ label:'件数', data:byDept.values, backgroundColor:COLORS.bar }] },
-      options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#1f2937'}},y:{grid:{color:'#1f2937'}}} }
+      data:{ labels:byDept.labels, datasets:[{ label:'件数', data:byDept.values }] },
+      options:{ indexAxis:'y', plugins:{legend:{display:false}} }
     });
 
-    // ライン別Top10
+    // ライン別（トップ10）
     const byLine = topN(groupCount(rows, r=>r.lineName||'未設定'), 10);
     charts.line = new Chart(document.getElementById('chartLine'),{
       type:'bar',
-      data:{ labels:byLine.labels, datasets:[{ label:'件数', data:byLine.values, backgroundColor:COLORS.bar2 }] },
-      options:{ indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#1f2937'}},y:{grid:{color:'#1f2937'}}} }
+      data:{ labels:byLine.labels, datasets:[{ label:'件数', data:byLine.values }] },
+      options:{ indexAxis:'y', plugins:{legend:{display:false}} }
     });
 
     // 再発/新規
     const rec = groupCount(rows.filter(r=>r.recurrenceType), r=>r.recurrenceType);
     charts.recur = new Chart(document.getElementById('chartRecurrence'),{
       type:'doughnut',
-      data:{ labels:Object.keys(rec), datasets:[{ data:Object.values(rec), backgroundColor:[COLORS.ng, COLORS.ok] }] },
+      data:{ labels:Object.keys(rec), datasets:[{ data:Object.values(rec) }] },
       options:{ plugins:{legend:{position:'bottom'}} }
     });
 
-    // パレート（頻出語）
+    // パレート（異常内容の頻出語）
     const words = topWords(rows, 20);
     charts.pareto = new Chart(document.getElementById('chartPareto'),{
       type:'bar',
-      data:{ labels:words.labels, datasets:[{ label:'出現回数', data:words.values, backgroundColor:'#38bdf8' }] },
-      options:{ plugins:{legend:{display:false}}, scales:{ x:{ ticks:{maxRotation:60,minRotation:30}, grid:{color:'#1f2937'} }, y:{ grid:{color:'#1f2937'} } } }
+      data:{ labels:words.labels, datasets:[{ label:'出現回数', data:words.values }] },
+      options:{ plugins:{legend:{display:false}}, scales:{ x:{ ticks:{maxRotation:60,minRotation:30} } } }
     });
 
     // 対応時間ヒストグラム
     const durations = rows.map(durationMinutes).filter(v=>v!=null);
-    const hist = histogram(durations, [0,5,10,15,20,30,45,60,90,120,180,240,360,480,720,1440,2880]);
+    const hist = histogram(durations, [0,5,10,15,20,30,45,60,90,120,180,240,360,480,720,1440,2880]); // 上限2日
     charts.dur = new Chart(document.getElementById('chartDuration'),{
       type:'bar',
-      data:{ labels:hist.labels, datasets:[{ label:'件数', data:hist.values, backgroundColor:'#a78bfa' }] },
-      options:{ plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#1f2937'}},y:{grid:{color:'#1f2937'}}} }
+      data:{ labels:hist.labels, datasets:[{ label:'件数', data:hist.values }] },
+      options:{ plugins:{legend:{display:false}} }
     });
   }
 
-  /* ===== Table ===== */
+  // ===== Table =====
   function renderTable(rows){
     const body = document.getElementById('tblBody');
     const MAX = 500;
@@ -554,7 +419,7 @@
     `).join('');
   }
 
-  /* ===== Helpers ===== */
+  // ===== Helpers =====
   function esc(v){ return (v??'').toString().replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[s]); }
   function trunc(v,n){ if(!v) return ''; const s=v.toString(); return s.length>n? s.slice(0,n)+'…' : s; }
 
@@ -578,6 +443,8 @@
   }
 
   function tokenizeJa(text){
+    // ひらがな/カタカナ/漢字/英数をざっくり分割
+    // 品質用なのでシンプル規則で十分（不要語も調整済み）
     const s = (text||'').toLowerCase()
       .replace(/[（）\(\)\[\]{}「」『』【】<>]/g,' ')
       .replace(/[、。，．.,!！?？:：;；/／\\\-\+]/g,' ');
