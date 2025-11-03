@@ -111,6 +111,61 @@
   .trend-increase{background:#ffebee;color:#c62828;}
   .trend-decrease{background:#e8f5e9;color:#2e7d32;}
   .trend-stable{background:#fff3e0;color:#ef6c00;}
+
+  /* --- 新規追加：履歴カード右側に写真を表示 --- */
+  .card-body.with-photos{
+    display:grid;
+    grid-template-columns: 1fr 200px;
+    gap:12px;
+    align-items:start;
+  }
+  .card-body.with-photos .card-text{
+    display:grid;
+    gap:8px;
+  }
+  .card-photos{
+    display:grid;
+    gap:8px;
+  }
+  .card-photos .thumbs{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:8px;
+  }
+  .card-photos .thumb{
+    position:relative;
+    aspect-ratio:1;
+    border-radius:6px;
+    overflow:hidden;
+    box-shadow:0 2px 5px rgba(0,0,0,.1);
+    cursor:pointer;
+  }
+  .card-photos .thumb img{
+    width:100%; height:100%; object-fit:cover;
+  }
+  .card-photos .more{
+    font-size:.85rem; color:#666; text-align:center;
+  }
+
+  /* 類似案件向けサムネ */
+  .similar-photos{
+    margin-top:8px;
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:6px;
+  }
+  .similar-photos .thumb{
+    aspect-ratio:1;
+    overflow:hidden;
+    border-radius:4px;
+    box-shadow:0 1px 3px rgba(0,0,0,.1);
+    cursor:pointer;
+  }
+  .similar-photos .thumb img{ width:100%; height:100%; object-fit:cover; }
+
+  @media (max-width:600px){
+    .card-body.with-photos{ grid-template-columns:1fr; }
+  }
 </style>
 </head>
 <body>
@@ -205,7 +260,6 @@
           <div class="form-group word-suggestions">
             <label>異常内容 *</label>
             <textarea id="anomalyContent" required></textarea>
-            <!-- ワード候補 -->
             <div id="anomalyWordSuggestions" class="word-suggestion-box">
               <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
               <div id="anomalyWords"></div>
@@ -215,7 +269,6 @@
           <div class="form-group word-suggestions">
             <label>製造処置内容 *</label>
             <textarea id="actionTaken" required></textarea>
-            <!-- ワード候補 -->
             <div id="actionWordSuggestions" class="word-suggestion-box">
               <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
               <div id="actionWords"></div>
@@ -391,7 +444,7 @@
     </div>
   </div>
 
-  <!-- 写真表示モーダル -->
+  <!-- 写真表示モーダル（残します：大きく見たい時用） -->
   <div id="photoModal" class="modal" aria-hidden="true">
     <div class="modal-content" style="max-width:800px;">
       <h3 class="modal-title">📷 写真一覧</h3>
@@ -419,7 +472,7 @@
     apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
     authDomain: "abnreport-fd733.firebaseapp.com",
     projectId: "abnreport-fd733",
-    storageBucket: "abnreport-fd733.firebasestorage.app",
+    storageBucket: "abnreport-fd733.appspot.com", /* ← 安定動作の正式形式 */
     messagingSenderId: "349748947315",
     appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
   };
@@ -487,25 +540,16 @@
     return {departments, lines, handlers};
   }
 
-  // ===== ワード候補機能（製造入力）=====
+  /* ===== ワード候補 ===== */
   function extractCommonWords(field, filterSerialNo = null){
     const words = {};
-    
-    // フィルタリング対象を決定
     let targetData = anomalyCache;
     if (filterSerialNo && filterSerialNo.trim() !== '') {
-      // 整理Noが入力されている場合、同じ整理Noのデータのみを対象
       targetData = anomalyCache.filter(item => item.serialNo === filterSerialNo.trim());
-      
-      // 同じ整理Noのデータが少ない（3件未満）場合は全データも参照
-      if (targetData.length < 3) {
-        targetData = anomalyCache;
-      }
+      if (targetData.length < 3) targetData = anomalyCache;
     }
-    
     targetData.forEach(item => {
       const text = item[field] || '';
-      // 2文字以上の単語を抽出（句読点で分割）
       const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
       segments.forEach(seg => {
         const trimmed = seg.trim();
@@ -514,16 +558,12 @@
         }
       });
     });
-    
-    // 出現頻度順にソートして上位20件を返す
     return Object.entries(words)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([word]) => word);
   }
-  
   function updateSerialNoList(){
-    // 整理Noの一覧を取得（重複を除去して頻度順にソート）
     const serialNoCounts = {};
     anomalyCache.forEach(item => {
       if (item.serialNo && item.serialNo.trim() !== '') {
@@ -531,91 +571,56 @@
         serialNoCounts[no] = (serialNoCounts[no] || 0) + 1;
       }
     });
-    
-    // 頻度順にソート
     const sortedSerialNos = Object.entries(serialNoCounts)
       .sort((a, b) => b[1] - a[1])
       .map(([no, count]) => ({no, count}));
-    
-    // datalistを更新
     const datalist = document.getElementById('serialNoList');
     datalist.innerHTML = sortedSerialNos.map(({no, count}) => 
       `<option value="${no}">${no} (${count}件)</option>`
     ).join('');
   }
-  
   function showWordSuggestions(targetId, suggestionsBoxId, wordsContainerId, field){
-    // 整理Noを取得
     const serialNo = document.getElementById('serialNo').value.trim();
     const words = extractCommonWords(field, serialNo);
     const box = document.getElementById(suggestionsBoxId);
     const container = document.getElementById(wordsContainerId);
-    
-    if (words.length === 0) {
-      box.classList.remove('active');
-      return;
-    }
-    
-    // 整理Noでフィルタされているかどうかを表示
+    if (words.length === 0) { box.classList.remove('active'); return; }
     let headerText = '💡 よく使われる表現（クリックで追加）';
     if (serialNo !== '') {
       const filteredCount = anomalyCache.filter(item => item.serialNo === serialNo).length;
-      if (filteredCount >= 3) {
-        headerText = `💡 整理No「${serialNo}」の過去の表現（${filteredCount}件）`;
-      } else if (filteredCount > 0) {
-        headerText = `💡 よく使われる表現（整理No「${serialNo}」は${filteredCount}件のみ）`;
-      }
+      if (filteredCount >= 3) headerText = `💡 整理No「${serialNo}」の過去の表現（${filteredCount}件）`;
+      else if (filteredCount > 0) headerText = `💡 よく使われる表現（整理No「${serialNo}」は${filteredCount}件のみ）`;
     }
-    
-    // ヘッダーを更新
     const header = box.querySelector('.word-suggestion-header');
     if (header) header.textContent = headerText;
-    
-    container.innerHTML = words.map(word => 
-      `<span class="word-tag" data-word="${word}">${word}</span>`
-    ).join('');
-    
+    container.innerHTML = words.map(word => `<span class="word-tag" data-word="${word}">${word}</span>`).join('');
     box.classList.add('active');
-    
-    // クリックで追加
     container.querySelectorAll('.word-tag').forEach(tag => {
       tag.addEventListener('click', () => {
         const textarea = document.getElementById(targetId);
         const word = tag.getAttribute('data-word');
         const currentValue = textarea.value;
-        
-        // カーソル位置に挿入
         const cursorPos = textarea.selectionStart;
         const before = currentValue.substring(0, cursorPos);
         const after = currentValue.substring(cursorPos);
-        
-        // 前の文字が空白でない場合は空白を追加
         const needsSpace = before.length > 0 && !before.match(/[\s、。\n]$/);
         const insertion = (needsSpace ? ' ' : '') + word;
-        
         textarea.value = before + insertion + after;
         textarea.focus();
         textarea.selectionStart = textarea.selectionEnd = cursorPos + insertion.length;
       });
     });
   }
-  
-  // フォーカス時にワード候補を表示
   document.getElementById('anomalyContent').addEventListener('focus', () => {
     showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
   });
-  
   document.getElementById('actionTaken').addEventListener('focus', () => {
     showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
   });
-  
-  // 整理No入力時に候補ワードを更新
   document.getElementById('serialNo').addEventListener('input', () => {
-    // 過去データ件数を表示
     const serialNo = document.getElementById('serialNo').value.trim();
     const infoBox = document.getElementById('serialNoInfo');
     const countSpan = document.getElementById('serialNoCount');
-    
     if (serialNo !== '') {
       const count = anomalyCache.filter(item => item.serialNo === serialNo).length;
       countSpan.textContent = count;
@@ -623,8 +628,6 @@
     } else {
       infoBox.style.display = 'none';
     }
-    
-    // 異常内容と処置内容のテキストエリアがフォーカスされている場合は候補を更新
     const activeElement = document.activeElement;
     if (activeElement.id === 'anomalyContent') {
       showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
@@ -632,12 +635,9 @@
       showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
     }
   });
-  
-  // 整理Noの変更時、候補が開いている場合は更新
   document.getElementById('serialNo').addEventListener('change', () => {
     const anomalyBox = document.getElementById('anomalyWordSuggestions');
     const actionBox = document.getElementById('actionWordSuggestions');
-    
     if (anomalyBox.classList.contains('active')) {
       showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
     }
@@ -645,159 +645,133 @@
       showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
     }
   });
-  
-  // フォーカスアウト時に候補を非表示（遅延して、クリックイベントを優先）
   document.getElementById('anomalyContent').addEventListener('blur', () => {
     setTimeout(() => document.getElementById('anomalyWordSuggestions').classList.remove('active'), 200);
   });
-  
   document.getElementById('actionTaken').addEventListener('blur', () => {
     setTimeout(() => document.getElementById('actionWordSuggestions').classList.remove('active'), 200);
   });
 
-  // ===== 類似案件表示機能（技術入力）=====
+  /* ===== 類似案件 ===== */
   let showingAllCases = false;
   let allSimilarCases = [];
-  
-  // テキストの類似度を計算する関数（簡易版）
   function calculateSimilarity(text1, text2) {
     if (!text1 || !text2) return 0;
-    
-    // 両方のテキストを正規化
-    const normalize = (text) => {
-      return text
-        .toLowerCase()
-        .replace(/[\s\u3000]/g, '') // 空白を除去
-        .replace(/[、。，．]/g, ''); // 句読点を除去
-    };
-    
-    const t1 = normalize(text1);
-    const t2 = normalize(text2);
-    
+    const normalize = (text) => text.toLowerCase().replace(/[\s\u3000]/g, '').replace(/[、。，．]/g, '');
+    const t1 = normalize(text1); const t2 = normalize(text2);
     if (t1 === t2) return 100;
     if (t1.length === 0 || t2.length === 0) return 0;
-    
-    // 共通する文字数をカウント
     let matches = 0;
     const minLen = Math.min(t1.length, t2.length);
     const maxLen = Math.max(t1.length, t2.length);
-    
-    // 2文字以上の共通部分文字列を探す
     for (let len = minLen; len >= 2; len--) {
       for (let i = 0; i <= t1.length - len; i++) {
         const substr = t1.substring(i, i + len);
-        if (t2.includes(substr)) {
-          matches += len;
-          break;
-        }
+        if (t2.includes(substr)) { matches += len; break; }
       }
       if (matches > 0) break;
     }
-    
-    // 類似度を0-100のスコアで返す
     return Math.round((matches / maxLen) * 100);
   }
-  
+
+  /* --- 共通: URL配列→サムネHTML --- */
+  function buildThumbs(urls, max=4){
+    if(!urls || !urls.length) return '';
+    const shown = urls.slice(0, max);
+    const more  = urls.length > max ? `<div class="more">+${urls.length - max} 枚</div>` : '';
+    return `
+      <div class="thumbs">
+        ${shown.map(u=>`
+          <div class="thumb" onclick="window.open('${u}','_blank')">
+            <img src="${u}" alt="">
+          </div>
+        `).join('')}
+      </div>
+      ${more}
+    `;
+  }
+
   function showSimilarCases(selectedId){
     const selected = anomalyCache.find(x => x._id === selectedId);
     if (!selected || !selected.serialNo) {
       document.getElementById('similarCasesBox').classList.remove('active');
       return;
     }
-    
-    // 同じ整理Noで技術対応済みのもの（選択中のものを除く）
     const sameSeriaCases = anomalyCache
-      .filter(x => 
-        x._id !== selectedId && 
-        x.serialNo === selected.serialNo && 
-        x.status === 'complete' &&
-        x.techRequest === '要請'
-      );
-    
-    // 異常内容の類似度を計算
+      .filter(x => x._id !== selectedId && x.serialNo === selected.serialNo && x.status === 'complete' && x.techRequest === '要請');
     const casesWithSimilarity = sameSeriaCases.map(item => {
-      const similarity = calculateSimilarity(
-        selected.anomalyContent || '',
-        item.anomalyContent || ''
-      );
+      const similarity = calculateSimilarity(selected.anomalyContent || '', item.anomalyContent || '');
       return { ...item, similarity };
     });
-    
-    // 類似度30%以上のものを抽出し、類似度と日付でソート
     allSimilarCases = casesWithSimilarity
       .filter(x => x.similarity >= 30)
-      .sort((a, b) => {
-        // 類似度が高い順、同じなら日付が新しい順
-        if (b.similarity !== a.similarity) {
-          return b.similarity - a.similarity;
-        }
-        return (b.occurrenceDate || '').localeCompare(a.occurrenceDate || '');
-      });
-    
+      .sort((a, b) => b.similarity !== a.similarity ? b.similarity - a.similarity : (b.occurrenceDate || '').localeCompare(a.occurrenceDate || ''));
+
     const box = document.getElementById('similarCasesBox');
     const content = document.getElementById('similarCasesContent');
     const showMoreBtn = document.getElementById('showMoreCases');
-    
-    if (allSimilarCases.length === 0) {
-      box.classList.remove('active');
-      return;
-    }
-    
-    // ヘッダーを更新
+    if (allSimilarCases.length === 0) { box.classList.remove('active'); return; }
+
     const header = box.querySelector('.similar-cases-header');
-    if (header) {
-      header.textContent = `🔍 類似する過去対応事例（整理No: ${selected.serialNo}）`;
-    }
-    
-    // 最初は直近1件のみ表示
+    if (header) header.textContent = `🔍 類似する過去対応事例（整理No: ${selected.serialNo}）`;
+
     const casesToShow = showingAllCases ? allSimilarCases : allSimilarCases.slice(0, 1);
-    
-    content.innerHTML = casesToShow.map((item, index) => `
-      <div class="similar-case-item">
-        <div class="similar-case-date">
-          📅 ${item.occurrenceDate || ''} の対応事例
-          <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:12px;font-size:.8rem;margin-left:8px;">
-            類似度 ${item.similarity}%
-          </span>
+
+    content.innerHTML = casesToShow.map((item) => {
+      const allPhotos = [ ...(item.mfgPhotoUrls || []), ...(item.techPhotoUrls || []) ];
+      const photosHtml = allPhotos.length ? `
+        <div class="similar-photos">
+          ${allPhotos.slice(0,8).map(u=>`
+            <div class="thumb" onclick="window.open('${u}','_blank')">
+              <img src="${u}" alt="">
+            </div>
+          `).join('')}
         </div>
-        <div class="similar-case-content">
-          <strong>異常内容:</strong> ${item.anomalyContent || '-'}<br>
-          <strong>製造処置:</strong> ${item.actionTaken || '-'}
+      ` : '';
+
+      return `
+        <div class="similar-case-item">
+          <div class="similar-case-date">
+            📅 ${item.occurrenceDate || ''} の対応事例
+            <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:12px;font-size:.8rem;margin-left:8px;">
+              類似度 ${item.similarity}%
+            </span>
+          </div>
+          <div class="similar-case-content">
+            <strong>異常内容:</strong> ${item.anomalyContent || '-'}<br>
+            <strong>製造処置:</strong> ${item.actionTaken || '-'}
+          </div>
+          <div class="similar-case-tech">
+            <strong>🔧 技術対応内容:</strong><br>
+            ${item.techHandler ? `技術処置者: ${item.techHandler}<br>` : ''}
+            ${item.rootCauseAction ? `原因・対策: ${item.rootCauseAction}<br>` : ''}
+            ${item.maintenanceUnit ? `保全単位: ${item.maintenanceUnit}<br>` : ''}
+            ${item.lifespan ? `命数有無: ${item.lifespan}<br>` : ''}
+            ${item.recurrenceType ? `分類: ${item.recurrenceType}` : ''}
+          </div>
+          ${photosHtml}
+          <button 
+            class="btn-small" 
+            style="background:#2196f3;color:#fff;margin-top:10px;width:100%;" 
+            onclick="showSimilarCaseDetail('${item._id}')">
+            📋 詳細を見る
+          </button>
         </div>
-        <div class="similar-case-tech">
-          <strong>🔧 技術対応内容:</strong><br>
-          ${item.techHandler ? `技術処置者: ${item.techHandler}<br>` : ''}
-          ${item.rootCauseAction ? `原因・対策: ${item.rootCauseAction}<br>` : ''}
-          ${item.maintenanceUnit ? `保全単位: ${item.maintenanceUnit}<br>` : ''}
-          ${item.lifespan ? `命数有無: ${item.lifespan}<br>` : ''}
-          ${item.recurrenceType ? `分類: ${item.recurrenceType}` : ''}
-        </div>
-        <button 
-          class="btn-small" 
-          style="background:#2196f3;color:#fff;margin-top:10px;width:100%;" 
-          onclick="showSimilarCaseDetail('${item._id}')">
-          📋 詳細を見る
-        </button>
-      </div>
-    `).join('');
-    
-    // 「他の案件を表示」ボタンの表示制御
+      `;
+    }).join('');
+
     if (allSimilarCases.length > 1 && !showingAllCases) {
       showMoreBtn.style.display = 'block';
       showMoreBtn.textContent = `他の類似案件を表示（あと${allSimilarCases.length - 1}件）`;
     } else {
       showMoreBtn.style.display = 'none';
     }
-    
     box.classList.add('active');
   }
-  
   document.getElementById('showMoreCases').addEventListener('click', () => {
     showingAllCases = true;
     const selectedId = document.getElementById('selectSerialNo').value;
-    if (selectedId) {
-      showSimilarCases(selectedId);
-    }
+    if (selectedId) showSimilarCases(selectedId);
   });
 
   function setNowDateTo(id){
@@ -871,6 +845,7 @@
     return urls;
   }
 
+  /* ===== 履歴描画 ===== */
   function renderHistory(){
     const items=[...anomalyCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
     const cardWrap=document.getElementById('cardView');
@@ -878,42 +853,50 @@
       cardWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
     }else{
       cardWrap.innerHTML = items.map((item)=>{
-        const status = item.status==='pending' ? {text:'技術入力待ち',cls:'status-pending'} :
-                      (item.techRequest==='完結' ? {text:'完了（製造完結）',cls:'status-complete'} : {text:'完了',cls:'status-complete'});
+        const status = item.status==='pending'
+          ? {text:'技術入力待ち',cls:'status-pending'}
+          : (item.techRequest==='完結' ? {text:'完了（製造完結）',cls:'status-complete'} : {text:'完了',cls:'status-complete'});
+
+        const allPhotos = [ ...(item.mfgPhotoUrls || []), ...(item.techPhotoUrls || []) ];
+        const hasPhotos = allPhotos.length > 0;
+
+        const leftFields = `
+          ${item.department?`<div class="card-field"><div class="field-label">部署</div><div class="field-value">${item.department}</div></div>`:''}
+          ${item.lineName?`<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${item.lineName}</div></div>`:''}
+          ${item.techRequest?`<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${item.techRequest==='要請'?'技術要請あり':'製造で完結'}</div></div>`:''}
+          <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${item.anomalyContent||''}</div></div>
+          <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${item.actionTaken||''}</div></div>
+          <div class="card-field"><div class="field-label">発生日時</div><div class="card-value">${item.occurrenceDate||''} ${item.occurrenceTime||''}</div></div>
+          <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${item.handler||''}</div></div>
+          ${item.status==='complete' && item.techRequest==='要請' ? `
+            <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${item.techHandler||'-'}</div></div>
+            <div class="card-field"><div class="field-label">保全単位</div><div class="field-value">${item.maintenanceUnit||'-'}</div></div>
+            <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction||'-'}</div></div>
+            <div class="card-field"><div class="field-label">再発/新規</div><div class="card-value">${item.recurrenceType||'-'}</div></div>
+          `:''}
+          <div class="action-btns" style="margin-top:10px;">
+            <button class="btn-small btn-edit" data-edit="${item._id}">編集</button>
+            <button class="btn-small btn-delete" data-del="${item._id}">削除</button>
+          </div>
+        `;
+
+        const rightPhotos = hasPhotos ? `
+          <div class="card-photos">
+            ${buildThumbs(allPhotos, 4)}
+          </div>
+        ` : '';
+
         return `
           <div class="anomaly-card ${item.status==='complete'?'complete':''}">
             <div class="card-header">
               <div class="card-id">${item.serialNo || '(No ID)'}</div>
               <div class="card-status ${status.cls}">${status.text}</div>
             </div>
-            <div class="card-body">
-              ${item.department?`<div class="card-field"><div class="field-label">部署</div><div class="field-value">${item.department}</div></div>`:''}
-              ${item.lineName?`<div class="card-field"><div class="field-label">ライン名</div><div class="field-value">${item.lineName}</div></div>`:''}
-              ${item.techRequest?`<div class="card-field"><div class="field-label">技術要請</div><div class="field-value">${item.techRequest==='要請'?'技術要請あり':'製造で完結'}</div></div>`:''}
-              <div class="card-field"><div class="field-label">異常内容</div><div class="field-value">${item.anomalyContent||''}</div></div>
-              <div class="card-field"><div class="field-label">製造処置</div><div class="field-value">${item.actionTaken||''}</div></div>
-              <div class="card-field"><div class="field-label">発生日時</div><div class="field-value">${item.occurrenceDate||''} ${item.occurrenceTime||''}</div></div>
-              <div class="card-field"><div class="field-label">処置者</div><div class="field-value">${item.handler||''}</div></div>
-              ${item.status==='complete' && item.techRequest==='要請' ? `
-                <div class="card-field"><div class="field-label">技術処置者</div><div class="field-value">${item.techHandler||'-'}</div></div>
-                <div class="card-field"><div class="field-label">保全単位</div><div class="field-value">${item.maintenanceUnit||'-'}</div></div>
-                <div class="card-field"><div class="field-label">原因・対策</div><div class="field-value">${item.rootCauseAction||'-'}</div></div>
-                <div class="card-field"><div class="field-label">再発/新規</div><div class="field-value">${item.recurrenceType||'-'}</div></div>
-              `:''}
-              ${(item.mfgPhotoUrls?.length || item.techPhotoUrls?.length) ? `
-                <div class="card-field">
-                  <div class="field-label">写真</div>
-                  <div class="field-value">
-                    <button class="btn-small" style="background:#2196f3;color:#fff;" data-photos="${item._id}">
-                      📷 写真 (${(item.mfgPhotoUrls?.length||0)+(item.techPhotoUrls?.length||0)}枚)
-                    </button>
-                  </div>
-                </div>
-              `:''}
-              <div class="action-btns" style="margin-top:10px;">
-                <button class="btn-small btn-edit" data-edit="${item._id}">編集</button>
-                <button class="btn-small btn-delete" data-del="${item._id}">削除</button>
+            <div class="card-body ${hasPhotos ? 'with-photos' : ''}">
+              <div class="card-text">
+                ${leftFields}
               </div>
+              ${rightPhotos}
             </div>
           </div>
         `;
@@ -1029,25 +1012,14 @@
     document.getElementById('department').addEventListener('change', ()=> {
       refreshLineAndHandler('department','lineName','handler', mastersCache.lines, mastersCache.handlers);
     });
+    document.getElementById('lineManageDept').addEventListener('change', async ()=> { await updateLineManageList(); });
+    document.getElementById('handlerManageDept').addEventListener('change', async ()=> { await updateHandlerManageList(); });
     
-    document.getElementById('lineManageDept').addEventListener('change', async ()=> {
-      await updateLineManageList();
-    });
-    
-    document.getElementById('handlerManageDept').addEventListener('change', async ()=> {
-      await updateHandlerManageList();
-    });
-    
-    // 発見タイミング変更時の処理
     document.getElementById('discoveryTiming').addEventListener('change', ()=> {
       const timing = document.getElementById('discoveryTiming').value;
       const previousCheckGroup = document.getElementById('previousCheckGroup');
-      if (timing === '初物') {
-        previousCheckGroup.style.display = 'block';
-      } else {
-        previousCheckGroup.style.display = 'none';
-        document.getElementById('previousCheck').value = '';
-      }
+      if (timing === '初物') { previousCheckGroup.style.display = 'block'; }
+      else { previousCheckGroup.style.display = 'none'; document.getElementById('previousCheck').value = ''; }
     });
 
     const q = query(anomaliesRef(), orderBy('createdAt','desc'));
@@ -1056,7 +1028,7 @@
       renderHistory();
       renderTechTargetSelect();
       updateAnalysis();
-      updateSerialNoList(); // 整理Noリストを更新
+      updateSerialNoList();
     });
 
     await updateDepartmentList();
@@ -1101,17 +1073,13 @@
     const id = document.getElementById('selectSerialNo').value;
     const d = anomalyCache.find(it=> it._id===id);
     const box=document.getElementById('selectedDataDisplay'), wrap=document.getElementById('displayContent');
-    
-    // 類似案件表示をリセット
     showingAllCases = false;
-    
     if (!d){ 
       box.style.display='none'; 
       wrap.innerHTML=''; 
       document.getElementById('similarCasesBox').classList.remove('active');
       return; 
     }
-    
     wrap.innerHTML = `
       <div style="display:grid;gap:8px;">
         <div><strong>整理No:</strong> ${d.serialNo}</div>
@@ -1124,8 +1092,6 @@
       </div>
     `;
     box.style.display='block';
-    
-    // 類似案件を自動表示
     showSimilarCases(id);
   });
 
@@ -1211,7 +1177,8 @@
         <div class="form-group"><label>命数到達</label>
           <select id="edit_lifespanReached">
             <option value="">選択</option>
-            <option value="至">至</option>
+            <option value="至">至
+            </option>
             <option value="不達">不達</option>
           </select>
         </div>
@@ -1335,7 +1302,6 @@
     if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
     const item = anomalyCache.find(a => a._id === id);
     try{
-      // 製造写真を削除
       if (item.mfgPhotoUrls && Array.isArray(item.mfgPhotoUrls)){
         for (const url of item.mfgPhotoUrls){
           try{
@@ -1346,7 +1312,6 @@
           }
         }
       }
-      // 技術写真を削除
       if (item.techPhotoUrls && Array.isArray(item.techPhotoUrls)){
         for (const url of item.techPhotoUrls){
           try{
@@ -1367,38 +1332,26 @@
   function showPhotos(id){
     const item = anomalyCache.find(a => a._id === id);
     if (!item) return;
-    
     const modal = document.getElementById('photoModal');
     const content = document.getElementById('photoModalContent');
-    
     let html = '';
-    
     if (item.mfgPhotoUrls && item.mfgPhotoUrls.length > 0){
       html += '<div style="grid-column:1/-1;"><h4 style="color:#667eea;margin-bottom:10px;">製造部門の写真</h4></div>';
       item.mfgPhotoUrls.forEach(url => {
-        html += `
-          <div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
-            <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
-          </div>
-        `;
+        html += `<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+          <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
+        </div>`;
       });
     }
-    
     if (item.techPhotoUrls && item.techPhotoUrls.length > 0){
       html += '<div style="grid-column:1/-1;margin-top:20px;"><h4 style="color:#f57c00;margin-bottom:10px;">技術部門の写真</h4></div>';
       item.techPhotoUrls.forEach(url => {
-        html += `
-          <div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
-            <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
-          </div>
-        `;
+        html += `<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+          <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
+        </div>`;
       });
     }
-    
-    if (!html){
-      html = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999;">写真がありません</div>';
-    }
-    
+    if (!html) html = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999;">写真がありません</div>';
     content.innerHTML = html;
     modal.classList.add('active');
     modal.setAttribute('aria-hidden', 'false');
@@ -1410,29 +1363,20 @@
     modal.setAttribute('aria-hidden', 'true');
   });
 
-  // グローバル関数として定義（HTMLのonclick属性から呼び出せるように）
+  // 類似案件詳細（写真は常時表示に変更）
   window.showSimilarCaseDetail = function(caseId) {
     const item = anomalyCache.find(x => x._id === caseId);
     if (!item) return;
-    
     const modal = document.getElementById('similarCaseDetailModal');
     const content = document.getElementById('similarCaseDetailContent');
-    
-    // 類似度を計算（選択中の案件と比較）
     const selectedId = document.getElementById('selectSerialNo').value;
     const selected = anomalyCache.find(x => x._id === selectedId);
-    const similarity = selected ? calculateSimilarity(
-      selected.anomalyContent || '',
-      item.anomalyContent || ''
-    ) : 0;
-    
+    const similarity = selected ? calculateSimilarity(selected.anomalyContent || '', item.anomalyContent || '') : 0;
     content.innerHTML = `
       <div style="background:#f8f9ff;padding:20px;border-radius:8px;margin-bottom:20px;">
         <h4 style="color:#667eea;margin-bottom:15px;display:flex;justify-content:space-between;align-items:center;">
           <span>📋 基本情報</span>
-          <span style="background:#4caf50;color:#fff;padding:4px 12px;border-radius:12px;font-size:.9rem;">
-            類似度 ${similarity}%
-          </span>
+          <span style="background:#4caf50;color:#fff;padding:4px 12px;border-radius:12px;font-size:.9rem;">類似度 ${similarity}%</span>
         </h4>
         <div style="display:grid;gap:12px;">
           <div><strong>整理No:</strong> ${item.serialNo || '-'}</div>
@@ -1485,20 +1429,33 @@
           </div>
         </div>
       ` : ''}
-      
+
       ${(item.mfgPhotoUrls?.length || item.techPhotoUrls?.length) ? `
         <div style="background:#e3f2fd;padding:20px;border-radius:8px;">
           <h4 style="color:#1976d2;margin-bottom:15px;">📷 写真</h4>
-          <button 
-            class="btn btn-primary" 
-            style="background:#1976d2;width:auto;padding:12px 24px;margin:0;"
-            onclick="showPhotos('${item._id}')">
-            📷 写真を表示 (${(item.mfgPhotoUrls?.length||0)+(item.techPhotoUrls?.length||0)}枚)
-          </button>
+          ${item.mfgPhotoUrls?.length ? `
+            <div style="margin-bottom:8px;color:#667eea;font-weight:bold;">製造部門</div>
+            <div class="similar-photos">
+              ${item.mfgPhotoUrls.map(u=>`
+                <div class="thumb" onclick="window.open('${u}','_blank')">
+                  <img src="${u}" alt="">
+                </div>
+              `).join('')}
+            </div>
+          `:''}
+          ${item.techPhotoUrls?.length ? `
+            <div style="margin:14px 0 8px;color:#f57c00;font-weight:bold;">技術部門</div>
+            <div class="similar-photos">
+              ${item.techPhotoUrls.map(u=>`
+                <div class="thumb" onclick="window.open('${u}','_blank')">
+                  <img src="${u}" alt="">
+                </div>
+              `).join('')}
+            </div>
+          `:''}
         </div>
       ` : ''}
     `;
-    
     modal.classList.add('active');
     modal.setAttribute('aria-hidden', 'false');
   };
@@ -1509,14 +1466,12 @@
     modal.setAttribute('aria-hidden', 'true');
   });
 
-  // モーダル背景クリックで閉じる
   document.getElementById('photoModal').addEventListener('click', (e)=>{
     if (e.target.id === 'photoModal') {
       document.getElementById('photoModal').classList.remove('active');
       document.getElementById('photoModal').setAttribute('aria-hidden', 'true');
     }
   });
-
   document.getElementById('similarCaseDetailModal').addEventListener('click', (e)=>{
     if (e.target.id === 'similarCaseDetailModal') {
       document.getElementById('similarCaseDetailModal').classList.remove('active');
@@ -1576,20 +1531,10 @@
     const dept=document.getElementById('lineManageDept').value;
     const list=document.getElementById('lineList'); 
     list.innerHTML='';
-    
-    if (!dept){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
-      return; 
-    }
-    
+    if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
     const snap=await getDocs(query(collection(db,'masters','line','items'), where('department','==',dept)));
     const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    
-    if (!arr.length){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; 
-      return; 
-    }
-    
+    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; return; }
     arr.forEach(row=>{
       const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #f57c00;';
@@ -1598,20 +1543,16 @@
       list.appendChild(div);
     });
   }
-  
   document.getElementById('btnAddLine').addEventListener('click', async ()=>{
     const dept=document.getElementById('lineManageDept').value;
     const name=(document.getElementById('newLine').value||'').trim();
     if (!dept){ alert('部署を選択してください'); return; }
     if (!name){ alert('ライン名を入力してください'); return; }
-    
     await addDoc(collection(db,'masters','line','items'), {department:dept, name});
     document.getElementById('newLine').value='';
-    
     mastersCache = await fetchMasters();
     await updateLineManageList();
   });
-  
   document.addEventListener('click', async (e)=>{
     const del=e.target.closest('button[data-del-line]'); if (!del) return;
     await deleteDoc(doc(db,'masters','line','items', del.getAttribute('data-del-line')));
@@ -1623,20 +1564,10 @@
     const dept=document.getElementById('handlerManageDept').value;
     const list=document.getElementById('handlerList'); 
     list.innerHTML='';
-    
-    if (!dept){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; 
-      return; 
-    }
-    
+    if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
     const snap=await getDocs(query(collection(db,'masters','handler','items'), where('department','==',dept)));
     const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    
-    if (!arr.length){ 
-      list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; 
-      return; 
-    }
-    
+    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; return; }
     arr.forEach(row=>{
       const div=document.createElement('div');
       div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #2e7d32;';
@@ -1645,20 +1576,16 @@
       list.appendChild(div);
     });
   }
-  
   document.getElementById('btnAddHandler').addEventListener('click', async ()=>{
     const dept=document.getElementById('handlerManageDept').value;
     const name=(document.getElementById('newHandler').value||'').trim();
     if (!dept){ alert('部署を選択してください'); return; }
     if (!name){ alert('処置者名を入力してください'); return; }
-    
     await addDoc(collection(db,'masters','handler','items'), {department:dept, name});
     document.getElementById('newHandler').value='';
-    
     mastersCache = await fetchMasters();
     await updateHandlerManageList();
   });
-  
   document.addEventListener('click', async (e)=>{
     const del=e.target.closest('button[data-del-handler]'); if (!del) return;
     await deleteDoc(doc(db,'masters','handler','items', del.getAttribute('data-del-handler')));
@@ -1667,7 +1594,6 @@
   });
 
   function updateAnalysis(){ updateStatistics(); updateTrendAnalysis(); updateDepartmentAnalysis(); updateRecurrenceAnalysis(); }
-  
   function updateStatistics(){
     const total=anomalyCache.length;
     const completed=anomalyCache.filter(x=>x.status==='complete').length;
@@ -1705,7 +1631,6 @@
         </div>
       </div>`;
   }
-  
   function updateTrendAnalysis(){
     const monthly={}; 
     anomalyCache.forEach(x=>{
@@ -1728,7 +1653,6 @@
         </div>
       </div>`;
     }).join('');
-    
     const ana=document.getElementById('trendAnalysis');
     if (months.length>=3){
       const r3=months.slice(-3).map(m=>monthly[m]);
@@ -1748,7 +1672,6 @@
       ana.innerHTML='<p style="color:#999;">データが不足しているため、傾向分析を表示できません</p>';
     }
   }
-  
   function updateDepartmentAnalysis(){
     const dept={}, line={};
     anomalyCache.forEach(x=>{
@@ -1783,16 +1706,12 @@
     });
     div.innerHTML = html || '<p style="color:#999;">データがありません</p>';
   }
-  
   function updateRecurrenceAnalysis(){
     const recCnt = anomalyCache.filter(x=>x.recurrenceType==='再発').length;
     const newCnt = anomalyCache.filter(x=>x.recurrenceType==='新規').length;
     const total=recCnt+newCnt; 
     const div=document.getElementById('recurrenceAnalysis');
-    if (!total){ 
-      div.innerHTML='<p style="color:#999;">技術対応済みのデータがありません</p>'; 
-      return; 
-    }
+    if (!total){ div.innerHTML='<p style="color:#999;">技術対応済みのデータがありません</p>'; return; }
     const rate=(recCnt/total*100).toFixed(1);
     div.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
@@ -1811,6 +1730,26 @@
         ${rate<20?'<br>✅ 再発率は良好です。現在の対策を継続しましょう。':''}
       </div>`;
   }
+
+  /* ===== 起動 ===== */
+  async function updateDepartmentList(){
+    const list=document.getElementById('departmentList'); list.innerHTML='';
+    const snap=await getDocs(collection(db,'masters','department','items'));
+    const arr = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
+    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">部署が登録されていません</p>'; return; }
+    arr.forEach(row=>{
+      const div=document.createElement('div');
+      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#f8f9fa;border-radius:6px;border-left:3px solid #667eea;';
+      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
+        <button class="btn-small btn-delete" data-del-dept="${row.id}">削除</button>`;
+      list.appendChild(div);
+    });
+    mastersCache = await fetchMasters();
+    updateDepartmentSelect('department', mastersCache.departments);
+    updateDepartmentSelect('lineManageDept', mastersCache.departments);
+    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
+  }
+  window.showSimilarCaseDetail = window.showSimilarCaseDetail; // keep export (no-op)
 </script>
 </body>
 </html>
