@@ -214,7 +214,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
   import { getDatabase, ref, child, get, set, push, update, remove, onValue, query, orderByChild, equalTo, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
-  import { getStorage, ref as sRef, uploadBytes, getDownloadURL, listAll, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
+  import { getStorage, ref as sRef, uploadBytesResumable, getDownloadURL, listAll, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
 
   // --- Firebase Config ---
   const firebaseConfig = {
@@ -611,18 +611,33 @@
   }
 
   // --- Upload Photos ---
-  async function uploadPhotos(id, folder, files){
-    const urls = [];
-    for(const f of files){
-      const key = Date.now() + "_" + sanitizeFilename(f.name||"photo");
-      const r = R.storage.anomalyFile(id, folder, key);
-      await uploadBytes(r, f, { contentType:f.type || "application/octet-stream" });
-      const url = await getDownloadURL(r);
-      urls.push(url);
-    }
-    return urls;
-  }
-
++ async function uploadPhotos(id, folder, files){
++   const urls = [];
++   for(const f of files){
++     const key = Date.now() + "_" + sanitizeFilename(f.name||"photo");
++     const r = R.storage.anomalyFile(id, folder, key);
++     await new Promise((resolve, reject)=>{
++       const task = uploadBytesResumable(r, f, { contentType: f.type || "application/octet-stream" });
++       task.on('state_changed',
++         () => {}, // 進捗が欲しければここで task.snapshot.bytesTransferred を使う
++         (err)=>{
++           // エラーの詳細を画面にも出す
++           const code = err.code || 'unknown';
++           const body = (err.serverResponse || (err.customData && err.customData.serverResponse)) || '';
++           console.error('Upload error:', code, err.message, body);
++           alert(`写真アップロード失敗: ${code}\n${err.message}\n${body ? 'srv:'+body : ''}`);
++           reject(err);
++         },
++         async ()=>{
++           const url = await getDownloadURL(task.snapshot.ref);
++           urls.push(url);
++           resolve();
++         }
++       );
++     });
++   }
++   return urls;
++ }
   // --- Search / Export ---
   el.qText.addEventListener("input", renderHistory);
   el.qDept.addEventListener("change", renderHistory);
