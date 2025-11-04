@@ -1,0 +1,1763 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>異常履歴入力ツール（Firebase連携版）</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f5}
+  .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:20px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.1)}
+  .header h1{font-size:1.5rem;margin-bottom:5px}
+  .container{max-width:900px;margin:0 auto;padding:10px}
+  .tabs{display:flex;background:#fff;margin:15px 0 0;border-radius:8px 8px 0 0;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
+  .tab{flex:1;padding:15px;text-align:center;cursor:pointer;background:#f8f9fa;border:none;font-size:1rem;font-weight:bold;transition:.3s;color:#666}
+  .tab.active{background:#fff;color:#667eea;border-bottom:3px solid #667eea}
+  .tab-content{display:none;background:#fff;padding:20px;border-radius:0 0 8px 8px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
+  .tab-content.active{display:block}
+  .form-group{margin-bottom:16px}
+  .form-group label{display:block;margin-bottom:8px;font-weight:bold;color:#333;font-size:.95rem}
+  .form-group input,.form-group textarea,.form-group select{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:6px;font-size:1rem;transition:border-color .3s}
+  .form-group input:focus,.form-group textarea:focus,.form-group select:focus{outline:none;border-color:#667eea}
+  .form-group textarea{min-height:100px;resize:vertical}
+  .time-group{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .photo-upload{border:2px dashed #e0e0e0;border-radius:6px;padding:20px;text-align:center;cursor:pointer;transition:.3s}
+  .photo-upload:hover{border-color:#667eea;background:#f8f9ff}
+  .photo-upload input[type=file]{display:none}
+  .photo-preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-top:15px}
+  .photo-item{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1)}
+  .photo-item img{width:100%;height:100%;object-fit:cover}
+  .photo-item .remove-btn{position:absolute;top:5px;right:5px;background:rgba(255,59,48,.9);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:1}
+  .btn{width:100%;padding:14px;border:none;border-radius:6px;font-size:1rem;font-weight:bold;cursor:pointer;transition:.3s;margin-top:10px}
+  .btn-primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
+  .btn-secondary{background:#6c757d;color:#fff}
+  .btn-export{background:#28a745;color:#fff}
+
+  /* フィルター */
+  .filter-panel{background:#f8f9ff;border:2px solid #667eea;border-radius:8px;padding:16px;margin-bottom:16px;}
+  .filter-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .filter-title{font-size:1.05rem;font-weight:bold;color:#667eea;display:flex;align-items:center;gap:8px;}
+  .filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;}
+  .filter-date-group{display:flex;gap:8px;align-items:center;}
+  .filter-date-group input{flex:1;}
+  .filter-date-group .date-btn{padding:8px 12px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold;font-size:.85rem;white-space:nowrap;}
+  .filter-date-group .date-btn:hover{background:#667eea;color:#fff;}
+  .filter-date-group .date-btn.active{background:#667eea;color:#fff;}
+  .filter-actions{display:flex;gap:8px;}
+  .filter-actions button{padding:10px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:.9rem;}
+  .btn-filter-apply{background:#667eea;color:#fff;}
+  .btn-filter-clear{background:#e0e0e0;color:#333;}
+  .filter-result-count{margin-top:12px;padding:10px;background:#fff;border-radius:6px;text-align:center;color:#666;font-size:.9rem;}
+  .filter-result-count strong{color:#667eea;}
+
+  .history-controls{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .view-toggle{display:flex;gap:5px}
+  .view-toggle button{padding:8px 12px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
+  .view-toggle button.active{background:#667eea;color:#fff}
+
+  /* カードレイアウト */
+  .card-view{display:grid;gap:16px;}
+  .anomaly-card{
+    position:relative;background:#fff;border-radius:8px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.1);
+    border-left:4px solid #667eea;display:grid;grid-template-columns:200px 1fr 180px;gap:20px;align-items:start;
+  }
+  .anomaly-card.complete{border-left-color:#28a745}
+
+  .card-left{display:flex;flex-direction:column;gap:10px;}
+  .card-id{font-size:1.2rem;font-weight:700;color:#667eea;margin-bottom:4px;}
+  .card-status{padding:4px 12px;border-radius:12px;font-size:.85rem;font-weight:700;text-align:center;width:fit-content;}
+  .status-pending{background:#fff3cd;color:#856404}
+  .status-complete{background:#d4edda;color:#155724}
+
+  .card-meta{display:flex;flex-direction:column;gap:6px;font-size:.9rem;}
+  .card-meta-item{display:flex;flex-direction:column;gap:2px;}
+  .card-meta-label{font-size:.75rem;color:#888;text-transform:uppercase;letter-spacing:0.5px;}
+  .card-meta-value{color:#333;font-weight:500;}
+
+  .card-center{display:flex;flex-direction:column;gap:12px;min-width:0;}
+  .card-content-section{display:flex;flex-direction:column;gap:6px;}
+  .card-content-label{font-size:.85rem;font-weight:bold;color:#667eea;display:flex;align-items:center;gap:6px;}
+  .card-content-text{color:#333;line-height:1.6;font-size:.95rem;}
+
+  .card-tech-info{
+    background:#f8f9ff;padding:12px;border-radius:6px;border-left:3px solid #667eea;
+    display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.85rem;
+  }
+  .tech-info-item{display:flex;gap:8px;}
+  .tech-info-label{color:#666;font-weight:600;}
+  .tech-info-value{color:#333;}
+
+  .card-right{display:flex;flex-direction:column;gap:12px;}
+  .card-photos-compact{display:grid;grid-template-columns:repeat(2, 1fr);gap:6px;}
+  .photo-thumb-compact{aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.1);cursor:pointer;transition:transform .2s;}
+  .photo-thumb-compact:hover{transform:scale(1.05);}
+  .photo-thumb-compact img{width:100%;height:100%;object-fit:cover;}
+  .photo-count-badge{text-align:center;font-size:.85rem;color:#666;margin-top:4px;}
+
+  .action-btns{display:flex;flex-direction:column;gap:6px;}
+  .btn-small{padding:8px 12px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem;font-weight:600;transition:.2s;}
+  .btn-edit{background:#ffc107;color:#000}
+  .btn-edit:hover{background:#ffb300}
+  .btn-delete{background:#dc3545;color:#fff}
+  .btn-delete:hover{background:#c82333}
+
+  /* 停止時間 */
+  .stop-badge{position:absolute;right:16px;bottom:16px;padding:6px 12px;border-radius:14px;font-weight:700;font-size:.9rem;color:#fff;background:#1976d2;box-shadow:0 2px 6px rgba(0,0,0,.15);}
+  .stop-badge.warn{background:#f57c00;}
+  .stop-badge.danger{background:#d32f2f;}
+
+  @media (max-width:900px){
+    .anomaly-card{grid-template-columns:1fr;gap:16px;}
+    .card-right{flex-direction:row;justify-content:space-between;}
+    .card-photos-compact{flex:1;max-width:200px;}
+    .action-btns{flex:1;}
+    .card-tech-info{grid-template-columns:1fr;}
+    .filter-grid{grid-template-columns:1fr;}
+    .filter-date-group{flex-direction:column;align-items:stretch;}
+    .filter-date-group .date-btn{width:100%;}
+    .stop-badge{right:16px;bottom:16px;}
+  }
+  @media (max-width:600px){
+    .time-group{grid-template-columns:1fr}
+    table{font-size:.85rem}
+    th,td{padding:8px}
+    .card-tech-info{grid-template-columns:1fr;}
+  }
+
+  /* テーブル */
+  .table-view{overflow-x:auto;display:none}
+  .table-view.active{display:block}
+  table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.08)}
+  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #eaeaea}
+  th{background:#667eea;color:#fff;font-weight:bold;position:sticky;top:0}
+  tr:hover{background:#f8f9ff}
+  .empty-state{text-align:center;padding:36px 20px;color:#999}
+  .empty-state-icon{font-size:2.5rem;margin-bottom:10px}
+
+  /* モーダル */
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
+  .modal.active{display:flex}
+  .modal-content{background:#fff;padding:20px;border-radius:8px;max-width:680px;width:95%;max-height:90vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .modal-title{font-size:1.1rem;font-weight:bold;margin-bottom:10px;color:#333}
+  .edit-tabs{display:flex;gap:8px;margin:8px 0 16px}
+  .edit-tab{flex:1;padding:10px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
+  .edit-tab.active{background:#667eea;color:#fff}
+  .edit-pane .form-group{margin-bottom:12px;}
+  .modal-actions{display:flex;gap:10px;margin-top:10px}
+  .btn-cancel{background:#9e9e9e;color:#fff}
+
+  /* サインイン */
+  #authGate{position:fixed;inset:0;background:#f5f5f5;display:flex;align-items:center;justify-content:center;z-index:2000}
+  #authCard{background:#fff;max-width:380px;width:92%;padding:24px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+  #signOutBtn{position:fixed;right:12px;top:12px;background:#ef5350;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;z-index:1500}
+
+  /* ワード候補・類似案件（既存） */
+  .word-suggestions{position:relative;}
+  .word-suggestion-box{position:absolute;z-index:100;background:#fff;border:2px solid #667eea;border-radius:8px;padding:10px;max-height:300px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15);display:none;width:100%;margin-top:5px;}
+  .word-suggestion-box.active{display:block;}
+  .word-suggestion-header{font-size:.85rem;color:#667eea;font-weight:bold;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #e0e0e0;}
+  .word-tag{display:inline-block;background:#f0f7ff;color:#667eea;padding:6px 12px;margin:3px;border-radius:16px;cursor:pointer;font-size:.85rem;transition:.2s;border:1px solid #e3f2fd;}
+  .word-tag:hover{background:#667eea;color:#fff;transform:translateY(-2px);box-shadow:0 2px 8px rgba(102,126,234,.3);}
+
+  .similar-cases-box{background:#fff4e6;border:2px solid #f57c00;border-radius:8px;padding:15px;margin-bottom:20px;display:none;}
+  .similar-cases-box.active{display:block;}
+  .similar-cases-header{color:#f57c00;font-weight:bold;margin-bottom:15px;font-size:1rem;display:flex;align-items:center;gap:8px;}
+  .similar-case-item{background:#fff;border-left:3px solid #f57c00;border-radius:6px;padding:12px;margin-bottom:10px;}
+  .similar-case-item:last-child{margin-bottom:0;}
+  .similar-case-date{font-weight:bold;color:#f57c00;margin-bottom:8px;font-size:.95rem;}
+  .similar-case-content{font-size:.9rem;color:#333;line-height:1.5;margin-bottom:8px;}
+  .similar-case-tech{margin-top:8px;padding-top:8px;border-top:1px solid #ffe0b2;font-size:.9rem;color:#666;}
+  .similar-case-tech strong{color:#f57c00;}
+  .show-more-btn{width:100%;padding:10px;background:#fff;color:#f57c00;border:2px solid #f57c00;border-radius:6px;font-weight:bold;cursor:pointer;transition:.2s;margin-top:10px;}
+  .show-more-btn:hover{background:#f57c00;color:#fff;}
+  .similar-photos{margin-top:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+  .similar-photos .thumb{aspect-ratio:1;overflow:hidden;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1);cursor:pointer;}
+  .similar-photos .thumb img{width:100%;height:100%;object-fit:cover;}
+</style>
+</head>
+<body>
+  <button id="signOutBtn" style="display:none;">サインアウト</button>
+
+  <div id="authGate">
+    <div id="authCard">
+      <h2 style="margin-bottom:10px;color:#667eea;">🔐 サインイン</h2>
+      <p style="color:#666;margin-bottom:15px;">社内メールでログインしてください</p>
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="authEmail" placeholder="user@miyama-unitec.co.jp">
+      </div>
+      <div class="form-group">
+        <label>パスワード</label>
+        <input type="password" id="authPassword" placeholder="••••••••">
+      </div>
+      <button class="btn btn-primary" id="authLoginBtn">ログイン</button>
+      <p id="authMsg" style="color:#c62828;margin-top:10px;"></p>
+    </div>
+  </div>
+
+  <div class="header">
+    <h1>📋 異常履歴入力ツール</h1>
+    <p>Firebase連携版（Auth / Firestore / Storage）</p>
+  </div>
+
+  <div class="container" style="display:none" id="appRoot">
+    <div class="tabs">
+      <button class="tab active" data-tab="manufacturing">製造入力</button>
+      <button class="tab" data-tab="technical">技術入力</button>
+      <button class="tab" data-tab="quality">品質入力</button><!-- ★ 新規タブ -->
+      <button class="tab" data-tab="history">履歴</button>
+      <button class="tab" data-tab="master">⚙️ 管理</button>
+    </div>
+
+    <!-- 製造入力 -->
+    <div id="manufacturing" class="tab-content active">
+      <h2 style="margin-bottom:16px;color:#667eea;">製造部門 - 異常報告</h2>
+      <form id="manufacturingForm">
+        <div style="background:#f0f7ff;padding:15px;border-radius:6px;margin-bottom:14px;">
+          <h3 style="color:#667eea;margin-bottom:12px;font-size:1.05rem;">📅 いつ</h3>
+          <div class="form-group">
+            <label>発生日 *</label>
+            <div style="display:flex;gap:10px;">
+              <input type="date" id="occurrenceDate" required style="flex:1;">
+              <button type="button" class="btn btn-secondary" style="width:auto;padding:10px 16px;margin:0;background:#17a2b8;" id="btnNowDate">📅 NOW</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>時刻</label>
+            <div class="time-group">
+              <div>
+                <label style="font-weight:normal;font-size:.9rem;">発生時刻</label>
+                <div style="display:flex;gap:5px;">
+                  <input type="time" id="occurrenceTime" style="flex:1;">
+                  <button type="button" class="btn btn-secondary" style="width:auto;padding:6px 10px;margin:0;font-size:.85rem;background:#17a2b8;" data-now="occurrenceTime">NOW</button>
+                </div>
+              </div>
+              <div>
+                <label style="font-weight:normal;font-size:.9rem;">再開時刻</label>
+                <div style="display:flex;gap:5px;">
+                  <input type="time" id="restartTime" style="flex:1;">
+                  <button type="button" class="btn btn-secondary" style="width:auto;padding:6px 10px;margin:0;font-size:.85rem;background:#17a2b8;" data-now="restartTime">NOW</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="background:#fff4e6;padding:15px;border-radius:6px;margin-bottom:14px;">
+          <h3 style="color:#f57c00;margin-bottom:12px;font-size:1.05rem;">📍 どこで</h3>
+          <div class="form-group"><label>部署 *</label><select id="department" required></select></div>
+          <div class="form-group"><label>ライン名 *</label><select id="lineName" required><option value="">部署を先に選択してください</option></select></div>
+          <div class="form-group"><label>処置者 *</label><select id="handler" required><option value="">部署を先に選択してください</option></select></div>
+        </div>
+
+        <div style="background:#f3e5f5;padding:15px;border-radius:6px;margin-bottom:14px;">
+          <h3 style="color:#8e24aa;margin-bottom:12px;font-size:1.05rem;">🔢 整理No</h3>
+          <div class="form-group word-suggestions">
+            <label>整理No *</label>
+            <input type="text" id="serialNo" required placeholder="例:6769" list="serialNoList">
+            <datalist id="serialNoList"></datalist>
+            <div id="serialNoInfo" style="margin-top:8px;padding:8px;background:#f3e5f5;border-radius:4px;font-size:.85rem;color:#8e24aa;display:none;">
+              <strong>💡 ヒント:</strong> この整理Noの過去データ: <span id="serialNoCount">0</span>件
+            </div>
+          </div>
+        </div>
+
+        <div style="background:#e8f5e9;padding:15px;border-radius:6px;margin-bottom:14px;">
+          <h3 style="color:#2e7d32;margin-bottom:12px;font-size:1.05rem;">📝 何があった</h3>
+          <div class="form-group word-suggestions">
+            <label>異常内容 *</label>
+            <textarea id="anomalyContent" required></textarea>
+            <div id="anomalyWordSuggestions" class="word-suggestion-box">
+              <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
+              <div id="anomalyWords"></div>
+            </div>
+          </div>
+          <div class="form-group word-suggestions">
+            <label>対応内容 *</label>
+            <textarea id="actionTaken" required></textarea>
+            <div id="actionWordSuggestions" class="word-suggestion-box">
+              <div class="word-suggestion-header">💡 よく使われる表現（クリックで追加）</div>
+              <div id="actionWords"></div>
+            </div>
+          </div>
+          <div class="form-group"><label>遡り *</label>
+            <select id="traceback" required><option value="">選択</option><option value="有">有</option><option value="無">無</option></select>
+          </div>
+
+          <div class="form-group"><label>技術要請 *</label>
+            <select id="techRequest" required>
+              <option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option>
+            </select>
+          </div>
+
+          <!-- ★ 追加：品質要請 -->
+          <div class="form-group"><label>品質要請 *</label>
+            <select id="qaRequest" required>
+              <option value="">選択</option>
+              <option value="要請">品質要請あり</option>
+              <option value="無">不要</option>
+            </select>
+          </div>
+
+          <button type="button" id="btnShowPastOnMfg" class="btn btn-secondary" style="background:#1976d2;">過去の異常履歴</button>
+
+          <div class="form-group">
+            <label>写真</label>
+            <div class="photo-upload" onclick="document.getElementById('mfgPhotos').click()">
+              <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
+              <input type="file" id="mfgPhotos" accept="image/*" multiple>
+            </div>
+            <div id="mfgPhotoPreview" class="photo-preview"></div>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">登録</button>
+      </form>
+
+      <div id="mfgSimilarBox" class="similar-cases-box" style="margin-top:14px;">
+        <div class="similar-cases-header">🔍 過去の異常履歴</div>
+        <div id="mfgSimilarContent"></div>
+        <button type="button" id="mfgShowMore" class="show-more-btn" style="display:none;">もっと表示</button>
+      </div>
+    </div>
+
+    <!-- 技術入力 -->
+    <div id="technical" class="tab-content">
+      <h2 style="margin-bottom:16px;color:#667eea;">技術部門 - 追加入力</h2>
+      <div class="form-group">
+        <label>対象の案件選択 *</label>
+        <select id="selectSerialNo"><option value="">案件を選択してください</option></select>
+      </div>
+
+      <button type="button" id="btnShowPastOnTech" class="btn btn-secondary" style="background:#1976d2;margin-bottom:10px;">過去の異常履歴</button>
+
+      <div id="similarCasesBox" class="similar-cases-box">
+        <div class="similar-cases-header">🔍 同じ整理Noの過去対応事例</div>
+        <div id="similarCasesContent"></div>
+        <button type="button" id="showMoreCases" class="show-more-btn" style="display:none;">他の類似案件を表示</button>
+      </div>
+
+      <div id="selectedDataDisplay" style="background:#f8f9ff;padding:15px;border-radius:6px;margin-bottom:14px;display:none;">
+        <h3 style="color:#667eea;margin-bottom:8px;">製造部門入力内容</h3>
+        <div id="displayContent"></div>
+      </div>
+
+      <form id="technicalForm">
+        <div class="form-group"><label>技術処置者 *</label><input type="text" id="techHandler"></div>
+        <div class="form-group">
+          <label>発見タイミング *</label>
+          <select id="discoveryTiming" required>
+            <option value="">選択</option>
+            <option value="運転中">運転中</option>
+            <option value="頭出し">頭出し</option>
+            <option value="初物">初物</option>
+            <option value="終物">終物</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group" id="previousCheckGroup" style="display:none;">
+          <label>前回終物確認（発見タイミングが初物の場合）</label>
+          <select id="previousCheck">
+            <option value="">選択</option>
+            <option value="不要">不要</option>
+            <option value="未">未</option>
+            <option value="確認済">確認済</option>
+          </select>
+        </div>
+        <div class="form-group"><label>命数有無 *</label><select id="lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group">
+          <label>命数到達 *</label>
+          <select id="lifespanReached" required>
+            <option value="">選択</option>
+            <option value="至">至</option>
+            <option value="不達">不達</option>
+          </select>
+        </div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="maintenanceUnit"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="rootCauseAction"></textarea></div>
+        <div class="form-group"><label>再発か新規か *</label><select id="recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+        <div class="form-group">
+          <label>暫定 *</label>
+          <select id="affirmation" required>
+            <option value="">選択</option>
+            <option value="有">有</option>
+            <option value="無">無</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>写真</label>
+          <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
+            <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
+            <input type="file" id="techPhotos" accept="image/*" multiple>
+          </div>
+          <div id="techPhotoPreview" class="photo-preview"></div>
+        </div>
+        <button type="submit" class="btn btn-primary">登録</button>
+      </form>
+    </div>
+
+    <!-- ★ 品質入力 -->
+    <div id="quality" class="tab-content">
+      <h2 style="margin-bottom:16px;color:#667eea;">品質部門 - 追加入力</h2>
+
+      <div class="form-group">
+        <label>対象の案件選択 *</label>
+        <select id="selectSerialNoQA">
+          <option value="">案件を選択してください</option>
+        </select>
+      </div>
+
+      <form id="qualityForm" style="margin-top:10px;">
+        <div class="form-group">
+          <label>判断 *</label>
+          <select id="qaJudge" required>
+            <option value="">選択</option>
+            <option value="保留">保留</option>
+            <option value="廃棄">廃棄</option>
+            <option value="流動">流動</option>
+            <option value="選別">選別</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>判定者 *</label>
+          <input type="text" id="qaJudgeBy" required>
+        </div>
+        <div class="form-group">
+          <label>備考</label>
+          <textarea id="qaNote" placeholder="必要に応じて記載"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>写真（品質）</label>
+          <div class="photo-upload" onclick="document.getElementById('qaPhotos').click()">
+            <div style="font-size:2rem;">📸</div><p>写真をアップロード（複数可）</p>
+            <input type="file" id="qaPhotos" accept="image/*" multiple>
+          </div>
+          <div id="qaPhotoPreview" class="photo-preview"></div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">登録</button>
+      </form>
+    </div>
+
+    <!-- 履歴 -->
+    <div id="history" class="tab-content">
+      <h2 style="margin-bottom:16px;color:#667eea;">異常履歴</h2>
+
+      <div class="filter-panel">
+        <div class="filter-header">
+          <div class="filter-title">🔍 フィルター検索</div>
+        </div>
+        <div class="filter-grid">
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:.9rem;margin-bottom:6px;">部署</label>
+            <select id="filterDepartment">
+              <option value="">すべて</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:.9rem;margin-bottom:6px;">整理No</label>
+            <input type="text" id="filterSerialNo" placeholder="部分一致検索">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:.9rem;margin-bottom:6px;">ライン名</label>
+            <select id="filterLine">
+              <option value="">すべて</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;margin-top:12px;">
+          <label style="font-size:.9rem;margin-bottom:6px;">発生日</label>
+          <div class="filter-date-group">
+            <button type="button" class="date-btn" id="btnFilterYesterday">昨日</button>
+            <button type="button" class="date-btn" id="btnFilterToday">今日</button>
+            <input type="date" id="filterDateFrom" placeholder="開始日">
+            <span style="color:#666;">〜</span>
+            <input type="date" id="filterDateTo" placeholder="終了日">
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="button" class="btn-filter-apply" id="btnApplyFilter">検索</button>
+          <button type="button" class="btn-filter-clear" id="btnClearFilter">クリア</button>
+        </div>
+        <div class="filter-result-count" id="filterResultCount" style="display:none;">
+          <strong>0</strong> 件の履歴が見つかりました
+        </div>
+      </div>
+
+      <div class="history-controls">
+        <div class="view-toggle"><button class="active" data-view="card">カード</button><button data-view="table">テーブル</button></div>
+        <button class="btn btn-secondary" style="flex:1;" id="btnImport">📤 CSVインポート</button>
+        <button class="btn btn-export" style="flex:1;" id="btnExport">📥 CSV出力</button>
+      </div>
+      <div id="cardView" class="card-view"></div>
+      <div id="tableView" class="table-view"></div>
+    </div>
+
+    <!-- 管理 -->
+    <div id="master" class="tab-content">
+      <h2 style="margin-bottom:16px;color:#667eea;">⚙️ マスタ管理</h2>
+      <div style="background:#fff;padding:18px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:16px;">
+        <h3 style="color:#667eea;margin-bottom:10px;">部署管理</h3>
+        <div style="display:flex;gap:10px;margin-bottom:12px;">
+          <input type="text" id="newDepartment" placeholder="新しい部署名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;" id="btnAddDept">追加</button>
+        </div>
+        <div id="departmentList" style="display:grid;gap:8px;"></div>
+      </div>
+
+      <div style="background:#fff;padding:18px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-bottom:16px;">
+        <h3 style="color:#f57c00;margin-bottom:10px;">ライン名管理</h3>
+        <div class="form-group"><label>対象部署</label><select id="lineManageDept"><option value="">部署を選択</option></select></div>
+        <div style="display:flex;gap:10px;margin-bottom:12px;">
+          <input type="text" id="newLine" placeholder="新しいライン名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#f57c00;" id="btnAddLine">追加</button>
+        </div>
+        <div id="lineList" style="display:grid;gap:8px;"></div>
+      </div>
+
+      <div style="background:#fff;padding:18px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+        <h3 style="color:#2e7d32;margin-bottom:10px;">処置者管理</h3>
+        <div class="form-group"><label>対象部署</label><select id="handlerManageDept"><option value="">部署を選択</option></select></div>
+        <div style="display:flex;gap:10px;margin-bottom:12px;">
+          <input type="text" id="newHandler" placeholder="新しい処置者名" style="flex:1;padding:10px;border:2px solid #e0e0e0;border-radius:6px;">
+          <button class="btn btn-primary" style="width:auto;padding:10px 20px;margin:0;background:#2e7d32;" id="btnAddHandler">追加</button>
+        </div>
+        <div id="handlerList" style="display:grid;gap:8px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 写真モーダル -->
+  <div id="photoModal" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:800px;">
+      <h3 class="modal-title">📷 写真一覧</h3>
+      <div id="photoModalContent" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin:20px 0;"></div>
+      <button class="btn btn-cancel" id="btnPhotoClose">閉じる</button>
+    </div>
+  </div>
+
+  <!-- CSVインポートモーダル（既存） -->
+  <div id="importModal" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:920px;">
+      <h3 class="modal-title">📤 CSVインポート</h3>
+      <div id="importModalInner"><!-- JSが中身を描画 --></div>
+      <div class="modal-actions" style="margin-top:12px;">
+        <button class="btn btn-cancel" id="btnImportCancel" style="flex:1;">閉じる</button>
+        <button class="btn btn-primary" id="btnImportStart" style="flex:1;">インポート開始</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 類似案件詳細モーダル -->
+  <div id="similarCaseDetailModal" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:900px;">
+      <h3 class="modal-title">📋 類似案件の詳細</h3>
+      <div id="similarCaseDetailContent" style="margin:20px 0;"></div>
+      <button class="btn btn-cancel" id="btnSimilarCaseDetailClose">閉じる</button>
+    </div>
+  </div>
+
+  <!-- ✏️ 編集モーダル（★品質タブ追加済み） -->
+  <div id="editModal" class="modal" aria-hidden="true">
+    <div class="modal-content" style="max-width:920px;">
+      <div class="modal-title">✏️ 履歴レコード編集</div>
+      <div class="edit-tabs">
+        <button class="edit-tab active" data-edit-tab="mfg">製造</button>
+        <button class="edit-tab" data-edit-tab="tech">技術</button>
+        <button class="edit-tab" data-edit-tab="qa">品質</button><!-- ★ 新規 -->
+      </div>
+
+      <!-- 製造編集 -->
+      <div id="editMfg" class="edit-pane">
+        <div class="form-group"><label>発生日 *</label><input type="date" id="edit_occurrenceDate"></div>
+        <div class="form-group"><label>発生時刻 / 再開時刻</label><div class="time-group"><input type="time" id="edit_occurrenceTime"><input type="time" id="edit_restartTime"></div></div>
+        <div class="form-group"><label>部署 *</label><select id="edit_department"></select></div>
+        <div class="form-group"><label>ライン名 *</label><select id="edit_lineName"></select></div>
+        <div class="form-group"><label>処置者 *</label><select id="edit_handler"></select></div>
+        <div class="form-group"><label>整理No *</label><input type="text" id="edit_serialNo"></div>
+        <div class="form-group"><label>異常内容 *</label><textarea id="edit_anomalyContent"></textarea></div>
+        <div class="form-group"><label>対応内容 *</label><textarea id="edit_actionTaken"></textarea></div>
+        <div class="form-group"><label>遡り *</label><select id="edit_traceback"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>技術要請 *</label><select id="edit_techRequest"><option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option></select></div>
+        <!-- ★ 追加：品質要請 -->
+        <div class="form-group"><label>品質要請 *</label>
+          <select id="edit_qaRequest">
+            <option value="">選択</option>
+            <option value="要請">品質要請あり</option>
+            <option value="無">不要</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 技術編集 -->
+      <div id="editTech" class="edit-pane" style="display:none;">
+        <div class="form-group"><label>技術処置者</label><input type="text" id="edit_techHandler"></div>
+        <div class="form-group"><label>発見タイミング</label>
+          <select id="edit_discoveryTiming">
+            <option value="">選択</option>
+            <option value="運転中">運転中</option>
+            <option value="頭出し">頭出し</option>
+            <option value="初物">初物</option>
+            <option value="終物">終物</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group"><label>前回終物確認</label>
+          <select id="edit_previousCheck">
+            <option value="">選択</option>
+            <option value="不要">不要</option>
+            <option value="未">未</option>
+            <option value="確認済">確認済</option>
+          </select>
+        </div>
+        <div class="form-group"><label>命数有無</label><select id="edit_lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
+        <div class="form-group"><label>命数到達</label>
+          <select id="edit_lifespanReached">
+            <option value="">選択</option>
+            <option value="至">至</option>
+            <option value="不達">不達</option>
+          </select>
+        </div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
+        <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+        <div class="form-group"><label>暫定</label>
+          <select id="edit_affirmation">
+            <option value="">選択</option>
+            <option value="有">有</option>
+            <option value="無">無</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ★ 品質編集 -->
+      <div id="editQA" class="edit-pane" style="display:none;">
+        <div class="form-group">
+          <label>判断</label>
+          <select id="edit_qaJudge">
+            <option value="">選択</option>
+            <option value="保留">保留</option>
+            <option value="廃棄">廃棄</option>
+            <option value="流動">流動</option>
+            <option value="選別">選別</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>判定者</label>
+          <input type="text" id="edit_qaJudgeBy">
+        </div>
+        <div class="form-group">
+          <label>備考</label>
+          <textarea id="edit_qaNote" placeholder="必要に応じて記載"></textarea>
+        </div>
+        <div class="form-group">
+          <label>（参考）品質写真枚数</label>
+          <input type="text" id="edit_qaPhotoCount" disabled placeholder="保存済みの写真枚数を表示">
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-cancel" id="btnEditCancel" style="flex:1;">キャンセル</button>
+        <button class="btn btn-primary" id="btnEditSave" style="flex:1;">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- スクリプト（Part 2/3・Part 3/3で挿入） -->
+  <script type="module">
+/* =========================
+   Part 2/3  JavaScript
+   ========================= */
+
+/* ==== Firebase CDN Imports (v10+) ==== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import {
+  getFirestore, collection, doc, addDoc, getDoc, getDocs, setDoc,
+  updateDoc, query, where, orderBy, serverTimestamp, limit
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+import {
+  getStorage, ref as storageRef, uploadBytes, getDownloadURL, listAll, deleteObject
+} from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
+
+/* ==== Firebase Config（ユーザー提供プロジェクト）==== */
+const firebaseConfig = {
+  apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
+  authDomain: "abnreport-fd733.firebaseapp.com",
+  databaseURL: "https://abnreport-fd733-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "abnreport-fd733",
+  storageBucket: "abnreport-fd733.appspot.com",
+  appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const st = getStorage(app);
+
+/* ==== State ==== */
+const state = {
+  user: null,
+  masters: {
+    departments: [],        // [{id, name}]
+    linesByDept: {},        // { deptName: [lineName,...] }
+    handlersByDept: {},     // { deptName: [handlerName,...] }
+    serialNos: []           // for datalist
+  },
+  cache: {
+    history: [],            // last fetched anomalies records
+  },
+  ui: {
+    historyView: "card",    // or "table"
+    filter: {
+      department: "",
+      line: "",
+      serialLike: "",
+      dateFrom: "",
+      dateTo: ""
+    },
+    editTargetId: null,
+    editTargetData: null
+  }
+};
+
+/* ==== Helpers ==== */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+const show = el => el && (el.style.display = "");
+const hide = el => el && (el.style.display = "none");
+
+function ymd(date = new Date()) {
+  const z = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${z(date.getMonth()+1)}-${z(date.getDate())}`;
+}
+
+function stopMinutesStr(occ, re) {
+  if (!occ || !re) return null;
+  const [ho, mo] = occ.split(":").map(Number);
+  const [hr, mr] = re.split(":").map(Number);
+  let start = ho * 60 + mo;
+  let end = hr * 60 + mr;
+  if (end < start) end += 24 * 60; // 日跨ぎは現状維持
+  const mins = end - start;
+  return mins;
+}
+
+function esc(s) {
+  return (s ?? "").toString().replace(/[&<>"']/g, m => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[m]));
+}
+
+/** 完了条件（品質版含む）
+ *  - 品質要請=要請 の場合：qaJudge（判断）とqaJudgeBy（判定者）が入っていれば完了
+ *  - 技術要請=要請 の場合：tech側の必要フィールド（techHandler, discoveryTiming, affirmation）が入っていれば完了
+ *  - 上記いずれも要請でない：製造側入力済みなら完了
+ */
+function isCompleted(rec) {
+  const techReq = rec.techRequest || "";
+  const qaReq = rec.qaRequest || "";
+  if (qaReq === "要請") {
+    return !!(rec.qaJudge && rec.qaJudgeBy);
+  }
+  if (techReq === "要請") {
+    return !!(rec.techHandler && rec.discoveryTiming && rec.affirmation);
+  }
+  // 両方とも要請でない → 製造入力が揃っていれば完了
+  return !!(rec.department && rec.lineName && rec.handler && rec.serialNo && rec.anomalyContent && rec.actionTaken);
+}
+
+function computeStatus(rec) {
+  return isCompleted(rec) ? "complete" : "pending";
+}
+
+/* ==== Auth ==== */
+const authGate = $("#authGate");
+const appRoot = $("#appRoot");
+const authMsg = $("#authMsg");
+$("#authLoginBtn")?.addEventListener("click", async () => {
+  authMsg.textContent = "";
+  const email = $("#authEmail").value.trim();
+  const pass = $("#authPassword").value;
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch (e) {
+    authMsg.textContent = "ログイン失敗：" + (e?.message ?? e);
+  }
+});
+$("#signOutBtn")?.addEventListener("click", async () => {
+  await signOut(auth);
+});
+
+onAuthStateChanged(auth, async (user) => {
+  state.user = user;
+  if (user) {
+    hide(authGate);
+    show(appRoot);
+    show($("#signOutBtn"));
+    await initMasters();
+    wireTabs();
+    wireHistoryViewToggle();
+    wireFilters();
+    wireNowButtons();
+    wireFilePreviews();
+    wireModals();
+    wireForms();
+    await refreshSerialNoHints();
+    await fetchAndRenderHistory();
+  } else {
+    show(authGate);
+    hide(appRoot);
+    hide($("#signOutBtn"));
+  }
+});
+
+/* ==== Masters ==== */
+// Firestore構成（簡易想定）
+// - masters/departments {list: ["製造1","製造2",...]}
+// - masters/lines_{dept} {list: ["LO1","LO2",...]}
+// - masters/handlers_{dept} {list: ["山田","佐藤",...]}
+// ※ Part3で管理画面から保存できるようにします。
+async function initMasters() {
+  // 部署
+  const depDoc = await getDoc(doc(db, "masters", "departments"));
+  if (depDoc.exists()) {
+    state.masters.departments = (depDoc.data().list || []).map((name, idx) => ({ id: String(idx), name }));
+  } else {
+    state.masters.departments = [];
+  }
+  // ライン/処置者は部署ごとに取得
+  state.masters.linesByDept = {};
+  state.masters.handlersByDept = {};
+  for (const d of state.masters.departments) {
+    const li = await getDoc(doc(db, "masters", `lines_${d.name}`));
+    state.masters.linesByDept[d.name] = (li.exists() ? (li.data().list || []) : []);
+    const hd = await getDoc(doc(db, "masters", `handlers_${d.name}`));
+    state.masters.handlersByDept[d.name] = (hd.exists() ? (hd.data().list || []) : []);
+  }
+  renderMasterOptions();
+}
+
+function renderMasterOptions() {
+  const depSelects = ["#department", "#edit_department", "#filterDepartment", "#lineManageDept", "#handlerManageDept"]
+    .map(id => $(id)).filter(Boolean);
+  depSelects.forEach(sel => {
+    const keep = sel.value;
+    sel.innerHTML = "";
+    const isFilter = sel.id === "filterDepartment";
+    if (isFilter) {
+      sel.insertAdjacentHTML("beforeend", `<option value="">すべて</option>`);
+    } else {
+      sel.insertAdjacentHTML("beforeend", `<option value="">選択</option>`);
+    }
+    state.masters.departments.forEach(d => {
+      sel.insertAdjacentHTML("beforeend", `<option value="${esc(d.name)}">${esc(d.name)}</option>`);
+    });
+    if (keep) sel.value = keep;
+  });
+
+  // 初期ライン・処置者は部署選択に連動
+  bindDeptCascades();
+}
+
+function bindDeptCascades() {
+  function setup(deptSelId, lineSelId, handlerSelId) {
+    const deptSel = $(deptSelId);
+    const lineSel = $(lineSelId);
+    const handlerSel = $(handlerSelId);
+    if (!deptSel) return;
+    deptSel.addEventListener("change", () => {
+      const dept = deptSel.value;
+      // line
+      if (lineSel) {
+        lineSel.innerHTML = "";
+        lineSel.insertAdjacentHTML("beforeend", `<option value="">${dept ? "選択" : "部署を先に選択してください"}</option>`);
+        (state.masters.linesByDept[dept] || []).forEach(l =>
+          lineSel.insertAdjacentHTML("beforeend", `<option>${esc(l)}</option>`));
+      }
+      // handler
+      if (handlerSel) {
+        handlerSel.innerHTML = "";
+        handlerSel.insertAdjacentHTML("beforeend", `<option value="">${dept ? "選択" : "部署を先に選択してください"}</option>`);
+        (state.masters.handlersByDept[dept] || []).forEach(h =>
+          handlerSel.insertAdjacentHTML("beforeend", `<option>${esc(h)}</option>`));
+      }
+    });
+  }
+  setup("#department", "#lineName", "#handler");
+  setup("#edit_department", "#edit_lineName", "#edit_handler");
+  // 履歴フィルタ用ライン
+  const filterDept = $("#filterDepartment");
+  const filterLine = $("#filterLine");
+  filterDept?.addEventListener("change", () => {
+    const dept = filterDept.value;
+    filterLine.innerHTML = `<option value="">すべて</option>`;
+    (state.masters.linesByDept[dept] || []).forEach(l =>
+      filterLine.insertAdjacentHTML("beforeend", `<option>${esc(l)}</option>`));
+  });
+}
+
+/* ==== Tabs ==== */
+function wireTabs() {
+  $$(".tabs .tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $$(".tabs .tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const id = btn.dataset.tab;
+      $$(".tab-content").forEach(tc => tc.classList.remove("active"));
+      $(`#${id}`).classList.add("active");
+    });
+  });
+
+  // 編集モーダル内タブ
+  $$(".edit-tabs .edit-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $$(".edit-tabs .edit-tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const id = btn.dataset.editTab;
+      $("#editMfg").style.display = (id === "mfg") ? "" : "none";
+      $("#editTech").style.display = (id === "tech") ? "" : "none";
+      $("#editQA").style.display = (id === "qa") ? "" : "none";
+    });
+  });
+}
+
+/* ==== Filters & View Toggle ==== */
+function wireHistoryViewToggle() {
+  const wrap = $(".view-toggle");
+  wrap?.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    $$(".view-toggle button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    state.ui.historyView = b.dataset.view;
+    $("#cardView").classList.toggle("active", state.ui.historyView === "card");
+    $("#tableView").classList.toggle("active", state.ui.historyView === "table");
+    renderHistory(state.cache.history); // 再描画
+  });
+  // 初期
+  $("#cardView").classList.add("active");
+}
+
+function wireFilters() {
+  $("#btnFilterYesterday")?.addEventListener("click", () => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    $("#filterDateFrom").value = ymd(d);
+    $("#filterDateTo").value = ymd(d);
+  });
+  $("#btnFilterToday")?.addEventListener("click", () => {
+    const d = ymd(new Date());
+    $("#filterDateFrom").value = d;
+    $("#filterDateTo").value = d;
+  });
+  $("#btnApplyFilter")?.addEventListener("click", async () => {
+    await fetchAndRenderHistory();
+  });
+  $("#btnClearFilter")?.addEventListener("click", async () => {
+    $("#filterDepartment").value = "";
+    $("#filterLine").value = "";
+    $("#filterSerialNo").value = "";
+    $("#filterDateFrom").value = "";
+    $("#filterDateTo").value = "";
+    await fetchAndRenderHistory();
+  });
+
+  // インポート/エクスポートは Part3 で実装。ここでは存在チェックして安全に無効化。
+  $("#btnExport")?.addEventListener("click", () => {
+    if (typeof window.exportCSV === "function") return window.exportCSV();
+    alert("CSV出力は後続パート（Part 3/3）で有効になります。");
+  });
+  $("#btnImport")?.addEventListener("click", () => {
+    if (typeof window.openImportModal === "function") return window.openImportModal();
+    alert("CSVインポートは後続パート（Part 3/3）で有効になります。");
+  });
+}
+
+function wireNowButtons() {
+  $("#btnNowDate")?.addEventListener("click", () => { $("#occurrenceDate").value = ymd(); });
+  $$("button[data-now]").forEach(b => {
+    b.addEventListener("click", () => {
+      const id = b.dataset.now;
+      const d = new Date();
+      const z = n => String(n).padStart(2, "0");
+      $(`#${id}`).value = `${z(d.getHours())}:${z(d.getMinutes())}`;
+    });
+  });
+}
+
+/* ==== File Previews ==== */
+function wireFilePreviews() {
+  // 製造
+  $("#mfgPhotos")?.addEventListener("change", (e) => {
+    drawPreview(e.target.files, $("#mfgPhotoPreview"));
+  });
+  // 技術
+  $("#techPhotos")?.addEventListener("change", (e) => {
+    drawPreview(e.target.files, $("#techPhotoPreview"));
+  });
+  // 品質
+  $("#qaPhotos")?.addEventListener("change", (e) => {
+    drawPreview(e.target.files, $("#qaPhotoPreview"));
+  });
+}
+
+function drawPreview(fileList, wrap) {
+  wrap.innerHTML = "";
+  [...fileList].forEach((f, i) => {
+    const url = URL.createObjectURL(f);
+    wrap.insertAdjacentHTML("beforeend", `
+      <div class="photo-item" data-idx="${i}">
+        <img src="${url}" alt="preview">
+        <button type="button" class="remove-btn" aria-label="remove">×</button>
+      </div>
+    `);
+  });
+  wrap.addEventListener("click", (e) => {
+    const btn = e.target.closest(".remove-btn");
+    if (!btn) return;
+    const item = btn.closest(".photo-item");
+    const idx = Number(item.dataset.idx);
+    // FileListは直接削除不可。残したいものだけで新DataTransferを作る
+    const input = wrap.previousElementSibling?.querySelector("input[type=file]") || wrap.parentElement.querySelector("input[type=file]");
+    const dt = new DataTransfer();
+    [...input.files].forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+    input.files = dt.files;
+    drawPreview(input.files, wrap);
+  }, { once: true });
+}
+
+/* ==== Modals ==== */
+function wireModals() {
+  $("#btnPhotoClose")?.addEventListener("click", () => $("#photoModal").classList.remove("active"));
+  $("#btnSimilarCaseDetailClose")?.addEventListener("click", () => $("#similarCaseDetailModal").classList.remove("active"));
+
+  $("#btnEditCancel")?.addEventListener("click", () => {
+    $("#editModal").classList.remove("active");
+    state.ui.editTargetId = null; state.ui.editTargetData = null;
+  });
+  $("#btnEditSave")?.addEventListener("click", async () => {
+    if (!state.ui.editTargetId) return;
+    try {
+      await saveEditModal();
+      $("#editModal").classList.remove("active");
+      await fetchAndRenderHistory();
+    } catch (e) {
+      alert("保存に失敗しました：" + (e?.message ?? e));
+    }
+  });
+}
+
+/* ==== Forms ==== */
+function wireForms() {
+  // 製造フォーム
+  $("#manufacturingForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = {
+      occurrenceDate: $("#occurrenceDate").value || null,
+      occurrenceTime: $("#occurrenceTime").value || null,
+      restartTime: $("#restartTime").value || null,
+      department: $("#department").value || "",
+      lineName: $("#lineName").value || "",
+      handler: $("#handler").value || "",
+      serialNo: $("#serialNo").value || "",
+      anomalyContent: $("#anomalyContent").value || "",
+      actionTaken: $("#actionTaken").value || "",
+      traceback: $("#traceback").value || "",
+      techRequest: $("#techRequest").value || "",
+      qaRequest: $("#qaRequest").value || "",          // ★ 製造にも品質要請
+      createdBy: state.user?.uid || null,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    // 簡易バリデーション
+    if (!data.occurrenceDate || !data.department || !data.lineName || !data.handler || !data.serialNo || !data.anomalyContent || !data.actionTaken || !data.techRequest || !data.qaRequest) {
+      alert("必須項目が未入力です。");
+      return;
+    }
+    // 先にドキュメント作成 → IDを使って写真保存
+    const docRef = await addDoc(collection(db, "anomalies"), data);
+    // 写真（製造）
+    const mfgFiles = $("#mfgPhotos").files;
+    const mfgUrls = await uploadPhotoFiles(docRef.id, "mfg", mfgFiles);
+    if (mfgUrls.length) {
+      await updateDoc(docRef, { mfgPhotoUrls: mfgUrls, updatedAt: serverTimestamp() });
+    }
+    // 完了
+    alert("登録しました。");
+    e.target.reset();
+    $("#mfgPhotoPreview").innerHTML = "";
+    await refreshSerialNoHints();
+    await fetchAndRenderHistory();
+  });
+
+  // 技術フォーム
+  $("#technicalForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = $("#selectSerialNo")?.value || "";
+    if (!id) return alert("対象件名を選択してください。");
+    const payload = {
+      techHandler: $("#techHandler").value || "",
+      discoveryTiming: $("#discoveryTiming").value || "",
+      previousCheck: $("#previousCheck").value || "",
+      lifespan: $("#lifespan").value || "",
+      lifespanReached: $("#lifespanReached").value || "",
+      maintenanceUnit: $("#maintenanceUnit").value || "",
+      rootCauseAction: $("#rootCauseAction").value || "",
+      recurrenceType: $("#recurrenceType").value || "",
+      affirmation: $("#affirmation").value || "",
+      updatedAt: serverTimestamp(),
+    };
+    const refDoc = doc(db, "anomalies", id);
+    await updateDoc(refDoc, payload);
+
+    // 写真（技術）
+    const techFiles = $("#techPhotos").files;
+    const techUrls = await uploadPhotoFiles(id, "tech", techFiles);
+    if (techUrls.length) {
+      const curr = await getDoc(refDoc);
+      const exist = curr.exists() ? (curr.data().techPhotoUrls || []) : [];
+      await updateDoc(refDoc, { techPhotoUrls: [...exist, ...techUrls], updatedAt: serverTimestamp() });
+    }
+    alert("技術入力を保存しました。");
+    e.target.reset();
+    $("#techPhotoPreview").innerHTML = "";
+    await fetchAndRenderHistory();
+  });
+
+  // 品質フォーム
+  $("#qualityForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = $("#selectSerialNoQA").value || "";
+    if (!id) return alert("対象件名を選択してください。");
+    const payload = {
+      qaJudge: $("#qaJudge").value || "",
+      qaJudgeBy: $("#qaJudgeBy").value || "",
+      qaNote: $("#qaNote").value || "",
+      updatedAt: serverTimestamp(),
+    };
+    const refDoc = doc(db, "anomalies", id);
+    await updateDoc(refDoc, payload);
+    // 写真（品質）
+    const qaFiles = $("#qaPhotos").files;
+    const qaUrls = await uploadPhotoFiles(id, "qa", qaFiles);
+    if (qaUrls.length) {
+      const curr = await getDoc(refDoc);
+      const exist = curr.exists() ? (curr.data().qaPhotoUrls || []) : [];
+      await updateDoc(refDoc, { qaPhotoUrls: [...exist, ...qaUrls], updatedAt: serverTimestamp() });
+    }
+    alert("品質入力を保存しました。");
+    e.target.reset();
+    $("#qaPhotoPreview").innerHTML = "";
+    await fetchAndRenderHistory();
+  });
+
+  // 発見タイミング＝初物 → 前回終物確認の表示切替
+  $("#discoveryTiming")?.addEventListener("change", () => {
+    $("#previousCheckGroup").style.display = ($("#discoveryTiming").value === "初物") ? "" : "none";
+  });
+}
+
+/* ==== Upload Helpers ==== */
+async function uploadPhotoFiles(docId, folder, fileList) {
+  if (!fileList || !fileList.length) return [];
+  const urls = [];
+  for (const f of fileList) {
+    const path = `anomalies/${docId}/${folder}/${Date.now()}_${f.name}`;
+    const ref = storageRef(st, path);
+    await uploadBytes(ref, f);
+    const url = await getDownloadURL(ref);
+    urls.push(url);
+  }
+  return urls;
+}
+
+/* ==== SerialNo ヒント ==== */
+async function refreshSerialNoHints() {
+  // 直近のserialNoを収集
+  const qy = query(collection(db, "anomalies"), orderBy("createdAt", "desc"), limit(200));
+  const ss = await getDocs(qy);
+  const set = new Set();
+  ss.forEach(d => {
+    const sn = d.data().serialNo || "";
+    if (sn) set.add(sn);
+  });
+  state.masters.serialNos = [...set];
+  const dl = $("#serialNoList");
+  if (dl) {
+    dl.innerHTML = "";
+    state.masters.serialNos.forEach(sn => dl.insertAdjacentHTML("beforeend", `<option value="${esc(sn)}"></option>`));
+  }
+}
+
+/* ==== History Fetch & Render ==== */
+async function fetchAndRenderHistory() {
+  // ベースは最近順
+  let qy = query(collection(db, "anomalies"), orderBy("createdAt", "desc"));
+  // 取得 → フロントでフィルタ（Firestore複合インデックスを回避）
+  const ss = await getDocs(qy);
+  let rows = ss.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // フロントフィルタ
+  const fDept = $("#filterDepartment").value || "";
+  const fLine = $("#filterLine").value || "";
+  const fSerial = $("#filterSerialNo").value?.trim() || "";
+  const df = $("#filterDateFrom").value || "";
+  const dt = $("#filterDateTo").value || "";
+
+  if (fDept) rows = rows.filter(r => (r.department || "") === fDept);
+  if (fLine) rows = rows.filter(r => (r.lineName || "") === fLine);
+  if (fSerial) rows = rows.filter(r => (r.serialNo || "").includes(fSerial));
+  if (df) rows = rows.filter(r => (r.occurrenceDate || "") >= df);
+  if (dt) rows = rows.filter(r => (r.occurrenceDate || "") <= dt);
+
+  state.cache.history = rows;
+  $("#filterResultCount").style.display = "";
+  $("#filterResultCount").innerHTML = `<strong>${rows.length}</strong> 件の履歴が見つかりました`;
+  // セレクト用（技術・品質）
+  fillSerialSelectors(rows);
+  renderHistory(rows);
+}
+
+function fillSerialSelectors(rows) {
+  const selTech = $("#selectSerialNo");
+  const selQA = $("#selectSerialNoQA");
+  if (selTech) {
+    const keep = selTech.value;
+    selTech.innerHTML = `<option value="">案件を選択してください</option>`;
+    rows.forEach(r => selTech.insertAdjacentHTML("beforeend",
+      `<option value="${r.id}">${esc(r.serialNo)}｜${esc(r.department)}｜${esc(r.lineName)}｜${esc(r.occurrenceDate || "")}</option>`));
+    selTech.value = keep;
+    selTech.onchange = async () => {
+      const id = selTech.value;
+      if (!id) { $("#selectedDataDisplay").style.display = "none"; $("#displayContent").innerHTML = ""; return; }
+      const r = rows.find(x => x.id === id);
+      $("#selectedDataDisplay").style.display = "";
+      $("#displayContent").innerHTML = `
+        <div class="card-meta">
+          <div class="card-meta-item"><div class="card-meta-label">整理No</div><div class="card-meta-value">${esc(r.serialNo || "")}</div></div>
+          <div class="card-meta-item"><div class="card-meta-label">異常内容</div><div class="card-meta-value">${esc(r.anomalyContent || "")}</div></div>
+          <div class="card-meta-item"><div class="card-meta-label">対応内容</div><div class="card-meta-value">${esc(r.actionTaken || "")}</div></div>
+        </div>`;
+    };
+  }
+  if (selQA) {
+    const keep = selQA.value;
+    selQA.innerHTML = `<option value="">案件を選択してください</option>`;
+    rows.forEach(r => selQA.insertAdjacentHTML("beforeend",
+      `<option value="${r.id}">${esc(r.serialNo)}｜${esc(r.department)}｜${esc(r.lineName)}｜${esc(r.occurrenceDate || "")}</option>`));
+    selQA.value = keep;
+  }
+}
+
+function renderHistory(rows) {
+  if (state.ui.historyView === "card") {
+    renderCardView(rows);
+  } else {
+    renderTableView(rows);
+  }
+}
+
+function renderCardView(rows) {
+  const wrap = $("#cardView");
+  wrap.innerHTML = "";
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🈳</div>データがありません</div>`;
+    return;
+  }
+  rows.forEach(r => {
+    const status = computeStatus(r);
+    const stop = stopMinutesStr(r.occurrenceTime, r.restartTime);
+    let stopClass = "stop-badge";
+    if (stop != null) {
+      if (stop >= 60) stopClass += " danger";
+      else if (stop >= 30) stopClass += " warn";
+    }
+    const mfgPhotos = (r.mfgPhotoUrls || []).slice(0, 4).map(u =>
+      `<div class="photo-thumb-compact"><img src="${esc(u)}" alt=""></div>`).join("");
+    const techInfo = `
+      <div class="tech-info-item"><div class="tech-info-label">技術要請</div><div class="tech-info-value">${esc(r.techRequest || "")}</div></div>
+      <div class="tech-info-item"><div class="tech-info-label">品質要請</div><div class="tech-info-value">${esc(r.qaRequest || "")}</div></div>
+      <div class="tech-info-item"><div class="tech-info-label">発見タイミング</div><div class="tech-info-value">${esc(r.discoveryTiming || "-")}</div></div>
+      <div class="tech-info-item"><div class="tech-info-label">暫定</div><div class="tech-info-value">${esc(r.affirmation || "-")}</div></div>
+    `;
+    wrap.insertAdjacentHTML("beforeend", `
+      <div class="anomaly-card ${status === "complete" ? "complete" : ""}">
+        <div class="card-left">
+          <div class="card-id">#${esc(r.serialNo || "")}</div>
+          <div class="card-status ${status === "complete" ? "status-complete" : "status-pending"}">
+            ${status === "complete" ? "完了" : "未完了"}
+          </div>
+          <div class="card-meta">
+            <div class="card-meta-item">
+              <div class="card-meta-label">発生日</div>
+              <div class="card-meta-value">${esc(r.occurrenceDate || "-")} ${esc(r.occurrenceTime || "")}</div>
+            </div>
+            <div class="card-meta-item">
+              <div class="card-meta-label">部署/ライン</div>
+              <div class="card-meta-value">${esc(r.department || "-")} / ${esc(r.lineName || "-")}</div>
+            </div>
+            <div class="card-meta-item">
+              <div class="card-meta-label">処置者</div>
+              <div class="card-meta-value">${esc(r.handler || "-")}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-center">
+          <div class="card-content-section">
+            <div class="card-content-label">異常内容</div>
+            <div class="card-content-text">${esc(r.anomalyContent || "-")}</div>
+          </div>
+          <div class="card-content-section">
+            <div class="card-content-label">対応内容</div>
+            <div class="card-content-text">${esc(r.actionTaken || "-")}</div>
+          </div>
+          <div class="card-tech-info">${techInfo}</div>
+          <div class="card-content-section">
+            <div class="card-content-label">品質判断</div>
+            <div class="card-content-text">${esc(r.qaJudge || "-")}（${esc(r.qaJudgeBy || "-")}） ${esc(r.qaNote || "")}</div>
+          </div>
+        </div>
+
+        <div class="card-right">
+          <div class="card-photos-compact">
+            ${mfgPhotos || ""}
+          </div>
+          <div class="photo-count-badge">
+            製造:${(r.mfgPhotoUrls||[]).length} / 技術:${(r.techPhotoUrls||[]).length} / 品質:${(r.qaPhotoUrls||[]).length}
+          </div>
+          <div class="action-btns">
+            <button class="btn-small btn-edit" data-id="${r.id}">編集</button>
+            <button class="btn-small btn-delete" data-id="${r.id}">削除</button>
+            ${(r.mfgPhotoUrls?.length || r.techPhotoUrls?.length || r.qaPhotoUrls?.length) ? `<button class="btn-small" data-photos="${r.id}">写真</button>` : ""}
+          </div>
+        </div>
+
+        ${stop != null ? `<div class="${stopClass}">停止時間 ${stop} 分</div>` : ""}
+      </div>
+    `);
+  });
+
+  // クリックイベント束ね
+  wrap.addEventListener("click", async (e) => {
+    const btnEdit = e.target.closest(".btn-edit");
+    const btnDel = e.target.closest(".btn-delete");
+    const btnPhoto = e.target.closest("button[data-photos]");
+    if (btnEdit) {
+      const id = btnEdit.dataset.id;
+      const row = state.cache.history.find(x => x.id === id);
+      if (!row) return;
+      openEditModal(row);
+    } else if (btnDel) {
+      const id = btnDel.dataset.id;
+      if (!confirm("このレコードを削除します。よろしいですか？")) return;
+      try {
+        await deleteAnomaly(id);
+        await fetchAndRenderHistory();
+      } catch (err) {
+        alert("削除に失敗：" + (err?.message ?? err));
+      }
+    } else if (btnPhoto) {
+      const id = btnPhoto.dataset.photos;
+      const r = state.cache.history.find(x => x.id === id);
+      openPhotoModal(r);
+    }
+  }, { once: true });
+}
+
+function renderTableView(rows) {
+  const tv = $("#tableView");
+  tv.innerHTML = "";
+  if (!rows.length) {
+    tv.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🈳</div>データがありません</div>`;
+    return;
+  }
+  const ths = [
+    "発生日","発生時刻","再開時刻","停止時間(分)","部署","ライン名","整理No",
+    "異常内容","対応内容","処置者","遡り","技術要請","品質要請","技術処置者","発見タイミング","暫定",
+    "品質判断","品質判定者","品質備考","作成日"
+  ];
+  tv.insertAdjacentHTML("beforeend", `<table><thead><tr>${ths.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody></tbody></table>`);
+  const tb = $("#tableView tbody");
+  rows.forEach(r => {
+    const stop = stopMinutesStr(r.occurrenceTime, r.restartTime);
+    tb.insertAdjacentHTML("beforeend", `
+      <tr>
+        <td>${esc(r.occurrenceDate || "")}</td>
+        <td>${esc(r.occurrenceTime || "")}</td>
+        <td>${esc(r.restartTime || "")}</td>
+        <td>${stop != null ? stop : ""}</td>
+        <td>${esc(r.department || "")}</td>
+        <td>${esc(r.lineName || "")}</td>
+        <td>${esc(r.serialNo || "")}</td>
+        <td>${esc(r.anomalyContent || "")}</td>
+        <td>${esc(r.actionTaken || "")}</td>
+        <td>${esc(r.handler || "")}</td>
+        <td>${esc(r.traceback || "")}</td>
+        <td>${esc(r.techRequest || "")}</td>
+        <td>${esc(r.qaRequest || "")}</td>
+        <td>${esc(r.techHandler || "")}</td>
+        <td>${esc(r.discoveryTiming || "")}</td>
+        <td>${esc(r.affirmation || "")}</td>
+        <td>${esc(r.qaJudge || "")}</td>
+        <td>${esc(r.qaJudgeBy || "")}</td>
+        <td>${esc(r.qaNote || "")}</td>
+        <td>${r.createdAt?.toDate ? ymd(r.createdAt.toDate()) : ""}</td>
+      </tr>
+    `);
+  });
+}
+
+/* ==== Edit Modal ==== */
+function openEditModal(row) {
+  state.ui.editTargetId = row.id;
+  state.ui.editTargetData = row;
+
+  // 製造
+  $("#edit_occurrenceDate").value = row.occurrenceDate || "";
+  $("#edit_occurrenceTime").value = row.occurrenceTime || "";
+  $("#edit_restartTime").value = row.restartTime || "";
+
+  $("#edit_department").value = row.department || "";
+  // 部署に合わせて選択肢再生成
+  $("#edit_department").dispatchEvent(new Event("change"));
+  $("#edit_lineName").value = row.lineName || "";
+  $("#edit_handler").value = row.handler || "";
+
+  $("#edit_serialNo").value = row.serialNo || "";
+  $("#edit_anomalyContent").value = row.anomalyContent || "";
+  $("#edit_actionTaken").value = row.actionTaken || "";
+  $("#edit_traceback").value = row.traceback || "";
+  $("#edit_techRequest").value = row.techRequest || "";
+  $("#edit_qaRequest").value = row.qaRequest || "";
+
+  // 技術
+  $("#edit_techHandler").value = row.techHandler || "";
+  $("#edit_discoveryTiming").value = row.discoveryTiming || "";
+  $("#edit_previousCheck").value = row.previousCheck || "";
+  $("#edit_lifespan").value = row.lifespan || "";
+  $("#edit_lifespanReached").value = row.lifespanReached || "";
+  $("#edit_maintenanceUnit").value = row.maintenanceUnit || "";
+  $("#edit_rootCauseAction").value = row.rootCauseAction || "";
+  $("#edit_recurrenceType").value = row.recurrenceType || "";
+  $("#edit_affirmation").value = row.affirmation || "";
+
+  // 品質
+  $("#edit_qaJudge").value = row.qaJudge || "";
+  $("#edit_qaJudgeBy").value = row.qaJudgeBy || "";
+  $("#edit_qaNote").value = row.qaNote || "";
+  $("#edit_qaPhotoCount").value = (row.qaPhotoUrls || []).length;
+
+  // タブ初期は製造
+  $$(".edit-tabs .edit-tab").forEach(b => b.classList.remove("active"));
+  $(`.edit-tabs .edit-tab[data-edit-tab="mfg"]`).classList.add("active");
+  $("#editMfg").style.display = "";
+  $("#editTech").style.display = "none";
+  $("#editQA").style.display = "none";
+
+  $("#editModal").classList.add("active");
+}
+
+async function saveEditModal() {
+  const id = state.ui.editTargetId;
+  if (!id) return;
+  const payload = {
+    // 製造
+    occurrenceDate: $("#edit_occurrenceDate").value || null,
+    occurrenceTime: $("#edit_occurrenceTime").value || null,
+    restartTime: $("#edit_restartTime").value || null,
+    department: $("#edit_department").value || "",
+    lineName: $("#edit_lineName").value || "",
+    handler: $("#edit_handler").value || "",
+    serialNo: $("#edit_serialNo").value || "",
+    anomalyContent: $("#edit_anomalyContent").value || "",
+    actionTaken: $("#edit_actionTaken").value || "",
+    traceback: $("#edit_traceback").value || "",
+    techRequest: $("#edit_techRequest").value || "",
+    qaRequest: $("#edit_qaRequest").value || "",
+
+    // 技術
+    techHandler: $("#edit_techHandler").value || "",
+    discoveryTiming: $("#edit_discoveryTiming").value || "",
+    previousCheck: $("#edit_previousCheck").value || "",
+    lifespan: $("#edit_lifespan").value || "",
+    lifespanReached: $("#edit_lifespanReached").value || "",
+    maintenanceUnit: $("#edit_maintenanceUnit").value || "",
+    rootCauseAction: $("#edit_rootCauseAction").value || "",
+    recurrenceType: $("#edit_recurrenceType").value || "",
+    affirmation: $("#edit_affirmation").value || "",
+
+    // 品質
+    qaJudge: $("#edit_qaJudge").value || "",
+    qaJudgeBy: $("#edit_qaJudgeBy").value || "",
+    qaNote: $("#edit_qaNote").value || "",
+
+    updatedAt: serverTimestamp(),
+  };
+  await updateDoc(doc(db, "anomalies", id), payload);
+}
+
+/* ==== Delete ==== */
+async function deleteAnomaly(id) {
+  // 写真(サブフォルダ)削除
+  for (const folder of ["mfg","tech","qa"]) {
+    try {
+      const dir = storageRef(st, `anomalies/${id}/${folder}`);
+      const listed = await listAll(dir);
+      await Promise.all(listed.items.map(it => deleteObject(it)));
+    } catch (e) {
+      // フォルダが無いなどは無視
+    }
+  }
+  // 本体
+  await updateDoc(doc(db, "anomalies", id), { __deleted: true, updatedAt: serverTimestamp() });
+  // 物理削除にしたい場合は setDoc/deleteDoc に置換（運用方針に合わせて Part3 で切替可）
+}
+
+/* ==== Photo Modal ==== */
+function openPhotoModal(r) {
+  const wrap = $("#photoModalContent");
+  wrap.innerHTML = "";
+  const all = [
+    ...(r.mfgPhotoUrls || []).map(u => ({u, tag:"製造"})),
+    ...(r.techPhotoUrls || []).map(u => ({u, tag:"技術"})),
+    ...(r.qaPhotoUrls || []).map(u => ({u, tag:"品質"})),
+  ];
+  if (!all.length) {
+    wrap.innerHTML = `<div style="color:#777;">写真がありません。</div>`;
+  } else {
+    all.forEach(p => {
+      wrap.insertAdjacentHTML("beforeend", `
+        <div>
+          <div style="font-weight:600;color:#667eea;margin-bottom:6px;">${p.tag}</div>
+          <img src="${esc(p.u)}" style="width:100%;height:auto;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);" />
+        </div>
+      `);
+    });
+  }
+  $("#photoModal").classList.add("active");
+}
+/* =========================
+   Part 3/3  CSV・マスタ保存・ユーティリティ
+   ========================= */
+
+/* ---- CSV エクスポート ----
+ * ・現在のフィルタ結果（state.cache.history）をそのまま出力
+ * ・配列（写真URLなど）は '|' で連結
+ */
+window.exportCSV = function exportCSV() {
+  const rows = state.cache.history || [];
+  const headers = [
+    "id","occurrenceDate","occurrenceTime","restartTime","department","lineName","handler",
+    "serialNo","anomalyContent","actionTaken","traceback",
+    "techRequest","qaRequest",
+    "techHandler","discoveryTiming","previousCheck","lifespan","lifespanReached",
+    "maintenanceUnit","rootCauseAction","recurrenceType","affirmation",
+    "qaJudge","qaJudgeBy","qaNote",
+    "mfgPhotoUrls","techPhotoUrls","qaPhotoUrls",
+    "createdAt","updatedAt","__deleted"
+  ];
+  const csv = [
+    headers.join(","),
+    ...rows.map(r => headers.map(h => {
+      let v = r[h];
+      if (Array.isArray(v)) v = v.join("|");
+      if (h === "createdAt" || h === "updatedAt") {
+        v = (r[h]?.toDate ? r[h].toDate().toISOString() : (r[h] ?? ""));
+      }
+      const s = (v ?? "").toString().replace(/"/g, '""');
+      return `"${s}"`;
+    }).join(","))
+  ].join("\r\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `anomalies_${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  alert("CSVを出力しました。");
+};
+
+/* ---- CSV インポート ----
+ * UIモーダルなしの軽量版：ファイル選択→プレビュー→取り込み
+ * ・既存id列があれば上書き、無ければ新規 addDoc
+ * ・URL欄はそのまま保存（写真アップロードは対象外）
+ */
+window.openImportModal = function openImportModal() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".csv,text/csv";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const { headers, rows } = parseCSV(text);
+    if (!rows.length) { alert("取り込むデータがありません。"); return; }
+
+    // 先頭数件プレビュー
+    const preview = rows.slice(0, 5).map(r => JSON.stringify(r)).join("\n");
+    const ok = confirm(`以下の形式で取り込みます（先頭5件プレビュー）\n\n${preview}\n\nこのまま実行しますか？`);
+    if (!ok) return;
+
+    // 取り込み
+    let addCount = 0, updCount = 0, errCount = 0;
+    for (const obj of rows) {
+      try {
+        // 配列フィールドの復元（|区切り）
+        for (const k of ["mfgPhotoUrls","techPhotoUrls","qaPhotoUrls"]) {
+          if (obj[k] && typeof obj[k] === "string") {
+            obj[k] = obj[k].split("|").filter(Boolean);
+          }
+        }
+        // createdAt / updatedAt は文字列のまま保持（ISO の場合は後工程で活用可）
+        const id = obj.id?.trim();
+        // 保存禁止キーを整理
+        const payload = { ...obj };
+        delete payload.id;
+
+        // Firestore取込：id有→更新 / 無→追加
+        if (id) {
+          await updateDoc(doc(db, "anomalies", id), payload);
+          updCount++;
+        } else {
+          await addDoc(collection(db, "anomalies"), payload);
+          addCount++;
+        }
+      } catch (e) {
+        console.error("import error:", e);
+        errCount++;
+      }
+    }
+    alert(`インポート完了：追加 ${addCount} / 更新 ${updCount} / エラー ${errCount}`);
+    await refreshSerialNoHints();
+    await fetchAndRenderHistory();
+  });
+  input.click();
+};
+
+/* ---- 簡易 CSV パーサ（ヘッダ必須, RFC厳密でなくOK） ---- */
+function parseCSV(text) {
+  // 行に分割（CRLF/CR/LF対応）
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter(l => l.length);
+  if (!lines.length) return { headers: [], rows: [] };
+
+  const headers = splitCSVLine(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCSVLine(lines[i]);
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = cols[idx] ?? ""; });
+    rows.push(obj);
+  }
+  return { headers, rows };
+}
+
+function splitCSVLine(line) {
+  const out = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i+1] === '"') { cur += '"'; i++; } // エスケープ
+        else { quoted = false; }
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === '"') { quoted = true; }
+      else if (ch === ",") { out.push(cur); cur = ""; }
+      else { cur += ch; }
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+/* ---- マスタ保存（部署・ライン・処置者） ----
+ * 想定UI：
+ *  - 部署タブ:  textarea#deptList （1行1部署） / 保存ボタン #btnSaveDepartments
+ *  - ラインタブ: select#lineManageDept + textarea#lineList / 保存 #btnSaveLines
+ *  - 処置者タブ: select#handlerManageDept + textarea#handlerList / 保存 #btnSaveHandlers
+ */
+$("#btnSaveDepartments")?.addEventListener("click", async () => {
+  const ta = $("#deptList");
+  if (!ta) return alert("部署リストのUIが見つかりません。");
+  const list = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  try {
+    await setDoc(doc(db, "masters", "departments"), { list, updatedAt: serverTimestamp() });
+    alert("部署マスタを保存しました。");
+    await initMasters();
+  } catch (e) {
+    alert("部署マスタの保存に失敗: " + (e?.message ?? e));
+  }
+});
+
+$("#btnSaveLines")?.addEventListener("click", async () => {
+  const dept = $("#lineManageDept")?.value || "";
+  const ta = $("#lineList");
+  if (!dept) return alert("部署を選択してください。");
+  if (!ta) return alert("ラインリストのUIが見つかりません。");
+  const list = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  try {
+    await setDoc(doc(db, "masters", `lines_${dept}`), { list, updatedAt: serverTimestamp() });
+    alert(`ラインマスタ（${dept}）を保存しました。`);
+    await initMasters();
+  } catch (e) {
+    alert("ラインマスタの保存に失敗: " + (e?.message ?? e));
+  }
+});
+
+$("#btnSaveHandlers")?.addEventListener("click", async () => {
+  const dept = $("#handlerManageDept")?.value || "";
+  const ta = $("#handlerList");
+  if (!dept) return alert("部署を選択してください。");
+  if (!ta) return alert("処置者リストのUIが見つかりません。");
+  const list = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  try {
+    await setDoc(doc(db, "masters", `handlers_${dept}`), { list, updatedAt: serverTimestamp() });
+    alert(`処置者マスタ（${dept}）を保存しました。`);
+    await initMasters();
+  } catch (e) {
+    alert("処置者マスタの保存に失敗: " + (e?.message ?? e));
+  }
+});
+
+/* ---- 便利ボタン（昨日/今日の入力）を編集モーダルにも提供する場合の補助 ---- */
+$$("button[data-now-edit]").forEach(b => {
+  b.addEventListener("click", () => {
+    const id = b.dataset.nowEdit;
+    const d = new Date();
+    const z = n => String(n).padStart(2, "0");
+    $(`#${id}`).value = `${z(d.getHours())}:${z(d.getMinutes())}`;
+  });
+});
+$("#btnNowDateEdit")?.addEventListener("click", () => { $("#edit_occurrenceDate").value = ymd(); });
+
+/* ---- 保護: 画面内の欠落UIに対するワーニング（開発時の見落とし検知） ---- */
+(function devGuard() {
+  const missing = [];
+  [
+    ["#btnExport","CSVエクスポートボタン"],
+    ["#btnImport","CSVインポートボタン"],
+    ["#deptList","#btnSaveDepartments（部署保存UI）"],
+    ["#lineManageDept","#btnSaveLines（ライン保存UI）"],
+    ["#handlerManageDept","#btnSaveHandlers（処置者保存UI）"]
+  ].forEach(([sel, label]) => { if (!document.querySelector(sel)) missing.push(label); });
+  if (missing.length) {
+    console.warn("UI未配置の可能性:", missing);
+  }
+})();
+
+  </script>
+</body>
+</html>
