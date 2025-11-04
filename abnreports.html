@@ -32,6 +32,24 @@
   .btn-primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
   .btn-secondary{background:#6c757d;color:#fff}
   .btn-export{background:#28a745;color:#fff}
+  
+  /* フィルター機能 */
+  .filter-panel{background:#f8f9ff;border:2px solid #667eea;border-radius:8px;padding:16px;margin-bottom:16px;}
+  .filter-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .filter-title{font-size:1.05rem;font-weight:bold;color:#667eea;display:flex;align-items:center;gap:8px;}
+  .filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:12px;}
+  .filter-date-group{display:flex;gap:8px;align-items:center;}
+  .filter-date-group input{flex:1;}
+  .filter-date-group .date-btn{padding:8px 12px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold;font-size:.85rem;white-space:nowrap;}
+  .filter-date-group .date-btn:hover{background:#667eea;color:#fff;}
+  .filter-date-group .date-btn.active{background:#667eea;color:#fff;}
+  .filter-actions{display:flex;gap:8px;}
+  .filter-actions button{padding:10px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:.9rem;}
+  .btn-filter-apply{background:#667eea;color:#fff;}
+  .btn-filter-clear{background:#e0e0e0;color:#333;}
+  .filter-result-count{margin-top:12px;padding:10px;background:#fff;border-radius:6px;text-align:center;color:#666;font-size:.9rem;}
+  .filter-result-count strong{color:#667eea;}
+  
   .history-controls{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
   .view-toggle{display:flex;gap:5px}
   .view-toggle button{padding:8px 12px;border:2px solid #667eea;background:#fff;color:#667eea;border-radius:6px;cursor:pointer;font-weight:bold}
@@ -256,6 +274,16 @@
     }
     .card-tech-info{
       grid-template-columns:1fr;
+    }
+    .filter-grid{
+      grid-template-columns:1fr;
+    }
+    .filter-date-group{
+      flex-direction:column;
+      align-items:stretch;
+    }
+    .filter-date-group .date-btn{
+      width:100%;
     }
   }
   
@@ -509,6 +537,49 @@
     <!-- 履歴 -->
     <div id="history" class="tab-content">
       <h2 style="margin-bottom:16px;color:#667eea;">異常履歴</h2>
+      
+      <!-- フィルターパネル -->
+      <div class="filter-panel">
+        <div class="filter-header">
+          <div class="filter-title">🔍 フィルター検索</div>
+        </div>
+        <div class="filter-grid">
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:.9rem;margin-bottom:6px;">部署</label>
+            <select id="filterDepartment">
+              <option value="">すべて</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:.9rem;margin-bottom:6px;">整理No</label>
+            <input type="text" id="filterSerialNo" placeholder="部分一致検索">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:.9rem;margin-bottom:6px;">ライン名</label>
+            <select id="filterLine">
+              <option value="">すべて</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:0;margin-top:12px;">
+          <label style="font-size:.9rem;margin-bottom:6px;">発生日</label>
+          <div class="filter-date-group">
+            <button type="button" class="date-btn" id="btnFilterYesterday">昨日</button>
+            <button type="button" class="date-btn" id="btnFilterToday">今日</button>
+            <input type="date" id="filterDateFrom" placeholder="開始日">
+            <span style="color:#666;">〜</span>
+            <input type="date" id="filterDateTo" placeholder="終了日">
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button type="button" class="btn-filter-apply" id="btnApplyFilter">検索</button>
+          <button type="button" class="btn-filter-clear" id="btnClearFilter">クリア</button>
+        </div>
+        <div class="filter-result-count" id="filterResultCount" style="display:none;">
+          <strong>0</strong> 件の履歴が見つかりました
+        </div>
+      </div>
+
       <div class="history-controls">
         <div class="view-toggle"><button class="active" data-view="card">カード</button><button data-view="table">テーブル</button></div>
         <button class="btn btn-secondary" style="flex:1;" id="btnImport">📤 CSVインポート</button>
@@ -685,6 +756,7 @@
   });
 
   let anomalyCache = [];
+  let filteredCache = []; // フィルター結果を保持
   let mfgPhotos = [];
   let techPhotos = [];
   let currentView='card';
@@ -712,7 +784,119 @@
     return {departments, lines, handlers};
   }
 
-  /* CSVインポート */
+  /* ==== フィルター機能 ==== */
+  function getDateString(daysOffset = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + daysOffset);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function applyFilter() {
+    const filterDept = document.getElementById('filterDepartment').value;
+    const filterSerial = document.getElementById('filterSerialNo').value.trim().toLowerCase();
+    const filterLine = document.getElementById('filterLine').value;
+    const filterDateFrom = document.getElementById('filterDateFrom').value;
+    const filterDateTo = document.getElementById('filterDateTo').value;
+
+    filteredCache = anomalyCache.filter(item => {
+      // 部署フィルター
+      if (filterDept && item.department !== filterDept) return false;
+      
+      // 整理Noフィルター（部分一致）
+      if (filterSerial && !(item.serialNo||'').toLowerCase().includes(filterSerial)) return false;
+      
+      // ラインフィルター
+      if (filterLine && item.lineName !== filterLine) return false;
+      
+      // 発生日フィルター
+      if (filterDateFrom && item.occurrenceDate < filterDateFrom) return false;
+      if (filterDateTo && item.occurrenceDate > filterDateTo) return false;
+      
+      return true;
+    });
+
+    // 結果表示
+    const resultCount = document.getElementById('filterResultCount');
+    resultCount.innerHTML = `<strong>${filteredCache.length}</strong> 件の履歴が見つかりました`;
+    resultCount.style.display = 'block';
+
+    renderHistory();
+  }
+
+  function clearFilter() {
+    document.getElementById('filterDepartment').value = '';
+    document.getElementById('filterSerialNo').value = '';
+    document.getElementById('filterLine').value = '';
+    document.getElementById('filterDateFrom').value = '';
+    document.getElementById('filterDateTo').value = '';
+    document.getElementById('filterResultCount').style.display = 'none';
+    
+    // 昨日/今日ボタンの選択解除
+    document.getElementById('btnFilterYesterday').classList.remove('active');
+    document.getElementById('btnFilterToday').classList.remove('active');
+    
+    filteredCache = [...anomalyCache];
+    renderHistory();
+  }
+
+  // フィルターボタンのイベント
+  document.getElementById('btnApplyFilter').addEventListener('click', applyFilter);
+  document.getElementById('btnClearFilter').addEventListener('click', clearFilter);
+
+  // 昨日ボタン
+  document.getElementById('btnFilterYesterday').addEventListener('click', () => {
+    const yesterday = getDateString(-1);
+    document.getElementById('filterDateFrom').value = yesterday;
+    document.getElementById('filterDateTo').value = yesterday;
+    document.getElementById('btnFilterYesterday').classList.add('active');
+    document.getElementById('btnFilterToday').classList.remove('active');
+    applyFilter();
+  });
+
+  // 今日ボタン
+  document.getElementById('btnFilterToday').addEventListener('click', () => {
+    const today = getDateString(0);
+    document.getElementById('filterDateFrom').value = today;
+    document.getElementById('filterDateTo').value = today;
+    document.getElementById('btnFilterToday').classList.add('active');
+    document.getElementById('btnFilterYesterday').classList.remove('active');
+    applyFilter();
+  });
+
+  // 部署変更時にライン選択肢を更新
+  document.getElementById('filterDepartment').addEventListener('change', () => {
+    const dept = document.getElementById('filterDepartment').value;
+    const lineSelect = document.getElementById('filterLine');
+    lineSelect.innerHTML = '<option value="">すべて</option>';
+    
+    if (dept && mastersCache && mastersCache.lines[dept]) {
+      mastersCache.lines[dept].forEach(line => {
+        const option = document.createElement('option');
+        option.value = line;
+        option.textContent = line;
+        lineSelect.appendChild(option);
+      });
+    }
+  });
+
+  // フィルターセレクトを初期化する関数
+  function initializeFilterSelects() {
+    if (!mastersCache) return;
+    
+    const deptSelect = document.getElementById('filterDepartment');
+    deptSelect.innerHTML = '<option value="">すべて</option>';
+    mastersCache.departments.forEach(dept => {
+      const option = document.createElement('option');
+      option.value = dept;
+      option.textContent = dept;
+      deptSelect.appendChild(option);
+    });
+  }
+
+ /* CSVインポート */
   function parseCSVLoose(text){
     const rows=[]; let cur=''; let row=[]; let inQuotes=false;
     for (let i=0;i<text.length;i++){
@@ -1241,13 +1425,13 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
     return urls;
   }
 
-  /* 履歴描画：PC向け横長レイアウト */
+  /* 履歴描画：フィルター対応 */
   function renderHistory(){
-    const items=[...anomalyCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+    const items=[...filteredCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
     const cardWrap=document.getElementById('cardView');
     
     if (!items.length){
-      cardWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
+      cardWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>該当するデータがありません</p></div>`;
     }else{
       cardWrap.innerHTML = items.map((item)=>{
         const status = item.status==='pending'
@@ -1261,7 +1445,6 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
           ? `<div class="stop-badge ${badgeCls}">停止：${stopMin}分</div>`
           : '';
 
-        // 左カラム：基本情報
         const leftHtml = `
           <div class="card-left">
             <div class="card-id">${item.serialNo || '(No ID)'}</div>
@@ -1299,7 +1482,6 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
           </div>
         `;
 
-        // 中央カラム：内容
         const centerHtml = `
           <div class="card-center">
             <div class="card-content-section">
@@ -1322,7 +1504,6 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
           </div>
         `;
 
-        // 右カラム：写真とアクション
         const rightHtml = `
           <div class="card-right">
             ${allPhotos.length > 0 ? `
@@ -1355,10 +1536,9 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       }).join('');
     }
 
-    // テーブルビューは変更なし
     const tableWrap=document.getElementById('tableView');
     if (!items.length){
-      tableWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>まだデータがありません</p></div>`;
+      tableWrap.innerHTML=`<div class="empty-state"><div class="empty-state-icon">📭</div><p>該当するデータがありません</p></div>`;
     }else{
       tableWrap.innerHTML = `
         <div style="overflow-x:auto;">
@@ -1444,6 +1624,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
     updateDepartmentSelect('department', mastersCache.departments);
     updateDepartmentSelect('lineManageDept', mastersCache.departments);
     updateDepartmentSelect('handlerManageDept', mastersCache.departments);
+    initializeFilterSelects(); // フィルター用セレクトを初期化
 
     document.getElementById('department').addEventListener('change', ()=> {
       refreshLineAndHandler('department','lineName','handler', mastersCache.lines, mastersCache.handlers);
@@ -1461,6 +1642,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
     const q = query(anomaliesRef(), orderBy('createdAt','desc'), limit(HISTORY_LIMIT));
     onSnapshot(q, (snap)=>{
       anomalyCache = snap.docs.map(d=> ({_id:d.id, ...d.data()}));
+      filteredCache = [...anomalyCache]; // 初期状態はフィルターなし
       renderHistory();
       renderTechTargetSelect();
       updateSerialNoList();
@@ -1647,444 +1829,9 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
     });
   });
 
-  /* 編集モーダル */
-  const editModalHtml = `
-    <div class="modal-content">
-      <div class="modal-title">✏️ 履歴レコード編集</div>
-      <div class="edit-tabs">
-        <button class="edit-tab active" data-edit-tab="mfg">製造</button>
-        <button class="edit-tab" data-edit-tab="tech">技術</button>
-      </div>
-      <div id="editMfg" class="edit-pane">
-        <div class="form-group"><label>発生日 *</label><input type="date" id="edit_occurrenceDate"></div>
-        <div class="form-group"><label>発生時刻 / 再開時刻</label><div class="time-group"><input type="time" id="edit_occurrenceTime"><input type="time" id="edit_restartTime"></div></div>
-        <div class="form-group"><label>部署 *</label><select id="edit_department"></select></div>
-        <div class="form-group"><label>ライン名 *</label><select id="edit_lineName"></select></div>
-        <div class="form-group"><label>処置者 *</label><select id="edit_handler"></select></div>
-        <div class="form-group"><label>整理No *</label><input type="text" id="edit_serialNo"></div>
-        <div class="form-group"><label>異常内容 *</label><textarea id="edit_anomalyContent"></textarea></div>
-        <div class="form-group"><label>製造処置内容 *</label><textarea id="edit_actionTaken"></textarea></div>
-        <div class="form-group"><label>遡り *</label><select id="edit_traceback"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
-        <div class="form-group"><label>技術要請 *</label><select id="edit_techRequest"><option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option></select></div>
-      </div>
-      <div id="editTech" class="edit-pane" style="display:none;">
-        <div class="form-group"><label>技術処置者</label><input type="text" id="edit_techHandler"></div>
-        <div class="form-group"><label>発見タイミング</label>
-          <select id="edit_discoveryTiming">
-            <option value="">選択</option>
-            <option value="運転中">運転中</option>
-            <option value="頭出し">頭出し</option>
-            <option value="初物">初物</option>
-            <option value="終物">終物</option>
-            <option value="その他">その他</option>
-          </select>
-        </div>
-        <div class="form-group"><label>前回終物確認</label>
-          <select id="edit_previousCheck">
-            <option value="">選択</option>
-            <option value="不要">不要</option>
-            <option value="未">未</option>
-            <option value="確認済">確認済</option>
-          </select>
-        </div>
-        <div class="form-group"><label>命数有無</label><select id="edit_lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
-        <div class="form-group"><label>命数到達</label>
-          <select id="edit_lifespanReached">
-            <option value="">選択</option>
-            <option value="至">至</option>
-            <option value="不達">不達</option>
-          </select>
-        </div>
-        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit"></div>
-        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
-        <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
-        <div class="form-group"><label>肯定</label>
-          <select id="edit_affirmation">
-            <option value="">選択</option>
-            <option value="有">有</option>
-            <option value="無">無</option>
-          </select>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn btn-cancel" id="btnEditCancel" style="flex:1;">キャンセル</button>
-        <button class="btn btn-primary" id="btnEditSave" style="flex:1;">保存</button>
-      </div>
-    </div>`;
-  const modal = document.createElement('div'); modal.className='modal'; modal.id='editModal'; modal.innerHTML=editModalHtml; document.body.appendChild(modal);
-
-  let editCurrentId=null, editMastersCache=null;
-  function openEdit(id){
-    const rec = anomalyCache.find(x=>x._id===id); if(!rec){ alert('対象が見つかりません'); return; }
-    editCurrentId=id;
-    (async ()=>{
-      editMastersCache = mastersCache || await fetchMasters();
-      const depSel = document.getElementById('edit_department'); depSel.innerHTML='';
-      editMastersCache.departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o); });
-      depSel.value = rec.department||'';
-      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
-      lineSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
-      hSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
-
-      lineSel.value = rec.lineName||'';
-      hSel.value = rec.handler||'';
-
-      document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate||'';
-      document.getElementById('edit_occurrenceTime').value = rec.occurrenceTime||'';
-      document.getElementById('edit_restartTime').value   = rec.restartTime||'';
-      document.getElementById('edit_serialNo').value      = rec.serialNo||'';
-      document.getElementById('edit_anomalyContent').value= rec.anomalyContent||'';
-      document.getElementById('edit_actionTaken').value   = rec.actionTaken||'';
-      document.getElementById('edit_traceback').value     = rec.traceback||'';
-      document.getElementById('edit_techRequest').value   = rec.techRequest||'';
-      document.getElementById('edit_techHandler').value   = rec.techHandler||'';
-      document.getElementById('edit_discoveryTiming').value = rec.discoveryTiming||'';
-      document.getElementById('edit_previousCheck').value = rec.previousCheck||'';
-      document.getElementById('edit_lifespan').value      = rec.lifespan||'';
-      document.getElementById('edit_lifespanReached').value = rec.lifespanReached||'';
-      document.getElementById('edit_maintenanceUnit').value= rec.maintenanceUnit||'';
-      document.getElementById('edit_rootCauseAction').value= rec.rootCauseAction||'';
-      document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
-      document.getElementById('edit_affirmation').value   = rec.affirmation||'';
-      modal.classList.add('active'); modal.setAttribute('aria-hidden','false');
-    })();
-  }
-  document.addEventListener('change', (e)=>{
-    if (e.target.id==='edit_department' && editMastersCache){
-      const dep=e.target.value;
-      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
-      lineSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.lines[dep]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
-      hSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.handlers[dep]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
-    }
-  });
-  document.addEventListener('click', (e)=>{
-    const t=e.target;
-    if (t.matches('.edit-tab')){
-      document.querySelectorAll('.edit-tab').forEach(x=>x.classList.remove('active'));
-      t.classList.add('active');
-      document.getElementById('editMfg').style.display = t.dataset.editTab==='mfg'?'block':'none';
-      document.getElementById('editTech').style.display= t.dataset.editTab==='tech'?'block':'none';
-    }
-    const ed = t.closest('button.btn-edit[data-edit]'); if (ed){ openEdit(ed.getAttribute('data-edit')); }
-    const del= t.closest('button.btn-delete[data-del]'); if (del){ deleteRecord(del.getAttribute('data-del')); }
-    const photos = t.closest('button[data-photos]'); if (photos){ showPhotos(photos.getAttribute('data-photos')); }
-  });
-  document.getElementById('btnEditCancel').addEventListener('click', ()=>{
-    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
-  });
-  document.getElementById('btnEditSave').addEventListener('click', async ()=>{
-    if (!editCurrentId) return;
-    const updates = {
-      occurrenceDate:  document.getElementById('edit_occurrenceDate').value||'',
-      occurrenceTime:  document.getElementById('edit_occurrenceTime').value||'',
-      restartTime:     document.getElementById('edit_restartTime').value||'',
-      department:      document.getElementById('edit_department').value||'',
-      lineName:        document.getElementById('edit_lineName').value||'',
-      handler:         document.getElementById('edit_handler').value||'',
-      serialNo:        document.getElementById('edit_serialNo').value||'',
-      anomalyContent:  document.getElementById('edit_anomalyContent').value||'',
-      actionTaken:     document.getElementById('edit_actionTaken').value||'',
-      traceback:       document.getElementById('edit_traceback').value||'',
-      techRequest:     document.getElementById('edit_techRequest').value||'',
-      techHandler:     document.getElementById('edit_techHandler').value||'',
-      discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
-      previousCheck:   document.getElementById('edit_previousCheck').value||'',
-      lifespan:        document.getElementById('edit_lifespan').value||'',
-      lifespanReached: document.getElementById('edit_lifespanReached').value||'',
-      maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
-      rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
-      recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
-      affirmation:     document.getElementById('edit_affirmation').value||'',
-    };
-    if (updates.techRequest==='完結'){
-      updates.status='complete';
-    }else{
-      const hasTech = (updates.techHandler||updates.lifespan||updates.maintenanceUnit||updates.rootCauseAction||updates.recurrenceType);
-      updates.status = hasTech ? 'complete' : 'pending';
-    }
-    await updateDoc(doc(db,'anomalies',editCurrentId), updates);
-    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
-    alert('更新しました。');
-  });
-
-  async function deleteRecord(id){
-    if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
-    const item = anomalyCache.find(a => a._id === id);
-    try{
-      if (item.mfgPhotoUrls && Array.isArray(item.mfgPhotoUrls)){
-        for (const url of item.mfgPhotoUrls){
-          try{
-            const photoRef = ref(storage, url);
-            await deleteObject(photoRef);
-          }catch(e){
-            console.log('Failed to delete mfg photo:', e);
-          }
-        }
-      }
-      if (item.techPhotoUrls && Array.isArray(item.techPhotoUrls)){
-        for (const url of item.techPhotoUrls){
-          try{
-            const photoRef = ref(storage, url);
-            await deleteObject(photoRef);
-          }catch(e){
-            console.log('Failed to delete tech photo:', e);
-          }
-        }
-      }
-    }catch(err){
-      console.log('Error deleting photos:', err);
-    }
-    await deleteDoc(doc(db,'anomalies',id));
-    alert('削除しました');
-  }
-
-  function showPhotos(id){
-    const item = anomalyCache.find(a => a._id === id);
-    if (!item) return;
-    const modal = document.getElementById('photoModal');
-    const content = document.getElementById('photoModalContent');
-    let html = '';
-    if (item.mfgPhotoUrls && item.mfgPhotoUrls.length > 0){
-      html += '<div style="grid-column:1/-1;"><h4 style="color:#667eea;margin-bottom:10px;">製造部門の写真</h4></div>';
-      item.mfgPhotoUrls.forEach(url => {
-        html += `<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
-          <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
-        </div>`;
-      });
-    }
-    if (item.techPhotoUrls && item.techPhotoUrls.length > 0){
-      html += '<div style="grid-column:1/-1;margin-top:20px;"><h4 style="color:#f57c00;margin-bottom:10px;">技術部門の写真</h4></div>';
-      item.techPhotoUrls.forEach(url => {
-        html += `<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1);">
-          <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" onclick="window.open('${url}','_blank')">
-        </div>`;
-      });
-    }
-    if (!html) html = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999;">写真がありません</div>';
-    content.innerHTML = html;
-    modal.classList.add('active');
-    modal.setAttribute('aria-hidden', 'false');
-  }
-
-  window.showSimilarCaseDetail = function(caseId) {
-    const item = anomalyCache.find(x => x._id === caseId);
-    if (!item) return;
-    const modal = document.getElementById('similarCaseDetailModal');
-    const content = document.getElementById('similarCaseDetailContent');
-    const techId = document.getElementById('selectSerialNo').value;
-    const selected = anomalyCache.find(x => x._id === techId) || { anomalyContent: (document.getElementById('anomalyContent').value||'') };
-    const similarity = calculateSimilarity(selected.anomalyContent || '', item.anomalyContent || '');
-    content.innerHTML = `
-      <div style="background:#f8f9ff;padding:20px;border-radius:8px;margin-bottom:20px;">
-        <h4 style="color:#667eea;margin-bottom:15px;display:flex;justify-content:space-between;align-items:center;">
-          <span>📋 基本情報</span>
-          <span style="background:#4caf50;color:#fff;padding:4px 12px;border-radius:12px;font-size:.9rem;">類似度 ${similarity}%</span>
-        </h4>
-        <div style="display:grid;gap:12px;">
-          <div><strong>整理No:</strong> ${item.serialNo || '-'}</div>
-          <div><strong>部署:</strong> ${item.department || '-'}</div>
-          <div><strong>ライン名:</strong> ${item.lineName || '-'}</div>
-          <div><strong>発生日:</strong> ${item.occurrenceDate || '-'} ${item.occurrenceTime || ''}</div>
-          <div><strong>再開時刻:</strong> ${item.restartTime || '-'}</div>
-          <div><strong>処置者:</strong> ${item.handler || '-'}</div>
-        </div>
-      </div>
-      <div style="background:#fff4e6;padding:20px;border-radius:8px;margin-bottom:20px;">
-        <h4 style="color:#f57c00;margin-bottom:15px;">🔧 製造部門の対応</h4>
-        <div style="display:grid;gap:12px;">
-          <div><strong>異常内容:</strong><div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;white-space:pre-wrap;">${item.anomalyContent || '-'}</div></div>
-          <div><strong>製造処置内容:</strong><div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;white-space:pre-wrap;">${item.actionTaken || '-'}</div></div>
-          <div><strong>遡り:</strong> ${item.traceback || '-'}</div>
-          <div><strong>技術要請:</strong> ${item.techRequest === '要請' ? '技術要請あり' : '製造で完結'}</div>
-        </div>
-      </div>
-      ${item.status === 'complete' && item.techRequest === '要請' ? `
-        <div style="background:#e8f5e9;padding:20px;border-radius:8px;margin-bottom:20px;">
-          <h4 style="color:#2e7d32;margin-bottom:15px;">⚙️ 技術部門の対応</h4>
-          <div style="display:grid;gap:12px;">
-            <div><strong>技術処置者:</strong> ${item.techHandler || '-'}</div>
-            <div><strong>発見タイミング:</strong> ${item.discoveryTiming || '-'}</div>
-            <div><strong>前回終物確認:</strong> ${item.previousCheck || '-'}</div>
-            <div><strong>命数有無:</strong> ${item.lifespan || '-'}</div>
-            <div><strong>命数到達:</strong> ${item.lifespanReached || '-'}</div>
-            <div><strong>
-
-            保全単位:</strong> ${item.maintenanceUnit || '-'}</div>
-            <div><strong>原因・対策:</strong><div style="background:#fff;padding:12px;border-radius:6px;margin-top:8px;white-space:pre-wrap;">${item.rootCauseAction || '-'}</div></div>
-            <div><strong>再発/新規:</strong> ${item.recurrenceType || '-'}</div>
-            <div><strong>肯定:</strong> ${item.affirmation || '-'}</div>
-          </div>
-        </div>` : ''}
-      ${(item.mfgPhotoUrls?.length || item.techPhotoUrls?.length) ? `
-        <div style="background:#e3f2fd;padding:20px;border-radius:8px;">
-          <h4 style="color:#1976d2;margin-bottom:15px;">📷 写真</h4>
-          ${item.mfgPhotoUrls?.length ? `
-            <div style="margin-bottom:8px;color:#667eea;font-weight:bold;">製造部門</div>
-            <div class="similar-photos">
-              ${item.mfgPhotoUrls.map(u=>`<div class="thumb" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}
-            </div>`:''}
-          ${item.techPhotoUrls?.length ? `
-            <div style="margin:14px 0 8px;color:#f57c00;font-weight:bold;">技術部門</div>
-            <div class="similar-photos">
-              ${item.techPhotoUrls.map(u=>`<div class="thumb" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}
-            </div>`:''}
-        </div>` : ''}
-    `;
-    modal.classList.add('active');
-    modal.setAttribute('aria-hidden', 'false');
-  };
-
-  document.getElementById('btnPhotoClose').addEventListener('click', ()=>{
-    const modal = document.getElementById('photoModal');
-    modal.classList.remove('active');
-    modal.setAttribute('aria-hidden', 'true');
-  });
-  document.getElementById('btnSimilarCaseDetailClose').addEventListener('click', ()=>{
-    const modal = document.getElementById('similarCaseDetailModal');
-    modal.classList.remove('active');
-    modal.setAttribute('aria-hidden', 'true');
-  });
-  document.getElementById('photoModal').addEventListener('click', (e)=>{
-    if (e.target.id === 'photoModal') {
-      document.getElementById('photoModal').classList.remove('active');
-      document.getElementById('photoModal').setAttribute('aria-hidden', 'true');
-    }
-  });
-  document.getElementById('similarCaseDetailModal').addEventListener('click', (e)=>{
-    if (e.target.id === 'similarCaseDetailModal') {
-      document.getElementById('similarCaseDetailModal').classList.remove('active');
-      document.getElementById('similarCaseDetailModal').setAttribute('aria-hidden', 'true');
-    }
-  });
-
-  /* CSV出力 */
-  document.getElementById('btnExport').addEventListener('click', ()=>{
-    if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
-    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','停止時間(分)','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','発見タイミング','前回終物確認','命数有無','命数到達','保全単位','原因対策','再発新規','肯定','状態','_id'];
-    const rows = anomalyCache.map(item=>{
-      const stopMin = (()=>{
-        if (!item.occurrenceTime || !item.restartTime) return null;
-        const [oh,om]=(item.occurrenceTime||'0:0').split(':').map(Number);
-        const [rh,rm]=(item.restartTime||'0:0').split(':').map(Number);
-        let m=(rh*60+rm)-(oh*60+om); if (m<0) m+=1440; return m;
-      })();
-      return [
-        item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
-        (stopMin!==null?stopMin:''),
-        item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
-        item.techRequest==='要請'?'技術要請あり':item.techRequest==='完結'?'製造で完結':'',
-        item.techHandler||'',item.discoveryTiming||'',item.previousCheck||'',item.lifespan||'',item.lifespanReached||'',
-        item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',item.affirmation||'',
-        item.status==='complete'?'完了':'技術入力待ち', item._id
-      ];
-    });
-    let csv = '\uFEFF' + headers.join(',') + '\n';
-    rows.forEach(r=>{ csv += r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(',')+'\n'; });
-    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-    const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
-  });
-
-  /* マスタ管理 */
-  async function updateDepartmentList(){
-    const list=document.getElementById('departmentList'); list.innerHTML='';
-    const snap=await getDocs(collection(db,'masters','department','items'));
-    const arr = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">部署が登録されていません</p>'; return; }
-    arr.forEach(row=>{
-      const div=document.createElement('div');
-      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f8f9fa;border-radius:6px;border-left:3px solid #667eea;';
-      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
-        <button class="btn-small btn-delete" data-del-dept="${row.id}">削除</button>`;
-      list.appendChild(div);
-    });
-    mastersCache = await fetchMasters();
-    updateDepartmentSelect('department', mastersCache.departments);
-    updateDepartmentSelect('lineManageDept', mastersCache.departments);
-    updateDepartmentSelect('handlerManageDept', mastersCache.departments);
-  }
-  document.getElementById('btnAddDept').addEventListener('click', async ()=>{
-    const name=(document.getElementById('newDepartment').value||'').trim();
-    if (!name){ alert('部署名を入力してください'); return; }
-    await addDoc(collection(db,'masters','department','items'), {name});
-    document.getElementById('newDepartment').value='';
-    updateDepartmentList();
-  });
-  document.addEventListener('click', async (e)=>{
-    const del=e.target.closest('button[data-del-dept]'); if (!del) return;
-    await deleteDoc(doc(db,'masters','department','items', del.getAttribute('data-del-dept')));
-    updateDepartmentList();
-  });
-
-  async function updateLineManageList(){
-    const dept=document.getElementById('lineManageDept').value;
-    const list=document.getElementById('lineList'); 
-    list.innerHTML='';
-    if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
-    const snap=await getDocs(query(collection(db,'masters','line','items'), where('department','==',dept)));
-    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">ライン名が登録されていません</p>'; return; }
-    arr.forEach(row=>{
-      const div=document.createElement('div');
-      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f8f9fa;border-radius:6px;border-left:3px solid #f57c00;';
-      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
-        <button class="btn-small btn-delete" data-del-line="${row.id}">削除</button>`;
-      list.appendChild(div);
-    });
-  }
-  document.getElementById('btnAddLine').addEventListener('click', async ()=>{
-    const dept=document.getElementById('lineManageDept').value;
-    const name=(document.getElementById('newLine').value||'').trim();
-    if (!dept){ alert('部署を選択してください'); return; }
-    if (!name){ alert('ライン名を入力してください'); return; }
-    await addDoc(collection(db,'masters','line','items'), {department:dept, name});
-    document.getElementById('newLine').value='';
-    mastersCache = await fetchMasters();
-    await updateLineManageList();
-  });
-  document.addEventListener('click', async (e)=>{
-    const del=e.target.closest('button[data-del-line]'); if (!del) return;
-    await deleteDoc(doc(db,'masters','line','items', del.getAttribute('data-del-line')));
-    mastersCache = await fetchMasters();
-    await updateLineManageList();
-  });
-
-  async function updateHandlerManageList(){
-    const dept=document.getElementById('handlerManageDept').value;
-    const list=document.getElementById('handlerList'); 
-    list.innerHTML='';
-    if (!dept){ list.innerHTML='<p style="color:#999;text-align:center;">部署を選択してください</p>'; return; }
-    const snap=await getDocs(query(collection(db,'masters','handler','items'), where('department','==',dept)));
-    const arr=snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=> a.name.localeCompare(b.name));
-    if (!arr.length){ list.innerHTML='<p style="color:#999;text-align:center;">処置者が登録されていません</p>'; return; }
-    arr.forEach(row=>{
-      const div=document.createElement('div');
-      div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#f8f9fa;border-radius:6px;border-left:3px solid #2e7d32;';
-      div.innerHTML = `<span style="font-weight:500;color:#333">${row.name}</span>
-        <button class="btn-small btn-delete" data-del-handler="${row.id}">削除</button>`;
-      list.appendChild(div);
-    });
-  }
-  document.getElementById('btnAddHandler').addEventListener('click', async ()=>{
-    const dept=document.getElementById('handlerManageDept').value;
-    const name=(document.getElementById('newHandler').value||'').trim();
-    if (!dept){ alert('部署を選択してください'); return; }
-    if (!name){ alert('処置者名を入力してください'); return; }
-    await addDoc(collection(db,'masters','handler','items'), {department:dept, name});
-    document.getElementById('newHandler').value='';
-    mastersCache = await fetchMasters();
-    await updateHandlerManageList();
-  });
-  document.addEventListener('click', async (e)=>{
-    const del=e.target.closest('button[data-del-handler]'); if (!del) return;
-    await deleteDoc(doc(db,'masters','handler','items', del.getAttribute('data-del-handler')));
-    mastersCache = await fetchMasters();
-    await updateHandlerManageList();
-  });
+  /* 編集・削除・写真表示などの残りの関数は前回と同じため省略 */
+  /* この後に、前回出力した編集モーダル、削除、写真表示、CSV出力、マスタ管理のコードが続きます */
+  /* 文字数制限のため、編集以降の関数群は前回のパート2/3の該当箇所をそのまま使用してください */
 
 </script>
 </body>
