@@ -2147,6 +2147,33 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       document.getElementById('similarCaseDetailModal').setAttribute('aria-hidden', 'true');
     }
   });
+  /* CSV出力 */
+  document.getElementById('btnExport').addEventListener('click', ()=>{
+    if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
+    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','停止時間(分)','異常内容','製造処置内容','遡り','処置者','技術要請','技術処置者','発見タイミング','前回終物確認','命数有無','命数到達','保全単位','原因対策','再発新規','肯定','状態','_id'];
+    const rows = anomalyCache.map(item=>{
+      const stopMin = (()=>{
+        if (!item.occurrenceTime || !item.restartTime) return null;
+        const [oh,om]=(item.occurrenceTime||'0:0').split(':').map(Number);
+        const [rh,rm]=(item.restartTime||'0:0').split(':').map(Number);
+        let m=(rh*60+rm)-(oh*60+om); if (m<0) m+=1440; return m;
+      })();
+      return [
+        item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
+        (stopMin!==null?stopMin:''),
+        item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
+        item.techRequest==='要請'?'技術要請あり':item.techRequest==='完結'?'製造で完結':'',
+        item.techHandler||'',item.discoveryTiming||'',item.previousCheck||'',item.lifespan||'',item.lifespanReached||'',
+        item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',item.affirmation||'',
+        item.status==='complete'?'完了':'技術入力待ち', item._id
+      ];
+    });
+    let csv = '\uFEFF' + headers.join(',') + '\n';
+    rows.forEach(r=>{ csv += r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(',')+'\n'; });
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+  });
 
   /* マスタ管理 */
   async function updateDepartmentList(){
