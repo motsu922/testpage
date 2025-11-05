@@ -1259,14 +1259,24 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
     importModal.classList.remove('active'); importModal.setAttribute('aria-hidden','true');
   });
 
-  /* ワード候補 */
+ /* ワード候補 */
   function extractCommonWords(field, filterSerialNo = null){
     const words = {};
     let targetData = anomalyCache;
+    
+    // 整理Noでフィルタリング
     if (filterSerialNo && filterSerialNo.trim() !== '') {
       targetData = anomalyCache.filter(item => item.serialNo === filterSerialNo.trim());
-      if (targetData.length < 3) targetData = anomalyCache;
+      
+      // 整理Noに該当するデータがない場合は空配列を返す
+      if (targetData.length === 0) {
+        return [];
+      }
+    } else {
+      // 整理Noが入力されていない場合は候補を表示しない
+      return [];
     }
+    
     targetData.forEach(item => {
       const text = item[field] || '';
       const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
@@ -1305,13 +1315,15 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
     const words = extractCommonWords(field, serialNo);
     const box = document.getElementById(suggestionsBoxId);
     const container = document.getElementById(wordsContainerId);
-    if (words.length === 0) { box.classList.remove('active'); return; }
-    let headerText = '💡 よく使われる表現（クリックで追加）';
-    if (serialNo !== '') {
-      const filteredCount = anomalyCache.filter(item => item.serialNo === serialNo).length;
-      if (filteredCount >= 3) headerText = `💡 整理No「${serialNo}」の過去の表現（${filteredCount}件）`;
-      else if (filteredCount > 0) headerText = `💡 よく使われる表現（整理No「${serialNo}」は${filteredCount}件のみ）`;
+    
+    if (words.length === 0) { 
+      box.classList.remove('active'); 
+      return; 
     }
+    
+    const filteredCount = anomalyCache.filter(item => item.serialNo === serialNo).length;
+    const headerText = `💡 整理No「${serialNo}」の過去の表現（${filteredCount}件の履歴から）`;
+    
     const header = box.querySelector('.word-suggestion-header');
     if (header) header.textContent = headerText;
     container.innerHTML = words.map(word => `<span class="word-tag" data-word="${word}">${word}</span>`).join('');
@@ -1350,6 +1362,8 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
     } else {
       infoBox.style.display = 'none';
     }
+    
+    // フォーカスされているテキストエリアの候補を更新
     const activeElement = document.activeElement;
     if (activeElement.id === 'anomalyContent') {
       showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
@@ -1373,7 +1387,7 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
   document.getElementById('actionTaken').addEventListener('blur', () => {
     setTimeout(() => document.getElementById('actionWordSuggestions').classList.remove('active'), 200);
   });
-
+ 
   /* 類似案件 */
   let showingAllCases = false;
   let allSimilarCases = [];
