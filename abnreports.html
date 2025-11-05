@@ -438,9 +438,9 @@
               <div id="actionWords"></div>
             </div>
           </div>
-          <div class="form-group"><label>遡り *</label>
-            <select id="traceback" required><option value="">選択</option><option value="有">有</option><option value="無">無</option></select>
-          </div>
+<div class="form-group"><label>遡り *</label>
+  <input type="text" id="traceback" required placeholder="例: 300個廃却　品質判断より生産分流動 など">
+</div>
           <div class="form-group"><label>技術要請 *</label>
             <select id="techRequest" required>
               <option value="">選択</option><option value="要請">技術要請あり</option><option value="完結">製造で完結</option>
@@ -712,13 +712,17 @@
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
   import {
-    initializeFirestore, persistentLocalCache, getFirestore,
+    getFirestore,
     collection, addDoc, getDocs, onSnapshot, query, orderBy, updateDoc,
-    doc, deleteDoc, serverTimestamp, where, limit
+    doc, deleteDoc, serverTimestamp, where, limit, startAfter
   } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
   import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
 
-  const HISTORY_LIMIT = 200;
+  // ページング設定
+  const PAGE_SIZE = 25;
+  let lastVisibleDoc = null;
+  let hasMoreData = true;
+  let isLoadingMore = false;
 
   const firebaseConfig = {
     apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
@@ -729,8 +733,8 @@
     appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
   };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
   const auth = getAuth(app);
   const storage = getStorage(app);
 
@@ -764,16 +768,23 @@ const db = getFirestore(app);
   });
 
   let anomalyCache = [];
-  let filteredCache = []; // フィルター結果を保持
+  let filteredCache = [];
   let mfgPhotos = [];
   let techPhotos = [];
   let currentView='card';
   let mastersCache = null;
+  let unsubscribeSnapshot = null;
 
+  // マスタデータはキャッシュして再利用
   async function fetchMasters(){
-    const depSnap = await getDocs(collection(db,'masters','department','items'));
-    const lineSnap= await getDocs(collection(db,'masters','line','items'));
-    const hSnap   = await getDocs(collection(db,'masters','handler','items'));
+    if (mastersCache) return mastersCache;
+    
+    const [depSnap, lineSnap, hSnap] = await Promise.all([
+      getDocs(collection(db,'masters','department','items')),
+      getDocs(collection(db,'masters','line','items')),
+      getDocs(collection(db,'masters','handler','items'))
+    ]);
+    
     const departments = depSnap.docs.map(d=>d.data().name).sort();
     const lines = {};
     lineSnap.forEach(d=>{
@@ -782,6 +793,7 @@ const db = getFirestore(app);
       lines[department].push(name);
     });
     Object.keys(lines).forEach(k=> lines[k].sort());
+    
     const handlers = {};
     hSnap.forEach(d=>{
       const {department,name} = d.data();
@@ -789,7 +801,128 @@ const db = getFirestore(app);
       handlers[department].push(name);
     });
     Object.keys(handlers).forEach(k=> handlers[k].sort());
-    return {departments, lines, handlers};
+    
+    mastersCache = {departments, lines, handlers};
+    return mastersCache;
+  }
+
+  // 初期データ読み込み（25件のみ）
+  async function loadInitialData(){
+    const q = query(
+      collection(db,'anomalies'), 
+      orderBy('createdAt','desc'), 
+      limit(PAGE_SIZE)
+    );
+    
+    const snapshot = await getDocs(q);
+    anomalyCache = snapshot.docs.map(d=> ({_id:d.id, ...d.data()}));
+    
+    if (snapshot.docs.length > 0) {
+      lastVisibleDoc = snapshot.docs[snapshot.docs.length - 1];
+      hasMoreData = snapshot.docs.length === PAGE_SIZE;
+    } else {
+      hasMoreData = false;
+    }
+    
+    filteredCache = [...anomalyCache];
+    renderHistory();
+    renderTechTargetSelect();
+    updateSerialNoList();
+  }
+
+  // 追加データ読み込み
+  async function loadMoreData(){
+    if (!hasMoreData || isLoadingMore || !lastVisibleDoc) return;
+    
+    isLoadingMore = true;
+    const loadMoreBtn = document.getElementById('btnLoadMore');
+    if (loadMoreBtn) loadMoreBtn.textContent = '読み込み中...';
+    
+    try {
+      const q = query(
+        collection(db,'anomalies'),
+        orderBy('createdAt','desc'),
+        startAfter(lastVisibleDoc),
+        limit(PAGE_SIZE)
+      );
+      
+      const snapshot = await getDocs(q);
+      const newData = snapshot.docs.map(d=> ({_id:d.id, ...d.data()}));
+      
+      anomalyCache = [...anomalyCache, ...newData];
+      
+      if (snapshot.docs.length > 0) {
+        lastVisibleDoc = snapshot.docs[snapshot.docs.length - 1];
+        hasMoreData = snapshot.docs.length === PAGE_SIZE;
+      } else {
+        hasMoreData = false;
+      }
+      
+      // フィルターが適用されていない場合は再描画
+      const filterActive = checkFilterActive();
+      if (!filterActive) {
+        filteredCache = [...anomalyCache];
+        renderHistory();
+      }
+      
+      updateSerialNoList();
+      
+    } finally {
+      isLoadingMore = false;
+      if (loadMoreBtn) {
+        loadMoreBtn.textContent = hasMoreData ? 'さらに読み込む' : 'すべて読み込み済み';
+        loadMoreBtn.disabled = !hasMoreData;
+      }
+    }
+  }
+
+  // リアルタイム更新（新規追加・更新・削除のみ監視）
+  function setupRealtimeUpdates(){
+    if (unsubscribeSnapshot) unsubscribeSnapshot();
+    
+    const q = query(
+      collection(db,'anomalies'),
+      orderBy('createdAt','desc'),
+      limit(5) // 最新5件のみリアルタイム監視
+    );
+    
+    unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const data = {_id: change.doc.id, ...change.doc.data()};
+        const existingIndex = anomalyCache.findIndex(item => item._id === data._id);
+        
+        if (change.type === 'added' && existingIndex === -1) {
+          // 新規追加
+          anomalyCache.unshift(data);
+          if (!checkFilterActive()) {
+            filteredCache.unshift(data);
+          }
+        } else if (change.type === 'modified' && existingIndex !== -1) {
+          // 更新
+          anomalyCache[existingIndex] = data;
+          const filteredIndex = filteredCache.findIndex(item => item._id === data._id);
+          if (filteredIndex !== -1) {
+            filteredCache[filteredIndex] = data;
+          }
+        } else if (change.type === 'removed') {
+          // 削除
+          anomalyCache = anomalyCache.filter(item => item._id !== data._id);
+          filteredCache = filteredCache.filter(item => item._id !== data._id);
+        }
+      });
+      
+      renderHistory();
+      renderTechTargetSelect();
+      updateSerialNoList();
+    });
+  }
+
+  function checkFilterActive(){
+    return document.getElementById('filterDepartment').value !== '' ||
+           document.getElementById('filterSerialNo').value.trim() !== '' ||
+           document.getElementById('filterLine').value !== '' ||
+           document.getElementById('filterDateFrom').value !== '' ||
+           document.getElementById('filterDateTo').value !== '';
   }
 
   /* ==== フィルター機能 ==== */
@@ -810,23 +943,14 @@ const db = getFirestore(app);
     const filterDateTo = document.getElementById('filterDateTo').value;
 
     filteredCache = anomalyCache.filter(item => {
-      // 部署フィルター
       if (filterDept && item.department !== filterDept) return false;
-      
-      // 整理Noフィルター（部分一致）
       if (filterSerial && !(item.serialNo||'').toLowerCase().includes(filterSerial)) return false;
-      
-      // ラインフィルター
       if (filterLine && item.lineName !== filterLine) return false;
-      
-      // 発生日フィルター
       if (filterDateFrom && item.occurrenceDate < filterDateFrom) return false;
       if (filterDateTo && item.occurrenceDate > filterDateTo) return false;
-      
       return true;
     });
 
-    // 結果表示
     const resultCount = document.getElementById('filterResultCount');
     resultCount.innerHTML = `<strong>${filteredCache.length}</strong> 件の履歴が見つかりました`;
     resultCount.style.display = 'block';
@@ -842,7 +966,6 @@ const db = getFirestore(app);
     document.getElementById('filterDateTo').value = '';
     document.getElementById('filterResultCount').style.display = 'none';
     
-    // 昨日/今日ボタンの選択解除
     document.getElementById('btnFilterYesterday').classList.remove('active');
     document.getElementById('btnFilterToday').classList.remove('active');
     
@@ -850,11 +973,9 @@ const db = getFirestore(app);
     renderHistory();
   }
 
-  // フィルターボタンのイベント
   document.getElementById('btnApplyFilter').addEventListener('click', applyFilter);
   document.getElementById('btnClearFilter').addEventListener('click', clearFilter);
 
-  // 昨日ボタン
   document.getElementById('btnFilterYesterday').addEventListener('click', () => {
     const yesterday = getDateString(-1);
     document.getElementById('filterDateFrom').value = yesterday;
@@ -864,7 +985,6 @@ const db = getFirestore(app);
     applyFilter();
   });
 
-  // 今日ボタン
   document.getElementById('btnFilterToday').addEventListener('click', () => {
     const today = getDateString(0);
     document.getElementById('filterDateFrom').value = today;
@@ -874,7 +994,6 @@ const db = getFirestore(app);
     applyFilter();
   });
 
-  // 部署変更時にライン選択肢を更新
   document.getElementById('filterDepartment').addEventListener('change', () => {
     const dept = document.getElementById('filterDepartment').value;
     const lineSelect = document.getElementById('filterLine');
@@ -890,7 +1009,6 @@ const db = getFirestore(app);
     }
   });
 
-  // フィルターセレクトを初期化する関数
   function initializeFilterSelects() {
     if (!mastersCache) return;
     
@@ -903,8 +1021,7 @@ const db = getFirestore(app);
       deptSelect.appendChild(option);
     });
   }
-
- /* CSVインポート */
+/* CSVインポート */
   function parseCSVLoose(text){
     const rows=[]; let cur=''; let row=[]; let inQuotes=false;
     for (let i=0;i<text.length;i++){
@@ -1074,58 +1191,62 @@ const db = getFirestore(app);
     let ok=0, skip=0, upd=0, ng=0;
     const problems=[];
 
-    for (let i=0;i<importParsed.mappedRows.length;i++){
-      const row = importParsed.mappedRows[i];
-      try{
-        const key = guessDuplicateKey(row);
-        const cacheHitId = cacheIdx.get(key) || null;
+    // バッチ処理で効率化
+    const batchSize = 10;
+    for (let i=0; i<importParsed.mappedRows.length; i+=batchSize){
+      const batch = importParsed.mappedRows.slice(i, i+batchSize);
+      
+      await Promise.all(batch.map(async (row) => {
+        try{
+          const key = guessDuplicateKey(row);
+          const cacheHitId = cacheIdx.get(key) || null;
 
-        if (dupPolicy === 'skip' && cacheHitId){
-          skip++; continue;
+          if (dupPolicy === 'skip' && cacheHitId){
+            skip++; return;
+          }
+
+          if (dupPolicy === 'overwrite_id' && row._id){
+            if (dryRun){ upd++; return; }
+            const updates = { ...row };
+            delete updates._id; delete updates._stopMin;
+            if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
+            await updateDoc(doc(db,'anomalies', row._id), updates);
+            upd++; return;
+          }
+
+          const payload = {
+            department: row.department||'',
+            lineName:   row.lineName||'',
+            serialNo:   row.serialNo||'',
+            occurrenceDate: row.occurrenceDate||'',
+            occurrenceTime: row.occurrenceTime||'',
+            restartTime: row.restartTime||'',
+            anomalyContent: row.anomalyContent||'',
+            actionTaken: row.actionTaken||'',
+            traceback: row.traceback||'',
+            handler: row.handler||'',
+            techRequest: row.techRequest||'',
+            techHandler: row.techHandler||'',
+            discoveryTiming: row.discoveryTiming||'',
+            previousCheck: row.previousCheck||'',
+            lifespan: row.lifespan||'',
+            lifespanReached: row.lifespanReached||'',
+            maintenanceUnit: row.maintenanceUnit||'',
+            rootCauseAction: row.rootCauseAction||'',
+            recurrenceType: row.recurrenceType||'',
+            affirmation: row.affirmation||'',
+            status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
+            mfgPhotoUrls: [], techPhotoUrls: []
+          };
+          if (useCreatedAtNow) payload.createdAt = serverTimestamp();
+
+          if (dryRun){ ok++; return; }
+          await addDoc(collection(db,'anomalies'), payload);
+          ok++;
+        }catch(e){
+          ng++; problems.push(`Row ${i+2}: ${e.code||e.message}`);
         }
-
-        if (dupPolicy === 'overwrite_id' && row._id){
-          if (dryRun){ upd++; continue; }
-          const updates = { ...row };
-          delete updates._id; delete updates._stopMin;
-          if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
-          await updateDoc(doc(db,'anomalies', row._id), updates);
-          upd++; continue;
-        }
-
-        const payload = {
-          department: row.department||'',
-          lineName:   row.lineName||'',
-          serialNo:   row.serialNo||'',
-          occurrenceDate: row.occurrenceDate||'',
-          occurrenceTime: row.occurrenceTime||'',
-          restartTime: row.restartTime||'',
-          anomalyContent: row.anomalyContent||'',
-          actionTaken: row.actionTaken||'',
-          traceback: row.traceback||'',
-          handler: row.handler||'',
-          techRequest: row.techRequest||'',
-          techHandler: row.techHandler||'',
-          discoveryTiming: row.discoveryTiming||'',
-          previousCheck: row.previousCheck||'',
-          lifespan: row.lifespan||'',
-          lifespanReached: row.lifespanReached||'',
-          maintenanceUnit: row.maintenanceUnit||'',
-          rootCauseAction: row.rootCauseAction||'',
-          recurrenceType: row.recurrenceType||'',
-          affirmation: row.affirmation||'',
-          status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
-          mfgPhotoUrls: [], techPhotoUrls: []
-        };
-        if (useCreatedAtNow) payload.createdAt = serverTimestamp();
-
-        if (dryRun){ ok++; continue; }
-        await addDoc(collection(db,'anomalies'), payload);
-        ok++;
-      }catch(e){
-        ng++; problems.push(`Row ${i+2}: ${e.code||e.message}`);
-        if (ng >= 20) break;
-      }
+      }));
     }
 
     alert(`インポート結果
@@ -1133,7 +1254,7 @@ const db = getFirestore(app);
 - 上書き: ${upd}
 - スキップ: ${skip}
 - 失敗: ${ng}
-${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
+${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
 
     importModal.classList.remove('active'); importModal.setAttribute('aria-hidden','true');
   });
@@ -1161,6 +1282,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       .slice(0, 20)
       .map(([word]) => word);
   }
+  
   function updateSerialNoList(){
     const serialNoCounts = {};
     anomalyCache.forEach(item => {
@@ -1177,6 +1299,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       `<option value="${no}">${no} (${count}件)</option>`
     ).join('');
   }
+  
   function showWordSuggestions(targetId, suggestionsBoxId, wordsContainerId, field){
     const serialNo = document.getElementById('serialNo').value.trim();
     const words = extractCommonWords(field, serialNo);
@@ -1209,6 +1332,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       });
     });
   }
+  
   document.getElementById('anomalyContent').addEventListener('focus', () => {
     showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
   });
@@ -1253,6 +1377,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
   /* 類似案件 */
   let showingAllCases = false;
   let allSimilarCases = [];
+  
   function calculateSimilarity(text1, text2) {
     if (!text1 || !text2) return 0;
     const normalize = (text) => text.toLowerCase().replace(/[\s\u3000]/g, '').replace(/[、。，．]/g, '');
@@ -1271,21 +1396,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
     }
     return Math.round((matches / maxLen) * 100);
   }
-  function buildThumbs(urls, max=4){
-    if(!urls || !urls.length) return '';
-    const shown = urls.slice(0, max);
-    const more  = urls.length > max ? `<div class="more">+${urls.length - max} 枚</div>` : '';
-    return `
-      <div class="thumbs">
-        ${shown.map(u=>`
-          <div class="thumb" onclick="window.open('${u}','_blank')">
-            <img src="${u}" alt="">
-          </div>
-        `).join('')}
-      </div>
-      ${more}
-    `;
-  }
+  
   function findSimilarCandidates(base, limitN=10){
     if (!base) return [];
     let candidates = anomalyCache
@@ -1303,6 +1414,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       .sort((a,b) => (b.similarity!==a.similarity) ? (b.similarity-a.similarity) : (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''))
       .slice(0, limitN);
   }
+  
   function renderSimilarList(items){
     return items.map((item) => {
       const allPhotos = [ ...(item.mfgPhotoUrls || []), ...(item.techPhotoUrls || []) ];
@@ -1421,19 +1533,17 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
 
   function anomaliesRef(){ return collection(db,'anomalies'); }
 
+  // 画像アップロードの最適化（並列処理）
   async function uploadPhotos(docId, kind, items){
-    const urls=[];
-    for (const it of items){
+    const uploadPromises = items.map(async (it) => {
       const path=`anomalies/${docId}/${kind}/${Date.now()}_${it.name}`;
       const storageRef=ref(storage, path);
       await uploadBytes(storageRef, it.file);
-      const url = await getDownloadURL(storageRef);
-      urls.push(url);
-    }
-    return urls;
+      return await getDownloadURL(storageRef);
+    });
+    return await Promise.all(uploadPromises);
   }
-
-  /* 履歴描画：フィルター対応 */
+ /* 履歴描画：フィルター対応 + ページング */
   function renderHistory(){
     const items=[...filteredCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
     const cardWrap=document.getElementById('cardView');
@@ -1542,6 +1652,22 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
           </div>
         `;
       }).join('');
+      
+      // ページング用の「もっと読み込む」ボタンを追加
+      if (!checkFilterActive() && hasMoreData) {
+        cardWrap.innerHTML += `
+          <div style="text-align:center;margin-top:20px;">
+            <button id="btnLoadMore" class="btn btn-secondary" style="max-width:300px;">
+              さらに読み込む（現在${anomalyCache.length}件表示中）
+            </button>
+          </div>
+        `;
+        // ボタンにイベントリスナーを追加
+        setTimeout(() => {
+          const btn = document.getElementById('btnLoadMore');
+          if (btn) btn.addEventListener('click', loadMoreData);
+        }, 0);
+      }
     }
 
     const tableWrap=document.getElementById('tableView');
@@ -1600,6 +1726,21 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
         </table>
         </div>
       `;
+      
+      // テーブルビューにも「もっと読み込む」ボタンを追加
+      if (!checkFilterActive() && hasMoreData) {
+        tableWrap.innerHTML += `
+          <div style="text-align:center;margin-top:20px;">
+            <button id="btnLoadMoreTable" class="btn btn-secondary" style="max-width:300px;">
+              さらに読み込む（現在${anomalyCache.length}件表示中）
+            </button>
+          </div>
+        `;
+        setTimeout(() => {
+          const btn = document.getElementById('btnLoadMoreTable');
+          if (btn) btn.addEventListener('click', loadMoreData);
+        }, 0);
+      }
     }
   }
 
@@ -1632,7 +1773,7 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
     updateDepartmentSelect('department', mastersCache.departments);
     updateDepartmentSelect('lineManageDept', mastersCache.departments);
     updateDepartmentSelect('handlerManageDept', mastersCache.departments);
-    initializeFilterSelects(); // フィルター用セレクトを初期化
+    initializeFilterSelects();
 
     document.getElementById('department').addEventListener('change', ()=> {
       refreshLineAndHandler('department','lineName','handler', mastersCache.lines, mastersCache.handlers);
@@ -1647,14 +1788,11 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       else { previousCheckGroup.style.display = 'none'; document.getElementById('previousCheck').value = ''; }
     });
 
-    const q = query(anomaliesRef(), orderBy('createdAt','desc'), limit(HISTORY_LIMIT));
-    onSnapshot(q, (snap)=>{
-      anomalyCache = snap.docs.map(d=> ({_id:d.id, ...d.data()}));
-      filteredCache = [...anomalyCache]; // 初期状態はフィルターなし
-      renderHistory();
-      renderTechTargetSelect();
-      updateSerialNoList();
-    });
+    // 初期データ読み込み（25件）
+    await loadInitialData();
+    
+    // リアルタイム更新の設定（最新5件のみ監視）
+    setupRealtimeUpdates();
 
     await updateDepartmentList();
     setNowDateTo('occurrenceDate');
@@ -1682,9 +1820,9 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       mfgPhotoUrls:[], techPhotoUrls:[]
     };
     const created = await addDoc(anomaliesRef(), base);
-    let urls=[];
+    
     if (mfgPhotos.length){
-      urls = await uploadPhotos(created.id, 'mfg', mfgPhotos);
+      const urls = await uploadPhotos(created.id, 'mfg', mfgPhotos);
       await updateDoc(doc(db,'anomalies',created.id), { mfgPhotoUrls: urls });
     }
 
@@ -1836,7 +1974,8 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       renderHistory();
     });
   });
-/* 編集モーダル */
+
+  /* 編集モーダル */
   const editModalHtml = `
     <div class="modal-content">
       <div class="modal-title">✏️ 履歴レコード編集</div>
@@ -2004,26 +2143,23 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
     if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
     const item = anomalyCache.find(a => a._id === id);
     try{
+      // 画像削除を並列処理で効率化
+      const deletePromises = [];
       if (item.mfgPhotoUrls && Array.isArray(item.mfgPhotoUrls)){
-        for (const url of item.mfgPhotoUrls){
-          try{
-            const photoRef = ref(storage, url);
-            await deleteObject(photoRef);
-          }catch(e){
-            console.log('Failed to delete mfg photo:', e);
-          }
-        }
+        item.mfgPhotoUrls.forEach(url => {
+          deletePromises.push(
+            deleteObject(ref(storage, url)).catch(e => console.log('Failed to delete mfg photo:', e))
+          );
+        });
       }
       if (item.techPhotoUrls && Array.isArray(item.techPhotoUrls)){
-        for (const url of item.techPhotoUrls){
-          try{
-            const photoRef = ref(storage, url);
-            await deleteObject(photoRef);
-          }catch(e){
-            console.log('Failed to delete tech photo:', e);
-          }
-        }
+        item.techPhotoUrls.forEach(url => {
+          deletePromises.push(
+            deleteObject(ref(storage, url)).catch(e => console.log('Failed to delete tech photo:', e))
+          );
+        });
       }
+      await Promise.all(deletePromises);
     }catch(err){
       console.log('Error deleting photos:', err);
     }
@@ -2147,17 +2283,13 @@ ${problems.length?'\n一部エラー:\n'+problems.join('\n'):''}`);
       document.getElementById('similarCaseDetailModal').setAttribute('aria-hidden', 'true');
     }
   });
+
   /* CSV出力 */
   document.getElementById('btnExport').addEventListener('click', ()=>{
     if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
     const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','停止時間(分)','異常内容','対応内容','遡り','処置者','技術要請','技術処置者','発見タイミング','前回終物確認','命数有無','命数到達','保全単位','技術対応','再発新規','暫定','状態','_id'];
     const rows = anomalyCache.map(item=>{
-      const stopMin = (()=>{
-        if (!item.occurrenceTime || !item.restartTime) return null;
-        const [oh,om]=(item.occurrenceTime||'0:0').split(':').map(Number);
-        const [rh,rm]=(item.restartTime||'0:0').split(':').map(Number);
-        let m=(rh*60+rm)-(oh*60+om); if (m<0) m+=1440; return m;
-      })();
+      const stopMin = calcStopMinutes(item);
       return [
         item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
         (stopMin!==null?stopMin:''),
