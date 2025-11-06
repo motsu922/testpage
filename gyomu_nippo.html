@@ -1419,9 +1419,47 @@
                 grid-template-columns: 100px 1fr;
             }
         }
+         /* 自動保存インジケーター */
+        .save-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border-radius: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            font-weight: 600;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 4000;
+            pointer-events: none;
+        }
+
+        .save-indicator.show {
+            opacity: 1;
+        }
+
+        .save-indicator.saving {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .save-indicator.saved {
+            background: #28a745;
+        }
+
+        .save-indicator.error {
+            background: #dc3545;
+        }
     </style>
 </head>
 <body>
+    <!-- 自動保存インジケーター -->
+    <div id="saveIndicator" class="save-indicator">
+        💾 保存中...
+    </div>
     <div class="container">
         <div class="header">
             <h1>📊 工数管理アプリ</h1>
@@ -2029,6 +2067,9 @@
         initializeApp();
 
         let quickAddMember = '';
+        // 自動保存関連（追加）
+        let autoSaveTimer = null;
+        const AUTO_SAVE_DELAY = 500; // 500ms後に自動保存
         let quickAddType = 'planned';
         let mobileEntryType = 'planned';
         let selectedQuickTaskId = null;
@@ -2344,7 +2385,28 @@
             closeQuickAddModal();
             showNotification(`✓ ${taskName} を追加しました`);
         }
-
+// 自動保存インジケーターを表示する関数
+        function showSaveIndicator(status) {
+            const indicator = document.getElementById('saveIndicator');
+            indicator.classList.remove('saving', 'saved', 'error');
+            
+            if (status === 'saving') {
+                indicator.textContent = '💾 保存中...';
+                indicator.classList.add('saving', 'show');
+            } else if (status === 'saved') {
+                indicator.textContent = '✓ 保存しました';
+                indicator.classList.add('saved', 'show');
+                setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 2000);
+            } else if (status === 'error') {
+                indicator.textContent = '⚠ 保存エラー';
+                indicator.classList.add('error', 'show');
+                setTimeout(() => {
+                    indicator.classList.remove('show');
+                }, 3000);
+            }
+        }
         function initializeApp() {
             currentDate = new Date();
             document.getElementById('timelineDate').valueAsDate = currentDate;
@@ -2541,14 +2603,19 @@
             }, 1000);
         }
 
+// データ保存関数（自動保存版）
         function saveData() {
-            localStorage.setItem('tasks', JSON.stringify(tasks));
-            localStorage.setItem('timelineItems', JSON.stringify(timelineItems));
-            localStorage.setItem('members', JSON.stringify(members));
-            
-            // Firebase連携時は自動同期
-            if (isFirebaseConnected) {
-                // syncToFirebase(); // scheduleFirebaseSyncで呼ばれる
+            // ローカルストレージに即座に保存
+            try {
+                localStorage.setItem('tasks', JSON.stringify(tasks));
+                localStorage.setItem('timelineItems', JSON.stringify(timelineItems));
+                localStorage.setItem('members', JSON.stringify(members));
+                
+                // Firebase同期をスケジュール
+                scheduleFirebaseSync();
+            } catch (error) {
+                console.error('保存エラー:', error);
+                showSaveIndicator('error');
             }
         }
 
@@ -4393,31 +4460,38 @@
 
 
         // Firebase同期をスケジュールする関数（0.5秒待機）
+// Firebase同期をスケジュールする関数（自動保存版）
         function scheduleFirebaseSync() {
             // 既存のタイマーをクリア
             if (firebaseSyncTimer) {
                 clearTimeout(firebaseSyncTimer);
             }
             
-            // まずローカルストレージに保存（呼び出し元で既に実行済み）
-            // saveData(); // 呼び出し元で既に実行されているため不要
+            // 保存中インジケーターを表示
+            showSaveIndicator('saving');
             
             // Firebaseに接続されている場合のみ、0.5秒後に同期
             if (isFirebaseConnected && database) {
                 firebaseSyncTimer = setTimeout(() => {
                     syncToFirebase();
-                }, 500);
+                }, AUTO_SAVE_DELAY);
+            } else {
+                // Firebase未接続の場合はローカルのみ保存完了
+                setTimeout(() => {
+                    showSaveIndicator('saved');
+                }, 300);
             }
         }
 
-        function syncToFirebase() {
+function syncToFirebase() {
             if (!isFirebaseConnected || !database) {
-                alert('Firebaseに接続されていません');
+                console.log('Firebase未接続のため同期をスキップ');
+                showSaveIndicator('saved');  // ← この行を追加
                 return;
             }
             
             try {
-                // データをクリーンアップ（undefinedやnullを除去）
+                // データをクリーンアップ
                 const cleanTimelineItems = timelineItems.map(item => {
                     const cleaned = {};
                     Object.keys(item).forEach(key => {
@@ -4426,7 +4500,7 @@
                         }
                     });
                     return cleaned;
-                }).filter(item => item.id && item.taskName); // 必須フィールドチェック
+                }).filter(item => item.id && item.taskName);
                 
                 const cleanTasks = tasks.map(task => {
                     const cleaned = {};
@@ -4436,26 +4510,24 @@
                         }
                     });
                     return cleaned;
-                }).filter(task => task.id && task.name); // 必須フィールドチェック
+                }).filter(task => task.id && task.name);
                 
                 const data = {
                     tasks: cleanTasks,
                     timelineItems: cleanTimelineItems,
-                    members: members.filter(m => m), // 空要素を除去
+                    members: members.filter(m => m),
                     lastUpdated: new Date().toISOString()
                 };
                 
                 database.ref('workHoursData').set(data);
                 localStorage.setItem('lastUpdated', data.lastUpdated);
-                showNotification('✓ ローカル → Firebase にアップロードしました');
+                showSaveIndicator('saved');  // ← この行を追加（showNotificationの代わり）
                 
             } catch (error) {
-                alert('同期エラー: ' + error.message);
-                console.error('Sync error details:', error);
-                console.error('Timeline items:', timelineItems);
+                console.error('同期エラー:', error);
+                showSaveIndicator('error');  // ← この行を追加
             }
         }
-
         function syncFromFirebase() {
             if (!isFirebaseConnected || !database) {
                 alert('Firebaseに接続されていません');
