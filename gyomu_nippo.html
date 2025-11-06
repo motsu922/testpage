@@ -3778,7 +3778,7 @@
         }
 
 
-        // タスクバーの名前を編集する関数
+   // タスクバーの名前を編集する関数
         function editTaskBarName(itemId, barElement) {
             const item = timelineItems.find(i => i.id === itemId);
             if (!item) return;
@@ -3802,6 +3802,9 @@
             input.focus();
             input.select();
             
+            // 編集完了フラグ
+            let isEditingFinished = false;
+            
             // Enterキーで確定
             input.addEventListener("keydown", function(e) {
                 if (e.key === "Enter") {
@@ -3824,14 +3827,35 @@
             
             // フォーカスが外れたら確定
             input.addEventListener("blur", function() {
-                setTimeout(() => finishEditing(), 100);
+                // 既に編集完了している場合は何もしない
+                if (isEditingFinished) return;
+                
+                setTimeout(() => {
+                    // 再度チェック（Enter押下後にblurが発生する場合があるため）
+                    if (!isEditingFinished) {
+                        finishEditing();
+                    }
+                }, 100);
             });
             
             function finishEditing() {
+                // 既に編集完了している場合は何もしない（二重実行防止）
+                if (isEditingFinished) return;
+                isEditingFinished = true;
+                
                 const newName = input.value.trim();
-                    // 名前変更前に状態を保存（Undo用）
-                    saveStateForUndo();
+                
+                // 編集モードを先に解除（保存処理の前に）
+                barElement.classList.remove("editing");
+                if (input.parentNode) {
+                    input.remove();
+                }
+                
+                // 名前が変更された場合のみ保存
                 if (newName && newName !== item.taskName) {
+                    // Undo用に状態を保存
+                    saveStateForUndo();
+                    
                     // 名前を更新
                     item.taskName = newName;
                     
@@ -3842,12 +3866,16 @@
                         textSpan.setAttribute("data-full-text", newName);
                     }
                     
-                    // データを保存（0.5秒待機してから）
+                    // データを保存
                     saveData();
-                    scheduleFirebaseSync();
                     
-                    showNotification("✓ 予定名を更新しました");
+                    showNotification("✓ タスク名を更新しました");
                 }
+            }
+            
+            function cancelEditing() {
+                // 編集完了フラグを立てる
+                isEditingFinished = true;
                 
                 // 編集モードを解除
                 barElement.classList.remove("editing");
@@ -3855,15 +3883,7 @@
                     input.remove();
                 }
             }
-            
-            function cancelEditing() {
-                barElement.classList.remove("editing");
-                if (input.parentNode) {
-                    input.remove();
-                }
-            }
         }
-
         function showNotification(message) {
             const notification = document.createElement('div');
             notification.style.cssText = `
