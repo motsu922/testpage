@@ -470,7 +470,11 @@
 
    <!-- 技術入力 -->
     <div id="technical" class="tab-content">
-      <h2 style="margin-bottom:16px;color:#667eea;">技術部門 - 追加入力</h2>
+<div class="tab-header">
+  <h2 style="color:#667eea;">技術部門 - 追加入力</h2>
+  <button class="btn btn-secondary btn-icon" id="btnRefreshTech">🔄 更新</button>
+</div>
+
       <div class="form-group">
         <label>対象の案件選択 *</label>
         <select id="selectSerialNo"><option value="">案件を選択してください</option></select>
@@ -829,6 +833,90 @@
     renderTechTargetSelect();
     updateSerialNoList();
   }
+// ==== リフレッシュ系ユーティリティ ====
+// 履歴のページング状態を初期化
+function resetPaging(){
+  lastVisibleDoc = null;
+  hasMoreData = true;
+  isLoadingMore = false;
+}
+
+// 製造タブの更新：マスタ再取得＋シリアル候補再構築
+async function refreshManufacturing(){
+  mastersCache = null;
+  mastersCache = await fetchMasters();
+  updateDepartmentSelect('department', mastersCache.departments);
+  // 部署選択に応じてライン／処置者を再構築
+  refreshLineAndHandler('department','lineName','handler', mastersCache.lines, mastersCache.handlers);
+  // 履歴も最新化（候補や類似検索の母集団が増える）
+  resetPaging();
+  await loadInitialData();
+  updateSerialNoList();
+}
+
+// 技術タブの更新：履歴最新化＋対象セレクト再描画
+async function refreshTechnical(){
+  resetPaging();
+  await loadInitialData();
+  renderTechTargetSelect(); // loadInitialData内でも呼ばれるが念のため
+}
+
+// 履歴タブの更新：履歴最新化＋フィルタ初期化維持
+async function refreshHistory(){
+  // フィルタの入力値はそのままにしてデータだけ更新
+  const keep = {
+    dep: document.getElementById('filterDepartment').value,
+    sn : document.getElementById('filterSerialNo').value,
+    line: document.getElementById('filterLine').value,
+    from: document.getElementById('filterDateFrom').value,
+    to  : document.getElementById('filterDateTo').value
+  };
+  resetPaging();
+  await loadInitialData();
+  // マスタ側のプルダウン最新化（部署/ライン）
+  initializeFilterSelects();
+  document.getElementById('filterDepartment').value = keep.dep;
+  // 部署に合わせたライン候補を再構築
+  const evt = new Event('change');
+  document.getElementById('filterDepartment').dispatchEvent(evt);
+  document.getElementById('filterSerialNo').value = keep.sn;
+  document.getElementById('filterLine').value = keep.line;
+  document.getElementById('filterDateFrom').value = keep.from;
+  document.getElementById('filterDateTo').value = keep.to;
+
+  // 再検索
+  if (keep.dep || keep.sn || keep.line || keep.from || keep.to){
+    applyFilter();
+  }else{
+    filteredCache = [...anomalyCache];
+    renderHistory();
+  }
+}
+
+// 管理タブの更新：マスタ一覧を最新化
+async function refreshMaster(){
+  mastersCache = null; // 次回 fetchMasters で取り直し
+  await updateDepartmentList();
+  await updateLineManageList();
+  await updateHandlerManageList();
+}
+
+// ==== ボタンクリック・イベント ====
+// （onAuthStateChanged -> bootAfterLogin 後なら要素が存在）
+document.addEventListener('click', (e)=>{
+  if (e.target && e.target.id === 'btnRefreshMfg'){
+    (async ()=>{ await refreshManufacturing(); alert('製造タブを更新しました'); })();
+  }
+  if (e.target && e.target.id === 'btnRefreshTech'){
+    (async ()=>{ await refreshTechnical(); alert('技術タブを更新しました'); })();
+  }
+  if (e.target && e.target.id === 'btnRefreshHistory'){
+    (async ()=>{ await refreshHistory(); alert('履歴を更新しました'); })();
+  }
+  if (e.target && e.target.id === 'btnRefreshMaster'){
+    (async ()=>{ await refreshMaster(); alert('マスタを更新しました'); })();
+  }
+});
 
   // 追加データ読み込み
   async function loadMoreData(){
@@ -1544,6 +1632,50 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
     if (m >= 10) return 'warn';
     return '';
   }
+// --- 追加：整理Noで全データ取得（必要ならページング） ---
+async function fetchAllBySerialNo(serialNo){
+  if (!serialNo) return [];
+  // まず createdAt で並べて取得（既存データに createdAt が無い場合に備えフォールバック）
+  try{
+    const results = [];
+    let last = null;
+    const BATCH = 500; // 1回の取得上限の目安
+
+    while(true){
+      const q = last
+        ? query(
+            collection(db,'anomalies'),
+            where('serialNo','==', serialNo),
+            orderBy('createdAt','desc'),
+            startAfter(last),
+            limit(BATCH)
+          )
+        : query(
+            collection(db,'anomalies'),
+            where('serialNo','==', serialNo),
+            orderBy('createdAt','desc'),
+            limit(BATCH)
+          );
+      const snap = await getDocs(q);
+      if (snap.empty) break;
+      snap.docs.forEach(d => results.push({_id:d.id, ...d.data()}));
+      if (snap.docs.length < BATCH){ break; }
+      last = snap.docs[snap.docs.length - 1];
+    }
+
+    // createdAtの無い古いレコード混在対策として、日付で最終並べ替え
+    results.sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+    return results;
+  }catch(e){
+    // 複合インデックス未作成などの場合のフォールバック（orderBy無し・クライアント側ソート）
+    const results = [];
+    const q = query(collection(db,'anomalies'), where('serialNo','==', serialNo));
+    const snap = await getDocs(q);
+    snap.forEach(d => results.push({_id:d.id, ...d.data()}));
+    results.sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+    return results;
+  }
+}
 
   function anomaliesRef(){ return collection(db,'anomalies'); }
 
@@ -1895,59 +2027,98 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
     document.getElementById('showMoreCases').style.display='none';
   });
 
-  document.getElementById('btnShowPastOnTech').addEventListener('click', ()=>{
-    const id = document.getElementById('selectSerialNo').value;
-    if (!id){ alert('対象案件を選択してください'); return; }
-    const d = anomalyCache.find(it=> it._id===id);
-    if (!d){ return; }
-    showingAllCases = false;
-    const candidates = findSimilarCandidates(d, 10);
-    const content = document.getElementById('similarCasesContent');
-    const simBox = document.getElementById('similarCasesBox');
-    if (candidates.length){
-      content.innerHTML = renderSimilarList(candidates.slice(0,1));
-      const showMoreBtn = document.getElementById('showMoreCases');
-      if (candidates.length > 1) {
-        showMoreBtn.style.display = 'block';
-        showMoreBtn.textContent = `他の類似案件を表示（あと${candidates.length - 1}件）`;
-      } else {
-        showMoreBtn.style.display = 'none';
-      }
-      simBox.classList.add('active');
-      simBox.scrollIntoView({behavior:'smooth', block:'start'});
-    }else{
-      simBox.classList.add('active');
-      document.getElementById('similarCasesContent').innerHTML = '<div style="color:#666;">候補がありません</div>';
-      document.getElementById('showMoreCases').style.display='none';
-    }
-  });
+document.getElementById('btnShowPastOnTech').addEventListener('click', async ()=>{
+  const id = document.getElementById('selectSerialNo').value;
+  if (!id){ alert('対象案件を選択してください'); return; }
 
-  document.getElementById('btnShowPastOnMfg').addEventListener('click', ()=>{
-    const serialNo = (document.getElementById('serialNo').value||'').trim();
-    const base = {
-      _id: '(temp)',
-      serialNo,
-      anomalyContent: (document.getElementById('anomalyContent').value||'')
-    };
-    const candidates = findSimilarCandidates(base, 10);
-    const box = document.getElementById('mfgSimilarBox');
-    const content = document.getElementById('mfgSimilarContent');
-    if (candidates.length){
-      content.innerHTML = renderSimilarList(candidates.slice(0,3));
-      const more = document.getElementById('mfgShowMore');
-      more.style.display = candidates.length>3 ? 'block' : 'none';
-      more.onclick = ()=>{
-        content.innerHTML = renderSimilarList(candidates);
-        more.style.display = 'none';
+  const d = anomalyCache.find(it=> it._id===id);
+  if (!d){ alert('対象案件が見つかりません'); return; }
+
+  // 整理No未入力（=選択案件にserialNo無し）の場合は検索しない
+  const serialNo = (d.serialNo||'').trim();
+  if (!serialNo){
+    alert('選択中の案件に整理Noがありません（検索を開始しません）');
+    return;
+  }
+
+  // 全データから該当整理Noを取得し、選択中案件自身は除外
+  const all = (await fetchAllBySerialNo(serialNo)).filter(x => x._id !== d._id);
+
+  // 類似度は「選択案件の異常内容」を基準に算出
+  const withScore = all.map(it => ({
+    ...it,
+    similarity: calculateSimilarity(d.anomalyContent||'', it.anomalyContent||'')
+  }))
+  .filter(x => x.similarity >= 30)
+  .sort((a,b)=> (b.similarity!==a.similarity) ? (b.similarity-a.similarity) : (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+
+  const content = document.getElementById('similarCasesContent');
+  const simBox = document.getElementById('similarCasesBox');
+  const showMoreBtn = document.getElementById('showMoreCases');
+
+  if (withScore.length){
+    content.innerHTML = renderSimilarList(withScore.slice(0,1));
+    if (withScore.length > 1) {
+      showMoreBtn.style.display = 'block';
+      showMoreBtn.textContent = `他の類似案件を表示（あと${withScore.length - 1}件）`;
+      showMoreBtn.onclick = ()=>{
+        content.innerHTML = renderSimilarList(withScore);
+        showMoreBtn.style.display = 'none';
       };
-      box.classList.add('active');
-      box.scrollIntoView({behavior:'smooth', block:'start'});
-    }else{
-      box.classList.add('active');
-      content.innerHTML = '<div style="color:#666;">候補がありません</div>';
-      document.getElementById('mfgShowMore').style.display='none';
+    } else {
+      showMoreBtn.style.display = 'none';
     }
-  });
+    simBox.classList.add('active');
+    simBox.scrollIntoView({behavior:'smooth', block:'start'});
+  }else{
+    simBox.classList.add('active');
+    content.innerHTML = '<div style="color:#666;">候補がありません</div>';
+    showMoreBtn.style.display='none';
+  }
+});
+
+
+document.getElementById('btnShowPastOnMfg').addEventListener('click', async ()=>{
+  const serialNo = (document.getElementById('serialNo').value||'').trim();
+
+  // 整理No未入力時は検索しない
+  if (!serialNo){
+    alert('整理Noを入力してください');
+    return;
+  }
+
+  // 全データから該当整理Noを取得
+  const all = await fetchAllBySerialNo(serialNo);
+
+  // 類似度計算（入力中の異常内容を基準に）
+  const baseText = (document.getElementById('anomalyContent').value||'');
+  const withScore = all.map(it => ({
+    ...it,
+    similarity: calculateSimilarity(baseText, it.anomalyContent||'')
+  }))
+  .filter(x => x._id !== '(temp)') // 念のため
+  .sort((a,b)=> (b.similarity!==a.similarity) ? (b.similarity-a.similarity) : (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+
+  const box = document.getElementById('mfgSimilarBox');
+  const content = document.getElementById('mfgSimilarContent');
+  const more = document.getElementById('mfgShowMore');
+
+  if (withScore.length){
+    content.innerHTML = renderSimilarList(withScore.slice(0,3));
+    more.style.display = withScore.length>3 ? 'block' : 'none';
+    more.onclick = ()=>{
+      content.innerHTML = renderSimilarList(withScore);
+      more.style.display = 'none';
+    };
+    box.classList.add('active');
+    box.scrollIntoView({behavior:'smooth', block:'start'});
+  }else{
+    box.classList.add('active');
+    content.innerHTML = '<div style="color:#666;">候補がありません</div>';
+    more.style.display='none';
+  }
+});
+
 
   document.getElementById('technicalForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
