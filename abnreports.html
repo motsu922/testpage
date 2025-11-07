@@ -800,18 +800,26 @@ recurrenceSelect.addEventListener('change', toggleMeasureStatusUI);
   });
   signOutBtn.addEventListener('click', ()=> signOut(auth));
 
-  onAuthStateChanged(auth, (user)=>{
-    if (user){
-      gate.style.display='none';
-      appRoot.style.display='block';
-      signOutBtn.style.display='inline-block';
-      bootAfterLogin();
-    }else{
-      appRoot.style.display='none';
-      gate.style.display='flex';
-      signOutBtn.style.display='none';
-    }
-  });
+onAuthStateChanged(auth, (user)=>{
+  if (user){
+    gate.style.display='none';
+    appRoot.style.display='block';
+    signOutBtn.style.display='inline-block';
+    bootAfterLogin();
+    bindPhotoInputs();   // ← ここで一度だけ
+  } else {
+    appRoot.style.display='none';
+    gate.style.display='flex';
+    signOutBtn.style.display='none';
+  }
+});
+
+// 例：編集モーダルを開く関数の末尾で
+function openEditModal(/* ... */){
+  renderEditModalUI();   // ここで edit_* の input が生成される
+  bindPhotoInputs();     // ここで改めてバインド（ヌルガード＆多重防止なので安全）
+}
+
 
   let anomalyCache = [];
   let filteredCache = [];
@@ -1657,17 +1665,31 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
       wrap.appendChild(div);
     });
   }
-  function handlePhotoUpload(inputId, previewId, arrRef){
-    const input = document.getElementById(inputId);
-    input.addEventListener('change',(e)=>{
-      (Array.from(e.target.files||[])).forEach(file=>{
-        const r=new FileReader();
-        r.onload = ev=>{ arrRef.push({name:file.name, file, preview:ev.target.result}); displayPhotos(previewId, arrRef.map(x=>x.preview)); };
-        r.readAsDataURL(file);
-      });
-      input.value='';
-    });
+function handlePhotoUpload(inputId, previewId, arrRef){
+  const input = document.getElementById(inputId);
+  if (!input) return; // ← 要素が無い時は何もしない（落ちない）
+
+  // 多重バインド防止（同じIDに二重で付かないように）
+  if (input._photoHandler) {
+    input.removeEventListener('change', input._photoHandler);
   }
+
+  const handler = (e)=>{
+    (Array.from(e.target.files||[])).forEach(file=>{
+      const r=new FileReader();
+      r.onload = ev=>{
+        arrRef.push({name:file.name, file, preview:ev.target.result});
+        displayPhotos(previewId, arrRef.map(x=>x.preview));
+      };
+      r.readAsDataURL(file);
+    });
+    input.value='';
+  };
+
+  input.addEventListener('change', handler);
+  input._photoHandler = handler;
+}
+
   handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
   handlePhotoUpload('techPhotos','techPhotoPreview', techPhotos);
  // 編集モーダルの写真アップロード
@@ -1701,6 +1723,13 @@ document.addEventListener('click', (e) => {
     if (id==='mfgPhotoPreview'){ mfgPhotos.splice(idx,1); displayPhotos(id, mfgPhotos.map(x=>x.preview)); }
     if (id==='techPhotoPreview'){ techPhotos.splice(idx,1); displayPhotos(id, techPhotos.map(x=>x.preview)); }
   });
+function bindPhotoInputs(){
+  handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
+  handlePhotoUpload('techPhotos','techPhotoPreview', techPhotos);
+  // ↓ モーダル要素はまだ無いかもしれないので、あっても無くてもOKな書き方
+  handlePhotoUpload('edit_mfgPhotos','edit_mfgPhotoPreview', editMfgPhotos);
+  handlePhotoUpload('edit_techPhotos','edit_techPhotoPreview', editTechPhotos);
+}
 
   function updateDepartmentSelect(selectId, departments){
     const sel=document.getElementById(selectId); if(!sel) return;
