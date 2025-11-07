@@ -109,6 +109,55 @@
   #authGate{position:fixed;inset:0;background:#f5f5f5;display:flex;align-items:center;justify-content:center;z-index:2000}
   #authCard{background:#fff;max-width:380px;width:92%;padding:24px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.15)}
   #signOutBtn{position:fixed;right:12px;top:12px;background:#ef5350;color:#fff;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;z-index:1500;font-weight:600}
+
+ /* ===== 可読性UP（テーブル） ===== */
+.table-container { overflow: auto; }
+.data-table{ table-layout:fixed; width:100%; }
+
+/* ヘッダー：小さめフォント＋高さ確保＋固定 */
+.data-table th{
+  font-size:12px; line-height:1.2; padding:8px 10px; z-index:2;
+  position: sticky; top:0;
+}
+.data-table th .sort-btn{ font-size:10px; padding:1px 4px; }
+
+/* 行ホバー＋縞々 */
+.data-table tr:nth-child(even){ background:#fafbff; }
+.data-table tr:hover{ background:#eef2ff; }
+
+/* セル基本：折返し禁止＋省略記号（短文列） */
+td.cell-nowrap{
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+/* セル長文：3行で折りたたみ（「もっと見る」無しの軽量版） */
+td.cell-memo > div{
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+  overflow:hidden; white-space:normal; max-height:4.6em;
+}
+
+/* 表示密度（標準/高密度/超高密度） */
+.density-compact .data-table th,
+.density-compact .data-table td{ padding:6px 8px; font-size:12px; }
+.density-ultra   .data-table th,
+.density-ultra   .data-table td{ padding:4px 6px; font-size:11px; }
+
+/* 列幅の目安（必要に応じて調整） */
+th[data-col="lineName"],  td[data-col="lineName"]{   width:90px;  }
+th[data-col="serialNo"],  td[data-col="serialNo"]{   width:90px;  }
+th[data-col="occurrenceTime"], td[data-col="occurrenceTime"],
+th[data-col="restartTime"],    td[data-col="restartTime"]{ width:70px; }
+th[data-col="handler"],   td[data-col="handler"]{    width:80px;  }
+th[data-col="techRequest"], td[data-col="techRequest"]{ width:70px; }
+th[data-col="stopMinutes"], td[data-col="stopMinutes"]{ width:90px; text-align:right; }
+th[data-col="discoveryTiming"], td[data-col="discoveryTiming"]{ width:90px; }
+
+th[data-col="anomalyContent"],   td[data-col="anomalyContent"],
+th[data-col="actionTaken"],      td[data-col="actionTaken"],
+th[data-col="rootCauseAction"],  td[data-col="rootCauseAction"],
+th[data-col="qualityResponse"],  td[data-col="qualityResponse"],
+th[data-col="traceback"],        td[data-col="traceback"]{ width:260px; }
+
 </style>
 </head>
 <body>
@@ -301,6 +350,19 @@
             <button id="btnExportCSV" style="padding:10px 20px;background:#28a745;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">
               📥 CSV出力
             </button>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+  <div style="font-size:.85rem;color:#555;">表示密度:</div>
+  <button id="denseNormal"  class="date-btn" style="padding:6px 10px;">標準</button>
+  <button id="denseCompact" class="date-btn" style="padding:6px 10px;">高密度</button>
+  <button id="denseUltra"   class="date-btn" style="padding:6px 10px;">超高密度</button>
+
+  <label style="display:flex;align-items:center;gap:6px;margin-left:10px;font-size:.9rem;">
+    <input type="checkbox" id="toggleClamp" checked>
+    長文を3行で折りたたむ
+  </label>
+</div>
+
+           
           </div>
         </div>
         <div style="overflow-x:auto;">
@@ -443,22 +505,101 @@
   }
   
 
+function initializeControls(){
+  const today = new Date();
+  const endDate = formatDate(today);
+  const startDate = formatDate(new Date(today.getFullYear(), today.getMonth(), 1));
+  document.getElementById('endDate').value = endDate;
+  document.getElementById('startDate').value = startDate;
+  document.getElementById('monthSelect').value =
+    `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
 
-  function initializeControls(){
-    const today = new Date();
-    const endDate = formatDate(today);
-    const startDate = formatDate(new Date(today.getFullYear(), today.getMonth(), 1));
-    document.getElementById('endDate').value = endDate;
-    document.getElementById('startDate').value = startDate;
-    document.getElementById('monthSelect').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-    
-    document.querySelectorAll('.period-tab').forEach(tab=>{
-      tab.addEventListener('click', ()=>{
-        document.querySelectorAll('.period-tab').forEach(t=>t.classList.remove('active'));
-        tab.classList.add('active');
-        currentPeriod = tab.dataset.period;
-      });
+  // 期間タブ
+  document.querySelectorAll('.period-tab').forEach(tab=>{
+    tab.addEventListener('click', ()=>{
+      document.querySelectorAll('.period-tab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      currentPeriod = tab.dataset.period;
     });
+  });
+
+  // クイック期間
+  document.querySelectorAll('[data-quick]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const type = btn.dataset.quick;
+      const t = new Date();
+      let start, end;
+      if(type === 'today'){ start = end = formatDate(t); }
+      else if(type === 'yesterday'){ const y=new Date(t); y.setDate(y.getDate()-1); start=end=formatDate(y); }
+      else if(type === 'thisWeek'){ const day=t.getDay(); const diff=t.getDate()-day+(day===0?-6:1); start=formatDate(new Date(t.getFullYear(),t.getMonth(),diff)); end=formatDate(t); }
+      else if(type === 'lastWeek'){ const day=t.getDay(); const diff=t.getDate()-day+(day===0?-6:1)-7; start=formatDate(new Date(t.getFullYear(),t.getMonth(),diff)); end=formatDate(new Date(t.getFullYear(),t.getMonth(),diff+6)); }
+      else if(type === 'thisMonth'){ start=formatDate(new Date(t.getFullYear(),t.getMonth(),1)); end=formatDate(t); }
+      else if(type === 'lastMonth'){ start=formatDate(new Date(t.getFullYear(),t.getMonth()-1,1)); end=formatDate(new Date(t.getFullYear(),t.getMonth(),0)); }
+      document.getElementById('startDate').value = start;
+      document.getElementById('endDate').value = end;
+      document.querySelectorAll('[data-quick]').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // 月選択
+  document.getElementById('monthSelect').addEventListener('change', (e)=>{
+    const [year, month] = e.target.value.split('-').map(Number);
+    const start = formatDate(new Date(year, month - 1, 1));
+    const end = formatDate(new Date(year, month, 0));
+    document.getElementById('startDate').value = start;
+    document.getElementById('endDate').value = end;
+  });
+
+  // ビュー切替
+  document.querySelectorAll('.view-tab').forEach(tab=>{
+    tab.addEventListener('click', ()=>{
+      document.querySelectorAll('.view-tab').forEach(t=>t.classList.remove('active'));
+      tab.classList.add('active');
+      const view = tab.dataset.view;
+      document.getElementById('chartView').style.display = view === 'chart' ? 'block' : 'none';
+      document.getElementById('sheetView').style.display = view === 'sheet' ? 'block' : 'none';
+    });
+  });
+
+  // 実行・詳細・CSV
+  document.getElementById('btnAnalyze').addEventListener('click', runAnalysis);
+  document.getElementById('serialNoSelect').addEventListener('change', showSerialNoDetail);
+  const reloadBtn = document.getElementById('btnReload'); // デバッグ欄を削除済ならnull
+  if (reloadBtn) reloadBtn.addEventListener('click', reloadData);
+  document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+
+  // ===== ここが「表示密度／長文折りたたみ」 =====
+  const dn = document.getElementById('denseNormal');
+  const dc = document.getElementById('denseCompact');
+  const du = document.getElementById('denseUltra');
+  const clamp = document.getElementById('toggleClamp');
+
+  if (dn) dn.addEventListener('click', ()=>{
+    document.body.classList.remove('density-compact','density-ultra');
+  });
+  if (dc) dc.addEventListener('click', ()=>{
+    document.body.classList.add('density-compact');
+    document.body.classList.remove('density-ultra');
+  });
+  if (du) du.addEventListener('click', ()=>{
+    document.body.classList.add('density-compact','density-ultra');
+  });
+
+  if (clamp) clamp.addEventListener('change', (e)=>{
+    const on = e.target.checked;
+    document.querySelectorAll('td.cell-memo > div').forEach(el=>{
+      if(on){
+        el.style.setProperty('-webkit-line-clamp','3');
+        el.style.maxHeight = '4.6em';
+      }else{
+        el.style.setProperty('-webkit-line-clamp','unset');
+        el.style.maxHeight = 'none';
+      }
+    });
+  });
+}
+
     
     document.querySelectorAll('[data-quick]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
@@ -643,46 +784,48 @@ function buildDataSheetColumns(data){
 
   // ✅ ヘッダー生成
   const headRow = document.getElementById('dataSheetHeadRow');
-  headRow.innerHTML = dataSheetColumns.map(k=>{
-    const label = labels[k] || k;
-    return `<th>${label} <button class="sort-btn" data-table="sheet" data-key="${k}">▲</button></th>`;
-  }).join('');
+ headRow.innerHTML = dataSheetColumns.map(k=>{
+  const label = (dataSheetColumnLabels[k] || k);
+  return `<th data-col="${k}">${label} <button class="sort-btn" data-table="sheet" data-key="${k}">▲</button></th>`;
+}).join('');
+
 
   dataSheetOriginalOrder = null;
   dataSheetCurrentSortKey = null;
 }
 
 
-  function renderDataSheet(data){
-    const tbody = document.getElementById('dataSheetBody');
-    if(data.length === 0){
-      tbody.innerHTML = '<tr><td colspan="999" style="text-align:center;padding:40px;color:#999;">データがありません</td></tr>';
-      return;
-    }
-    // 初回のオリジナル順保存
-    if(!dataSheetOriginalOrder) dataSheetOriginalOrder = data.map((_,i)=>i);
-
-    // 行描画
-    const html = data.map(item=>{
-      return `<tr>${dataSheetColumns.map(col=>{
-        let val = '';
-        if(col === 'stopMinutes'){
-          const m = calcStopMinutes(item); val = (m===null||m===undefined)?'':m;
-        }else{
-          val = item[col];
-          // 配列/オブジェクトはJSONに
-          if(Array.isArray(val)) val = val.join(' | ');
-          else if(typeof val === 'object' && val !== null) val = JSON.stringify(val);
-          val = (val===undefined||val===null)?'':String(val);
-          if(col==='anomalyContent' || col==='actionTaken'){
-            val = `<div style="max-width:380px;white-space:pre-wrap;">${escapeHTML(val)}</div>`;
-          }
-        }
-        return `<td>${val || (col==='stopMinutes'?'': '-')}</td>`;
-      }).join('')}</tr>`;
-    }).join('');
-    tbody.innerHTML = html;
+function renderDataSheet(data){
+  const tbody = document.getElementById('dataSheetBody');
+  if(data.length === 0){
+    tbody.innerHTML = '<tr><td colspan="999" style="text-align:center;padding:40px;color:#999;">データがありません</td></tr>';
+    return;
   }
+  // 初回のオリジナル順保存
+  if(!dataSheetOriginalOrder) dataSheetOriginalOrder = data.map((_,i)=>i);
+
+  // 行描画
+  const html = data.map(item=>{
+    return `<tr>${dataSheetColumns.map(col=>{
+      let val = '';
+      if(col === 'stopMinutes'){
+        const m = calcStopMinutes(item); val = (m===null||m===undefined)?'':m;
+      }else{
+        val = item[col];
+        // 配列/オブジェクトはJSONに
+        if(Array.isArray(val)) val = val.join(' | ');
+        else if(typeof val === 'object' && val !== null) val = JSON.stringify(val);
+        val = (val===undefined||val===null)?'':String(val);
+        if(col==='anomalyContent' || col==='actionTaken'){
+          val = `<div style="max-width:380px;white-space:pre-wrap;">${escapeHTML(val)}</div>`;
+        }
+      }
+      return `<td>${val || (col==='stopMinutes'?'': '-')}</td>`;
+    }).join('')}</tr>`;
+  }).join('');
+  tbody.innerHTML = html;
+}
+
 
   // ソート（データシート：昇順→解除）
   function sortDataSheetBy(key){
