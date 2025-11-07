@@ -1757,29 +1757,67 @@ async function fetchAllBySerialNo(serialNo){
 
   // 画像アップロードの最適化（並列処理）
 // uploadPhotos 関数を改善
-async function uploadPhotos(docId, kind, items){
-  const urls=[];
-  for (const it of items){
+// 画像アップロード関数（完全再構築版）
+async function uploadPhotos(docId, kind, items) {
+  console.log(`=== Starting upload: ${items.length} files for ${kind} ===`);
+  const urls = [];
+  
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     try {
-      // ファイル名をサニタイズ（特殊文字を除去）
-      const sanitizedName = it.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const timestamp = Date.now();
-      const path = `anomalies/${docId}/${kind}/${timestamp}_${sanitizedName}`;
+      // ファイル名の生成
+      const timestamp = Date.now() + i; // 重複を避けるため
+      const extension = item.name.split('.').pop();
+      const fileName = `${timestamp}.${extension}`;
+      const path = `anomalies/${docId}/${kind}/${fileName}`;
       
-      console.log(`Uploading: ${path}`); // デバッグ用
+      console.log(`[${i + 1}/${items.length}] Uploading to: ${path}`);
+      console.log(`File size: ${item.file.size} bytes`);
+      console.log(`File type: ${item.file.type}`);
       
+      // Storageへのアップロード
       const storageRef = ref(storage, path);
-      const snapshot = await uploadBytes(storageRef, it.file);
-      const url = await getDownloadURL(snapshot.ref);
+      const metadata = {
+        contentType: item.file.type,
+        customMetadata: {
+          'originalName': item.name,
+          'uploadedAt': new Date().toISOString()
+        }
+      };
       
-      console.log(`Upload success: ${url}`); // デバッグ用
+      const uploadResult = await uploadBytes(storageRef, item.file, metadata);
+      console.log(`Upload complete: ${uploadResult.metadata.fullPath}`);
+      
+      // URLの取得
+      const url = await getDownloadURL(uploadResult.ref);
+      console.log(`Download URL obtained: ${url}`);
+      
       urls.push(url);
+      
     } catch (error) {
-      console.error(`Upload failed for ${it.name}:`, error);
-      alert(`画像のアップロードに失敗しました: ${it.name}\nエラー: ${error.message}`);
-      throw error; // エラーを上位に伝播
+      console.error(`❌ Upload failed for file ${i + 1}:`, error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        serverResponse: error.serverResponse
+      });
+      
+      // ユーザーにわかりやすいエラーメッセージ
+      let errorMsg = `画像 ${i + 1} のアップロードに失敗しました。\n`;
+      if (error.code === 'storage/unauthorized') {
+        errorMsg += 'アクセス権限がありません。Firebase Storageのルールを確認してください。';
+      } else if (error.code === 'storage/quota-exceeded') {
+        errorMsg += 'ストレージの容量が上限に達しています。';
+      } else {
+        errorMsg += `エラー: ${error.message}`;
+      }
+      
+      alert(errorMsg);
+      throw error;
     }
   }
+  
+  console.log(`=== Upload complete: ${urls.length} files uploaded successfully ===`);
   return urls;
 }
 
@@ -2134,39 +2172,105 @@ ${(item.recurrenceType==='再発' && item.measureStatus) ?
     await updateDepartmentList();
     setNowDateTo('occurrenceDate');
   }
-  document.getElementById('manufacturingForm').addEventListener('submit', async (e)=>{
-    e.preventDefault();
+// 製造フォーム送信
+document.getElementById('manufacturingForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  console.log('=== Form submission started ===');
+  
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = '登録中...';
+  
+  try {
     const techReq = document.getElementById('techRequest').value;
+    
+    // 1. まずドキュメントを作成
     const base = {
       department: document.getElementById('department').value,
-      lineName:   document.getElementById('lineName').value,
-      serialNo:   document.getElementById('serialNo').value,
+      lineName: document.getElementById('lineName').value,
+      serialNo: document.getElementById('serialNo').value,
       occurrenceDate: document.getElementById('occurrenceDate').value,
       occurrenceTime: document.getElementById('occurrenceTime').value || '',
-      restartTime:    document.getElementById('restartTime').value || '',
+      restartTime: document.getElementById('restartTime').value || '',
       anomalyContent: document.getElementById('anomalyContent').value,
-      actionTaken:    document.getElementById('actionTaken').value,
-      traceback:      document.getElementById('traceback').value,
-      handler:        document.getElementById('handler').value,
-      techRequest:    techReq,
-      status:         techReq==='完結' ? 'complete':'pending',
-      createdAt:      serverTimestamp(),
-      techHandler:'', lifespan:'', maintenanceUnit:'', rootCauseAction:'', recurrenceType:'',
-      discoveryTiming:'', previousCheck:'', lifespanReached:'', affirmation:'',
-      mfgPhotoUrls:[], techPhotoUrls:[]
+      actionTaken: document.getElementById('actionTaken').value,
+      traceback: document.getElementById('traceback').value,
+      handler: document.getElementById('handler').value,
+      techRequest: techReq,
+      status: techReq === '完結' ? 'complete' : 'pending',
+      createdAt: serverTimestamp(),
+      techHandler: '', 
+      lifespan: '', 
+      maintenanceUnit: '', 
+      rootCauseAction: '', 
+      recurrenceType: '',
+      discoveryTiming: '', 
+      previousCheck: '', 
+      lifespanReached: '', 
+      affirmation: '',
+      measureStatus: '',
+      mfgPhotoUrls: [], 
+      techPhotoUrls: []
     };
-    const created = await addDoc(anomaliesRef(), base);
     
-    if (mfgPhotos.length){
-      const urls = await uploadPhotos(created.id, 'mfg', mfgPhotos);
-      await updateDoc(doc(db,'anomalies',created.id), { mfgPhotoUrls: urls });
+    console.log('Creating document with data:', base);
+    const docRef = await addDoc(collection(db, 'anomalies'), base);
+    console.log('Document created with ID:', docRef.id);
+    
+    // 2. 画像がある場合はアップロードして更新
+    if (mfgPhotos.length > 0) {
+      console.log(`Uploading ${mfgPhotos.length} photos...`);
+      submitBtn.textContent = `画像アップロード中... (${mfgPhotos.length}枚)`;
+      
+      const photoUrls = await uploadPhotos(docRef.id, 'mfg', mfgPhotos);
+      console.log('Photos uploaded, URLs:', photoUrls);
+      
+      // Firestoreを更新
+      await updateDoc(doc(db, 'anomalies', docRef.id), {
+        mfgPhotoUrls: photoUrls
+      });
+      console.log('Document updated with photo URLs');
+      
+      // キャッシュも更新
+      const newDoc = {
+        _id: docRef.id,
+        ...base,
+        mfgPhotoUrls: photoUrls
+      };
+      anomalyCache.unshift(newDoc);
+      filteredCache = [newDoc, ...filteredCache];
+      renderHistory();
     }
-
-    e.target.reset(); mfgPhotos=[]; document.getElementById('mfgPhotoPreview').innerHTML='';
-    document.getElementById('lineName').innerHTML='<option value="">部署を先に選択してください</option>';
-    document.getElementById('handler').innerHTML='<option value="">部署を先に選択してください</option>';
-    alert('登録しました。');
-  });
+    
+    // 3. フォームをリセット
+    e.target.reset();
+    mfgPhotos = [];
+    document.getElementById('mfgPhotoPreview').innerHTML = '';
+    document.getElementById('lineName').innerHTML = '<option value="">部署を先に選択してください</option>';
+    document.getElementById('handler').innerHTML = '<option value="">部署を先に選択してください</option>';
+    
+    submitBtn.disabled = false;
+    submitBtn.textContent = '登録';
+    
+    alert('登録が完了しました！');
+    console.log('=== Form submission completed successfully ===');
+    
+  } catch (error) {
+    console.error('=== Form submission error ===', error);
+    submitBtn.disabled = false;
+    submitBtn.textContent = '登録';
+    
+    let errorMsg = '登録に失敗しました。\n\n';
+    if (error.code) {
+      errorMsg += `エラーコード: ${error.code}\n`;
+    }
+    errorMsg += `エラー内容: ${error.message}\n\n`;
+    errorMsg += 'コンソール（F12）で詳細を確認してください。';
+    
+    alert(errorMsg);
+  }
+});
 
   document.getElementById('selectSerialNo').addEventListener('change', ()=>{
     const id = document.getElementById('selectSerialNo').value;
@@ -2311,10 +2415,28 @@ document.getElementById('btnShowPastOnMfg').addEventListener('click', async ()=>
 });
 
 
-  document.getElementById('technicalForm').addEventListener('submit', async (e)=>{
-    e.preventDefault();
+// 技術フォーム送信
+document.getElementById('technicalForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  console.log('=== Tech form submission started ===');
+  
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = '登録中...';
+  
+  try {
     const id = document.getElementById('selectSerialNo').value;
-
+    if (!id) {
+      alert('案件を選択してください');
+      submitBtn.disabled = false;
+      submitBtn.textContent = '登録';
+      return;
+    }
+    
+    const recType = document.getElementById('recurrenceType').value;
+    const ms = (document.getElementById('measureStatus')?.value || '').trim();
+    
     const updates = {
       techHandler: document.getElementById('techHandler').value,
       discoveryTiming: document.getElementById('discoveryTiming').value,
@@ -2323,31 +2445,70 @@ document.getElementById('btnShowPastOnMfg').addEventListener('click', async ()=>
       lifespanReached: document.getElementById('lifespanReached').value,
       maintenanceUnit: document.getElementById('maintenanceUnit').value,
       rootCauseAction: document.getElementById('rootCauseAction').value,
-      recurrenceType: document.getElementById('recurrenceType').value,
+      recurrenceType: recType,
+      measureStatus: (recType === '再発') ? ms : '',
       affirmation: document.getElementById('affirmation').value,
       status: 'complete',
       completedAt: serverTimestamp()
     };
-
-    // ←←← ここに追加（再発のときだけ対策状況を保存）
-    const recType = document.getElementById('recurrenceType').value;
-    const ms = (document.getElementById('measureStatus')?.value || '').trim();
-    updates.measureStatus = (recType === '再発') ? ms : '';
-
-    if (techPhotos.length){
-      const urls = await uploadPhotos(id,'tech', techPhotos);
-      updates.techPhotoUrls = (anomalyCache.find(x=>x._id===id)?.techPhotoUrls||[]).concat(urls);
+    
+    console.log('Updating document:', id, updates);
+    
+    // 画像がある場合
+    if (techPhotos.length > 0) {
+      console.log(`Uploading ${techPhotos.length} tech photos...`);
+      submitBtn.textContent = `画像アップロード中... (${techPhotos.length}枚)`;
+      
+      const photoUrls = await uploadPhotos(id, 'tech', techPhotos);
+      console.log('Tech photos uploaded, URLs:', photoUrls);
+      
+      // 既存の画像URLに追加
+      const existingUrls = anomalyCache.find(x => x._id === id)?.techPhotoUrls || [];
+      updates.techPhotoUrls = [...existingUrls, ...photoUrls];
     }
-    await updateDoc(doc(db,'anomalies',id), updates);
-
-
-    e.target.reset(); techPhotos=[]; document.getElementById('techPhotoPreview').innerHTML='';
-    document.getElementById('selectedDataDisplay').style.display='none';
+    
+    await updateDoc(doc(db, 'anomalies', id), updates);
+    console.log('Document updated successfully');
+    
+    // キャッシュを更新
+    const cacheIndex = anomalyCache.findIndex(x => x._id === id);
+    if (cacheIndex !== -1) {
+      anomalyCache[cacheIndex] = { ...anomalyCache[cacheIndex], ...updates };
+      filteredCache = [...anomalyCache];
+      renderHistory();
+    }
+    
+    e.target.reset();
+    techPhotos = [];
+    document.getElementById('techPhotoPreview').innerHTML = '';
+    document.getElementById('selectedDataDisplay').style.display = 'none';
     document.getElementById('similarCasesBox').classList.remove('active');
+    document.getElementById('previousCheckGroup').style.display = 'none';
+    document.getElementById('measureStatusGroup').style.display = 'none';
     showingAllCases = false;
-    document.getElementById('previousCheckGroup').style.display='none';
-    alert('技術入力を登録しました。');
-  });
+    
+    submitBtn.disabled = false;
+    submitBtn.textContent = '登録';
+    
+    alert('技術入力が完了しました！');
+    console.log('=== Tech form submission completed successfully ===');
+    
+  } catch (error) {
+    console.error('=== Tech form submission error ===', error);
+    submitBtn.disabled = false;
+    submitBtn.textContent = '登録';
+    
+    alert(`登録に失敗しました。\n\nエラー: ${error.message}\n\nコンソール（F12）で詳細を確認してください。`);
+  }
+});
+
+   === Form submission started ===
+   Creating document with data: {...}
+   Document created with ID: xxx
+   === Starting upload: 2 files for mfg ===
+   [1/2] Uploading to: anomalies/xxx/mfg/123456.jpg
+   Upload complete: anomalies/xxx/mfg/123456.jpg
+   Download URL obtained: https://...
 
   document.querySelectorAll('.view-toggle button').forEach(b=>{
     b.addEventListener('click', ()=>{
