@@ -4,7 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>異常履歴分析ダッシュボード</title>
-<!-- （任意）グラフを使う場合のみ -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 
 <style>
@@ -34,7 +33,7 @@
   /* ====== データシート ====== */
   .table-container{background:#fff;padding:20px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);margin-bottom:20px;overflow-x:auto}
   .data-table{table-layout:fixed;width:100%;min-width:1800px;border-collapse:collapse}
-  .data-table th{background:#667eea;color:#fff;padding:8px 10px;text-align:left;font-weight:700;position:sticky;top:0;z-index:2;font-size:12px;line-height:1.2}
+  .data-table th{background:#667eea;color:#fff;padding:8px 10px;text-align:left;font-weight:700;position:sticky;top:0;z-index:2;font-size:12px;line-height:1.2;white-space:nowrap}
   .data-table th .sort-btn{margin-left:6px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.5);color:#fff;padding:1px 4px;border-radius:4px;cursor:pointer;font-size:10px}
   .data-table td{padding:10px;border-bottom:1px solid #f0f0f0;vertical-align:top}
   .data-table tr:nth-child(even){background:#fafbff}
@@ -61,7 +60,7 @@
   th[data-col="actionTaken"], td[data-col="actionTaken"],
   th[data-col="rootCauseAction"], td[data-col="rootCauseAction"]{width:320px}
 
-  /* 横幅拡大モード（ボタンで切替） */
+  /* 横幅拡大モード */
   .body-sheet-wide .container{max-width:96vw}
   .body-sheet-wide .data-table{min-width:2400px}
   .body-sheet-ultra .data-table{min-width:3000px}
@@ -165,14 +164,19 @@
       </div>
     </div>
 
-    <!-- グラフビュー（任意） -->
+    <!-- グラフビュー -->
     <div id="chartView">
       <div class="control-panel">
-        <p style="color:#666">※必要に応じてグラフ描画を有効化してください（コードは下部で用意）。</p>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px;">
-          <canvas id="trendChart" height="240"></canvas>
-          <canvas id="deptChart" height="240"></canvas>
-          <canvas id="stopTimeChart" height="240"></canvas>
+          <div style="background:#fff;padding:16px;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.06);height:320px">
+            <canvas id="trendChart"></canvas>
+          </div>
+          <div style="background:#fff;padding:16px;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.06);height:320px">
+            <canvas id="deptChart"></canvas>
+          </div>
+          <div style="background:#fff;padding:16px;border-radius:10px;box-shadow:0 1px 6px rgba(0,0,0,.06);height:320px">
+            <canvas id="stopTimeChart"></canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -235,6 +239,8 @@
 
   let allData = [];
   let currentPeriod = 'day';
+  // グラフインスタンス
+  let charts = { trend:null, dept:null, stop:null };
 
   /* ===== Utils ===== */
   function normalizeDate(dateStr) {
@@ -251,7 +257,7 @@
         const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), d2=String(d.getDate()).padStart(2,'0');
         return `${y}-${m}-${d2}`;
       }
-    } catch(e) {}
+    } catch(_e) {}
     return dateStr;
   }
   function formatDate(date){ return date.toISOString().split('T')[0]; }
@@ -261,7 +267,7 @@
     const [rh,rm] = item.restartTime.split(':').map(Number);
     let diff = (rh*60+rm) - (oh*60+om);
     if(isNaN(diff)) return null;
-    if(diff < 0) diff += 1440;
+    if(diff < 0) diff += 1440; // 日跨ぎ簡易対応
     return diff;
   }
   function escapeHTML(s){
@@ -286,9 +292,9 @@
       gate.style.display='none';
       appRoot.style.display='block';
       signOutBtn.style.display='inline-block';
-      await loadData();          // データ取得
-      initializeControls();      // DOMイベント＋初回ヘッダー生成
-      runAnalysis();             // 初回描画
+      await loadData();
+      initializeControls();
+      runAnalysis();
     }else{
       appRoot.style.display='none';
       gate.style.display='flex';
@@ -331,7 +337,7 @@
     }
   }
 
-  /* ===== Sheet (固定11列) ===== */
+  /* ===== Sheet（固定11列） ===== */
   let dataSheetColumns = [];
   let dataSheetColumnLabels = {};
   let dataSheetOriginalOrder = null;
@@ -405,7 +411,7 @@
     tbody.innerHTML = html;
   }
 
-  function compareAsc(a,b,key){
+  function compareAsc(a,b){
     const dateLike = v => typeof v==='string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
     if(dateLike(a) && dateLike(b)) return a.localeCompare(b);
     const na = parseFloat(a), nb = parseFloat(b);
@@ -423,6 +429,7 @@
     const endDate = document.getElementById('endDate').value;
     const dept = document.getElementById('deptFilter').value;
     const moldTechOnly = document.getElementById('moldTechOnly').checked;
+
     let data = allData.filter(x=> x.occurrenceDate && x.occurrenceDate >= startDate && x.occurrenceDate <= endDate);
     if(dept) data = data.filter(x=> x.department === dept);
     if(moldTechOnly) data = data.filter(x=> Number(x?.maintenanceUnit ?? 0) >= 1);
@@ -435,20 +442,113 @@
     }
     dataSheetCurrentSortKey = key;
     const getter = (row)=> key==='stopMinutes' ? calcStopMinutes(row) : (row[key] ?? '');
-    data.sort((a,b)=> compareAsc(getter(a), getter(b), key));
+    data.sort((a,b)=> compareAsc(getter(a), getter(b)));
     renderDataSheet(data);
   }
 
   // ヘッダーの▲クリック（委任）
-  document.addEventListener('click', (e)=>{
-    const btn = e.target.closest('.sort-btn');
+  document.addEventListener('click', (evt)=>{
+    const btn = evt.target.closest('.sort-btn');
     if(!btn) return;
     if(btn.dataset.table === 'sheet'){
       sortDataSheetBy(btn.dataset.key);
     }
   });
 
-  /* ===== Run ===== */
+  /* ===== グラフ関数 ===== */
+  function isoWeekKey(dateStr){
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d)) return dateStr;
+    const target = new Date(d.valueOf());
+    const dayNr = (d.getDay() + 6) % 7; // 月:0 … 日:6
+    target.setDate(target.getDate() - dayNr + 3);
+    const firstThursday = new Date(target.getFullYear(),0,4);
+    const firstDayNr = (firstThursday.getDay() + 6) % 7;
+    firstThursday.setDate(firstThursday.getDate() - firstDayNr + 3);
+    const weekNo = 1 + Math.round((target - firstThursday) / (7*24*3600*1000));
+    return `${target.getFullYear()}-W${String(weekNo).padStart(2,'0')}`;
+  }
+
+  function renderTrendChart(data){
+    const canvas = document.getElementById('trendChart');
+    if (!canvas) return;
+
+    const grouped = {};
+    data.forEach(x=>{
+      if(!x.occurrenceDate) return;
+      let key;
+      if (currentPeriod === 'day') key = x.occurrenceDate;
+      else if (currentPeriod === 'week') key = isoWeekKey(x.occurrenceDate);
+      else key = x.occurrenceDate.slice(0,7);
+      grouped[key] = (grouped[key]||0) + 1;
+    });
+
+    const labels = Object.keys(grouped).sort();
+    const values = labels.map(k=>grouped[k]);
+
+    if (charts.trend) charts.trend.destroy();
+    charts.trend = new Chart(canvas, {
+      type: 'line',
+      data: { labels, datasets: [{ label: '異常件数', data: values, borderColor: '#667eea', backgroundColor: 'rgba(102,126,234,0.12)', tension: 0.35, fill: true, pointRadius: 2 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true }, tooltip: { mode: 'index', intersect: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  }
+
+  function renderDeptChart(data){
+    const canvas = document.getElementById('deptChart');
+    if (!canvas) return;
+
+    const counts = {};
+    data.forEach(x=>{
+      const dept = x.department || '(未設定)';
+      counts[dept] = (counts[dept]||0) + 1;
+    });
+
+    const labels = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+    const values = labels.map(k=>counts[k]);
+
+    if (charts.dept) charts.dept.destroy();
+    charts.dept = new Chart(canvas, {
+      type: 'bar',
+      data: { labels, datasets: [{ label: '件数', data: values }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+        scales: {
+          x: { ticks: { autoSkip: false, maxRotation: 45, minRotation: 0 } },
+          y: { beginAtZero: true, ticks: { precision: 0 } }
+        }
+      }
+    });
+  }
+
+  function renderStopTimeChart(data){
+    const canvas = document.getElementById('stopTimeChart');
+    if (!canvas) return;
+
+    const bins = { '0-10分':0, '10-30分':0, '30-60分':0, '60分以上':0, '未記録':0 };
+    data.forEach(x=>{
+      const m = calcStopMinutes(x);
+      if (m === null || m === undefined) bins['未記録']++;
+      else if (m < 10)  bins['0-10分']++;
+      else if (m < 30)  bins['10-30分']++;
+      else if (m < 60)  bins['30-60分']++;
+      else              bins['60分以上']++;
+    });
+
+    if (charts.stop) charts.stop.destroy();
+    charts.stop = new Chart(canvas, {
+      type: 'doughnut',
+      data: { labels: Object.keys(bins), datasets: [{ data: Object.values(bins) }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '55%' }
+    });
+  }
+
+  /* ===== 実行系 ===== */
   function runAnalysis(){
     loading.classList.add('active');
     setTimeout(()=>{
@@ -463,9 +563,9 @@
         if(moldTechOnly) filtered = filtered.filter(x => Number(x?.maintenanceUnit ?? 0) >= 1);
 
         renderDataSheet(filtered);
-
-        // 必要なら下を有効化
-        // renderTrendChart(filtered); renderDeptChart(filtered); renderStopTimeChart(filtered);
+        renderTrendChart(filtered);
+        renderDeptChart(filtered);
+        renderStopTimeChart(filtered);
       }finally{
         loading.classList.remove('active');
       }
@@ -509,10 +609,10 @@
   /* ===== Init / Events ===== */
   function initializeControls(){
     const today = new Date();
-    const endDate = formatDate(today);
-    const startDate = formatDate(new Date(today.getFullYear(), today.getMonth(), 1));
-    document.getElementById('endDate').value = endDate;
-    document.getElementById('startDate').value = startDate;
+    const endStr = formatDate(today);
+    const startStr = formatDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    document.getElementById('endDate').value = endStr;
+    document.getElementById('startDate').value = startStr;
     document.getElementById('monthSelect').value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
 
     // 期間タブ
@@ -521,6 +621,7 @@
         document.querySelectorAll('.period-tab').forEach(t=>t.classList.remove('active'));
         tab.classList.add('active');
         currentPeriod = tab.dataset.period;
+        runAnalysis();
       });
     });
 
@@ -540,17 +641,19 @@
         document.getElementById('endDate').value = e;
         document.querySelectorAll('[data-quick]').forEach(b=>b.classList.remove('active'));
         btn.classList.add('active');
+        runAnalysis();
       });
     });
 
     // 月選択
- document.getElementById('monthSelect').addEventListener('change', (ev)=>{
-   const [year, month] = ev.target.value.split('-').map(Number);
-   const s = formatDate(new Date(year, month - 1, 1));
-   const endStr = formatDate(new Date(year, month, 0));
-   document.getElementById('startDate').value = s;
-   document.getElementById('endDate').value = endStr;
- });
+    document.getElementById('monthSelect').addEventListener('change', (ev)=>{
+      const [year, month] = ev.target.value.split('-').map(Number);
+      const s = formatDate(new Date(year, month - 1, 1));
+      const eStr = formatDate(new Date(year, month, 0));
+      document.getElementById('startDate').value = s;
+      document.getElementById('endDate').value = eStr;
+      runAnalysis();
+    });
 
     // ビュー切替
     document.querySelectorAll('.view-tab').forEach(tab=>{
@@ -577,8 +680,8 @@
 
     // 長文折りたたみ
     const clamp = document.getElementById('toggleClamp');
-    if (clamp) clamp.addEventListener('change', (e)=>{
-      const on = e.target.checked;
+    if (clamp) clamp.addEventListener('change', (ev)=>{
+      const on = ev.target.checked;
       document.querySelectorAll('td.cell-memo > div').forEach(el=>{
         if(on){ el.style.setProperty('-webkit-line-clamp','3'); el.style.maxHeight = '4.6em'; }
         else  { el.style.setProperty('-webkit-line-clamp','unset'); el.style.maxHeight = 'none'; }
@@ -596,14 +699,9 @@
       document.body.classList.remove('body-sheet-wide','body-sheet-ultra');
     });
 
-    // 初回ヘッダー生成（ここでならDOMが確実に存在）
+    // 初回ヘッダー生成
     buildDataSheetColumns();
   }
-
-  /* ===== （任意）グラフ関数（必要な時に実装） ===== */
-  function renderTrendChart(){ /* Chart.js 実装を追加可能 */ }
-  function renderDeptChart(){ /* Chart.js 実装を追加可能 */ }
-  function renderStopTimeChart(){ /* Chart.js 実装を追加可能 */ }
 
 </script>
 </body>
