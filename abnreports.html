@@ -526,7 +526,25 @@
         </div>
         <div class="form-group"><label>保全単位</label><input type="text" id="maintenanceUnit"></div>
         <div class="form-group"><label>何が悪くどうした</label><textarea id="rootCauseAction"></textarea></div>
-        <div class="form-group"><label>再発か新規か *</label><select id="recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+
+        <!-- 再発か新規か -->
+
+       
+        <div class="form-group">
+          <label>再発か新規か *</label>
+          <select id="recurrenceType">
+            <option value="">選択</option>
+            <option value="再発">再発</option>
+            <option value="新規">新規</option>
+          </select>
+        </div>
+
+<div class="form-group" id="measureStatusGroup" style="display:none;">
+  <label>対策状況（再発時のみ）</label>
+  <textarea id="measureStatus" placeholder="例：恒久対策検討中／仮対策実施済み／横展準備中 など"></textarea>
+</div>
+
+
         <div class="form-group">
           <label>暫定 *</label>
           <select id="affirmation" required>
@@ -535,6 +553,7 @@
             <option value="無">無</option>
           </select>
         </div>
+
         <div class="form-group">
           <label>写真</label>
           <div class="photo-upload" onclick="document.getElementById('techPhotos').click()">
@@ -745,6 +764,25 @@
   const gate = document.getElementById('authGate');
   const appRoot = document.getElementById('appRoot');
   const signOutBtn = document.getElementById('signOutBtn');
+// --- 再発時の対策状況 切替UI ---
+const recurrenceSelect = document.getElementById('recurrenceType');
+const measureStatusGroup = document.getElementById('measureStatusGroup');
+const measureStatusInput = document.getElementById('measureStatus');
+
+function toggleMeasureStatusUI(){
+  if (recurrenceSelect.value === '再発'){
+    measureStatusGroup.style.display = 'block';
+    measureStatusInput.setAttribute('required', '');
+  } else {
+    measureStatusGroup.style.display = 'none';
+    measureStatusInput.removeAttribute('required');
+    measureStatusInput.value = '';
+  }
+}
+
+// 初期状態の反映 & 変更時の反映
+toggleMeasureStatusUI();
+recurrenceSelect.addEventListener('change', toggleMeasureStatusUI);
 
   document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
     const email = (document.getElementById('authEmail').value||'').trim();
@@ -1131,14 +1169,36 @@ document.addEventListener('click', (e)=>{
     return rows;
   }
 
-  const HEADER_MAP = {
-    '整理No':'serialNo','部署':'department','ライン名':'lineName','発生日':'occurrenceDate',
-    '発生時刻':'occurrenceTime','再開時刻':'restartTime','異常内容':'anomalyContent','対応内容':'actionTaken',
-    '遡り':'traceback','処置者':'handler','技術対応':'techRequest','技術処置者':'techHandler',
-    '発見タイミング':'discoveryTiming','前回終物確認':'previousCheck','命数有無':'lifespan','命数到達':'lifespanReached',
-    '保全単位':'maintenanceUnit','技術対応':'rootCauseAction','再発新規':'recurrenceType','暫定':'affirmation',
-    '状態':'_statusText','停止時間(分)':'_stopMin','_id':'_id'
-  };
+// ヘッダ
+const headers = [
+  '整理No','部署','ライン名','発生日','発生時刻','再開時刻','停止時間(分)',
+  '異常内容','対応内容','遡り','処置者',
+  '技術対応区分','技術処置者','発見タイミング','前回終物確認',
+  '命数有無','命数到達','保全単位',
+  '技術対応内容','再発新規','対策状況','暫定','状態','_id'
+];
+
+// 行
+const rows = anomalyCache.map(item=>{
+  const stopMin = calcStopMinutes(item);
+  return [
+    item.serialNo||'', item.department||'', item.lineName||'',
+    item.occurrenceDate||'', item.occurrenceTime||'', item.restartTime||'',
+    (stopMin!==null?stopMin:''),
+    item.anomalyContent||'', item.actionTaken||'', item.traceback||'', item.handler||'',
+    // 技術対応区分
+    item.techRequest==='要請'?'技術対応あり':item.techRequest==='完結'?'完了':'',
+    item.techHandler||'', item.discoveryTiming||'', item.previousCheck||'',
+    item.lifespan||'', item.lifespanReached||'', item.maintenanceUnit||'',
+    // 技術対応内容
+    item.rootCauseAction||'',
+    item.recurrenceType||'', item.measureStatus||'',
+    item.affirmation||'',
+    item.status==='complete'?'完了':'技術入力待ち',
+    item._id
+  ];
+});
+
   const REQUIRED_HEADERS = ['整理No','部署','発生日','異常内容','対応内容'];
 
   let importParsed = null;
@@ -1323,6 +1383,7 @@ document.addEventListener('click', (e)=>{
             rootCauseAction: row.rootCauseAction||'',
             recurrenceType: row.recurrenceType||'',
             affirmation: row.affirmation||'',
+             measureStatus: row.measureStatus || '',   // ← 追加
             status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
             mfgPhotoUrls: [], techPhotoUrls: []
           };
@@ -1763,6 +1824,12 @@ async function fetchAllBySerialNo(serialNo){
                 ${item.recurrenceType ? `<div class="tech-info-item"><span class="tech-info-label">分類:</span><span class="tech-info-value">${item.recurrenceType}</span></div>` : ''}
                 ${item.lifespan ? `<div class="tech-info-item"><span class="tech-info-label">命数:</span><span class="tech-info-value">${item.lifespan}</span></div>` : ''}
                 ${item.rootCauseAction ? `<div class="tech-info-item" style="grid-column:1/-1;"><span class="tech-info-label">技術対応:</span><span class="tech-info-value">${item.rootCauseAction}</span></div>` : ''}
+${(item.recurrenceType==='再発' && item.measureStatus) ? 
+  `<div class="tech-info-item" style="grid-column:1/-1;">
+     <span class="tech-info-label">対策状況:</span>
+     <span class="tech-info-value">${item.measureStatus}</span>
+   </div>` : ''
+}
               </div>
             ` : ''}
           </div>
@@ -1827,7 +1894,7 @@ async function fetchAllBySerialNo(serialNo){
             <th>整理No</th><th>部署</th><th>ライン</th><th>発生日</th><th>発生時刻</th>
             <th>再開時刻</th><th>停止時間(分)</th><th>異常内容</th><th>処置内容</th><th>遡り</th>
             <th>処置者</th><th>技術対応</th><th>技術処置者</th><th>発見タイミング</th><th>前回終物確認</th>
-            <th>命数有無</th><th>命数到達</th><th>保全単位</th><th>技術対応</th><th>再発新規</th>
+            <th>命数有無</th><th>命数到達</th><th>保全単位</th><th>技術対応</th><th>再発新規</th><th>対策状況</th>
             <th>暫定</th><th>写真</th><th>状態</th><th>操作</th>
           </tr></thead>
           <tbody>
@@ -1858,6 +1925,8 @@ async function fetchAllBySerialNo(serialNo){
                   <td>${it.maintenanceUnit||'-'}</td>
                   <td style="min-width:150px;">${(it.rootCauseAction||'-').slice(0,50)}${(it.rootCauseAction||'').length>50?'...':''}</td>
                   <td>${it.recurrenceType||'-'}</td>
+                  <td style="min-width:150px;">${(it.measureStatus||'-').slice(0,50)}${(it.measureStatus||'').length>50?'...':''}</td>
+
                   <td>${it.affirmation||'-'}</td>
                   <td>${photoCount ? `<button class="btn-small" style="background:#2196f3;color:#fff;" data-photos="${it._id}">📷 ${photoCount}</button>` : '-'}</td>
                   <td><span class="card-status ${cls}">${st}</span></td>
@@ -2123,6 +2192,7 @@ document.getElementById('btnShowPastOnMfg').addEventListener('click', async ()=>
   document.getElementById('technicalForm').addEventListener('submit', async (e)=>{
     e.preventDefault();
     const id = document.getElementById('selectSerialNo').value;
+
     const updates = {
       techHandler: document.getElementById('techHandler').value,
       discoveryTiming: document.getElementById('discoveryTiming').value,
@@ -2136,11 +2206,19 @@ document.getElementById('btnShowPastOnMfg').addEventListener('click', async ()=>
       status: 'complete',
       completedAt: serverTimestamp()
     };
+
+    // ←←← ここに追加（再発のときだけ対策状況を保存）
+    const recType = document.getElementById('recurrenceType').value;
+    const ms = (document.getElementById('measureStatus')?.value || '').trim();
+    updates.measureStatus = (recType === '再発') ? ms : '';
+
     if (techPhotos.length){
       const urls = await uploadPhotos(id,'tech', techPhotos);
       updates.techPhotoUrls = (anomalyCache.find(x=>x._id===id)?.techPhotoUrls||[]).concat(urls);
     }
     await updateDoc(doc(db,'anomalies',id), updates);
+
+
     e.target.reset(); techPhotos=[]; document.getElementById('techPhotoPreview').innerHTML='';
     document.getElementById('selectedDataDisplay').style.display='none';
     document.getElementById('similarCasesBox').classList.remove('active');
@@ -2210,6 +2288,11 @@ const editModalHtml = `
       <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit"></div>
       <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
       <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
+      <div class="form-group" id="edit_measureStatusGroup" style="display:none;">
+  <label>対策状況（再発の場合）</label>
+  <textarea id="edit_measureStatus"></textarea>
+</div>
+
       <div class="form-group"><label>暫定</label>
         <select id="edit_affirmation">
           <option value="">選択</option>
@@ -2261,6 +2344,10 @@ const editModalHtml = `
       document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
       document.getElementById('edit_affirmation').value   = rec.affirmation||'';
       modal.classList.add('active'); modal.setAttribute('aria-hidden','false');
+     document.getElementById('edit_measureStatus').value = rec.measureStatus || '';
+document.getElementById('edit_measureStatusGroup').style.display =
+  (rec.recurrenceType === '再発') ? 'block' : 'none';
+
     })();
   }
   document.addEventListener('change', (e)=>{
@@ -2288,40 +2375,48 @@ const editModalHtml = `
   document.getElementById('btnEditCancel').addEventListener('click', ()=>{
     modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
   });
-  document.getElementById('btnEditSave').addEventListener('click', async ()=>{
-    if (!editCurrentId) return;
-    const updates = {
-      occurrenceDate:  document.getElementById('edit_occurrenceDate').value||'',
-      occurrenceTime:  document.getElementById('edit_occurrenceTime').value||'',
-      restartTime:     document.getElementById('edit_restartTime').value||'',
-      department:      document.getElementById('edit_department').value||'',
-      lineName:        document.getElementById('edit_lineName').value||'',
-      handler:         document.getElementById('edit_handler').value||'',
-      serialNo:        document.getElementById('edit_serialNo').value||'',
-      anomalyContent:  document.getElementById('edit_anomalyContent').value||'',
-      actionTaken:     document.getElementById('edit_actionTaken').value||'',
-      traceback:       document.getElementById('edit_traceback').value||'',
-      techRequest:     document.getElementById('edit_techRequest').value||'',
-      techHandler:     document.getElementById('edit_techHandler').value||'',
-      discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
-      previousCheck:   document.getElementById('edit_previousCheck').value||'',
-      lifespan:        document.getElementById('edit_lifespan').value||'',
-      lifespanReached: document.getElementById('edit_lifespanReached').value||'',
-      maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
-      rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
-      recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
-      affirmation:     document.getElementById('edit_affirmation').value||'',
-    };
-    if (updates.techRequest==='完結'){
-      updates.status='complete';
-    }else{
-      const hasTech = (updates.techHandler||updates.lifespan||updates.maintenanceUnit||updates.rootCauseAction||updates.recurrenceType);
-      updates.status = hasTech ? 'complete' : 'pending';
-    }
-    await updateDoc(doc(db,'anomalies',editCurrentId), updates);
-    modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
-    alert('更新しました。');
-  });
+document.getElementById('btnEditSave').addEventListener('click', async ()=>{
+  if (!editCurrentId) return;
+  const updates = {
+    occurrenceDate:  document.getElementById('edit_occurrenceDate').value||'',
+    occurrenceTime:  document.getElementById('edit_occurrenceTime').value||'',
+    restartTime:     document.getElementById('edit_restartTime').value||'',
+    department:      document.getElementById('edit_department').value||'',
+    lineName:        document.getElementById('edit_lineName').value||'',
+    handler:         document.getElementById('edit_handler').value||'',
+    serialNo:        document.getElementById('edit_serialNo').value||'',
+    anomalyContent:  document.getElementById('edit_anomalyContent').value||'',
+    actionTaken:     document.getElementById('edit_actionTaken').value||'',
+    traceback:       document.getElementById('edit_traceback').value||'',
+    techRequest:     document.getElementById('edit_techRequest').value||'',
+    techHandler:     document.getElementById('edit_techHandler').value||'',
+    discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
+    previousCheck:   document.getElementById('edit_previousCheck').value||'',
+    lifespan:        document.getElementById('edit_lifespan').value||'',
+    lifespanReached: document.getElementById('edit_lifespanReached').value||'',
+    maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
+    rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
+    recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
+    affirmation:     document.getElementById('edit_affirmation').value||'',
+  };
+
+  // 🟩 ここを追加！
+  updates.measureStatus = (updates.recurrenceType === '再発')
+    ? (document.getElementById('edit_measureStatus').value || '')
+    : '';
+
+  if (updates.techRequest==='完結'){
+    updates.status='complete';
+  }else{
+    const hasTech = (updates.techHandler||updates.lifespan||updates.maintenanceUnit||updates.rootCauseAction||updates.recurrenceType);
+    updates.status = hasTech ? 'complete' : 'pending';
+  }
+  await updateDoc(doc(db,'anomalies',editCurrentId), updates);
+  modal.classList.remove('active');
+  modal.setAttribute('aria-hidden','true');
+  editCurrentId=null;
+  alert('更新しました。');
+});
 
   async function deleteRecord(id){
     if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
@@ -2471,7 +2566,7 @@ const editModalHtml = `
   /* CSV出力 */
   document.getElementById('btnExport').addEventListener('click', ()=>{
     if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
-    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','停止時間(分)','異常内容','対応内容','遡り','処置者','技術対応','技術処置者','発見タイミング','前回終物確認','命数有無','命数到達','保全単位','技術対応','再発新規','暫定','状態','_id'];
+    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','停止時間(分)','異常内容','対応内容','遡り','処置者','技術対応','技術処置者','発見タイミング','前回終物確認','命数有無','命数到達','保全単位','技術対応','再発新規','対策状況','暫定','状態','_id'];
     const rows = anomalyCache.map(item=>{
       const stopMin = calcStopMinutes(item);
       return [
@@ -2480,7 +2575,7 @@ const editModalHtml = `
         item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
         item.techRequest==='要請'?'技術対応あり':item.techRequest==='完結'?'完了':'',
         item.techHandler||'',item.discoveryTiming||'',item.previousCheck||'',item.lifespan||'',item.lifespanReached||'',
-        item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',item.affirmation||'',
+        item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',item.measureStatus||'',item.affirmation||'',
         item.status==='complete'?'完了':'技術入力待ち', item._id
       ];
     });
