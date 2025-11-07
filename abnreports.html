@@ -1668,6 +1668,30 @@ ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
   }
   handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
   handlePhotoUpload('techPhotos','techPhotoPreview', techPhotos);
+ // 編集モーダルの写真アップロード
+handlePhotoUpload('edit_mfgPhotos','edit_mfgPhotoPreview', editMfgPhotos);
+handlePhotoUpload('edit_techPhotos','edit_techPhotoPreview', editTechPhotos);
+
+// 既存写真の削除ボタン処理
+document.addEventListener('click', (e) => {
+  const deleteBtn = e.target.closest('button[data-delete-existing]');
+  if (deleteBtn) {
+    const kind = deleteBtn.getAttribute('data-delete-existing');
+    const url = deleteBtn.getAttribute('data-url');
+    
+    if (confirm('この写真を削除しますか？')) {
+      editPhotosToDelete.push(url);
+      deleteBtn.closest('.photo-item').remove();
+      
+      // リストが空になったら「写真なし」を表示
+      const listId = kind === 'mfg' ? 'edit_mfgPhotosList' : 'edit_techPhotosList';
+      const list = document.getElementById(listId);
+      if (list.querySelectorAll('.photo-item').length === 0) {
+        list.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">写真なし</p>';
+      }
+    }
+  }
+});
   document.addEventListener('click',(e)=>{
     const rm=e.target.closest('.remove-btn[data-photo]'); if(!rm) return;
     const id=rm.getAttribute('data-photo'); const idx=Number(rm.getAttribute('data-index'));
@@ -2617,12 +2641,14 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
   });
 
 /* 編集モーダル */
+/* 編集モーダル */
 const editModalHtml = `
-  <div class="modal-content">
+  <div class="modal-content" style="max-width:800px;">
     <div class="modal-title">✏️ 履歴レコード編集</div>
     <div class="edit-tabs">
       <button class="edit-tab active" data-edit-tab="mfg">製造</button>
       <button class="edit-tab" data-edit-tab="tech">技術</button>
+      <button class="edit-tab" data-edit-tab="photos">写真</button>
     </div>
     <div id="editMfg" class="edit-pane">
       <div class="form-group"><label>発生日 *</label><input type="date" id="edit_occurrenceDate"></div>
@@ -2633,7 +2659,7 @@ const editModalHtml = `
       <div class="form-group"><label>整理No *</label><input type="text" id="edit_serialNo"></div>
       <div class="form-group"><label>異常内容 *</label><textarea id="edit_anomalyContent"></textarea></div>
       <div class="form-group"><label>対応内容 *</label><textarea id="edit_actionTaken"></textarea></div>
-      <div class="form-group"><label>遡り *</label><input type="text" id="edit_traceback" placeholder="例: 有、無、一部 など"></div>
+      <div class="form-group"><label>遡り *</label><input type="text" id="edit_traceback"></div>
       <div class="form-group"><label>技術対応 *</label><select id="edit_techRequest"><option value="">選択</option><option value="要請">技術対応あり</option><option value="完結">完了</option></select></div>
     </div>
     <div id="editTech" class="edit-pane" style="display:none;">
@@ -2668,10 +2694,9 @@ const editModalHtml = `
       <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction"></textarea></div>
       <div class="form-group"><label>再発か新規か</label><select id="edit_recurrenceType"><option value="">選択</option><option value="再発">再発</option><option value="新規">新規</option></select></div>
       <div class="form-group" id="edit_measureStatusGroup" style="display:none;">
-  <label>対策状況（再発の場合）</label>
-  <textarea id="edit_measureStatus"></textarea>
-</div>
-
+        <label>対策状況（再発の場合）</label>
+        <textarea id="edit_measureStatus"></textarea>
+      </div>
       <div class="form-group"><label>暫定</label>
         <select id="edit_affirmation">
           <option value="">選択</option>
@@ -2680,55 +2705,137 @@ const editModalHtml = `
         </select>
       </div>
     </div>
+    <div id="editPhotos" class="edit-pane" style="display:none;">
+      <div style="margin-bottom:20px;">
+        <h4 style="color:#667eea;margin-bottom:10px;">📸 製造部門の写真</h4>
+        <div id="edit_mfgPhotosList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-bottom:15px;"></div>
+        <div class="photo-upload" onclick="document.getElementById('edit_mfgPhotos').click()">
+          <div style="font-size:1.5rem;">📸</div>
+          <p style="font-size:.9rem;">製造写真を追加</p>
+          <input type="file" id="edit_mfgPhotos" accept="image/*" multiple style="display:none;">
+        </div>
+        <div id="edit_mfgPhotoPreview" class="photo-preview"></div>
+      </div>
+      <div>
+        <h4 style="color:#f57c00;margin-bottom:10px;">🔧 技術部門の写真</h4>
+        <div id="edit_techPhotosList" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-bottom:15px;"></div>
+        <div class="photo-upload" onclick="document.getElementById('edit_techPhotos').click()">
+          <div style="font-size:1.5rem;">📸</div>
+          <p style="font-size:.9rem;">技術写真を追加</p>
+          <input type="file" id="edit_techPhotos" accept="image/*" multiple style="display:none;">
+        </div>
+        <div id="edit_techPhotoPreview" class="photo-preview"></div>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-cancel" id="btnEditCancel" style="flex:1;">キャンセル</button>
       <button class="btn btn-primary" id="btnEditSave" style="flex:1;">保存</button>
     </div>
   </div>`;
+ 
   const modal = document.createElement('div'); modal.className='modal'; modal.id='editModal'; modal.innerHTML=editModalHtml; document.body.appendChild(modal);
 
   let editCurrentId=null, editMastersCache=null;
-  function openEdit(id){
-    const rec = anomalyCache.find(x=>x._id===id); if(!rec){ alert('対象が見つかりません'); return; }
-    editCurrentId=id;
-    (async ()=>{
-      editMastersCache = mastersCache || await fetchMasters();
-      const depSel = document.getElementById('edit_department'); depSel.innerHTML='';
-      editMastersCache.departments.forEach(d=>{ const o=document.createElement('option'); o.value=o.textContent=d; depSel.appendChild(o); });
-      depSel.value = rec.department||'';
-      const lineSel=document.getElementById('edit_lineName'), hSel=document.getElementById('edit_handler');
-      lineSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.lines[depSel.value]||[]).forEach(l=>{ const o=document.createElement('option'); o.value=o.textContent=l; lineSel.appendChild(o); });
-      hSel.innerHTML='<option value="">選択してください</option>';
-      (editMastersCache.handlers[depSel.value]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; hSel.appendChild(o); });
+ let editCurrentId = null;
+let editMastersCache = null;
+let editMfgPhotos = [];
+let editTechPhotos = [];
+let editPhotosToDelete = [];
+function openEdit(id){
+  const rec = anomalyCache.find(x=>x._id===id);
+  if(!rec){ alert('対象が見つかりません'); return; }
+  
+  editCurrentId = id;
+  editMfgPhotos = [];
+  editTechPhotos = [];
+  editPhotosToDelete = [];
+  
+  (async ()=>{
+    editMastersCache = mastersCache || await fetchMasters();
+    
+    // 部署・ライン・処置者の設定
+    const depSel = document.getElementById('edit_department');
+    depSel.innerHTML='';
+    editMastersCache.departments.forEach(d=>{ 
+      const o=document.createElement('option'); 
+      o.value=o.textContent=d; 
+      depSel.appendChild(o); 
+    });
+    depSel.value = rec.department||'';
+    
+    const lineSel=document.getElementById('edit_lineName');
+    const hSel=document.getElementById('edit_handler');
+    lineSel.innerHTML='<option value="">選択してください</option>';
+    (editMastersCache.lines[depSel.value]||[]).forEach(l=>{ 
+      const o=document.createElement('option'); 
+      o.value=o.textContent=l; 
+      lineSel.appendChild(o); 
+    });
+    hSel.innerHTML='<option value="">選択してください</option>';
+    (editMastersCache.handlers[depSel.value]||[]).forEach(h=>{ 
+      const o=document.createElement('option'); 
+      o.value=o.textContent=h; 
+      hSel.appendChild(o); 
+    });
 
-      lineSel.value = rec.lineName||'';
-      hSel.value = rec.handler||'';
+    lineSel.value = rec.lineName||'';
+    hSel.value = rec.handler||'';
 
-      document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate||'';
-      document.getElementById('edit_occurrenceTime').value = rec.occurrenceTime||'';
-      document.getElementById('edit_restartTime').value   = rec.restartTime||'';
-      document.getElementById('edit_serialNo').value      = rec.serialNo||'';
-      document.getElementById('edit_anomalyContent').value= rec.anomalyContent||'';
-      document.getElementById('edit_actionTaken').value   = rec.actionTaken||'';
-      document.getElementById('edit_traceback').value     = rec.traceback||'';
-      document.getElementById('edit_techRequest').value   = rec.techRequest||'';
-      document.getElementById('edit_techHandler').value   = rec.techHandler||'';
-      document.getElementById('edit_discoveryTiming').value = rec.discoveryTiming||'';
-      document.getElementById('edit_previousCheck').value = rec.previousCheck||'';
-      document.getElementById('edit_lifespan').value      = rec.lifespan||'';
-      document.getElementById('edit_lifespanReached').value = rec.lifespanReached||'';
-      document.getElementById('edit_maintenanceUnit').value= rec.maintenanceUnit||'';
-      document.getElementById('edit_rootCauseAction').value= rec.rootCauseAction||'';
-      document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
-      document.getElementById('edit_affirmation').value   = rec.affirmation||'';
-      modal.classList.add('active'); modal.setAttribute('aria-hidden','false');
-     document.getElementById('edit_measureStatus').value = rec.measureStatus || '';
-document.getElementById('edit_measureStatusGroup').style.display =
-  (rec.recurrenceType === '再発') ? 'block' : 'none';
+    // フォーム値の設定
+    document.getElementById('edit_occurrenceDate').value = rec.occurrenceDate||'';
+    document.getElementById('edit_occurrenceTime').value = rec.occurrenceTime||'';
+    document.getElementById('edit_restartTime').value = rec.restartTime||'';
+    document.getElementById('edit_serialNo').value = rec.serialNo||'';
+    document.getElementById('edit_anomalyContent').value = rec.anomalyContent||'';
+    document.getElementById('edit_actionTaken').value = rec.actionTaken||'';
+    document.getElementById('edit_traceback').value = rec.traceback||'';
+    document.getElementById('edit_techRequest').value = rec.techRequest||'';
+    document.getElementById('edit_techHandler').value = rec.techHandler||'';
+    document.getElementById('edit_discoveryTiming').value = rec.discoveryTiming||'';
+    document.getElementById('edit_previousCheck').value = rec.previousCheck||'';
+    document.getElementById('edit_lifespan').value = rec.lifespan||'';
+    document.getElementById('edit_lifespanReached').value = rec.lifespanReached||'';
+    document.getElementById('edit_maintenanceUnit').value = rec.maintenanceUnit||'';
+    document.getElementById('edit_rootCauseAction').value = rec.rootCauseAction||'';
+    document.getElementById('edit_recurrenceType').value = rec.recurrenceType||'';
+    document.getElementById('edit_affirmation').value = rec.affirmation||'';
+    document.getElementById('edit_measureStatus').value = rec.measureStatus || '';
+    document.getElementById('edit_measureStatusGroup').style.display = (rec.recurrenceType === '再発') ? 'block' : 'none';
+    
+    // 既存写真の表示
+    displayEditExistingPhotos('mfg', rec.mfgPhotoUrls || []);
+    displayEditExistingPhotos('tech', rec.techPhotoUrls || []);
+    
+    // プレビューをクリア
+    document.getElementById('edit_mfgPhotoPreview').innerHTML = '';
+    document.getElementById('edit_techPhotoPreview').innerHTML = '';
+    
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden','false');
+  })();
+}
 
-    })();
+// 既存写真を表示する関数
+function displayEditExistingPhotos(kind, urls) {
+  const listId = kind === 'mfg' ? 'edit_mfgPhotosList' : 'edit_techPhotosList';
+  const list = document.getElementById(listId);
+  list.innerHTML = '';
+  
+  if (!urls || urls.length === 0) {
+    list.innerHTML = '<p style="color:#999;text-align:center;padding:20px;">写真なし</p>';
+    return;
   }
+  
+  urls.forEach((url, idx) => {
+    const div = document.createElement('div');
+    div.className = 'photo-item';
+    div.innerHTML = `
+      <img src="${url}" alt="">
+      <button class="remove-btn" data-delete-existing="${kind}" data-url="${url}" data-index="${idx}">×</button>
+    `;
+    list.appendChild(div);
+  });
+}
 
  // 編集モーダルでの再発/新規切り替え処理
   document.getElementById('edit_recurrenceType').addEventListener('change', function(){
@@ -2765,77 +2872,160 @@ document.getElementById('edit_measureStatusGroup').style.display =
   document.getElementById('btnEditCancel').addEventListener('click', ()=>{
     modal.classList.remove('active'); modal.setAttribute('aria-hidden','true'); editCurrentId=null;
   });
-document.getElementById('btnEditSave').addEventListener('click', async ()=>{
+document.getElementById('btnEditSave').addEventListener('click', async () => {
   if (!editCurrentId) return;
-  const updates = {
-    occurrenceDate:  document.getElementById('edit_occurrenceDate').value||'',
-    occurrenceTime:  document.getElementById('edit_occurrenceTime').value||'',
-    restartTime:     document.getElementById('edit_restartTime').value||'',
-    department:      document.getElementById('edit_department').value||'',
-    lineName:        document.getElementById('edit_lineName').value||'',
-    handler:         document.getElementById('edit_handler').value||'',
-    serialNo:        document.getElementById('edit_serialNo').value||'',
-    anomalyContent:  document.getElementById('edit_anomalyContent').value||'',
-    actionTaken:     document.getElementById('edit_actionTaken').value||'',
-    traceback:       document.getElementById('edit_traceback').value||'',
-    techRequest:     document.getElementById('edit_techRequest').value||'',
-    techHandler:     document.getElementById('edit_techHandler').value||'',
-    discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
-    previousCheck:   document.getElementById('edit_previousCheck').value||'',
-    lifespan:        document.getElementById('edit_lifespan').value||'',
-    lifespanReached: document.getElementById('edit_lifespanReached').value||'',
-    maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
-    rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
-    recurrenceType:  document.getElementById('edit_recurrenceType').value||'',
-    affirmation:     document.getElementById('edit_affirmation').value||'',
-  };
+  
+  const saveBtn = document.getElementById('btnEditSave');
+  saveBtn.disabled = true;
+  saveBtn.textContent = '保存中...';
+  
+  try {
+    const updates = {
+      occurrenceDate: document.getElementById('edit_occurrenceDate').value||'',
+      occurrenceTime: document.getElementById('edit_occurrenceTime').value||'',
+      restartTime: document.getElementById('edit_restartTime').value||'',
+      department: document.getElementById('edit_department').value||'',
+      lineName: document.getElementById('edit_lineName').value||'',
+      handler: document.getElementById('edit_handler').value||'',
+      serialNo: document.getElementById('edit_serialNo').value||'',
+      anomalyContent: document.getElementById('edit_anomalyContent').value||'',
+      actionTaken: document.getElementById('edit_actionTaken').value||'',
+      traceback: document.getElementById('edit_traceback').value||'',
+      techRequest: document.getElementById('edit_techRequest').value||'',
+      techHandler: document.getElementById('edit_techHandler').value||'',
+      discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
+      previousCheck: document.getElementById('edit_previousCheck').value||'',
+      lifespan: document.getElementById('edit_lifespan').value||'',
+      lifespanReached: document.getElementById('edit_lifespanReached').value||'',
+      maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
+      rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
+      recurrenceType: document.getElementById('edit_recurrenceType').value||'',
+      affirmation: document.getElementById('edit_affirmation').value||'',
+      measureStatus: (document.getElementById('edit_recurrenceType').value === '再発')
+        ? (document.getElementById('edit_measureStatus').value || '')
+        : ''
+    };
 
-  // 🟩 ここを追加！
-  updates.measureStatus = (updates.recurrenceType === '再発')
-    ? (document.getElementById('edit_measureStatus').value || '')
-    : '';
-
-  if (updates.techRequest==='完結'){
-    updates.status='complete';
-  }else{
-    const hasTech = (updates.techHandler||updates.lifespan||updates.maintenanceUnit||updates.rootCauseAction||updates.recurrenceType);
-    updates.status = hasTech ? 'complete' : 'pending';
+    if (updates.techRequest === '完結') {
+      updates.status = 'complete';
+    } else {
+      const hasTech = (updates.techHandler || updates.lifespan || updates.maintenanceUnit || updates.rootCauseAction || updates.recurrenceType);
+      updates.status = hasTech ? 'complete' : 'pending';
+    }
+    
+    // 削除する写真を処理
+    if (editPhotosToDelete.length > 0) {
+      saveBtn.textContent = '画像削除中...';
+      for (const url of editPhotosToDelete) {
+        try {
+          await deleteObject(ref(storage, url));
+          console.log('Deleted photo:', url);
+        } catch (e) {
+          console.log('Failed to delete photo:', e);
+        }
+      }
+    }
+    
+    // 既存の写真URLを取得（削除されたものを除く）
+    const currentItem = anomalyCache.find(x => x._id === editCurrentId);
+    let remainingMfgUrls = (currentItem?.mfgPhotoUrls || []).filter(url => !editPhotosToDelete.includes(url));
+    let remainingTechUrls = (currentItem?.techPhotoUrls || []).filter(url => !editPhotosToDelete.includes(url));
+    
+    // 新しい写真をアップロード
+    if (editMfgPhotos.length > 0) {
+      saveBtn.textContent = `製造写真アップロード中... (${editMfgPhotos.length}枚)`;
+      const newUrls = await uploadPhotos(editCurrentId, 'mfg', editMfgPhotos);
+      remainingMfgUrls = [...remainingMfgUrls, ...newUrls];
+    }
+    
+    if (editTechPhotos.length > 0) {
+      saveBtn.textContent = `技術写真アップロード中... (${editTechPhotos.length}枚)`;
+      const newUrls = await uploadPhotos(editCurrentId, 'tech', editTechPhotos);
+      remainingTechUrls = [...remainingTechUrls, ...newUrls];
+    }
+    
+    updates.mfgPhotoUrls = remainingMfgUrls;
+    updates.techPhotoUrls = remainingTechUrls;
+    
+    saveBtn.textContent = '保存中...';
+    await updateDoc(doc(db, 'anomalies', editCurrentId), updates);
+    
+    // キャッシュを更新
+    const cacheIndex = anomalyCache.findIndex(x => x._id === editCurrentId);
+    if (cacheIndex !== -1) {
+      anomalyCache[cacheIndex] = { ...anomalyCache[cacheIndex], ...updates };
+      filteredCache = [...anomalyCache];
+      renderHistory();
+    }
+    
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden','true');
+    editCurrentId = null;
+    editMfgPhotos = [];
+    editTechPhotos = [];
+    editPhotosToDelete = [];
+    
+    alert('更新しました！');
+    
+  } catch (error) {
+    console.error('Edit save error:', error);
+    alert(`更新に失敗しました。\n\nエラー: ${error.message}`);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = '保存';
   }
-  await updateDoc(doc(db,'anomalies',editCurrentId), updates);
-  modal.classList.remove('active');
-  modal.setAttribute('aria-hidden','true');
-  editCurrentId=null;
-  alert('更新しました。');
 });
 
-  async function deleteRecord(id){
-    if (!confirm('このレコードを削除しますか？（画像も削除）')) return;
-    const item = anomalyCache.find(a => a._id === id);
-    try{
-      // 画像削除を並列処理で効率化
-      const deletePromises = [];
-      if (item.mfgPhotoUrls && Array.isArray(item.mfgPhotoUrls)){
-        item.mfgPhotoUrls.forEach(url => {
-          deletePromises.push(
-            deleteObject(ref(storage, url)).catch(e => console.log('Failed to delete mfg photo:', e))
-          );
-        });
-      }
-      if (item.techPhotoUrls && Array.isArray(item.techPhotoUrls)){
-        item.techPhotoUrls.forEach(url => {
-          deletePromises.push(
-            deleteObject(ref(storage, url)).catch(e => console.log('Failed to delete tech photo:', e))
-          );
-        });
-      }
-      await Promise.all(deletePromises);
-    }catch(err){
-      console.log('Error deleting photos:', err);
-    }
-    await deleteDoc(doc(db,'anomalies',id));
-    alert('削除しました');
+async function deleteRecord(id){
+  if (!confirm('このレコードを削除しますか？（画像も削除されます）')) return;
+  
+  console.log('Deleting record:', id);
+  const item = anomalyCache.find(a => a._id === id);
+  
+  if (!item) {
+    alert('削除対象が見つかりません');
+    return;
   }
-
+  
+  try {
+    // 画像削除
+    const deletePromises = [];
+    if (item.mfgPhotoUrls && Array.isArray(item.mfgPhotoUrls)){
+      item.mfgPhotoUrls.forEach(url => {
+        deletePromises.push(
+          deleteObject(ref(storage, url)).catch(e => console.log('Failed to delete mfg photo:', e))
+        );
+      });
+    }
+    if (item.techPhotoUrls && Array.isArray(item.techPhotoUrls)){
+      item.techPhotoUrls.forEach(url => {
+        deletePromises.push(
+          deleteObject(ref(storage, url)).catch(e => console.log('Failed to delete tech photo:', e))
+        );
+      });
+    }
+    await Promise.all(deletePromises);
+    
+    // Firestoreから削除
+    await deleteDoc(doc(db, 'anomalies', id));
+    console.log('Document deleted from Firestore');
+    
+    // キャッシュから削除して即座に再描画
+    anomalyCache = anomalyCache.filter(item => item._id !== id);
+    filteredCache = filteredCache.filter(item => item._id !== id);
+    
+    renderHistory();
+    renderTechTargetSelect();
+    updateSerialNoList();
+    
+    alert('削除しました');
+    console.log('Cache updated and UI re-rendered');
+    
+  } catch (err) {
+    console.error('Error deleting record:', err);
+    alert(`削除に失敗しました。\n\nエラー: ${err.message}`);
+  }
+}
   function showPhotos(id){
     const item = anomalyCache.find(a => a._id === id);
     if (!item) return;
