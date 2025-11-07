@@ -1743,15 +1743,122 @@ async function fetchAllBySerialNo(serialNo){
   function anomaliesRef(){ return collection(db,'anomalies'); }
 
   // 画像アップロードの最適化（並列処理）
-  async function uploadPhotos(docId, kind, items){
-    const uploadPromises = items.map(async (it) => {
-      const path=`anomalies/${docId}/${kind}/${Date.now()}_${it.name}`;
-      const storageRef=ref(storage, path);
-      await uploadBytes(storageRef, it.file);
-      return await getDownloadURL(storageRef);
-    });
-    return await Promise.all(uploadPromises);
+// uploadPhotos 関数を改善
+async function uploadPhotos(docId, kind, items){
+  const urls=[];
+  for (const it of items){
+    try {
+      // ファイル名をサニタイズ（特殊文字を除去）
+      const sanitizedName = it.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const timestamp = Date.now();
+      const path = `anomalies/${docId}/${kind}/${timestamp}_${sanitizedName}`;
+      
+      console.log(`Uploading: ${path}`); // デバッグ用
+      
+      const storageRef = ref(storage, path);
+      const snapshot = await uploadBytes(storageRef, it.file);
+      const url = await getDownloadURL(snapshot.ref);
+      
+      console.log(`Upload success: ${url}`); // デバッグ用
+      urls.push(url);
+    } catch (error) {
+      console.error(`Upload failed for ${it.name}:`, error);
+      alert(`画像のアップロードに失敗しました: ${it.name}\nエラー: ${error.message}`);
+      throw error; // エラーを上位に伝播
+    }
   }
+  return urls;
+}
+
+// 製造フォーム送信時のエラーハンドリング改善
+document.getElementById('manufacturingForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  
+  try {
+    const techReq = document.getElementById('techRequest').value;
+    const base = {
+      department: document.getElementById('department').value,
+      lineName:   document.getElementById('lineName').value,
+      serialNo:   document.getElementById('serialNo').value,
+      occurrenceDate: document.getElementById('occurrenceDate').value,
+      occurrenceTime: document.getElementById('occurrenceTime').value || '',
+      restartTime:    document.getElementById('restartTime').value || '',
+      anomalyContent: document.getElementById('anomalyContent').value,
+      actionTaken:    document.getElementById('actionTaken').value,
+      traceback:      document.getElementById('traceback').value,
+      handler:        document.getElementById('handler').value,
+      techRequest:    techReq,
+      status:         techReq==='完結' ? 'complete':'pending',
+      createdAt:      serverTimestamp(),
+      techHandler:'', lifespan:'', maintenanceUnit:'', rootCauseAction:'', recurrenceType:'',
+      discoveryTiming:'', previousCheck:'', lifespanReached:'', affirmation:'',
+      mfgPhotoUrls:[], techPhotoUrls:[]
+    };
+    
+    console.log('Creating document...'); // デバッグ用
+    const created = await addDoc(anomaliesRef(), base);
+    console.log('Document created:', created.id); // デバッグ用
+    
+    if (mfgPhotos.length){
+      console.log(`Uploading ${mfgPhotos.length} photos...`); // デバッグ用
+      const urls = await uploadPhotos(created.id, 'mfg', mfgPhotos);
+      await updateDoc(doc(db,'anomalies',created.id), { mfgPhotoUrls: urls });
+      console.log('Photos uploaded successfully'); // デバッグ用
+    }
+
+    e.target.reset(); 
+    mfgPhotos=[]; 
+    document.getElementById('mfgPhotoPreview').innerHTML='';
+    document.getElementById('lineName').innerHTML='<option value="">部署を先に選択してください</option>';
+    document.getElementById('handler').innerHTML='<option value="">部署を先に選択してください</option>';
+    alert('登録しました。');
+  } catch (error) {
+    console.error('Form submission error:', error);
+    alert(`登録に失敗しました。\nエラー: ${error.message}\n\nコードを確認してください: ${error.code || 'N/A'}`);
+  }
+});
+
+// 技術フォームも同様に修正
+document.getElementById('technicalForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  
+  try {
+    const id = document.getElementById('selectSerialNo').value;
+    const updates = {
+      techHandler: document.getElementById('techHandler').value,
+      discoveryTiming: document.getElementById('discoveryTiming').value,
+      previousCheck: document.getElementById('previousCheck').value || '',
+      lifespan: document.getElementById('lifespan').value,
+      lifespanReached: document.getElementById('lifespanReached').value,
+      maintenanceUnit: document.getElementById('maintenanceUnit').value,
+      rootCauseAction: document.getElementById('rootCauseAction').value,
+      recurrenceType: document.getElementById('recurrenceType').value,
+      affirmation: document.getElementById('affirmation').value,
+      status: 'complete',
+      completedAt: serverTimestamp()
+    };
+    
+    if (techPhotos.length){
+      console.log(`Uploading ${techPhotos.length} tech photos...`); // デバッグ用
+      const urls = await uploadPhotos(id,'tech', techPhotos);
+      updates.techPhotoUrls = (anomalyCache.find(x=>x._id===id)?.techPhotoUrls||[]).concat(urls);
+    }
+    
+    await updateDoc(doc(db,'anomalies',id), updates);
+    
+    e.target.reset(); 
+    techPhotos=[]; 
+    document.getElementById('techPhotoPreview').innerHTML='';
+    document.getElementById('selectedDataDisplay').style.display='none';
+    document.getElementById('similarCasesBox').classList.remove('active');
+    showingAllCases = false;
+    document.getElementById('previousCheckGroup').style.display='none';
+    alert('技術入力を登録しました。');
+  } catch (error) {
+    console.error('Tech form submission error:', error);
+    alert(`登録に失敗しました。\nエラー: ${error.message}\n\nコードを確認してください: ${error.code || 'N/A'}`);
+  }
+});
  /* 履歴描画：フィルター対応 + ページング */
   function renderHistory(){
     const items=[...filteredCache].sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
