@@ -576,45 +576,82 @@ if (moldTechOnly) lastMonthData = lastMonthData.filter(x => Number(x?.maintenanc
   /*========================
     データシート（全項目表示）
   ========================*/
-  function buildDataSheetColumns(data){
-    const exclude = new Set(['status','_firebaseId']);
-    const basePreferred = [
-      'occurrenceDate','department','lineName','serialNo','anomalyContent','actionTaken',
-      'occurrenceTime','restartTime','handler','techRequest'
-    ];
-    const labels = {
-      occurrenceDate:'発生日', department:'部署', lineName:'ライン名', serialNo:'整理No',
-      anomalyContent:'異常内容', actionTaken:'対応内容', occurrenceTime:'発生時刻',
-      restartTime:'再開時刻', handler:'処置者', techRequest:'技術要請', discoveryTiming:'発見タイミング',
-      defectType:'不良区分', cause:'原因', countermeasure:'対策', lotNo:'ロットNo',
-      quantity:'数量', unit:'単位', location:'発生場所', reporter:'記録者', createdAt:'作成日',
-      updatedAt:'更新日', equipment:'設備', lineStop:'停止有無', photoUrl:'写真URL', photoUrls:'写真URL一覧',maintenanceUnit:'保全単位'
-    };
+function buildDataSheetColumns(data){
+  // ✅ データシートから除外する項目
+  const exclude = new Set([
+    'status',
+    '_firebaseId',
 
-    // すべてのキーを収集
-    const keySet = new Set();
-    data.forEach(row=>{
-      Object.keys(row||{}).forEach(k=>{
-        if(!exclude.has(k)) keySet.add(k);
-      });
+    // ▼あなたの要望で削除
+    'completedAt',
+    'createdAt',
+    'techPhotoUrls'
+  ]);
+
+  // ✅ 優先表示項目
+  const basePreferred = [
+    'occurrenceDate','department','lineName','serialNo',
+    'anomalyContent','actionTaken','occurrenceTime','restartTime',
+    'handler','techRequest','stopMinutes','discoveryTiming'
+  ];
+
+  // ✅ 日本語ラベル（不足分すべて追加）
+  const labels = {
+    occurrenceDate:'発生日',
+    department:'部署',
+    lineName:'ライン名',
+    serialNo:'整理No',
+    anomalyContent:'異常内容',
+    actionTaken:'対応内容',
+    occurrenceTime:'発生時刻',
+    restartTime:'再開時刻',
+    handler:'処置者',
+    techRequest:'技術要請',
+    stopMinutes:'停止時間(分)',
+    discoveryTiming:'発見タイミング',
+
+    // 追加の日本語化
+    rootCauseAction:'是正処置',
+    affirmation:'是正確認',
+    qualityResponse:'品質対応',
+    previousCheck:'過去点検/横展',
+    lifespanReached:'寿命到達',
+    traceback:'トレースバック',
+    maintenanceUnit:'保全単位',
+    lifespan:'寿命',
+    measureStatus:'対策状況',
+    techHandler:'技術担当者',
+    mfgPhotoUrls:'製造写真URL一覧',
+    recurrenceType:'再発分類'
+  };
+
+  // ✅ データのキー収集（除外対象を除く）
+  const keySet = new Set();
+  data.forEach(row=>{
+    Object.keys(row||{}).forEach(k=>{
+      if(!exclude.has(k)) keySet.add(k);
     });
+  });
 
-    // 表示順：優先列 → 停止時間(分：派生) → その他
-    const keysAll = Array.from(keySet);
-    const others = keysAll.filter(k => !basePreferred.includes(k));
-    dataSheetColumns = [...basePreferred, 'stopMinutes', ...others];
-    dataSheetColumnLabels = {...labels, stopMinutes:'停止時間(分)'};
+  // ✅ すべての列（優先 → その他）
+  const keysAll = Array.from(keySet);
+  const others = keysAll.filter(k => !basePreferred.includes(k));
+  dataSheetColumns = [...basePreferred, ...others];
 
-    // ヘッダー生成（▲ボタン付き）
-    const headRow = document.getElementById('dataSheetHeadRow');
-    headRow.innerHTML = dataSheetColumns.map(k=>{
-      return `<th>${(dataSheetColumnLabels[k]||k)} ${k==='(rank)'?'':`<button class="sort-btn" data-table="sheet" data-key="${k}">▲</button>`}</th>`;
-    }).join('');
+  // ✅ ラベル保存
+  dataSheetColumnLabels = labels;
 
-    // 初期並び保存
-    dataSheetOriginalOrder = null;
-    dataSheetCurrentSortKey = null;
-  }
+  // ✅ ヘッダー生成
+  const headRow = document.getElementById('dataSheetHeadRow');
+  headRow.innerHTML = dataSheetColumns.map(k=>{
+    const label = labels[k] || k;
+    return `<th>${label} <button class="sort-btn" data-table="sheet" data-key="${k}">▲</button></th>`;
+  }).join('');
+
+  dataSheetOriginalOrder = null;
+  dataSheetCurrentSortKey = null;
+}
+
 
   function renderDataSheet(data){
     const tbody = document.getElementById('dataSheetBody');
