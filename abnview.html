@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>異常履歴分析ダッシュボード</title>
-<!-- （グラフは任意）Chart.js を使う場合だけ有効 -->
+<!-- （任意）グラフを使う場合のみ -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
 
 <style>
@@ -31,7 +31,7 @@
   .view-tab:hover{background:#f8f9ff}
   .view-tab.active{background:#fff!important;border-bottom-color:#667eea!important;color:#667eea}
 
-  /* ====== データシート（見やすさ改善） ====== */
+  /* ====== データシート ====== */
   .table-container{background:#fff;padding:20px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);margin-bottom:20px;overflow-x:auto}
   .data-table{table-layout:fixed;width:100%;min-width:1800px;border-collapse:collapse}
   .data-table th{background:#667eea;color:#fff;padding:8px 10px;text-align:left;font-weight:700;position:sticky;top:0;z-index:2;font-size:12px;line-height:1.2}
@@ -56,7 +56,7 @@
   th[data-col="restartTime"], td[data-col="restartTime"]{width:70px}
   th[data-col="handler"], td[data-col="handler"]{width:80px}
   th[data-col="stopMinutes"], td[data-col="stopMinutes"]{width:90px}
-  th[data-col="discoveryTiming"], td[data-col="discoveryTiming"]{width:90px}
+  th[data-col="discoveryTiming"], td[data-col="discoveryTiming"]{width:110px}
   th[data-col="anomalyContent"], td[data-col="anomalyContent"],
   th[data-col="actionTaken"], td[data-col="actionTaken"],
   th[data-col="rootCauseAction"], td[data-col="rootCauseAction"]{width:320px}
@@ -181,7 +181,7 @@
     <div id="sheetView" style="display:none;">
       <div class="table-container">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:15px;">
-          <h3 style="color:#333;font-size:1.1rem;margin:0;">📋 異常履歴データシート（全項目表示・状態は除外）</h3>
+          <h3 style="color:#333;font-size:1.1rem;margin:0;">📋 異常履歴データシート（固定11列）</h3>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button id="btnExportCSV" style="padding:10px 20px;background:#28a745;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">📥 CSV出力</button>
             <div style="display:flex;gap:8px;align-items:center;">
@@ -189,12 +189,33 @@
               <button id="denseNormal"  class="date-btn" style="padding:6px 10px;">標準</button>
               <button id="denseCompact" class="date-btn" style="padding:6px 10px;">高密度</button>
               <button id="denseUltra"   class="date-btn" style="padding:6px 10px;">超高密度</button>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;white-space:nowrap;">
+              <input type="checkbox" id="toggleClamp" checked> 長文を3行で折りたたむ
+            </label>
+            <button id="btnSheetWide"  class="date-btn" style="padding:6px 10px;">幅を拡大</button>
+            <button id="btnSheetNorm"  class="date-btn" style="padding:6px 10px;">元に戻す</button>
+          </div>
+        </div>
+
+        <div style="overflow-x:auto;">
+          <table class="data-table" id="dataSheet">
+            <thead>
+              <tr id="dataSheetHeadRow"><!-- JSで生成 --></tr>
+            </thead>
+            <tbody id="dataSheetBody"><!-- JSで生成 --></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
   import { getFirestore, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
 
-  // ===== Firebase 設定（あなたのプロジェクト）
+  /* ===== Firebase ===== */
   const firebaseConfig = {
     apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
     authDomain: "abnreport-fd733.firebaseapp.com",
@@ -203,7 +224,6 @@
     messagingSenderId: "349748947315",
     appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
   };
-
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const auth = getAuth(app);
@@ -215,9 +235,8 @@
 
   let allData = [];
   let currentPeriod = 'day';
-  let charts = {};
 
-  // === ユーティリティ
+  /* ===== Utils ===== */
   function normalizeDate(dateStr) {
     if (!dateStr) return '';
     if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(dateStr)) {
@@ -249,7 +268,7 @@
     return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
   }
 
-  // === サインイン
+  /* ===== Auth ===== */
   document.getElementById('authLoginBtn').addEventListener('click', async ()=>{
     const email = (document.getElementById('authEmail').value||'').trim();
     const pw = document.getElementById('authPassword').value;
@@ -267,9 +286,9 @@
       gate.style.display='none';
       appRoot.style.display='block';
       signOutBtn.style.display='inline-block';
-      await loadData();
-      initializeControls();
-      runAnalysis();
+      await loadData();          // データ取得
+      initializeControls();      // DOMイベント＋初回ヘッダー生成
+      runAnalysis();             // 初回描画
     }else{
       appRoot.style.display='none';
       gate.style.display='flex';
@@ -277,7 +296,7 @@
     }
   });
 
-  // === データ読込
+  /* ===== Data ===== */
   async function loadData(){
     loading.classList.add('active');
     try{
@@ -296,16 +315,14 @@
       // 部署フィルタ
       const depts = [...new Set(allData.map(x=>x.department).filter(Boolean))].sort();
       const deptSelect = document.getElementById('deptFilter');
-      deptSelect.innerHTML = '<option value="">全部署</option>';
-      depts.forEach(d=>{
-        const opt = document.createElement('option');
-        opt.value = opt.textContent = d;
-        deptSelect.appendChild(opt);
-      });
-
-      // 固定列ヘッダー生成
-      buildDataSheetColumns();
-
+      if (deptSelect){
+        deptSelect.innerHTML = '<option value="">全部署</option>';
+        depts.forEach(d=>{
+          const opt = document.createElement('option');
+          opt.value = opt.textContent = d;
+          deptSelect.appendChild(opt);
+        });
+      }
     }catch(e){
       console.error('データ読み込みエラー:', e);
       alert('データ読み込みに失敗しました: ' + e.message);
@@ -314,7 +331,7 @@
     }
   }
 
-  // === 固定列（ご要望の 11 列のみ）
+  /* ===== Sheet (固定11列) ===== */
   let dataSheetColumns = [];
   let dataSheetColumnLabels = {};
   let dataSheetOriginalOrder = null;
@@ -330,7 +347,7 @@
       'occurrenceTime',   // 発生時刻
       'restartTime',      // 再開時刻
       'handler',          // 処置者
-      'stopMinutes',      // 停止時間(分) ※派生
+      'stopMinutes',      // 停止時間(分)※派生
       'discoveryTiming',  // 発見タイミング
       'rootCauseAction'   // 是正処置
     ];
@@ -341,19 +358,28 @@
       handler:'処置者', stopMinutes:'停止時間(分)',
       discoveryTiming:'発見タイミング', rootCauseAction:'是正処置'
     };
+
     const headRow = document.getElementById('dataSheetHeadRow');
+    if (!headRow){
+      console.warn('[buildDataSheetColumns] #dataSheetHeadRow が見つかりません');
+      return;
+    }
     headRow.innerHTML = dataSheetColumns.map(col=>{
       const label = dataSheetColumnLabels[col] || col;
       return `<th data-col="${col}">${label} <button class="sort-btn" data-table="sheet" data-key="${col}">▲</button></th>`;
     }).join('');
+
     dataSheetOriginalOrder = null;
     dataSheetCurrentSortKey = null;
   }
 
-  // === レンダリング（長文は3行折りたたみ）
   function renderDataSheet(data){
     const tbody = document.getElementById('dataSheetBody');
-    if(data.length === 0){
+    if (!tbody){
+      console.warn('[renderDataSheet] #dataSheetBody が見つかりません');
+      return;
+    }
+    if(!data || data.length === 0){
       tbody.innerHTML = '<tr><td colspan="999" style="text-align:center;padding:40px;color:#999;">データがありません</td></tr>';
       return;
     }
@@ -379,7 +405,6 @@
     tbody.innerHTML = html;
   }
 
-  // === ソート（昇順→解除）
   function compareAsc(a,b,key){
     const dateLike = v => typeof v==='string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
     if(dateLike(a) && dateLike(b)) return a.localeCompare(b);
@@ -392,6 +417,7 @@
     }
     return String(a).localeCompare(String(b), 'ja');
   }
+
   function sortDataSheetBy(key){
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
@@ -403,7 +429,7 @@
 
     if(dataSheetCurrentSortKey === key){
       dataSheetCurrentSortKey = null;
-      data.sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||'')); // 元に戻す = 日付降順
+      data.sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||'')); // 元に戻す（日付降順）
       renderDataSheet(data);
       return;
     }
@@ -412,7 +438,8 @@
     data.sort((a,b)=> compareAsc(getter(a), getter(b), key));
     renderDataSheet(data);
   }
-  // ヘッダーの▲クリック
+
+  // ヘッダーの▲クリック（委任）
   document.addEventListener('click', (e)=>{
     const btn = e.target.closest('.sort-btn');
     if(!btn) return;
@@ -421,7 +448,7 @@
     }
   });
 
-  // === 解析（フィルタ適用→シート描画＆必要ならグラフ）
+  /* ===== Run ===== */
   function runAnalysis(){
     loading.classList.add('active');
     setTimeout(()=>{
@@ -435,10 +462,9 @@
         if(dept) filtered = filtered.filter(x=> x.department === dept);
         if(moldTechOnly) filtered = filtered.filter(x => Number(x?.maintenanceUnit ?? 0) >= 1);
 
-        // 表示
         renderDataSheet(filtered);
 
-        // （任意）グラフ描画を使うならここで関数呼び出し
+        // 必要なら下を有効化
         // renderTrendChart(filtered); renderDeptChart(filtered); renderStopTimeChart(filtered);
       }finally{
         loading.classList.remove('active');
@@ -446,7 +472,7 @@
     }, 50);
   }
 
-  // === CSV 出力（シートと同じフィルタ＆列順）
+  /* ===== CSV ===== */
   function exportCSV(){
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
@@ -480,7 +506,7 @@
     a.click();
   }
 
-  // === 初期化（イベント束ね）
+  /* ===== Init / Events ===== */
   function initializeControls(){
     const today = new Date();
     const endDate = formatDate(today);
@@ -503,15 +529,15 @@
       btn.addEventListener('click', ()=>{
         const type = btn.dataset.quick;
         const t = new Date();
-        let start, end;
-        if(type === 'today'){ start = end = formatDate(t); }
-        else if(type === 'yesterday'){ const y=new Date(t); y.setDate(y.getDate()-1); start=end=formatDate(y); }
-        else if(type === 'thisWeek'){ const day=t.getDay(); const diff=t.getDate()-day+(day===0?-6:1); start=formatDate(new Date(t.getFullYear(),t.getMonth(),diff)); end=formatDate(t); }
-        else if(type === 'lastWeek'){ const day=t.getDay(); const diff=t.getDate()-day+(day===0?-6:1)-7; start=formatDate(new Date(t.getFullYear(),t.getMonth(),diff)); end=formatDate(new Date(t.getFullYear(),t.getMonth(),diff+6)); }
-        else if(type === 'thisMonth'){ start=formatDate(new Date(t.getFullYear(),t.getMonth(),1)); end=formatDate(t); }
-        else if(type === 'lastMonth'){ start=formatDate(new Date(t.getFullYear(),t.getMonth()-1,1)); end=formatDate(new Date(t.getFullYear(),t.getMonth(),0)); }
-        document.getElementById('startDate').value = start;
-        document.getElementById('endDate').value = end;
+        let s, e;
+        if(type === 'today'){ s = e = formatDate(t); }
+        else if(type === 'yesterday'){ const y=new Date(t); y.setDate(y.getDate()-1); s=e=formatDate(y); }
+        else if(type === 'thisWeek'){ const day=t.getDay(); const diff=t.getDate()-day+(day===0?-6:1); s=formatDate(new Date(t.getFullYear(),t.getMonth(),diff)); e=formatDate(t); }
+        else if(type === 'lastWeek'){ const day=t.getDay(); const diff=t.getDate()-day+(day===0?-6:1)-7; s=formatDate(new Date(t.getFullYear(),t.getMonth(),diff)); e=formatDate(new Date(t.getFullYear(),t.getMonth(),diff+6)); }
+        else if(type === 'thisMonth'){ s=formatDate(new Date(t.getFullYear(),t.getMonth(),1)); e=formatDate(t); }
+        else if(type === 'lastMonth'){ s=formatDate(new Date(t.getFullYear(),t.getMonth()-1,1)); e=formatDate(new Date(t.getFullYear(),t.getMonth(),0)); }
+        document.getElementById('startDate').value = s;
+        document.getElementById('endDate').value = e;
         document.querySelectorAll('[data-quick]').forEach(b=>b.classList.remove('active'));
         btn.classList.add('active');
       });
@@ -520,10 +546,10 @@
     // 月選択
     document.getElementById('monthSelect').addEventListener('change', (e)=>{
       const [year, month] = e.target.value.split('-').map(Number);
-      const start = formatDate(new Date(year, month - 1, 1));
-      const end = formatDate(new Date(year, month, 0));
-      document.getElementById('startDate').value = start;
-      document.getElementById('endDate').value = end;
+      const s = formatDate(new Date(year, month - 1, 1));
+      const e = formatDate(new Date(year, month, 0));
+      document.getElementById('startDate').value = s;
+      document.getElementById('endDate').value = e;
     });
 
     // ビュー切替
@@ -569,12 +595,15 @@
     if (btnNorm) btnNorm.addEventListener('click', ()=>{
       document.body.classList.remove('body-sheet-wide','body-sheet-ultra');
     });
+
+    // 初回ヘッダー生成（ここでならDOMが確実に存在）
+    buildDataSheetColumns();
   }
 
-  // === （任意）簡易グラフ関数（必要なときだけ使う）
-  function renderTrendChart(){ /* 必要なら Chart.js コードを追加 */ }
-  function renderDeptChart(){ /* 必要なら Chart.js コードを追加 */ }
-  function renderStopTimeChart(){ /* 必要なら Chart.js コードを追加 */ }
+  /* ===== （任意）グラフ関数（必要な時に実装） ===== */
+  function renderTrendChart(){ /* Chart.js 実装を追加可能 */ }
+  function renderDeptChart(){ /* Chart.js 実装を追加可能 */ }
+  function renderStopTimeChart(){ /* Chart.js 実装を追加可能 */ }
 
 </script>
 </body>
