@@ -259,6 +259,11 @@
 .table-view.fullscreen table{
   font-size:0.9rem;
 }
+.table-view.fullscreen thead{
+  position:sticky;
+  top:60px; /* コントロールバーの高さ分 */
+  z-index:5;
+}
 .fullscreen-controls{
   position:sticky;
   top:0;
@@ -608,13 +613,13 @@
         <div class="filter-header">
           <div class="filter-title">🔍 フィルター検索</div>
         </div>
-        <div class="filter-grid">
-          <div class="form-group" style="margin-bottom:0;">
-            <label style="font-size:.9rem;margin-bottom:6px;">部署</label>
-            <select id="filterDepartment">
-              <option value="">すべて</option>
-            </select>
-          </div>
+<div class="form-group" style="margin-bottom:0;">
+  <label style="font-size:.9rem;margin-bottom:6px;">部署（複数選択可）</label>
+  <select id="filterDepartment" multiple style="height:120px;">
+    <!-- オプションは動的に追加 -->
+  </select>
+  <div style="font-size:.75rem;color:#666;margin-top:4px;">Ctrl/Cmd+クリックで複数選択</div>
+</div>
           <div class="form-group" style="margin-bottom:0;">
             <label style="font-size:.9rem;margin-bottom:6px;">整理No</label>
             <input type="text" id="filterSerialNo" placeholder="部分一致検索">
@@ -947,9 +952,9 @@ async function refreshTechnical(){
 
 // 履歴タブの更新：履歴最新化＋フィルタ初期化維持
 async function refreshHistory(){
-  // フィルタの入力値はそのままにしてデータだけ更新
+  const filterDeptSelect = document.getElementById('filterDepartment');
   const keep = {
-    dep: document.getElementById('filterDepartment').value,
+    deps: Array.from(filterDeptSelect.selectedOptions).map(opt => opt.value),
     sn : document.getElementById('filterSerialNo').value,
     line: document.getElementById('filterLine').value,
     from: document.getElementById('filterDateFrom').value,
@@ -957,19 +962,22 @@ async function refreshHistory(){
   };
   resetPaging();
   await loadInitialData();
-  // マスタ側のプルダウン最新化（部署/ライン）
   initializeFilterSelects();
-  document.getElementById('filterDepartment').value = keep.dep;
-  // 部署に合わせたライン候補を再構築
+  
+  // 複数部署を再選択
+  keep.deps.forEach(dept => {
+    const option = Array.from(filterDeptSelect.options).find(opt => opt.value === dept);
+    if (option) option.selected = true;
+  });
+  
   const evt = new Event('change');
-  document.getElementById('filterDepartment').dispatchEvent(evt);
+  filterDeptSelect.dispatchEvent(evt);
   document.getElementById('filterSerialNo').value = keep.sn;
   document.getElementById('filterLine').value = keep.line;
   document.getElementById('filterDateFrom').value = keep.from;
   document.getElementById('filterDateTo').value = keep.to;
 
-  // 再検索
-  if (keep.dep || keep.sn || keep.line || keep.from || keep.to){
+  if (keep.deps.length || keep.sn || keep.line || keep.from || keep.to){
     applyFilter();
   }else{
     filteredCache = [...anomalyCache];
@@ -1089,13 +1097,16 @@ document.addEventListener('click', (e)=>{
     });
   }
 
-  function checkFilterActive(){
-    return document.getElementById('filterDepartment').value !== '' ||
-           document.getElementById('filterSerialNo').value.trim() !== '' ||
-           document.getElementById('filterLine').value !== '' ||
-           document.getElementById('filterDateFrom').value !== '' ||
-           document.getElementById('filterDateTo').value !== '';
-  }
+function checkFilterActive(){
+  const filterDeptSelect = document.getElementById('filterDepartment');
+  const filterDepts = Array.from(filterDeptSelect.selectedOptions).map(opt => opt.value);
+  
+  return filterDepts.length > 0 ||
+         document.getElementById('filterSerialNo').value.trim() !== '' ||
+         document.getElementById('filterLine').value !== '' ||
+         document.getElementById('filterDateFrom').value !== '' ||
+         document.getElementById('filterDateTo').value !== '';
+}
 
   /* ==== フィルター機能 ==== */
   function getDateString(daysOffset = 0) {
@@ -1107,43 +1118,45 @@ document.addEventListener('click', (e)=>{
     return `${y}-${m}-${day}`;
   }
 
-  function applyFilter() {
-    const filterDept = document.getElementById('filterDepartment').value;
-    const filterSerial = document.getElementById('filterSerialNo').value.trim().toLowerCase();
-    const filterLine = document.getElementById('filterLine').value;
-    const filterDateFrom = document.getElementById('filterDateFrom').value;
-    const filterDateTo = document.getElementById('filterDateTo').value;
+function applyFilter() {
+  const filterDeptSelect = document.getElementById('filterDepartment');
+  const filterDepts = Array.from(filterDeptSelect.selectedOptions).map(opt => opt.value);
+  const filterSerial = document.getElementById('filterSerialNo').value.trim().toLowerCase();
+  const filterLine = document.getElementById('filterLine').value;
+  const filterDateFrom = document.getElementById('filterDateFrom').value;
+  const filterDateTo = document.getElementById('filterDateTo').value;
 
-    filteredCache = anomalyCache.filter(item => {
-      if (filterDept && item.department !== filterDept) return false;
-      if (filterSerial && !(item.serialNo||'').toLowerCase().includes(filterSerial)) return false;
-      if (filterLine && item.lineName !== filterLine) return false;
-      if (filterDateFrom && item.occurrenceDate < filterDateFrom) return false;
-      if (filterDateTo && item.occurrenceDate > filterDateTo) return false;
-      return true;
-    });
+  filteredCache = anomalyCache.filter(item => {
+    if (filterDepts.length > 0 && !filterDepts.includes(item.department)) return false;
+    if (filterSerial && !(item.serialNo||'').toLowerCase().includes(filterSerial)) return false;
+    if (filterLine && item.lineName !== filterLine) return false;
+    if (filterDateFrom && item.occurrenceDate < filterDateFrom) return false;
+    if (filterDateTo && item.occurrenceDate > filterDateTo) return false;
+    return true;
+  });
 
-    const resultCount = document.getElementById('filterResultCount');
-    resultCount.innerHTML = `<strong>${filteredCache.length}</strong> 件の履歴が見つかりました`;
-    resultCount.style.display = 'block';
+  const resultCount = document.getElementById('filterResultCount');
+  resultCount.innerHTML = `<strong>${filteredCache.length}</strong> 件の履歴が見つかりました`;
+  resultCount.style.display = 'block';
 
-    renderHistory();
-  }
+  renderHistory();
+}
 
-  function clearFilter() {
-    document.getElementById('filterDepartment').value = '';
-    document.getElementById('filterSerialNo').value = '';
-    document.getElementById('filterLine').value = '';
-    document.getElementById('filterDateFrom').value = '';
-    document.getElementById('filterDateTo').value = '';
-    document.getElementById('filterResultCount').style.display = 'none';
-    
-    document.getElementById('btnFilterYesterday').classList.remove('active');
-    document.getElementById('btnFilterToday').classList.remove('active');
-    
-    filteredCache = [...anomalyCache];
-    renderHistory();
-  }
+function clearFilter() {
+  const filterDeptSelect = document.getElementById('filterDepartment');
+  filterDeptSelect.selectedIndex = -1; // すべての選択を解除
+  document.getElementById('filterSerialNo').value = '';
+  document.getElementById('filterLine').value = '';
+  document.getElementById('filterDateFrom').value = '';
+  document.getElementById('filterDateTo').value = '';
+  document.getElementById('filterResultCount').style.display = 'none';
+  
+  document.getElementById('btnFilterYesterday').classList.remove('active');
+  document.getElementById('btnFilterToday').classList.remove('active');
+  
+  filteredCache = [...anomalyCache];
+  renderHistory();
+}
 
   document.getElementById('btnApplyFilter').addEventListener('click', applyFilter);
   document.getElementById('btnClearFilter').addEventListener('click', clearFilter);
@@ -1166,21 +1179,27 @@ document.addEventListener('click', (e)=>{
     applyFilter();
   });
 
-  document.getElementById('filterDepartment').addEventListener('change', () => {
-    const dept = document.getElementById('filterDepartment').value;
-    const lineSelect = document.getElementById('filterLine');
-    lineSelect.innerHTML = '<option value="">すべて</option>';
-    
-    if (dept && mastersCache && mastersCache.lines[dept]) {
-      mastersCache.lines[dept].forEach(line => {
-        const option = document.createElement('option');
-        option.value = line;
-        option.textContent = line;
-        lineSelect.appendChild(option);
-      });
-    }
-  });
-
+document.getElementById('filterDepartment').addEventListener('change', () => {
+  const filterDeptSelect = document.getElementById('filterDepartment');
+  const selectedDepts = Array.from(filterDeptSelect.selectedOptions).map(opt => opt.value);
+  const lineSelect = document.getElementById('filterLine');
+  lineSelect.innerHTML = '<option value="">すべて</option>';
+  
+  if (selectedDepts.length > 0 && mastersCache) {
+    const allLines = new Set();
+    selectedDepts.forEach(dept => {
+      if (mastersCache.lines[dept]) {
+        mastersCache.lines[dept].forEach(line => allLines.add(line));
+      }
+    });
+    Array.from(allLines).sort().forEach(line => {
+      const option = document.createElement('option');
+      option.value = line;
+      option.textContent = line;
+      lineSelect.appendChild(option);
+    });
+  }
+});
   function initializeFilterSelects() {
     if (!mastersCache) return;
     
