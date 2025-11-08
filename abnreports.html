@@ -1294,36 +1294,58 @@ const rows = anomalyCache.map(item=>{
     }
   });
 
-  document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
-    const f = e.target.files?.[0]; if (!f) return;
-    const text = await f.text();
-    const rows = parseCSVLoose(text);
-    if (!rows.length){ document.getElementById('importPreview').innerHTML = '<span style="color:#c62828;">CSVが空です。</span>'; return; }
-    const headers = rows[0];
+document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
+  const f = e.target.files?.[0]; if (!f) return;
+  const text = await f.text();
+  const rows = parseCSVLoose(text);
+  if (!rows.length){ document.getElementById('importPreview').innerHTML = '<span style="color:#c62828;">CSVが空です。</span>'; return; }
+  const headers = rows[0];
 
-    const mapIdx = headers.map(h => HEADER_MAP[h] || null);
-    const dataRows = rows.slice(1).filter(r => r.some(c => (c??'').toString().trim() !== ''));
-    const mappedRows = dataRows.map(r => {
-      const obj={};
-      mapIdx.forEach((key, i)=>{
-        if (!key) return;
-        obj[key] = (r[i]??'').toString().trim();
-      });
-      obj.techRequest = normalizeTechRequest(obj.techRequest);
-      if (obj._statusText){ obj.status = normalizeStatus(obj._statusText); delete obj._statusText; }
-      return obj;
+  const mapIdx = headers.map(h => HEADER_MAP[h] || null);
+  const dataRows = rows.slice(1).filter(r => r.some(c => (c??'').toString().trim() !== ''));
+  
+  // ↓↓↓ ここから置き換え ↓↓↓
+  const mappedRows = dataRows.map(r => {
+    const obj={};
+    mapIdx.forEach((key, i)=>{
+      if (!key) return;
+      obj[key] = (r[i]??'').toString().trim();
     });
+    
+    // 時刻フォーマットの正規化（HH:MM:SS → HH:MM）
+    if (obj.occurrenceTime && /^\d{1,2}:\d{2}:\d{2}$/.test(obj.occurrenceTime)) {
+      obj.occurrenceTime = obj.occurrenceTime.substring(0, 5); // 秒部分を切り捨て
+    }
+    if (obj.restartTime && /^\d{1,2}:\d{2}:\d{2}$/.test(obj.restartTime)) {
+      obj.restartTime = obj.restartTime.substring(0, 5); // 秒部分を切り捨て
+    }
+    
+    obj.techRequest = normalizeTechRequest(obj.techRequest);
+    if (obj._statusText){ obj.status = normalizeStatus(obj._statusText); delete obj._statusText; }
+    return obj;
+  });
 
-    const errors=[];
-    mappedRows.forEach((o, i)=>{
-      const rowNo = i+2;
-   
-    const previewCount = Math.min(5, mappedRows.length);
-    const sample = mappedRows.slice(0, previewCount).map(o => ({
-      整理№:o.serialNo, 部署:o.department, 発生日:o.occurrenceDate,
-      異常内容:(o.anomalyContent||'').slice(0,20)+(o.anomalyContent?.length>20?'...':''),
-      対応内容:(o.actionTaken||'').slice(0,20)+(o.actionTaken?.length>20?'...':''), _id:o._id||''
-    }));
+  const errors=[];
+  mappedRows.forEach((o, i)=>{
+    const rowNo = i+2;
+    
+    // 正規化後の時刻フォーマットチェック（HH:MM形式のみ）
+    if (o.occurrenceTime && !/^\d{1,2}:\d{2}$/.test(o.occurrenceTime)){ 
+      errors.push(`Row ${rowNo}: 発生時刻の形式が不正`); 
+    }
+    if (o.restartTime && !/^\d{1,2}:\d{2}$/.test(o.restartTime)){ 
+      errors.push(`Row ${rowNo}: 再開時刻の形式が不正`); 
+    }
+  });
+  
+  // 時刻フォーマットのチェックを拡張（HH:MM または HH:MM:SS に対応）
+  if (o.occurrenceTime && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(o.occurrenceTime)){ 
+    errors.push(`Row ${rowNo}: 発生時刻はHH:MMまたはHH:MM:SS形式`); 
+  }
+  if (o.restartTime && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(o.restartTime)){ 
+    errors.push(`Row ${rowNo}: 再開時刻はHH:MMまたはHH:MM:SS形式`); 
+  }
+});
 
     const previewEl = document.getElementById('importPreview');
     previewEl.innerHTML = `
