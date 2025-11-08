@@ -365,6 +365,24 @@
   .similar-photos{margin-top:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
   .similar-photos .thumb{aspect-ratio:1;overflow:hidden;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1);cursor:pointer;}
   .similar-photos .thumb img{width:100%;height:100%;object-fit:cover;}
+/* 再発バッジ */
+.anomaly-card { position: relative; } /* 念のため */
+.recur-badge{
+  position:absolute;
+  bottom:52px;
+  right:16px;
+  background:#ef4444;     /* 赤系 */
+  color:#fff;
+  font-weight:700;
+  padding:4px 10px;
+  border-radius:12px;
+  box-shadow:0 2px 6px rgba(0,0,0,.15);
+  letter-spacing:.02em;
+  z-index:2;
+}
+
+
+ 
 </style>
 </head>
 <body>
@@ -482,6 +500,21 @@
               <option value="">選択</option><option value="要請">技術対応あり</option><option value="完結">完了</option>
             </select>
           </div>
+<!-- （発信部署）再発/新規（任意） -->
+<div class="form-group">
+  <label>再発/新規</label>
+  <select id="mfg_recurrenceType">
+    <option value="">選択</option>
+    <option value="再発">再発</option>
+    <option value="新規">新規</option>
+  </select>
+</div>
+
+<!-- （発信部署）対策状況：再発のときだけ表示／任意入力 -->
+<div class="form-group" id="mfg_measureStatusGroup" style="display:none;">
+  <label>対策状況（再発の場合）</label>
+  <textarea id="mfg_measureStatus" placeholder="例）恒久対策：型部品変更、実施時期：11/20 予定 など"></textarea>
+</div>
 
           <button type="button" id="btnShowPastOnMfg" class="btn btn-secondary" style="background:#1976d2;">過去の異常履歴</button>
 
@@ -1995,8 +2028,13 @@ document.getElementById('manufacturingForm').addEventListener('submit', async (e
   
   try {
     const techReq = document.getElementById('techRequest').value;
-    
+    const mfgRecType = document.getElementById('mfg_recurrenceType')?.value || '';
+const mfgMeasure = document.getElementById('mfg_measureStatus')?.value || '';
+
     const base = {
+     recurrenceType: mfgRecType,                                // 製造でも設定可（任意）
+measureStatus: (mfgRecType === '再発') ? mfgMeasure : '',   // 任意
+
       department: document.getElementById('department').value,
       lineName: document.getElementById('lineName').value,
       serialNo: document.getElementById('serialNo').value,
@@ -2064,6 +2102,10 @@ document.getElementById('manufacturingForm').addEventListener('submit', async (e
     document.getElementById('mfgPhotoPreview').innerHTML = '';
     document.getElementById('lineName').innerHTML = '<option value="">部署を先に選択してください</option>';
     document.getElementById('handler').innerHTML = '<option value="">部署を先に選択してください</option>';
+   document.getElementById('mfg_recurrenceType').value = '';
+document.getElementById('mfg_measureStatus').value = '';
+document.getElementById('mfg_measureStatusGroup').style.display = 'none';
+
     
     alert('登録が完了しました！');
     console.log('=== Form submission completed successfully ===');
@@ -2187,6 +2229,10 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
         const stopBadge = (stopMin !== null)
           ? `<div class="stop-badge ${badgeCls}">停止：${stopMin}分</div>`
           : '';
+// 再発バッジ
+const recurBadge = (item.recurrenceType === '再発')
+  ? `<div class="recur-badge">再発</div>`
+  : '';
 
         const leftHtml = `
           <div class="card-left">
@@ -2283,6 +2329,7 @@ ${(item.recurrenceType==='再発' && item.measureStatus) ?
         return `
           <div class="anomaly-card ${item.status==='complete'?'complete':''}">
             ${stopBadge}
+            ${recurBadge} 
             ${leftHtml}
             ${centerHtml}
             ${rightHtml}
@@ -2427,6 +2474,22 @@ ${(item.recurrenceType==='再発' && item.measureStatus) ?
       if (timing === '初物') { previousCheckGroup.style.display = 'block'; }
       else { previousCheckGroup.style.display = 'none'; document.getElementById('previousCheck').value = ''; }
     });
+  // 技術タブ：再発/新規の UI 連動（任意入力のまま）
+document.getElementById('recurrenceType')?.addEventListener('change', ()=>{
+  const v = document.getElementById('recurrenceType').value;
+  const g = document.getElementById('measureStatusGroup');
+  g.style.display = (v === '再発') ? 'block' : 'none';
+  if (v !== '再発') document.getElementById('measureStatus').value = '';
+});
+
+  // 発信部署：再発/新規 選択で「対策状況」を開閉
+document.getElementById('mfg_recurrenceType')?.addEventListener('change', ()=>{
+  const v = document.getElementById('mfg_recurrenceType').value;
+  const g = document.getElementById('mfg_measureStatusGroup');
+  g.style.display = (v === '再発') ? 'block' : 'none';
+  if (v !== '再発') document.getElementById('mfg_measureStatus').value = '';
+});
+
 
     // 初期データ読み込み（25件）
     await loadInitialData();
