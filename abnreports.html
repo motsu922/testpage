@@ -3028,28 +3028,54 @@ async function deleteRecord(id){
     }
   });
 
-  /* CSV出力 */
-  document.getElementById('btnExport').addEventListener('click', ()=>{
-    if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
-    const headers = ['整理No','部署','ライン名','発生日','発生時刻','再開時刻','停止時間(分)','異常内容','対応内容','遡り','処置者','技術対応','技術処置者','発見タイミング','前回終物確認','命数有無','命数到達','保全単位','技術対応','再発新規','対策状況','暫定','状態','_id'];
-    const rows = anomalyCache.map(item=>{
-      const stopMin = calcStopMinutes(item);
-      return [
-        item.serialNo||'',item.department||'',item.lineName||'',item.occurrenceDate||'',item.occurrenceTime||'',item.restartTime||'',
-        (stopMin!==null?stopMin:''),
-        item.anomalyContent||'',item.actionTaken||'',item.traceback||'',item.handler||'',
-        item.techRequest==='要請'?'技術対応あり':item.techRequest==='完結'?'完了':'',
-        item.techHandler||'',item.discoveryTiming||'',item.previousCheck||'',item.lifespan||'',item.lifespanReached||'',
-        item.maintenanceUnit||'',item.rootCauseAction||'',item.recurrenceType||'',item.measureStatus||'',item.affirmation||'',
-        item.status==='complete'?'完了':'技術入力待ち', item._id
-      ];
-    });
-    let csv = '\uFEFF' + headers.join(',') + '\n';
-    rows.forEach(r=>{ csv += r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(',')+'\n'; });
-    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-    const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+/* CSV出力 */
+document.getElementById('btnExport').addEventListener('click', ()=>{
+  if (!anomalyCache.length){ alert('エクスポートするデータがありません'); return; }
+  
+  // ヘッダーを新しい順序に変更
+  const headers = [
+    '部署', '発生日', '発生時刻', '再開時刻', '停止時間(分)', '遡り', 
+    'ライン名', '整理No', '異常内容', '対応内容', '遡り', 
+    '処置者', '技術対応', '最終者名', '対策状況', '技術処置者', '保全単位', 
+    '発生タイミング', '前回終物確認', '技術対応', '命数到達', '暫定', '状態', '_id'
+  ];
+  
+  const rows = anomalyCache.map(item=>{
+    const stopMin = calcStopMinutes(item);
+    return [
+      item.department||'',           // 部署
+      item.occurrenceDate||'',       // 発生日
+      item.occurrenceTime||'',       // 発生時刻
+      item.restartTime||'',          // 再開時刻
+      (stopMin!==null?stopMin:''),   // 停止時間(分)
+      item.traceback||'',            // 遡り
+      item.lineName||'',             // ライン名
+      item.serialNo||'',             // 整理No
+      item.anomalyContent||'',       // 異常内容
+      item.actionTaken||'',          // 対応内容
+      item.qualityResponse||'',      // 品質対応（遡りの後）
+      item.handler||'',              // 処置者
+      item.techRequest==='要請'?'技術対応あり':item.techRequest==='完結'?'完了':'', // 技術対応
+      item.techHandler||'',          // 最終者名（技術処置者）
+      item.measureStatus||'',        // 対策状況
+      item.techHandler||'',          // 技術処置者（重複？）
+      item.maintenanceUnit||'',      // 保全単位
+      item.discoveryTiming||'',      // 発生タイミング（発見タイミング）
+      item.previousCheck||'',        // 前回終物確認
+      item.rootCauseAction||'',      // 技術対応（内容）
+      item.lifespanReached||'',      // 命数到達
+      item.affirmation||'',          // 暫定
+      item.status==='complete'?'完了':'技術入力待ち', // 状態
+      item._id                       // _id
+    ];
   });
+  
+  let csv = '\uFEFF' + headers.join(',') + '\n';
+  rows.forEach(r=>{ csv += r.map(c=>`"${(c??'').toString().replace(/"/g,'""')}"`).join(',')+'\n'; });
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`異常履歴_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+});
 
   /* マスタ管理 */
   async function updateDepartmentList(){
