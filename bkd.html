@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>プレス稼働ログ（タップ記録＆時間別稼働率）</title>
+<title>プレス稼働ログ（停止時間色分けバー付）</title>
 <style>
   :root{
     --ink:#0f172a; --muted:#6b7280; --card:#fff; --bg:#f6f8fb; --border:#e5e7eb;
@@ -35,11 +35,13 @@
   th{font-weight:700;background:#fafbff}
   .mono{font-variant-numeric:tabular-nums}
   .right{text-align:right}
-  .bar{height:10px;background:#e5e7eb;border-radius:6px;overflow:hidden}
-  .fill{height:100%}
-  .fill.run{background:var(--run)} .fill.abn{background:var(--abn)} .fill.plan{background:var(--plan)} .fill.setup{background:var(--setup)}
+  .bar{height:12px;background:#e5e7eb;border-radius:6px;overflow:hidden;display:flex}
+  .seg{height:100%}
+  .seg.run{background:var(--run)}
+  .seg.abn{background:var(--abn);opacity:.4}
+  .seg.plan{background:var(--plan);opacity:.4}
+  .seg.setup{background:var(--setup);opacity:.4}
   .hint{color:var(--muted);font-size:.9rem}
-  .warn{color:var(--abn);font-weight:700}
   footer{margin:14px 0 6px;color:var(--muted);font-size:.85rem}
 </style>
 </head>
@@ -56,11 +58,9 @@
     </label>
     <label>日付 <input type="date" id="workDate"></label>
     <button class="ghost" id="newDay">新規日付</button>
-    <span class="hint">端末保存／CSV出力可</span>
   </header>
 
   <div class="row">
-    <!-- 左：操作＆現況 -->
     <section class="card" style="padding:14px">
       <h2>状態切替（タップで記録）</h2>
       <div class="btns" style="margin:10px 0 12px">
@@ -69,363 +69,121 @@
         <button class="btn plan"  data-state="plan">計画停止中</button>
         <button class="btn setup" data-state="setup">段取り中</button>
       </div>
-
-      <div class="state" id="stateNow" style="margin:4px 0 8px">
+      <div class="state" id="stateNow">
         <div class="dot run" id="stateDot"></div>
         <div><b id="stateLabel">稼働中</b> <span class="hint">（<span id="since">--:--</span>から）</span></div>
       </div>
       <div class="kv">
         <div>経過：<span class="mono" id="elapsed">00:00:00</span></div>
         <div>本日稼働：<span class="mono" id="sumRun">0:00</span></div>
-        <div>本日稼働率：<span class="mono" id="rateToday">0%</span> <span class="hint" id="denomHint">（計画停止含む）</span></div>
+        <div>稼働率：<span class="mono" id="rateToday">0%</span></div>
       </div>
-
       <div class="tools" style="margin-top:10px">
-        <button class="ghost" id="undo">直前の区間を取り消し</button>
-        <button class="ghost" id="split">現在時点で区切る</button>
-        <button class="ghost" id="clearDay">本日の記録を全削除</button>
-        <label class="ghost" style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="excludePlan"> 稼働率の分母から計画停止を除外
-        </label>
-        <button class="ghost" id="exportCsv">CSV出力</button>
+        <button class="ghost" id="undo">直前取消</button>
+        <button class="ghost" id="split">区切る</button>
+        <button class="ghost" id="clearDay">全削除</button>
+        <label class="ghost"><input type="checkbox" id="excludePlan"> 計画停止を除外</label>
+        <button class="ghost" id="exportCsv">CSV</button>
       </div>
     </section>
 
-    <!-- 右：時間別集計 -->
     <section class="card" style="padding:14px">
-      <h2>時間別稼働率（1時間ごと）</h2>
+      <h2>時間別稼働率（停止時間色分け）</h2>
       <table id="tblHour">
-        <thead>
-          <tr><th>時</th><th>稼働率</th><th>稼働分/分母</th></tr>
-        </thead>
+        <thead><tr><th>時</th><th>稼働率バー</th><th>稼働分/分母</th></tr></thead>
         <tbody></tbody>
       </table>
-      <div class="hint" style="margin-top:6px">※ 分母はその時間帯で記録のある合計分。オプションで計画停止を除外可能。</div>
     </section>
   </div>
 
-  <!-- 下：ログ -->
   <section class="card" style="padding:14px;margin-top:12px">
     <h2>区間ログ</h2>
     <table id="tblLog">
-      <thead>
-        <tr>
-          <th>#</th><th>状態</th><th>開始</th><th>終了</th><th class="right">分</th>
-        </tr>
-      </thead>
+      <thead><tr><th>#</th><th>状態</th><th>開始</th><th>終了</th><th class="right">分</th></tr></thead>
       <tbody></tbody>
     </table>
   </section>
-
-  <footer>端末保存キー：<span id="keyHint" class="mono">-</span></footer>
+  <footer>localStorage保存キー：<span id="keyHint"></span></footer>
 </div>
 
 <script>
-/* ====== 基本ユーティリティ ====== */
-const ST_LABEL = {run:'稼働中', abn:'異常停止中', plan:'計画停止中', setup:'段取り中'};
-const ST_ORDER  = ['run','abn','plan','setup'];
-const pad = (n)=> String(n).padStart(2,'0');
-const fmtHMS = (sec)=>{
-  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-};
-const fmtHM = (min)=> `${Math.floor(min/60)}:${pad(Math.floor(min%60))}`;
-const todayStr = ()=>{
-  const d=new Date(); d.setHours(0,0,0,0);
-  const y=d.getFullYear(), m=pad(d.getMonth()+1), da=pad(d.getDate());
-  return `${y}-${m}-${da}`;
-};
-const toLocalISO = (d)=> {
-  const z = d.getTimezoneOffset()*60000;
-  return new Date(d - z).toISOString().slice(0,19);
-};
-const parseLocal = (iso)=> new Date(iso);
+const ST_LABEL={run:'稼働中',abn:'異常停止中',plan:'計画停止中',setup:'段取り中'};
+const pad=n=>String(n).padStart(2,'0');
+const fmtHM=m=>`${Math.floor(m/60)}:${pad(Math.floor(m%60))}`;
+const todayStr=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;}
+const toLocalISO=d=>{const z=d.getTimezoneOffset()*60000;return new Date(d-z).toISOString().slice(0,19);}
+const parseLocal=iso=>new Date(iso);
+const keyOf=(m,d)=>`presslog_v2:${m}:${d}`;
+const load=(m,d)=>JSON.parse(localStorage.getItem(keyOf(m,d))||'{"current":null,"logs":[]}');
+const save=(m,d,v)=>localStorage.setItem(keyOf(m,d),JSON.stringify(v));
 
-/* ====== ストレージ（端末保存） ====== */
-const keyOf = (machine, date)=> `presslog_v1:${machine}:${date}`;
-const loadDay = (machine, date)=>{
-  const raw = localStorage.getItem(keyOf(machine,date));
-  return raw ? JSON.parse(raw) : {current:null, logs:[]}; // logs: [{state,start,end}]
-};
-const saveDay = (machine, date, data)=>{
-  localStorage.setItem(keyOf(machine,date), JSON.stringify(data));
-  document.getElementById('keyHint').textContent = keyOf(machine,date);
-};
+let state={machine:'PRESS-01',date:todayStr(),data:{current:null,logs:[]}};
 
-/* ====== 状態 ====== */
-const machineEl = document.getElementById('machine');
-const dateEl = document.getElementById('workDate');
-const stateDot = document.getElementById('stateDot');
-const stateLabel = document.getElementById('stateLabel');
-const sinceEl = document.getElementById('since');
-const elapsedEl = document.getElementById('elapsed');
-const sumRunEl = document.getElementById('sumRun');
-const rateTodayEl = document.getElementById('rateToday');
-const denomHintEl = document.getElementById('denomHint');
-const tblLogBody = document.querySelector('#tblLog tbody');
-const tblHourBody = document.querySelector('#tblHour tbody');
-const excludePlanEl = document.getElementById('excludePlan');
-
-let timer=null;
-let state = {machine: 'PRESS-01', date: todayStr(), data: {current:null, logs:[] }};
-
-function refreshFromStorage(){
-  state.data = loadDay(state.machine, state.date);
-  saveDay(state.machine, state.date, state.data);
-  renderAll();
+function changeState(s){
+  const now=new Date();
+  const d=state.data;
+  if(d.current){d.current.end=toLocalISO(now);d.logs.push({...d.current});}
+  d.current={state:s,start:toLocalISO(now),end:null};
+  save(state.machine,state.date,d);render();
 }
-function setMachine(v){ state.machine=v; refreshFromStorage(); }
-function setDate(v){ state.date=v; refreshFromStorage(); }
+function split(){const now=new Date();const d=state.data;if(!d.current)return;d.current.end=toLocalISO(now);d.logs.push({...d.current});d.current={state:d.current.state,start:toLocalISO(now),end:null};save(state.machine,state.date,d);render();}
+function undo(){const d=state.data;if(d.logs.length)d.logs.pop();else d.current=null;save(state.machine,state.date,d);render();}
+function clearDay(){if(!confirm('全削除？'))return;state.data={current:null,logs:[]};save(state.machine,state.date,state.data);render();}
 
-function startTimer(){
-  if(timer) clearInterval(timer);
-  timer = setInterval(()=> { renderHeader(); }, 1000);
-}
-
-/* ====== クリックで状態変更 ====== */
-function changeState(newState){
-  const now = new Date();
-  let d = state.data;
-  // 現在区間をクローズ
-  if(d.current){
-    d.current.end = toLocalISO(now);
-    d.logs.push({...d.current});
-  }
-  // 新区間を開始
-  d.current = {state:newState, start: toLocalISO(now), end: null};
-  saveDay(state.machine, state.date, d);
-  renderAll();
-}
-
-function splitNow(){
-  const now = new Date();
-  let d = state.data;
-  if(!d.current) return;
-  // 終了→同じ状態で即再開（区切り）
-  d.current.end = toLocalISO(now);
-  d.logs.push({...d.current});
-  d.current = {state: d.current.state, start: toLocalISO(now), end: null};
-  saveDay(state.machine, state.date, d);
-  renderAll();
-}
-
-function undoLast(){
-  let d = state.data;
-  if(d.current && !d.logs.length){
-    d.current = null;
-  }else if(d.current && d.logs.length){
-    // カレントを破棄して直前ログを復元
-    d.current = d.logs.pop();
-    d.current.end = null;
-  }else if(!d.current && d.logs.length){
-    // 直前ログを削除
-    d.logs.pop();
-  }
-  saveDay(state.machine, state.date, d);
-  renderAll();
-}
-
-function clearDay(){
-  if(!confirm('本日の記録を全削除します。よろしいですか？')) return;
-  state.data = {current:null, logs:[]};
-  saveDay(state.machine, state.date, state.data);
-  renderAll();
-}
-
-/* ====== 描画 ====== */
-function renderHeader(){
-  const d = state.data;
-  const cur = d.current;
-  let label='未記録', dotClass='run', since='--:--', elapsed='00:00:00';
-  if(cur){
-    label = ST_LABEL[cur.state];
-    dotClass = cur.state;
-    const sinceDate = parseLocal(cur.start);
-    since = `${pad(sinceDate.getHours())}:${pad(sinceDate.getMinutes())}`;
-    const sec = Math.floor((Date.now() - sinceDate.getTime())/1000);
-    elapsed = fmtHMS(Math.max(0,sec));
-  }
-  stateDot.className = `dot ${dotClass}`;
-  stateLabel.textContent = label;
-  sinceEl.textContent = since;
-  elapsedEl.textContent = elapsed;
-
-  // 当日稼働合計＆稼働率
-  const agg = aggregateAll(d.logs, d.current, excludePlanEl.checked);
-  sumRunEl.textContent = fmtHM(agg.sumRunMin);
-  rateTodayEl.textContent = `${(agg.rateToday*100).toFixed(0)}%`;
-  denomHintEl.textContent = excludePlanEl.checked ? '（計画停止を分母から除外）' : '（計画停止含む）';
-}
-
-function renderLogs(){
-  const d = state.data;
-  const rows = [...d.logs];
-  if(d.current) rows.push({...d.current, end: d.current.end}); // 表示用（進行中は分なし）
-  tblLogBody.innerHTML = '';
-  rows.forEach((r,i)=>{
-    const st = r.state;
-    const stName = ST_LABEL[st];
-    const s = parseLocal(r.start);
-    const e = r.end ? parseLocal(r.end) : null;
-    const mins = e ? Math.max(0, Math.round((e - s)/60000)) : '';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="mono">${i+1}</td>
-      <td><span class="dot ${st}"></span> ${stName}</td>
-      <td class="mono">${toDisp(s)}</td>
-      <td class="mono">${e?toDisp(e):'<span class="hint">進行中</span>'}</td>
-      <td class="right mono">${mins!=='' ? mins : '-'}</td>
-    `;
-    tblLogBody.appendChild(tr);
-  });
-}
-const toDisp = (d)=> `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
-
-/* ====== 集計（時間別・終日） ====== */
-function aggregateAll(logs, current, excludePlan){
-  // 現在進行中は「今時点」で仮終了にして集計
-  const closed = logs.map(x=>({...x}));
-  if(current){
-    closed.push({...current, end: toLocalISO(new Date())});
-  }
-  // 当日0:00〜24:00にクリップ＆時間別に分割
-  const dayStart = new Date(state.date+'T00:00:00');
-  const dayEnd   = new Date(state.date+'T24:00:00');
-
-  // 区間を[dayStart,dayEnd]に収め、時間帯ごとにミニ区間へ分割
-  const chunks = [];
+function aggregate(excludePlan){
+  const d=state.data;
+  const closed=[...d.logs];if(d.current)closed.push({...d.current,end:toLocalISO(new Date())});
+  const hRows=Array.from({length:24},(_,h)=>({h,run:0,abn:0,plan:0,setup:0}));
   closed.forEach(r=>{
-    if(!r.end) return; // 終了していないものは除外（上で仮終了済みだが念のため）
-    let s = parseLocal(r.start), e = parseLocal(r.end);
-    if(e<=dayStart || s>=dayEnd) return;
-    if(s<dayStart) s = new Date(dayStart);
-    if(e>dayEnd)   e = new Date(dayEnd);
-    // 時間境界で分割
-    let curS = s;
-    while(curS < e){
-      const boundary = new Date(curS); boundary.setMinutes(0,0,0); boundary.setHours(boundary.getHours()+1);
-      const curE = e<boundary ? e : boundary;
-      chunks.push({state:r.state, start:curS, end:curE});
-      curS = curE;
-    }
+    if(!r.end)return;let s=parseLocal(r.start),e=parseLocal(r.end);
+    while(s<e){const next=new Date(s);next.setHours(s.getHours()+1,0,0,0);const stop=e<next?e:next;
+      hRows[s.getHours()][r.state]+=Math.max(0,(stop-s)/60000);s=stop;}
   });
-
-  // 1時間ごと集計
-  const hour = Array.from({length:24}, (_,h)=>({h, run:0, abn:0, plan:0, setup:0}));
-  chunks.forEach(c=>{
-    const minutes = Math.max(0, (c.end - c.start)/60000);
-    const h = c.start.getHours(); // 分割してるのでstartの時間でOK
-    hour[h][c.state] += minutes;
+  let sumRun=0,sumDen=0;
+  const rows=hRows.map(r=>{
+    const den=excludePlan?(r.run+r.abn+r.setup):(r.run+r.abn+r.plan+r.setup);
+    const rate=den? r.run/den:0;
+    sumRun+=r.run;sumDen+=den;
+    return {...r,den,rate};
   });
-
-  // 1日合算
-  let sumRun=0, sumDen=0;
-  const rows = hour.map(r=>{
-    const den = excludePlan ? (r.run + r.abn + r.setup) : (r.run + r.abn + r.plan + r.setup);
-    const rate = den>0 ? r.run/den : 0;
-    sumRun += r.run; sumDen += den;
-    return {h:r.h, rate, den, run:r.run, abn:r.abn, plan:r.plan, setup:r.setup};
-  });
-  const rateToday = sumDen>0 ? sumRun/sumDen : 0;
-
-  return {rows, rateToday, sumRunMin: sumRun};
+  return {rows,rate:sumDen?sumRun/sumDen:0,sumRun};
 }
 
-function renderHour(){
-  const ex = excludePlanEl.checked;
-  const agg = aggregateAll(state.data.logs, state.data.current, ex);
-  tblHourBody.innerHTML='';
-  agg.rows.forEach(r=>{
-    const pct = Math.round(r.rate*100);
-    const tr = document.createElement('tr');
-    const denTxt = `${Math.round(r.run)} / ${Math.round(r.den)}`;
-    tr.innerHTML = `
+function render(){
+  const ex=document.getElementById('excludePlan').checked;
+  const a=aggregate(ex);
+  document.getElementById('tblHour').querySelector('tbody').innerHTML=a.rows.map(r=>{
+    const total=r.den||1;
+    const wRun=r.run/total*100,wAbn=r.abn/total*100,wPlan=r.plan/total*100,wSetup=r.setup/total*100;
+    return `<tr>
       <td class="mono">${pad(r.h)}:00</td>
-      <td style="min-width:260px">
-        <div class="bar"><div class="fill run" style="width:${pct}%;"></div></div>
-        <div class="hint">${pct}%（稼働）</div>
+      <td>
+        <div class="bar">
+          <div class="seg run" style="width:${wRun}%"></div>
+          <div class="seg abn" style="width:${wAbn}%"></div>
+          <div class="seg plan" style="width:${wPlan}%"></div>
+          <div class="seg setup" style="width:${wSetup}%"></div>
+        </div>
+        <div class="hint">${Math.round(r.rate*100)}%</div>
       </td>
-      <td class="right mono">${denTxt}</td>
-    `;
-    tblHourBody.appendChild(tr);
-  });
+      <td class="right mono">${Math.round(r.run)} / ${Math.round(r.den)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('sumRun').textContent=fmtHM(a.sumRun);
+  document.getElementById('rateToday').textContent=`${(a.rate*100).toFixed(0)}%`;
+  document.getElementById('keyHint').textContent=keyOf(state.machine,state.date);
 }
 
-/* ====== CSV ====== */
-function exportCsv(){
-  const d = state.data;
-  // 出力：No,状態,開始,終了,分
-  const rows = [['No','状態','開始','終了','分']];
-  const closed = [...d.logs];
-  if(d.current){
-    closed.push({...d.current, end: toLocalISO(new Date())});
-  }
-  closed.forEach((r,i)=>{
-    const s = parseLocal(r.start);
-    const e = r.end ? parseLocal(r.end) : null;
-    const mins = e ? Math.round((e - s)/60000) : '';
-    rows.push([i+1, ST_LABEL[r.state], r.start, r.end||'', mins]);
-  });
+document.querySelectorAll('.btn[data-state]').forEach(b=>b.onclick=()=>changeState(b.dataset.state));
+document.getElementById('split').onclick=split;
+document.getElementById('undo').onclick=undo;
+document.getElementById('clearDay').onclick=clearDay;
+document.getElementById('excludePlan').onchange=render;
+document.getElementById('machine').onchange=e=>{state.machine=e.target.value;state.data=load(state.machine,state.date);render();}
+document.getElementById('workDate').onchange=e=>{state.date=e.target.value;state.data=load(state.machine,state.date);render();}
+document.getElementById('newDay').onclick=()=>{const d=prompt('日付(YYYY-MM-DD)',state.date);if(d){state.date=d;document.getElementById('workDate').value=d;state.data=load(state.machine,d);render();}};
 
-  // 時間別集計も末尾に追加
-  rows.push([]);
-  rows.push(['時間別集計（分母' + (excludePlanEl.checked?'計画停止除外':'計画停止含む') + '）']);
-  rows.push(['時','稼働率%','稼働分','分母','異常停止分','計画停止分','段取り分']);
-  const ex = excludePlanEl.checked;
-  const agg = aggregateAll(state.data.logs, state.data.current, ex);
-  agg.rows.forEach(r=>{
-    rows.push([`${pad(r.h)}:00`, Math.round(r.rate*100), Math.round(r.run), Math.round(r.den), Math.round(r.abn), Math.round(r.plan), Math.round(r.setup)]);
-  });
-
-  const csv = rows.map(cols=> cols.map(v=>{
-    const s = (v===null||v===undefined)?'':String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
-  }).join(',')).join('\n');
-
-  const blob = new Blob([csv], {type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${state.machine}_${state.date}_presslog.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-}
-
-/* ====== イベント配線 ====== */
-document.querySelectorAll('.btn[data-state]').forEach(b=>{
-  b.addEventListener('click', ()=> changeState(b.dataset.state));
-});
-document.getElementById('undo').addEventListener('click', undoLast);
-document.getElementById('split').addEventListener('click', splitNow);
-document.getElementById('clearDay').addEventListener('click', clearDay);
-document.getElementById('exportCsv').addEventListener('click', exportCsv);
-excludePlanEl.addEventListener('change', ()=> { renderHeader(); renderHour(); });
-
-machineEl.addEventListener('change', e=> setMachine(e.target.value));
-dateEl.addEventListener('change', e=> setDate(e.target.value));
-document.getElementById('newDay').addEventListener('click', ()=>{
-  const d = prompt('日付（YYYY-MM-DD）を入力', state.date);
-  if(!d) return;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return alert('形式が正しくありません');
-  dateEl.value = d; setDate(d);
-});
-
-/* ====== 起動 ====== */
-(function init(){
-  // 既定：今日
-  dateEl.value = todayStr();
-  state.machine = machineEl.value;
-  state.date = dateEl.value;
-  refreshFromStorage();
-  renderAll();
-  startTimer();
-})();
-
-function renderAll(){
-  renderHeader();
-  renderLogs();
-  renderHour();
-}
+(function init(){const t=todayStr();document.getElementById('workDate').value=t;state.data=load(state.machine,t);render();})();
 </script>
 </body>
 </html>
