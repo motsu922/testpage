@@ -3,46 +3,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>プレス稼働ログ（停止時間色分けバー付）</title>
+<title>プレス稼働ログ（ヒーロー表示＋停止内訳バー）</title>
 <style>
   :root{
     --ink:#0f172a; --muted:#6b7280; --card:#fff; --bg:#f6f8fb; --border:#e5e7eb;
     --run:#16a34a; --abn:#ef4444; --plan:#0ea5e9; --setup:#f59e0b;
+    --accent: var(--run);
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Hiragino Sans",sans-serif;background:var(--bg);color:var(--ink)}
   .wrap{max-width:1100px;margin:0 auto;padding:16px}
-  .row{display:grid;gap:12px}
-  @media(min-width:960px){.row{grid-template-columns:1.1fr .9fr}}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.04)}
-  .card h2{font-size:1rem;margin:0 0 8px;padding:0 0 8px;border-bottom:1px solid var(--border)}
   header{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:6px 0 14px}
   header .title{font-weight:700;font-size:1.05rem}
   select,input[type="date"]{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fff}
-  .btns{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .ghost{background:#fff;border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px 10px;cursor:pointer}
+  .ghost:active{transform:scale(.99)}
+
+  /* ===== ヒーロー（現況） ===== */
+  .hero{
+    background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, white) 0%, color-mix(in srgb, var(--accent) 12%, white) 100%);
+    border:1px solid var(--border); border-radius:16px; box-shadow:0 6px 16px rgba(0,0,0,.06);
+    padding:18px 20px; margin-bottom:14px; position:relative; overflow:hidden;
+  }
+  .hero .rows{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+  .stateBadge{
+    display:flex;align-items:center;gap:10px;
+    background:#fff;border:1px solid var(--border);border-radius:12px;padding:6px 12px;
+    font-weight:800;font-size:clamp(16px,2.2vw,22px);
+  }
+  .dot{width:14px;height:14px;border-radius:50%}
+  .dot.run{background:var(--run)} .dot.abn{background:var(--abn)} .dot.plan{background:var(--plan)} .dot.setup{background:var(--setup)}
+  .timer{
+    font-variant-numeric:tabular-nums;
+    font-weight:900; letter-spacing:1px;
+    font-size:clamp(36px,8.5vw,80px); line-height:1; color:#0b141f;
+    text-shadow:0 1px 0 rgba(255,255,255,.6);
+  }
+  .under{
+    display:flex;flex-wrap:wrap;gap:14px;color:#22303c;opacity:.85;font-size:clamp(13px,1.8vw,15px)
+  }
+  .pill{
+    background:rgba(255,255,255,.9); padding:6px 10px; border-radius:999px; border:1px solid var(--border);
+    display:inline-flex; gap:6px; align-items:center
+  }
+  .bigStat{
+    display:flex;flex-direction:column; align-items:flex-end; gap:6px
+  }
+  .bigStat .val{font-variant-numeric:tabular-nums;font-weight:800;font-size:clamp(18px,3.2vw,28px)}
+  .bigStat .cap{color:#345}
+  .heroTools{position:absolute;right:10px;top:10px;display:flex;gap:8px}
+
+  /* ===== レイアウト下段 ===== */
+  .row{display:grid;gap:12px}
+  @media(min-width:960px){.row{grid-template-columns:1.1fr .9fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.04)}
+  .card h2{font-size:1rem;margin:0 0 8px;padding:10px 14px;border-bottom:1px solid var(--border)}
+  .card .body{padding:14px}
+
+  .btns{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:10px 0 12px}
   .btn{padding:14px 10px;border:none;border-radius:12px;color:#fff;font-weight:700;font-size:1.05rem;cursor:pointer}
   .btn:active{transform:scale(.99)}
   .run{background:var(--run)} .abn{background:var(--abn)} .plan{background:var(--plan)} .setup{background:var(--setup)}
-  .state{display:flex;align-items:center;gap:10px}
-  .dot{width:12px;height:12px;border-radius:50%}
-  .dot.run{background:var(--run)} .dot.abn{background:var(--abn)} .dot.plan{background:var(--plan)} .dot.setup{background:var(--setup)}
-  .kv{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:.95rem}
-  .tools{display:flex;gap:8px;flex-wrap:wrap}
-  .ghost{background:#fff;border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px 10px;cursor:pointer}
-  .ghost:active{transform:scale(.99)}
+
   table{width:100%;border-collapse:collapse}
   th,td{padding:8px 8px;border-bottom:1px solid var(--border);text-align:left;font-size:.95rem}
   th{font-weight:700;background:#fafbff}
   .mono{font-variant-numeric:tabular-nums}
   .right{text-align:right}
-  .bar{height:12px;background:#e5e7eb;border-radius:6px;overflow:hidden;display:flex}
+
+  /* 積み上げバー（停止内訳含む） */
+  .bar{height:14px;background:#e5e7eb;border-radius:6px;overflow:hidden;display:flex}
   .seg{height:100%}
   .seg.run{background:var(--run)}
   .seg.abn{background:var(--abn);opacity:.4}
   .seg.plan{background:var(--plan);opacity:.4}
   .seg.setup{background:var(--setup);opacity:.4}
-  .hint{color:var(--muted);font-size:.9rem}
+
   footer{margin:14px 0 6px;color:var(--muted);font-size:.85rem}
+
+  /* 現場モード（ヒーローのみフルスクリーン風） */
+  .floorOnly .wrap > :not(.hero){display:none}
+  .floorOnly .wrap{max-width:1400px}
+  .floorOnly .hero{margin-top:12vh}
 </style>
 </head>
 <body>
@@ -58,104 +100,165 @@
     </label>
     <label>日付 <input type="date" id="workDate"></label>
     <button class="ghost" id="newDay">新規日付</button>
+    <button class="ghost" id="toggleFloor">現場モード</button>
   </header>
 
+  <!-- ===== ヒーロー：現在の状態＋経過時間（特大） ===== -->
+  <section class="hero" id="hero">
+    <div class="heroTools">
+      <span class="pill"><b id="heroDate">--/--</b></span>
+      <span class="pill">設備 <b id="heroMachine">-</b></span>
+    </div>
+
+    <div class="rows">
+      <div>
+        <div class="stateBadge" id="stateBadge">
+          <span class="dot run" id="stateDot"></span>
+          <span id="stateLabel">稼働中</span>
+        </div>
+        <div class="timer" id="elapsedBig">00:00:00</div>
+        <div class="under">
+          <span class="pill">開始 <b id="since">--:--</b></span>
+          <span class="pill">現在 <b id="nowClock">--:--:--</b></span>
+        </div>
+      </div>
+
+      <div class="bigStat">
+        <div class="val" id="sumRun">0:00</div>
+        <div class="cap">本日稼働</div>
+        <div class="val" id="rateToday">0%</div>
+        <div class="cap" id="denomHint">（計画停止含む）</div>
+      </div>
+    </div>
+  </section>
+
   <div class="row">
-    <section class="card" style="padding:14px">
+    <section class="card">
       <h2>状態切替（タップで記録）</h2>
-      <div class="btns" style="margin:10px 0 12px">
-        <button class="btn run"   data-state="run">稼働中</button>
-        <button class="btn abn"   data-state="abn">異常停止中</button>
-        <button class="btn plan"  data-state="plan">計画停止中</button>
-        <button class="btn setup" data-state="setup">段取り中</button>
-      </div>
-      <div class="state" id="stateNow">
-        <div class="dot run" id="stateDot"></div>
-        <div><b id="stateLabel">稼働中</b> <span class="hint">（<span id="since">--:--</span>から）</span></div>
-      </div>
-      <div class="kv">
-        <div>経過：<span class="mono" id="elapsed">00:00:00</span></div>
-        <div>本日稼働：<span class="mono" id="sumRun">0:00</span></div>
-        <div>稼働率：<span class="mono" id="rateToday">0%</span></div>
-      </div>
-      <div class="tools" style="margin-top:10px">
-        <button class="ghost" id="undo">直前取消</button>
-        <button class="ghost" id="split">区切る</button>
-        <button class="ghost" id="clearDay">全削除</button>
-        <label class="ghost"><input type="checkbox" id="excludePlan"> 計画停止を除外</label>
-        <button class="ghost" id="exportCsv">CSV</button>
+      <div class="body">
+        <div class="btns">
+          <button class="btn run"   data-state="run">稼働中</button>
+          <button class="btn abn"   data-state="abn">異常停止中</button>
+          <button class="btn plan"  data-state="plan">計画停止中</button>
+          <button class="btn setup" data-state="setup">段取り中</button>
+        </div>
+        <div class="tools" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="ghost" id="undo">直前取消</button>
+          <button class="ghost" id="split">区切る</button>
+          <button class="ghost" id="clearDay">全削除</button>
+          <label class="ghost"><input type="checkbox" id="excludePlan"> 計画停止を除外</label>
+          <button class="ghost" id="exportCsv">CSV</button>
+        </div>
       </div>
     </section>
 
-    <section class="card" style="padding:14px">
+    <section class="card">
       <h2>時間別稼働率（停止時間色分け）</h2>
-      <table id="tblHour">
-        <thead><tr><th>時</th><th>稼働率バー</th><th>稼働分/分母</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div class="body">
+        <table id="tblHour">
+          <thead><tr><th>時</th><th>稼働率バー</th><th>稼働分/分母</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div style="color:var(--muted);font-size:.9rem;margin-top:6px">※ 稼働=濃緑、異常/計画/段取り=半透明で内訳を積み上げ表示。</div>
+      </div>
     </section>
   </div>
 
-  <section class="card" style="padding:14px;margin-top:12px">
+  <section class="card" style="margin-top:12px">
     <h2>区間ログ</h2>
-    <table id="tblLog">
-      <thead><tr><th>#</th><th>状態</th><th>開始</th><th>終了</th><th class="right">分</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="body">
+      <table id="tblLog">
+        <thead><tr><th>#</th><th>状態</th><th>開始</th><th>終了</th><th class="right">分</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </section>
-  <footer>localStorage保存キー：<span id="keyHint"></span></footer>
+
+  <footer>localStorage保存キー：<span id="keyHint" class="mono">-</span></footer>
 </div>
 
 <script>
+/* ===== ユーティリティ ===== */
 const ST_LABEL={run:'稼働中',abn:'異常停止中',plan:'計画停止中',setup:'段取り中'};
 const pad=n=>String(n).padStart(2,'0');
+const fmtHMS=sec=>{const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return `${pad(h)}:${pad(m)}:${pad(s)}`;}
 const fmtHM=m=>`${Math.floor(m/60)}:${pad(Math.floor(m%60))}`;
 const todayStr=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;}
 const toLocalISO=d=>{const z=d.getTimezoneOffset()*60000;return new Date(d-z).toISOString().slice(0,19);}
 const parseLocal=iso=>new Date(iso);
-const keyOf=(m,d)=>`presslog_v2:${m}:${d}`;
-const load=(m,d)=>JSON.parse(localStorage.getItem(keyOf(m,d))||'{"current":null,"logs":[]}');
-const save=(m,d,v)=>localStorage.setItem(keyOf(m,d),JSON.stringify(v));
+const toDisp=t=>`${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
 
+const keyOf=(m,d)=>`presslog_v3:${m}:${d}`;
+const load=(m,d)=>JSON.parse(localStorage.getItem(keyOf(m,d))||'{"current":null,"logs":[]}');
+const save=(m,d,v)=>{localStorage.setItem(keyOf(m,d),JSON.stringify(v));document.getElementById('keyHint').textContent=keyOf(m,d);}
+
+/* ===== 状態 ===== */
+let timer=null, clock=null;
 let state={machine:'PRESS-01',date:todayStr(),data:{current:null,logs:[]}};
 
-function changeState(s){
-  const now=new Date();
-  const d=state.data;
-  if(d.current){d.current.end=toLocalISO(now);d.logs.push({...d.current});}
-  d.current={state:s,start:toLocalISO(now),end:null};
-  save(state.machine,state.date,d);render();
-}
-function split(){const now=new Date();const d=state.data;if(!d.current)return;d.current.end=toLocalISO(now);d.logs.push({...d.current});d.current={state:d.current.state,start:toLocalISO(now),end:null};save(state.machine,state.date,d);render();}
-function undo(){const d=state.data;if(d.logs.length)d.logs.pop();else d.current=null;save(state.machine,state.date,d);render();}
-function clearDay(){if(!confirm('全削除？'))return;state.data={current:null,logs:[]};save(state.machine,state.date,state.data);render();}
+const machineEl=document.getElementById('machine');
+const dateEl=document.getElementById('workDate');
+const excludePlanEl=document.getElementById('excludePlan');
 
+/* ===== 集計 ===== */
 function aggregate(excludePlan){
   const d=state.data;
-  const closed=[...d.logs];if(d.current)closed.push({...d.current,end:toLocalISO(new Date())});
-  const hRows=Array.from({length:24},(_,h)=>({h,run:0,abn:0,plan:0,setup:0}));
+  const closed=[...d.logs]; if(d.current) closed.push({...d.current,end:toLocalISO(new Date())});
+  const hour=Array.from({length:24},(_,h)=>({h,run:0,abn:0,plan:0,setup:0}));
   closed.forEach(r=>{
-    if(!r.end)return;let s=parseLocal(r.start),e=parseLocal(r.end);
-    while(s<e){const next=new Date(s);next.setHours(s.getHours()+1,0,0,0);const stop=e<next?e:next;
-      hRows[s.getHours()][r.state]+=Math.max(0,(stop-s)/60000);s=stop;}
+    if(!r.end) return; let s=parseLocal(r.start),e=parseLocal(r.end);
+    while(s<e){const nxt=new Date(s);nxt.setHours(s.getHours()+1,0,0,0);const stop=e<nxt?e:nxt;
+      hour[s.getHours()][r.state]+=Math.max(0,(stop-s)/60000); s=stop;}
   });
   let sumRun=0,sumDen=0;
-  const rows=hRows.map(r=>{
+  const rows=hour.map(r=>{
     const den=excludePlan?(r.run+r.abn+r.setup):(r.run+r.abn+r.plan+r.setup);
     const rate=den? r.run/den:0;
-    sumRun+=r.run;sumDen+=den;
+    sumRun+=r.run; sumDen+=den;
     return {...r,den,rate};
   });
   return {rows,rate:sumDen?sumRun/sumDen:0,sumRun};
 }
 
-function render(){
-  const ex=document.getElementById('excludePlan').checked;
-  const a=aggregate(ex);
-  document.getElementById('tblHour').querySelector('tbody').innerHTML=a.rows.map(r=>{
+/* ===== 描画 ===== */
+function renderAll(){ renderHero(); renderHour(); renderLog(); }
+function renderHero(){
+  const d=state.data, cur=d.current;
+  let label='未記録',dot='run',since='--:--',elapsed='00:00:00',accent='var(--run)';
+  if(cur){
+    label=ST_LABEL[cur.state]; dot=cur.state; since=toDisp(parseLocal(cur.start));
+    const sec=Math.floor((Date.now()-parseLocal(cur.start).getTime())/1000);
+    elapsed=fmtHMS(Math.max(0,sec));
+    accent = getAccent(cur.state);
+  }
+  document.getElementById('stateLabel').textContent=label;
+  document.getElementById('stateDot').className=`dot ${dot}`;
+  document.getElementById('since').textContent=since;
+  document.getElementById('elapsedBig').textContent=elapsed;
+  document.getElementById('heroMachine').textContent=state.machine;
+  document.getElementById('heroDate').textContent=state.date;
+  document.documentElement.style.setProperty('--accent', accent);
+
+  const ex=excludePlanEl.checked; const a=aggregate(ex);
+  document.getElementById('sumRun').textContent=fmtHM(a.sumRun);
+  document.getElementById('rateToday').textContent=`${(a.rate*100).toFixed(0)}%`;
+  document.getElementById('denomHint').textContent = ex?'（計画停止除外）':'（計画停止含む）';
+}
+function getAccent(st){
+  if(st==='run') return getComputedStyle(document.documentElement).getPropertyValue('--run').trim();
+  if(st==='abn') return getComputedStyle(document.documentElement).getPropertyValue('--abn').trim();
+  if(st==='plan')return getComputedStyle(document.documentElement).getPropertyValue('--plan').trim();
+  if(st==='setup')return getComputedStyle(document.documentElement).getPropertyValue('--setup').trim();
+  return 'var(--run)';
+}
+function renderHour(){
+  const ex=excludePlanEl.checked; const a=aggregate(ex);
+  const tbody=document.querySelector('#tblHour tbody'); tbody.innerHTML='';
+  a.rows.forEach(r=>{
     const total=r.den||1;
     const wRun=r.run/total*100,wAbn=r.abn/total*100,wPlan=r.plan/total*100,wSetup=r.setup/total*100;
-    return `<tr>
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
       <td class="mono">${pad(r.h)}:00</td>
       <td>
         <div class="bar">
@@ -164,26 +267,103 @@ function render(){
           <div class="seg plan" style="width:${wPlan}%"></div>
           <div class="seg setup" style="width:${wSetup}%"></div>
         </div>
-        <div class="hint">${Math.round(r.rate*100)}%</div>
+        <div style="color:var(--muted);font-size:.9rem;margin-top:4px">${Math.round(r.rate*100)}%</div>
       </td>
-      <td class="right mono">${Math.round(r.run)} / ${Math.round(r.den)}</td>
-    </tr>`;
-  }).join('');
-  document.getElementById('sumRun').textContent=fmtHM(a.sumRun);
-  document.getElementById('rateToday').textContent=`${(a.rate*100).toFixed(0)}%`;
-  document.getElementById('keyHint').textContent=keyOf(state.machine,state.date);
+      <td class="right mono">${Math.round(r.run)} / ${Math.round(r.den)}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+function renderLog(){
+  const d=state.data, body=document.querySelector('#tblLog tbody');
+  const rows=[...d.logs]; if(d.current) rows.push({...d.current,end:d.current.end});
+  body.innerHTML='';
+  rows.forEach((r,i)=>{
+    const s=parseLocal(r.start), e=r.end?parseLocal(r.end):null;
+    const mins=e? Math.max(0,Math.round((e-s)/60000)) : '';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td class="mono">${i+1}</td>
+      <td><span class="dot ${r.state}"></span> ${ST_LABEL[r.state]}</td>
+      <td class="mono">${toDisp(s)}</td>
+      <td class="mono">${e?toDisp(e):'<span style="color:var(--muted)">進行中</span>'}</td>
+      <td class="right mono">${mins!==''?mins:'-'}</td>`;
+    body.appendChild(tr);
+  });
 }
 
-document.querySelectorAll('.btn[data-state]').forEach(b=>b.onclick=()=>changeState(b.dataset.state));
-document.getElementById('split').onclick=split;
-document.getElementById('undo').onclick=undo;
-document.getElementById('clearDay').onclick=clearDay;
-document.getElementById('excludePlan').onchange=render;
-document.getElementById('machine').onchange=e=>{state.machine=e.target.value;state.data=load(state.machine,state.date);render();}
-document.getElementById('workDate').onchange=e=>{state.date=e.target.value;state.data=load(state.machine,state.date);render();}
-document.getElementById('newDay').onclick=()=>{const d=prompt('日付(YYYY-MM-DD)',state.date);if(d){state.date=d;document.getElementById('workDate').value=d;state.data=load(state.machine,d);render();}};
+/* ===== 入出力 ===== */
+function changeState(s){
+  const now=new Date(); const d=state.data;
+  if(d.current){ d.current.end=toLocalISO(now); d.logs.push({...d.current}); }
+  d.current={state:s,start:toLocalISO(now),end:null};
+  save(state.machine,state.date,d); renderAll();
+}
+function splitNow(){
+  const now=new Date(); const d=state.data; if(!d.current) return;
+  d.current.end=toLocalISO(now); d.logs.push({...d.current});
+  d.current={state:d.current.state,start:toLocalISO(now),end:null};
+  save(state.machine,state.date,d); renderAll();
+}
+function undoLast(){
+  const d=state.data;
+  if(d.current && !d.logs.length){ d.current=null; }
+  else if(d.current && d.logs.length){ d.current=d.logs.pop(); d.current.end=null; }
+  else if(!d.current && d.logs.length){ d.logs.pop(); }
+  save(state.machine,state.date,d); renderAll();
+}
+function clearDay(){
+  if(!confirm('本日の記録を全削除します。よろしいですか？')) return;
+  state.data={current:null,logs:[]}; save(state.machine,state.date,state.data); renderAll();
+}
 
-(function init(){const t=todayStr();document.getElementById('workDate').value=t;state.data=load(state.machine,t);render();})();
+/* ===== CSV ===== */
+function exportCsv(){
+  const d=state.data; const rows=[['No','状態','開始','終了','分']];
+  const closed=[...d.logs]; if(d.current) closed.push({...d.current,end:toLocalISO(new Date())});
+  closed.forEach((r,i)=>{const s=parseLocal(r.start),e=r.end?parseLocal(r.end):null;const mins=e?Math.round((e-s)/60000):'';rows.push([i+1,ST_LABEL[r.state],r.start,r.end||'',mins]);});
+  rows.push([]); const ex=excludePlanEl.checked; const a=aggregate(ex);
+  rows.push(['時間別集計（'+(ex?'計画停止除外':'計画停止含む')+'）']);
+  rows.push(['時','稼働率%','稼働分','分母','異常停止分','計画停止分','段取り分']);
+  a.rows.forEach(r=>rows.push([`${pad(r.h)}:00`,Math.round(r.rate*100),Math.round(r.run),Math.round(r.den),Math.round(r.abn),Math.round(r.plan),Math.round(r.setup)]));
+  const csv=rows.map(cols=>cols.map(v=>{const s=(v??'').toString();return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);
+  const aTag=document.createElement('a');aTag.href=url;aTag.download=`${state.machine}_${state.date}_presslog.csv`;document.body.appendChild(aTag);aTag.click();aTag.remove();URL.revokeObjectURL(url);
+}
+
+/* ===== イベント配線 ===== */
+document.querySelectorAll('.btn[data-state]').forEach(b=>b.addEventListener('click',()=>changeState(b.dataset.state)));
+document.getElementById('split').addEventListener('click',splitNow);
+document.getElementById('undo').addEventListener('click',undoLast);
+document.getElementById('clearDay').addEventListener('click',clearDay);
+document.getElementById('exportCsv').addEventListener('click',exportCsv);
+excludePlanEl.addEventListener('change',renderAll);
+
+machineEl.addEventListener('change',e=>{state.machine=e.target.value;state.data=load(state.machine,state.date);renderAll();});
+dateEl.addEventListener('change',e=>{state.date=e.target.value;state.data=load(state.machine,state.date);renderAll();});
+document.getElementById('newDay').addEventListener('click',()=>{const d=prompt('日付（YYYY-MM-DD）',state.date);if(d){dateEl.value=d;state.date=d;state.data=load(state.machine,d);renderAll();}});
+document.getElementById('toggleFloor').addEventListener('click',()=>{
+  document.body.classList.toggle('floorOnly');
+  if(document.fullscreenElement){ document.exitFullscreen(); }
+  else { document.documentElement.requestFullscreen?.(); }
+});
+
+/* ===== 時計＆タイマー ===== */
+function tick(){
+  // 経過のライブ更新
+  const d=state.data, cur=d.current;
+  if(cur){
+    const sec=Math.floor((Date.now()-parseLocal(cur.start).getTime())/1000);
+    document.getElementById('elapsedBig').textContent=fmtHMS(Math.max(0,sec));
+  }
+  // 現在時刻
+  const now=new Date(); document.getElementById('nowClock').textContent=toDisp(now);
+}
+(function init(){
+  const t=todayStr(); dateEl.value=t; state.data=load(state.machine,t);
+  renderAll();
+  timer=setInterval(()=>{renderHero();}, 1000); // KPIも1秒ごと追随
+  clock=setInterval(tick,1000);
+})();
 </script>
 </body>
 </html>
