@@ -202,6 +202,8 @@ display: flex;
 justify-content: space-between;
 align-items: center;
 background: #f8f9fa;
+flex-wrap: wrap;
+gap: 12px;
 }
 
 .result-count {
@@ -214,9 +216,37 @@ color: #667eea;
 font-size: 1.2rem;
 }
 
+.display-count-selector {
+display: flex;
+align-items: center;
+gap: 8px;
+}
+
+.display-count-selector label {
+font-size: .9rem;
+color: #666;
+white-space: nowrap;
+}
+
+.display-count-selector select {
+padding: 6px 12px;
+border: 2px solid #e0e0e0;
+border-radius: 6px;
+background: #fff;
+cursor: pointer;
+font-size: .9rem;
+transition: .2s;
+}
+
+.display-count-selector select:focus {
+outline: none;
+border-color: #667eea;
+}
+
 .toolbar-actions {
 display: flex;
 gap: 10px;
+flex-wrap: wrap;
 }
 
 .btn-tool {
@@ -558,7 +588,16 @@ align-items: stretch;
 <div class="datasheet-container">
   <div class="datasheet-toolbar">
     <div class="result-count">
-      表示中: <strong id="resultCount">0</strong> 件
+      表示中: <strong id="resultCount">0</strong> 件 / 全 <strong id="totalCount">0</strong> 件
+    </div>
+    <div class="display-count-selector">
+      <label for="displayCount">表示件数:</label>
+      <select id="displayCount">
+        <option value="25">25件</option>
+        <option value="50">50件</option>
+        <option value="75">75件</option>
+        <option value="100">100件</option>
+      </select>
     </div>
     <div class="toolbar-actions">
       <button class="btn-tool" id="btnResetFilters">🔄 フィルタリセット</button>
@@ -698,6 +737,7 @@ align-items: stretch;
 
   // デフォルト表示列
   let visibleColumns = ['serialNo', 'department', 'lineName', 'occurrenceDate', 'occurrenceTime', 'stopMinutes', 'handler', 'status'];
+  let displayLimit = 25; // デフォルト表示件数
 
   // ローカルストレージから設定を読み込み
   function loadSettings() {
@@ -705,11 +745,22 @@ align-items: stretch;
     if (saved) {
       visibleColumns = JSON.parse(saved);
     }
+    
+    const savedLimit = localStorage.getItem('displayLimit');
+    if (savedLimit) {
+      displayLimit = parseInt(savedLimit);
+      document.getElementById('displayCount').value = displayLimit.toString();
+    }
   }
 
   // 設定を保存
   function saveSettings() {
     localStorage.setItem('datasheetColumns', JSON.stringify(visibleColumns));
+  }
+  
+  // 表示件数を保存
+  function saveDisplayLimit() {
+    localStorage.setItem('displayLimit', displayLimit.toString());
   }
 
   // 認証
@@ -861,8 +912,11 @@ align-items: stretch;
       });
     });
     
+    // 表示件数で制限
+    const displayData = filteredData.slice(0, displayLimit);
+    
     // ボディ
-    if (filteredData.length === 0) {
+    if (displayData.length === 0) {
       tbody.innerHTML = `
         <tr>
           <td colspan="${columns.length}">
@@ -874,7 +928,7 @@ align-items: stretch;
         </tr>
       `;
     } else {
-      tbody.innerHTML = filteredData.map(item => `
+      tbody.innerHTML = displayData.map(item => `
         <tr data-id="${item._id}">
           ${columns.map(col => {
             let value = item[col.id] || '-';
@@ -904,7 +958,8 @@ align-items: stretch;
     }
     
     // 件数表示
-    document.getElementById('resultCount').textContent = filteredData.length;
+    document.getElementById('resultCount').textContent = displayData.length;
+    document.getElementById('totalCount').textContent = filteredData.length;
   }
 
   // ソート適用
@@ -1085,6 +1140,13 @@ align-items: stretch;
   // イベント設定
   document.getElementById('btnSettings').addEventListener('click', showSettings);
   document.getElementById('btnExport').addEventListener('click', exportCSV);
+  
+  // 表示件数変更
+  document.getElementById('displayCount').addEventListener('change', (e) => {
+    displayLimit = parseInt(e.target.value);
+    saveDisplayLimit();
+    renderTable();
+  });
   
   // 部署フィルター
   document.getElementById('btnClearDept').addEventListener('click', () => {
