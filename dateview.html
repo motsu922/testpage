@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>異常履歴データシート</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+body {
+font-family: -apple-system, BlinkMacSystemFont, ‘Segoe UI’, ‘Hiragino Sans’, sans-serif;
+background: #f5f5f7;
+color: #1d1d1f;
+}
+
+.header {
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+color: #fff;
+padding: 20px;
+box-shadow: 0 2px 10px rgba(0,0,0,.1);
+position: sticky;
+top: 0;
+z-index: 100;
+}
+
+.header-content {
+max-width: 1400px;
+margin: 0 auto;
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+
+.header h1 {
+font-size: 1.5rem;
+font-weight: 600;
+}
+
+.header-actions {
+display: flex;
+gap: 10px;
+}
+
+.btn-header {
+background: rgba(255,255,255,.2);
+border: 1px solid rgba(255,255,255,.3);
+color: #fff;
+padding: 8px 16px;
+border-radius: 6px;
+cursor: pointer;
+font-weight: 500;
+transition: .2s;
+}
+
+.btn-header:hover {
+background: rgba(255,255,255,.3);
+}
+
+.container {
+max-width: 1400px;
+margin: 0 auto;
+padding: 20px;
+}
+
+/* 部署選択エリア */
+.dept-filter {
+background: #fff;
+border-radius: 12px;
+padding: 20px;
+margin-bottom: 20px;
+box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+
+.dept-filter-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 16px;
+}
+
+.dept-filter-title {
+font-size: 1.1rem;
+font-weight: 600;
+color: #667eea;
+}
+
+.dept-buttons {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+gap: 12px;
+}
+
+.dept-btn {
+padding: 16px 20px;
+border: 2px solid #e0e0e0;
+background: #fff;
+border-radius: 10px;
+cursor: pointer;
+font-size: 1rem;
+font-weight: 600;
+transition: .2s;
+text-align: center;
+}
+
+.dept-btn:hover {
+border-color: #667eea;
+background: #f8f9ff;
+}
+
+.dept-btn.active {
+border-color: #667eea;
+background: #667eea;
+color: #fff;
+}
+
+.dept-count {
+font-size: .85rem;
+opacity: .8;
+margin-top: 4px;
+}
+
+/* データシートエリア */
+.datasheet-container {
+background: #fff;
+border-radius: 12px;
+box-shadow: 0 2px 8px rgba(0,0,0,.08);
+overflow: hidden;
+}
+
+.datasheet-toolbar {
+padding: 16px 20px;
+border-bottom: 1px solid #e0e0e0;
+display: flex;
+justify-content: space-between;
+align-items: center;
+background: #f8f9fa;
+}
+
+.result-count {
+font-size: 1rem;
+color: #666;
+}
+
+.result-count strong {
+color: #667eea;
+font-size: 1.2rem;
+}
+
+.toolbar-actions {
+display: flex;
+gap: 10px;
+}
+
+.btn-tool {
+padding: 8px 16px;
+border: 1px solid #e0e0e0;
+background: #fff;
+border-radius: 6px;
+cursor: pointer;
+font-weight: 500;
+transition: .2s;
+}
+
+.btn-tool:hover {
+border-color: #667eea;
+background: #f8f9ff;
+}
+
+/* テーブル */
+.table-wrapper {
+overflow-x: auto;
+max-height: calc(100vh - 400px);
+position: relative;
+}
+
+table {
+width: 100%;
+border-collapse: collapse;
+font-size: .9rem;
+}
+
+thead {
+position: sticky;
+top: 0;
+z-index: 10;
+background: #fff;
+}
+
+th {
+padding: 12px 16px;
+text-align: left;
+background: #667eea;
+color: #fff;
+font-weight: 600;
+white-space: nowrap;
+cursor: pointer;
+user-select: none;
+position: relative;
+}
+
+th:hover {
+background: #5568d3;
+}
+
+th.sortable::after {
+content: ‘⇅’;
+margin-left: 8px;
+opacity: .4;
+}
+
+th.sort-asc::after {
+content: ‘↑’;
+opacity: 1;
+}
+
+th.sort-desc::after {
+content: ‘↓’;
+opacity: 1;
+}
+
+.filter-icon {
+margin-left: 6px;
+font-size: .8rem;
+opacity: .6;
+}
+
+td {
+padding: 12px 16px;
+border-bottom: 1px solid #f0f0f0;
+}
+
+tr {
+cursor: pointer;
+transition: background .15s;
+}
+
+tbody tr:hover {
+background: #f8f9ff;
+}
+
+.status-badge {
+display: inline-block;
+padding: 4px 12px;
+border-radius: 12px;
+font-size: .85rem;
+font-weight: 600;
+}
+
+.status-pending {
+background: #fff3cd;
+color: #856404;
+}
+
+.status-complete {
+background: #d4edda;
+color: #155724;
+}
+
+/* 詳細モーダル */
+.modal {
+display: none;
+position: fixed;
+inset: 0;
+background: rgba(0,0,0,.5);
+z-index: 1000;
+align-items: center;
+justify-content: center;
+}
+
+.modal.active {
+display: flex;
+}
+
+.modal-content {
+background: #fff;
+border-radius: 16px;
+max-width: 900px;
+width: 95%;
+max-height: 90vh;
+overflow-y: auto;
+box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+
+.modal-header {
+padding: 24px;
+border-bottom: 1px solid #e0e0e0;
+display: flex;
+justify-content: space-between;
+align-items: center;
+position: sticky;
+top: 0;
+background: #fff;
+z-index: 10;
+}
+
+.modal-title {
+font-size: 1.3rem;
+font-weight: 600;
+color: #667eea;
+}
+
+.btn-close {
+background: #f0f0f0;
+border: none;
+width: 32px;
+height: 32px;
+border-radius: 50%;
+cursor: pointer;
+font-size: 1.2rem;
+color: #666;
+transition: .2s;
+}
+
+.btn-close:hover {
+background: #e0e0e0;
+}
+
+.modal-body {
+padding: 24px;
+}
+
+.detail-section {
+margin-bottom: 24px;
+}
+
+.section-title {
+font-size: 1rem;
+font-weight: 600;
+color: #667eea;
+margin-bottom: 12px;
+padding-bottom: 8px;
+border-bottom: 2px solid #e0e0e0;
+}
+
+.detail-grid {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+gap: 16px;
+}
+
+.detail-item {
+display: flex;
+flex-direction: column;
+gap: 4px;
+}
+
+.detail-label {
+font-size: .85rem;
+color: #888;
+font-weight: 500;
+}
+
+.detail-value {
+font-size: 1rem;
+color: #333;
+font-weight: 500;
+}
+
+.detail-text-area {
+background: #f8f9fa;
+padding: 12px;
+border-radius: 8px;
+line-height: 1.6;
+white-space: pre-wrap;
+}
+
+/* 設定モーダル */
+.settings-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+gap: 12px;
+}
+
+.column-checkbox {
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 12px;
+border: 1px solid #e0e0e0;
+border-radius: 8px;
+cursor: pointer;
+transition: .2s;
+}
+
+.column-checkbox:hover {
+border-color: #667eea;
+background: #f8f9ff;
+}
+
+.column-checkbox input[type=“checkbox”] {
+width: 18px;
+height: 18px;
+cursor: pointer;
+}
+
+.column-checkbox label {
+cursor: pointer;
+flex: 1;
+}
+
+.empty-state {
+text-align: center;
+padding: 60px 20px;
+color: #999;
+}
+
+.empty-icon {
+font-size: 3rem;
+margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+.dept-buttons {
+grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+```
+.dept-btn {
+  padding: 12px 16px;
+  font-size: .9rem;
+}
+
+.header-content {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-grid {
+  grid-template-columns: 1fr;
+}
+```
+
+}
+</style>
+
+</head>
+<body>
+  <div class="header">
+    <div class="header-content">
+      <h1>📊 異常履歴データシート</h1>
+      <div class="header-actions">
+        <button class="btn-header" id="btnSettings">⚙️ 表示設定</button>
+        <button class="btn-header" id="btnExport">📥 CSV出力</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- 部署選択フィルター -->
+    <div class="dept-filter">
+      <div class="dept-filter-header">
+        <div class="dept-filter-title">🏢 部署で絞り込み（複数選択可）</div>
+        <button class="btn-tool" id="btnClearDept">すべて解除</button>
+      </div>
+      <div class="dept-buttons" id="deptButtons">
+        <!-- 動的に生成 -->
+      </div>
+    </div>
+
+```
+<!-- データシート -->
+<div class="datasheet-container">
+  <div class="datasheet-toolbar">
+    <div class="result-count">
+      表示中: <strong id="resultCount">0</strong> 件
+    </div>
+    <div class="toolbar-actions">
+      <button class="btn-tool" id="btnResetFilters">🔄 フィルタリセット</button>
+      <button class="btn-tool" id="btnResetSort">↕️ ソートリセット</button>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table id="dataTable">
+      <thead id="tableHead">
+        <!-- 動的に生成 -->
+      </thead>
+      <tbody id="tableBody">
+        <!-- 動的に生成 -->
+      </tbody>
+    </table>
+  </div>
+</div>
+```
+
+  </div>
+
+  <!-- 詳細モーダル -->
+
+  <div class="modal" id="detailModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="detailTitle">詳細情報</div>
+        <button class="btn-close" id="btnCloseDetail">×</button>
+      </div>
+      <div class="modal-body" id="detailBody">
+        <!-- 動的に生成 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 設定モーダル -->
+
+  <div class="modal" id="settingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ 表示項目設定</div>
+        <button class="btn-close" id="btnCloseSettings">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:16px;color:#666;">表示する項目を選択してください</p>
+        <div class="settings-grid" id="columnSettings">
+          <!-- 動的に生成 -->
+        </div>
+        <button class="btn-header" style="width:100%;margin-top:20px;padding:12px;background:#667eea;border:none;font-size:1rem;" id="btnSaveSettings">保存</button>
+      </div>
+    </div>
+  </div>
+
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
+  import { getFirestore, collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
+    authDomain: "abnreport-fd733.firebaseapp.com",
+    databaseURL: "https://abnreport-fd733-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "abnreport-fd733",
+    storageBucket: "abnreport-fd733.firebasestorage.app",
+    messagingSenderId: "349748947315",
+    appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+
+  // 全データ
+  let allData = [];
+  let filteredData = [];
+  let selectedDepts = new Set();
+  let currentSort = { column: null, direction: 'asc' };
+
+  // 列定義
+  const allColumns = [
+    { id: 'serialNo', label: '整理No', sortable: true, filterable: true },
+    { id: 'department', label: '部署', sortable: true, filterable: true },
+    { id: 'lineName', label: 'ライン', sortable: true, filterable: true },
+    { id: 'occurrenceDate', label: '発生日', sortable: true, filterable: true },
+    { id: 'occurrenceTime', label: '発生時刻', sortable: true, filterable: false },
+    { id: 'restartTime', label: '再開時刻', sortable: true, filterable: false },
+    { id: 'stopMinutes', label: '停止時間', sortable: true, filterable: false },
+    { id: 'handler', label: '処置者', sortable: true, filterable: true },
+    { id: 'techHandler', label: '技術処置者', sortable: true, filterable: true },
+    { id: 'status', label: '状態', sortable: true, filterable: true },
+    { id: 'anomalyContent', label: '異常内容', sortable: false, filterable: true },
+    { id: 'actionTaken', label: '対応内容', sortable: false, filterable: true },
+  ];
+
+  // デフォルト表示列
+  let visibleColumns = ['serialNo', 'department', 'lineName', 'occurrenceDate', 'occurrenceTime', 'stopMinutes', 'handler', 'status'];
+
+  // ローカルストレージから設定を読み込み
+  function loadSettings() {
+    const saved = localStorage.getItem('datasheetColumns');
+    if (saved) {
+      visibleColumns = JSON.parse(saved);
+    }
+  }
+
+  // 設定を保存
+  function saveSettings() {
+    localStorage.setItem('datasheetColumns', JSON.stringify(visibleColumns));
+  }
+
+  // 認証
+  async function checkAuth() {
+    return new Promise((resolve) => {
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          resolve(true);
+        } else {
+          const email = prompt('メールアドレスを入力してください');
+          const password = prompt('パスワードを入力してください');
+          if (email && password) {
+            setPersistence(auth, browserLocalPersistence)
+              .then(() => signInWithEmailAndPassword(auth, email, password))
+              .then(() => resolve(true))
+              .catch((e) => {
+                alert('ログインに失敗しました: ' + e.message);
+                resolve(false);
+              });
+          } else {
+            resolve(false);
+          }
+        }
+      });
+    });
+  }
+
+  // データ読み込み
+  async function loadData() {
+    const q = query(collection(db, 'anomalies'), orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    
+    allData = snapshot.docs.map(doc => {
+      const data = { _id: doc.id, ...doc.data() };
+      
+      // 停止時間を計算
+      if (data.occurrenceTime && data.restartTime) {
+        const [oh, om] = data.occurrenceTime.split(':').map(Number);
+        const [rh, rm] = data.restartTime.split(':').map(Number);
+        let diff = (rh * 60 + rm) - (oh * 60 + om);
+        if (diff < 0) diff += 1440;
+        data.stopMinutes = diff;
+      } else {
+        data.stopMinutes = null;
+      }
+      
+      return data;
+    });
+    
+    filteredData = [...allData];
+    renderDepartmentButtons();
+    renderTable();
+  }
+
+  // 部署ボタン描画
+  function renderDepartmentButtons() {
+    const deptCounts = {};
+    allData.forEach(item => {
+      const dept = item.department || '未設定';
+      deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+    });
+    
+    const sortedDepts = Object.keys(deptCounts).sort();
+    const container = document.getElementById('deptButtons');
+    
+    container.innerHTML = sortedDepts.map(dept => `
+      <div class="dept-btn" data-dept="${dept}">
+        <div>${dept}</div>
+        <div class="dept-count">${deptCounts[dept]}件</div>
+      </div>
+    `).join('');
+    
+    // イベント設定
+    container.querySelectorAll('.dept-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dept = btn.getAttribute('data-dept');
+        if (selectedDepts.has(dept)) {
+          selectedDepts.delete(dept);
+          btn.classList.remove('active');
+        } else {
+          selectedDepts.add(dept);
+          btn.classList.add('active');
+        }
+        applyFilters();
+      });
+    });
+  }
+
+  // フィルタ適用
+  function applyFilters() {
+    if (selectedDepts.size === 0) {
+      filteredData = [...allData];
+    } else {
+      filteredData = allData.filter(item => 
+        selectedDepts.has(item.department || '未設定')
+      );
+    }
+    
+    // ソート維持
+    if (currentSort.column) {
+      applySorting();
+    } else {
+      renderTable();
+    }
+  }
+
+  // テーブル描画
+  function renderTable() {
+    const thead = document.getElementById('tableHead');
+    const tbody = document.getElementById('tableBody');
+    
+    // ヘッダー
+    const columns = allColumns.filter(col => visibleColumns.includes(col.id));
+    thead.innerHTML = `
+      <tr>
+        ${columns.map(col => `
+          <th class="${col.sortable ? 'sortable' : ''} ${currentSort.column === col.id ? 'sort-' + currentSort.direction : ''}" 
+              data-column="${col.id}">
+            ${col.label}
+            ${col.filterable ? '<span class="filter-icon">🔍</span>' : ''}
+          </th>
+        `).join('')}
+      </tr>
+    `;
+    
+    // ソートイベント
+    thead.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const column = th.getAttribute('data-column');
+        if (currentSort.column === column) {
+          currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentSort.column = column;
+          currentSort.direction = 'asc';
+        }
+        applySorting();
+      });
+    });
+    
+    // ボディ
+    if (filteredData.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="${columns.length}">
+            <div class="empty-state">
+              <div class="empty-icon">📭</div>
+              <p>データがありません</p>
+            </div>
+          </td>
+        </tr>
+      `;
+    } else {
+      tbody.innerHTML = filteredData.map(item => `
+        <tr data-id="${item._id}">
+          ${columns.map(col => {
+            let value = item[col.id] || '-';
+            
+            if (col.id === 'status') {
+              const statusText = item.status === 'complete' ? '完了' : '技術入力待ち';
+              const statusClass = item.status === 'complete' ? 'status-complete' : 'status-pending';
+              value = `<span class="status-badge ${statusClass}">${statusText}</span>`;
+            } else if (col.id === 'stopMinutes' && item.stopMinutes !== null) {
+              value = `${item.stopMinutes}分`;
+            } else if (col.id === 'anomalyContent' || col.id === 'actionTaken') {
+              value = (value.length > 30 ? value.slice(0, 30) + '...' : value);
+            }
+            
+            return `<td>${value}</td>`;
+          }).join('')}
+        </tr>
+      `).join('');
+      
+      // 行クリックイベント
+      tbody.querySelectorAll('tr').forEach(tr => {
+        tr.addEventListener('click', () => {
+          const id = tr.getAttribute('data-id');
+          showDetail(id);
+        });
+      });
+    }
+    
+    // 件数表示
+    document.getElementById('resultCount').textContent = filteredData.length;
+  }
+
+  // ソート適用
+  function applySorting() {
+    const col = currentSort.column;
+    const dir = currentSort.direction;
+    
+    filteredData.sort((a, b) => {
+      let valA = a[col] || '';
+      let valB = b[col] || '';
+      
+      // 数値の場合
+      if (col === 'stopMinutes') {
+        valA = valA || 0;
+        valB = valB || 0;
+      }
+      
+      if (valA < valB) return dir === 'asc' ? -1 : 1;
+      if (valA > valB) return dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    renderTable();
+  }
+
+  // 詳細表示
+  function showDetail(id) {
+    const item = allData.find(x => x._id === id);
+    if (!item) return;
+    
+    const modal = document.getElementById('detailModal');
+    const title = document.getElementById('detailTitle');
+    const body = document.getElementById('detailBody');
+    
+    title.textContent = `整理No: ${item.serialNo || '-'}`;
+    
+    body.innerHTML = `
+      <div class="detail-section">
+        <div class="section-title">📋 基本情報</div>
+        <div class="detail-grid">
+          <div class="detail-item">
+            <div class="detail-label">整理No</div>
+            <div class="detail-value">${item.serialNo || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">部署</div>
+            <div class="detail-value">${item.department || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">ライン</div>
+            <div class="detail-value">${item.lineName || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">発生日</div>
+            <div class="detail-value">${item.occurrenceDate || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">発生時刻</div>
+            <div class="detail-value">${item.occurrenceTime || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">再開時刻</div>
+            <div class="detail-value">${item.restartTime || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">停止時間</div>
+            <div class="detail-value">${item.stopMinutes !== null ? item.stopMinutes + '分' : '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">処置者</div>
+            <div class="detail-value">${item.handler || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">状態</div>
+            <div class="detail-value">
+              <span class="status-badge ${item.status === 'complete' ? 'status-complete' : 'status-pending'}">
+                ${item.status === 'complete' ? '完了' : '技術入力待ち'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="detail-section">
+        <div class="section-title">🚨 異常内容</div>
+        <div class="detail-text-area">${item.anomalyContent || '-'}</div>
+      </div>
+      
+      <div class="detail-section">
+        <div class="section-title">🔧 対応内容</div>
+        <div class="detail-text-area">${item.actionTaken || '-'}</div>
+      </div>
+      
+      ${item.status === 'complete' && item.techRequest === '要請' ? `
+        <div class="detail-section">
+          <div class="section-title">⚙️ 技術対応</div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <div class="detail-label">技術処置者</div>
+              <div class="detail-value">${item.techHandler || '-'}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">発見タイミング</div>
+              <div class="detail-value">${item.discoveryTiming || '-'}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">命数有無</div>
+              <div class="detail-value">${item.lifespan || '-'}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">命数到達</div>
+              <div class="detail-value">${item.lifespanReached || '-'}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">保全単位</div>
+              <div class="detail-value">${item.maintenanceUnit || '-'}</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">再発/新規</div>
+              <div class="detail-value">${item.recurrenceType || '-'}</div>
+            </div>
+          </div>
+          ${item.rootCauseAction ? `
+            <div style="margin-top:16px;">
+              <div class="detail-label" style="margin-bottom:8px;">技術対応内容</div>
+              <div class="detail-text-area">${item.rootCauseAction}</div>
+            </div>
+          ` : ''}
+        </div>
+      ` : ''}
+    `;
+    
+    modal.classList.add('active');
+  }
+
+  // 設定モーダル
+  function showSettings() {
+    const modal = document.getElementById('settingsModal');
+    const container = document.getElementById('columnSettings');
+    
+    container.innerHTML = allColumns.map(col => `
+      <div class="column-checkbox">
+        <input type="checkbox" id="col-${col.id}" ${visibleColumns.includes(col.id) ? 'checked' : ''}>
+        <label for="col-${col.id}">${col.label}</label>
+      </div>
+    `).join('');
+    
+    modal.classList.add('active');
+  }
+
+  // CSV出力
+  function exportCSV() {
+    const columns = allColumns.filter(col => visibleColumns.includes(col.id));
+    const headers = columns.map(col => col.label);
+    
+    let csv = '\uFEFF' + headers.join(',') + '\n';
+    
+    filteredData.forEach(item => {
+      const row = columns.map(col => {
+        let value = item[col.id] || '';
+        if (col.id === 'status') {
+          value = item.status === 'complete' ? '完了' : '技術入力待ち';
+        } else if (col.id === 'stopMinutes' && item.stopMinutes !== null) {
+          value = item.stopMinutes;
+        }
+        return `"${value.toString().replace(/"/g, '""')}"`;
+      });
+      csv += row.join(',') + '\n';
+    });
+    
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `異常履歴_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  }
+
+  // イベント設定
+  document.getElementById('btnSettings').addEventListener('click', showSettings);
+  document.getElementById('btnExport').addEventListener('click', exportCSV);
+  
+  document.getElementById('btnClearDept').addEventListener('click', () => {
+    selectedDepts.clear();
+    document.querySelectorAll('.dept-btn').forEach(btn => btn.classList.remove('active'));
+    applyFilters();
+  });
+  
+  document.getElementById('btnResetFilters').addEventListener('click', () => {
+    selectedDepts.clear();
+    document.querySelectorAll('.dept-btn').forEach(btn => btn.classList.remove('active'));
+    applyFilters();
+  });
+  
+  document.getElementById('btnResetSort').addEventListener('click', () => {
+    currentSort = { column: null, direction: 'asc' };
+    renderTable();
+  });
+  
+  document.getElementById('btnCloseDetail').addEventListener('click', () => {
+    document.getElementById('detailModal').classList.remove('active');
+  });
+  
+  document.getElementById('btnCloseSettings').addEventListener('click', () => {
+    document.getElementById('settingsModal').classList.remove('active');
+  });
+  
+  document.getElementById('btnSaveSettings').addEventListener('click', () => {
+    visibleColumns = [];
+    allColumns.forEach(col => {
+      const checkbox = document.getElementById(`col-${col.id}`);
+      if (checkbox && checkbox.checked) {
+        visibleColumns.push(col.id);
+      }
+    });
+    saveSettings();
+    document.getElementById('settingsModal').classList.remove('active');
+    renderTable();
+  });
+
+  // 初期化
+  (async () => {
+    const authenticated = await checkAuth();
+    if (!authenticated) {
+      alert('認証が必要です');
+      return;
+    }
+    
+    loadSettings();
+    await loadData();
+  })();
+</script>
+
+</body>
+</html>
