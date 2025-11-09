@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>異常履歴データシート（可変スパークライン：7日／30日／24h@8／期間自動）</title>
+<title>異常履歴データシート（積み上げスパークライン対応）</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f7;color:#1d1d1f}
@@ -19,7 +19,7 @@
 
   /* 期間選択 */
   .date-filter{background:#fff;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-  .date-filter-header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+  .date-filter-header{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
   .date-filter-title{font-size:1.1rem;font-weight:600;color:#667eea}
   .date-controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
   .date-input-group{display:flex;gap:8px;align-items:center}
@@ -29,8 +29,8 @@
   .date-quick-btn:hover{background:#f8f9ff}
   .date-quick-btn.active{background:#667eea;color:#fff}
 
-  /* スパークラインモード */
-  .spark-mode{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  /* スパークライン設定 */
+  .spark-mode{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .seg{display:flex;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden}
   .seg button{padding:8px 12px;background:#fff;border:none;border-right:1px solid #e0e0e0;cursor:pointer}
   .seg button:last-child{border-right:none}
@@ -39,7 +39,7 @@
 
   /* 部署横並び＋展開パネル */
   .dept-filter{background:#fff;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-  .dept-filter-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .dept-filter-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap}
   .dept-filter-title{font-size:1.1rem;font-weight:600;color:#667eea}
   .btn-tool{padding:8px 16px;border:1px solid #e0e0e0;background:#fff;border-radius:6px;cursor:pointer;font-weight:500;transition:.2s}
   .btn-tool:hover{border-color:#667eea;background:#f8f9ff}
@@ -55,10 +55,10 @@
   .btn-pill.active{border-color:#667eea;background:#667eea;color:#fff}
 
   /* スパークライン（中央重ね） */
-  .btn-pill .sparkline{position:absolute; top:50%; left:6px; right:6px; transform:translateY(-50%); height:44px; opacity:.5; pointer-events:none; z-index:0}
+  .btn-pill .sparkline{position:absolute; top:50%; left:6px; right:6px; transform:translateY(-50%); height:54px; opacity:.72; pointer-events:none; z-index:0}
   .btn-pill > .title, .btn-pill > .sub{position:relative; z-index:1}
   .btn-pill .title{text-align:center}
-  .btn-pill .sub{font-size:.85rem; opacity:.8; margin-top:3px}
+  .btn-pill .sub{font-size:.85rem; opacity:.9; margin-top:3px}
 
   .expand-panel{margin-top:14px; border:1px solid #e6e8ef; border-radius:10px; display:none}
   .expand-panel.open{display:block}
@@ -93,7 +93,6 @@
   .photo-btn:hover{background:#1976d2}
   .photo-btn:disabled{background:#ccc;cursor:not-allowed}
 
-  /* モーダル（簡略） */
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#fff;border-radius:16px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
@@ -116,7 +115,7 @@
 <body>
   <div class="header">
     <div class="header-content">
-      <h1>📊 異常履歴データシート（可変スパークライン）</h1>
+      <h1>📊 異常履歴データシート（積み上げスパークライン）</h1>
       <div class="header-actions">
         <button class="btn-header" id="btnSettings">⚙️ 表示設定</button>
         <button class="btn-header" id="btnExport">📥 CSV出力</button>
@@ -130,10 +129,14 @@
       <div class="date-filter-header">
         <div class="date-filter-title">📅 期間で絞り込み</div>
         <div class="spark-mode">
-          <div class="seg">
-            <button id="mode7">7日</button>
+          <div class="seg" title="スパークラインの期間">
+            <button id="mode7" class="active">7日</button>
             <button id="mode30">30日</button>
             <button id="mode24">24時間(8時)</button>
+          </div>
+          <div class="seg" title="表示モード（合計/積み上げ）">
+            <button id="viewTotal" class="active">合計</button>
+            <button id="viewStack">積み上げ</button>
           </div>
           <div class="mode-hint" id="modeHint">選択日の範囲で描画</div>
         </div>
@@ -254,10 +257,13 @@
   let filteredData = [];
   let dateFromStr = null, dateToStr = null;
 
-  // スパークライン設定
+  // スパークライン期間設定
   let sparkMode = '7d';            // '7d' | '30d' | '24h' | 'range'
-  let lastManualSparkMode = '7d';  // 期間未指定に戻ったらこれに戻す
-  let autoRangeActive = false;     // dateFrom & dateTo が両方入っていると true
+  let lastManualSparkMode = '7d';
+  let autoRangeActive = false;
+
+  // 表示モード（合計/積み上げ）
+  let viewMode = 'total';          // 'total' | 'stack'
 
   // 選択状態
   const selectedDepts   = new Set();
@@ -271,10 +277,9 @@
 
   // ====== ユーティリティ ======
   const pad2 = n => String(n).padStart(2,'0');
+  const clamp = (v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 
-  function formatDate(d){ // local date YYYY-MM-DD
-    return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-  }
+  function formatDate(d){return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;}
   function getToday(){ return formatDate(new Date()); }
   function getPreviousBusinessDay(){
     const date=new Date();const dow=date.getDay();
@@ -288,7 +293,7 @@
   function normalizeDeptName(s){s=(s??'').toString();return normalizeWide(s).toUpperCase()||'未設定';}
   function normalizeLineName(s){s=(s??'').toString();return normalizeWide(s)||'未設定';}
 
-  // 日付ゆれ → {iso(local), valueMs(local midnight)}
+  // 日付ゆれ対応
   function parseDateFlexible(v){
     if(!v) return {iso:null,value:null};
     let d=null;
@@ -311,30 +316,24 @@
     return {iso:`${y}-${pad2(m)}-${pad2(dd)}`, value:new Date(y,m-1,dd).getTime()};
   }
 
-  // 時刻ゆれ → HH:MM
   function normalizeTime(v){
     if(!v) return null; const s=String(v).trim();
     let m=s.match(/^(\d{1,2}):(\d{1,2})$/);
-    if(m){ return `${pad2(Math.min(+m[1],23))}:${pad2(Math.min(+m[2],59))}`; }
+    if(m){ return `${pad2(clamp(+m[1],0,23))}:${pad2(clamp(+m[2],0,59))}`; }
     m=s.match(/(\d{1,2})\D+(\d{1,2})/);
-    if(m){ return `${pad2(Math.min(+m[1],23))}:${pad2(Math.min(+m[2],59))}`; }
+    if(m){ return `${pad2(clamp(+m[1],0,23))}:${pad2(clamp(+m[2],0,59))}`; }
     m=s.match(/^(\d{3,4})$/);
-    if(m){ const raw=m[1].padStart(4,'0'); return `${pad2(Math.min(+raw.slice(0,2),23))}:${pad2(Math.min(+raw.slice(2,4),59))}`; }
+    if(m){ const raw=m[1].padStart(4,'0'); return `${pad2(clamp(+raw.slice(0,2),0,23))}:${pad2(clamp(+raw.slice(2,4),0,59))}`; }
     return null;
   }
 
-  function startOfDayMsLocal(y,m,d){ return new Date(y,m-1,d,0,0,0,0).getTime(); }
-
-  // “選択日”の決定（dateTo → dateFrom → 今日）
   function getSelectedDateStr(){
     if(dateToStr) return dateToStr;
     if(dateFromStr) return dateFromStr;
     return getToday();
   }
 
-  // オカレンスの“ローカル日時ms”取得
   function getOccurrenceMsLocal(it){
-    // 優先：occurrenceDateISO + occurrenceTimeNorm
     let iso=it.occurrenceDateISO;
     if(!iso && it.occurrenceDateValue!=null){
       const d=new Date(it.occurrenceDateValue);
@@ -347,9 +346,8 @@
     return new Date(iso).getTime();
   }
 
-  // ====== ビン構築（柔軟） ======
+  // ====== ビン構築 ======
   function buildBins(){
-    // 自動期間モード？
     if(autoRangeActive && dateFromStr && dateToStr){
       const from = new Date(`${dateFromStr}T00:00:00`).getTime();
       const to   = new Date(`${dateToStr}T23:59:59.999`).getTime();
@@ -364,11 +362,9 @@
       return {type:'day', bins};
     }
 
-    // 手動モード
     const selStr = getSelectedDateStr();
     const selDate = new Date(`${selStr}T00:00:00`);
     if(sparkMode==='24h'){
-      // 8:00〜翌8:00、1時間×24
       const start = new Date(selDate); start.setHours(8,0,0,0);
       const bins=[];
       for(let i=0;i<24;i++){
@@ -379,7 +375,6 @@
       return {type:'hour', bins};
     }else{
       const days = (sparkMode==='30d')?30:7;
-      const end = new Date(selDate); // 選択日の0:00〜当日23:59:59
       const bins=[];
       for(let i=days-1;i>=0;i--){
         const d=new Date(selDate); d.setDate(d.getDate()-i);
@@ -391,16 +386,16 @@
     }
   }
 
-  // ====== シリーズ作成（部署／ライン／整理No） ======
+  // ====== シリーズ作成 ======
   function buildSeriesMapsFlexible(data){
     const {bins} = buildBins();
     const len=bins.length;
 
-    const deptSeries=new Map();   // dept -> [len]
+    const deptSeries=new Map();   // dept -> [len]（合計）
+    const deptStack =new Map();   // dept -> Map(line->[len])（積層用）
     const lineSeries=new Map();   // dept -> Map(line->[len])
-    const serialSeries=new Map(); // dept -> Map(line -> Map(sn->[len]))
+    const lineStack =new Map();   // dept -> Map(line -> Map(serial->[len]))
 
-    // インデックス探索（線形でも len<=~60 なのでOK）
     function binIndex(ms){
       for(let i=0;i<len;i++){ const b=bins[i]; if(ms>=b.start && ms<=b.end) return i; }
       return -1;
@@ -416,20 +411,133 @@
       const line=it.lineNameNormalized||'未設定';
       const sn  =it.serialNo||'未設定';
 
+      // 部署合計
       if(!deptSeries.has(dept)) deptSeries.set(dept, Array(len).fill(0));
       deptSeries.get(dept)[idx]+=1;
 
+      // 部署-ライン（積層用）
+      if(!deptStack.has(dept)) deptStack.set(dept,new Map());
+      if(!deptStack.get(dept).has(line)) deptStack.get(dept).set(line, Array(len).fill(0));
+      deptStack.get(dept).get(line)[idx]+=1;
+
+      // ライン合計
       if(!lineSeries.has(dept)) lineSeries.set(dept,new Map());
       if(!lineSeries.get(dept).has(line)) lineSeries.get(dept).set(line, Array(len).fill(0));
       lineSeries.get(dept).get(line)[idx]+=1;
 
-      if(!serialSeries.has(dept)) serialSeries.set(dept,new Map());
-      if(!serialSeries.get(dept).has(line)) serialSeries.get(dept).set(line,new Map());
-      if(!serialSeries.get(dept).get(line).has(sn)) serialSeries.get(dept).get(line).set(sn, Array(len).fill(0));
-      serialSeries.get(dept).get(line).get(sn)[idx]+=1;
+      // ライン-整理No（積層用）
+      if(!lineStack.has(dept)) lineStack.set(dept,new Map());
+      if(!lineStack.get(dept).has(line)) lineStack.get(dept).set(line,new Map());
+      if(!lineStack.get(dept).get(line).has(sn)) lineStack.get(dept).get(line).set(sn, Array(len).fill(0));
+      lineStack.get(dept).get(line).get(sn)[idx]+=1;
     }
 
-    return {deptSeries,lineSeries,serialSeries};
+    return {deptSeries,deptStack,lineSeries,lineStack};
+  }
+
+  // ====== スパークライン描画 ======
+  function drawLineSpark(canvas, values, color='rgba(106,124,245,0.95)'){
+    if(!canvas) return;
+    const dpr=window.devicePixelRatio||1;
+    const cssW=canvas.clientWidth||120, cssH=canvas.clientHeight||54;
+    canvas.width=Math.max(1,Math.floor(cssW*dpr));
+    canvas.height=Math.max(1,Math.floor(cssH*dpr));
+    const ctx=canvas.getContext('2d'); if(!ctx) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    const n=values.length; if(!n) return;
+    const max=Math.max(...values,1), min=Math.min(...values,0);
+    const pad=6*dpr; const xStep=n>1?(canvas.width-pad*2)/(n-1):0;
+
+    // baseline
+    ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1*dpr;
+    ctx.beginPath(); ctx.moveTo(pad, canvas.height-pad); ctx.lineTo(canvas.width-pad, canvas.height-pad); ctx.stroke();
+
+    // line
+    ctx.strokeStyle=color; ctx.lineWidth=2*dpr; ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const v=values[i];
+      const ratio=(max===min)?0.5:(v-min)/(max-min);
+      const x=pad+xStep*i;
+      const y=canvas.height-pad - ratio*(canvas.height-pad*2);
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    // endpoint
+    ctx.fillStyle=color;
+    const lastX=pad+xStep*(n-1);
+    const lastV=values[n-1];
+    const lastR=(max===min)?0.5:(lastV-min)/(max-min);
+    const lastY=canvas.height-pad - lastR*(canvas.height-pad*2);
+    ctx.beginPath(); ctx.arc(lastX,lastY,2.5*dpr,0,Math.PI*2); ctx.fill();
+  }
+
+  function hexToRgba(hex, alpha){
+    const h = hex.replace('#',''); const bigint = parseInt(h,16);
+    const r = (bigint>>16)&255, g=(bigint>>8)&255, b=bigint&255;
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2']){
+    if(!canvas) return;
+    const dpr=window.devicePixelRatio||1;
+    const cssW=canvas.clientWidth||120, cssH=canvas.clientHeight||54;
+    canvas.width=Math.max(1,Math.floor(cssW*dpr));
+    canvas.height=Math.max(1,Math.floor(cssH*dpr));
+    const ctx=canvas.getContext('2d'); if(!ctx) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    const L = seriesList?.[0]?.length || 0;
+    if(!L) return;
+
+    const sums = Array.from({length:L}, (_,i)=> seriesList.reduce((acc,s)=> acc+(s[i]||0), 0));
+    const maxSum = Math.max(...sums, 1);
+    const pad = 6*dpr;
+    const step = (canvas.width - pad*2) / Math.max(1,(L-1));
+    const baseY = canvas.height - pad;
+    const height = (canvas.height - pad*2);
+
+    let accumPrev = Array(L).fill(0);
+    seriesList.forEach((s,idx)=>{
+      const topY = s.map((v,i)=>{
+        const up = (accumPrev[i] + v) / maxSum;
+        return baseY - up * height;
+      });
+      const botY = accumPrev.map((v,i)=>{
+        const up = v / maxSum;
+        return baseY - up * height;
+      });
+
+      ctx.beginPath();
+      for(let i=0;i<L;i++){
+        const x = pad + step*i;
+        const y = topY[i];
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      for(let i=L-1;i>=0;i--){
+        const x = pad + step*i;
+        const y = botY[i];
+        ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = hexToRgba(colors[idx%colors.length], 0.85);
+      ctx.fill();
+
+      accumPrev = accumPrev.map((v,i)=> v + (s[i]||0));
+    });
+
+    // 外枠（合計境界）
+    ctx.beginPath();
+    for(let i=0;i<L;i++){
+      const x = pad + step*i;
+      const ratio = sums[i]/maxSum;
+      const y = baseY - ratio * height;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 1*dpr;
+    ctx.stroke();
   }
 
   // ====== 列定義・テーブル ======
@@ -493,67 +601,25 @@
         departmentNormalized:deptNorm,
         lineNameNormalized:lineNorm,
         occurrenceDateISO:occ.iso,
-        occurrenceDateValue:occ.value, // local 0:00
+        occurrenceDateValue:occ.value,
         occurrenceTimeNorm:occTime,
         restartTimeNorm:resTime,
         stopMinutes:stop
       };
     });
-    renderDeptBar();     // 横並び部署＋スパークライン
-    applyFilters();      // テーブル
-  }
-
-  // ====== スパークライン描画（共通） ======
-  function drawSparkline(canvas, values, color='rgba(66,133,244,0.65)', pointColor=color){
-    if(!canvas) return;
-    const dpr=window.devicePixelRatio||1;
-    const cssW=canvas.clientWidth||120, cssH=canvas.clientHeight||44;
-    canvas.width=Math.max(1,Math.floor(cssW*dpr));
-    canvas.height=Math.max(1,Math.floor(cssH*dpr));
-    const ctx=canvas.getContext('2d'); if(!ctx) return;
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.lineWidth=2*dpr;
-
-    const n=values.length; if(!n) return;
-    const max=Math.max(...values), min=Math.min(...values);
-    const pad=3*dpr; const xStep=n>1?(canvas.width-pad*2)/(n-1):0;
-
-    // baseline
-    ctx.strokeStyle='rgba(0,0,0,0.12)';
-    ctx.beginPath(); ctx.moveTo(pad, canvas.height-pad); ctx.lineTo(canvas.width-pad, canvas.height-pad); ctx.stroke();
-
-    // line
-    ctx.strokeStyle=color; ctx.beginPath();
-    for(let i=0;i<n;i++){
-      const v=values[i];
-      const ratio=(max===min)?0.5:(v-min)/(max-min);
-      const x=pad+xStep*i;
-      const y=canvas.height-pad - ratio*(canvas.height-pad*2);
-      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-
-    // endpoint
-    ctx.fillStyle=pointColor;
-    const lastX=pad+xStep*(n-1);
-    const lastV=values[n-1];
-    const lastR=(max===min)?0.5:(lastV-min)/(max-min);
-    const lastY=canvas.height-pad - lastR*(canvas.height-pad*2);
-    ctx.beginPath(); ctx.arc(lastX,lastY,2.5*dpr,0,Math.PI*2); ctx.fill();
+    renderDeptBar();
+    applyFilters();
   }
 
   // ====== 部署バー描画 ======
   function renderDeptBar(){
     const bar=document.getElementById('deptBar');
-
-    // 件数（総数表示用）
     const counts = new Map();
     for(const it of allData){
       const d=it.departmentNormalized||'未設定';
       counts.set(d,(counts.get(d)||0)+1);
     }
     const depts=[...counts.keys()].sort();
-
     bar.innerHTML = depts.map(dept=>{
       const total=counts.get(dept);
       const activeClass = selectedDepts.has(dept)?'active':'';
@@ -565,7 +631,6 @@
         </div>`;
     }).join('');
 
-    // クリック：選択トグル＋パネル更新
     bar.querySelectorAll('[data-role="dept"]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const dept=btn.getAttribute('data-dept');
@@ -575,13 +640,11 @@
         focusedLineKey = null;
         renderExpandPanel(dept);
         applyFilters();
-        drawAllSparklines(); // 色再適用含む
+        drawAllSparklines();
       });
     });
 
     drawAllSparklines();
-
-    // リサイズ
     let timer=null;
     window.addEventListener('resize', ()=>{
       clearTimeout(timer);
@@ -603,7 +666,7 @@
     panel.classList.add('open');
     serialsHolder.style.display='none'; serialsGrid.innerHTML='';
 
-    // ライン集計（総数表示用）
+    // ライン総数
     const base=allData.filter(it=>(it.departmentNormalized||'未設定')===dept);
     const lineCounts=new Map();
     for(const it of base){
@@ -624,7 +687,6 @@
         </div>`;
     }).join('');
 
-    // クリックで整理Noを出す
     linesGrid.querySelectorAll('[data-role="line"]').forEach(btn=>{
       btn.addEventListener('click',(e)=>{
         const d=btn.getAttribute('data-dept');
@@ -640,7 +702,7 @@
       });
     });
 
-    drawAllSparklines(); // ラインのスパークラインも更新
+    drawAllSparklines();
   }
 
   function renderSerials(dept,line){
@@ -685,55 +747,63 @@
     serialsHolder.style.display='block';
   }
 
-  // すべてのスパークラインを現在モードで再計算・描画
+  // ====== すべてのスパークライン再描画 ======
   function drawAllSparklines(){
-    const {deptSeries,lineSeries,serialSeries}=buildSeriesMapsFlexible(allData);
+    const {deptSeries,deptStack,lineSeries,lineStack}=buildSeriesMapsFlexible(allData);
+    const binsLen = buildBins().bins.length;
 
-    // 部署
+    // 部署：合計 or ライン積層
     document.querySelectorAll('#deptBar [data-role="dept"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const canvas=btn.querySelector('.sparkline');
-      const vals=deptSeries.get(dept)||Array( (buildBins().bins||[]).length ).fill(0);
       const active=btn.classList.contains('active');
-      drawSparkline(canvas, vals,
-        active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)',
-        active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)');
+      if(viewMode==='stack'){
+        const stacks = [...(deptStack.get(dept)?.values()||[])];
+        const fallback = stacks.length? stacks : [Array(binsLen).fill(0)];
+        drawStackedSpark(canvas, fallback);
+      }else{
+        const vals=deptSeries.get(dept)||Array(binsLen).fill(0);
+        drawLineSpark(canvas, vals, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)');
+      }
     });
 
-    // ライン
+    // ライン：合計 or 整理No積層
     document.querySelectorAll('#linesGrid [data-role="line"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const line=btn.getAttribute('data-line');
       const canvas=btn.querySelector('.sparkline');
-      const vals=(lineSeries.get(dept)?.get(line))||Array((buildBins().bins||[]).length).fill(0);
       const active=btn.classList.contains('active');
-      drawSparkline(canvas, vals,
-        active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)',
-        active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)');
+      if(viewMode==='stack'){
+        const stacks = [...(lineStack.get(dept)?.get(line)?.values()||[])];
+        const fallback = stacks.length? stacks : [Array(binsLen).fill(0)];
+        drawStackedSpark(canvas, fallback);
+      }else{
+        const vals=(lineSeries.get(dept)?.get(line))||Array(binsLen).fill(0);
+        drawLineSpark(canvas, vals, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)');
+      }
     });
 
-    // 整理No
+    // 整理Noは単線（見やすさ重視）
     document.querySelectorAll('#serialsGrid [data-role="serial"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const line=btn.getAttribute('data-line');
       const sn  =btn.getAttribute('data-serial');
       const canvas=btn.querySelector('.sparkline');
-      const vals=(serialSeries.get(dept)?.get(line)?.get(sn))||Array((buildBins().bins||[]).length).fill(0);
+      const map = lineStack.get(dept)?.get(line);
+      const vals = map?.get(sn) || [];
+      const bins = vals.length? vals : Array(binsLen).fill(0);
       const active=btn.classList.contains('active');
-      drawSparkline(canvas, vals,
-        active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)',
-        active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)');
+      drawLineSpark(canvas, bins, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)');
     });
 
     // モードヒント
     const hint=document.getElementById('modeHint');
     if(autoRangeActive && dateFromStr && dateToStr){
-      hint.textContent = `自動: 期間（${dateFromStr}〜${dateToStr}）`;
+      hint.textContent = `自動: 期間（${dateFromStr}〜${dateToStr}）／表示:${viewMode==='stack'?'積み上げ':'合計'}`;
     }else{
       const base = getSelectedDateStr();
-      hint.textContent = (sparkMode==='7d')?`選択日を含む7日`
-                     : (sparkMode==='30d')?`選択日を含む30日`
-                     : `選択日の24時間（8:00〜翌8:00）`;
+      const p = (sparkMode==='7d')?`7日`:(sparkMode==='30d')?`30日`:`24時間（8:00〜翌8:00）`;
+      hint.textContent = `${base} を基準に ${p} ／表示:${viewMode==='stack'?'積み上げ':'合計'}`;
     }
   }
 
@@ -766,7 +836,6 @@
     if(currentSort.column) applySorting();
     else renderTable();
 
-    // スパークライン再描画
     drawAllSparklines();
   }
 
@@ -937,7 +1006,7 @@
   document.getElementById('btnExport').addEventListener('click', exportCSV);
   document.getElementById('displayCount').addEventListener('change', e=>{displayLimit=parseInt(e.target.value); saveDisplayLimit(); renderTable();});
 
-  // スパークラインモードボタン
+  // 期間モード
   function setManualMode(mode){
     autoRangeActive=false;
     sparkMode=mode;
@@ -950,15 +1019,23 @@
   document.getElementById('mode7').addEventListener('click', ()=>setManualMode('7d'));
   document.getElementById('mode30').addEventListener('click',()=>setManualMode('30d'));
   document.getElementById('mode24').addEventListener('click',()=>setManualMode('24h'));
-  // 初期ハイライト
   setManualMode('7d');
 
-  // 期間ボタン
+  // 表示モード（合計/積み上げ）
+  function setViewMode(mode){
+    viewMode = mode;
+    document.getElementById('viewTotal').classList.toggle('active', mode==='total');
+    document.getElementById('viewStack').classList.toggle('active', mode==='stack');
+    drawAllSparklines();
+  }
+  document.getElementById('viewTotal').addEventListener('click', ()=>setViewMode('total'));
+  document.getElementById('viewStack').addEventListener('click', ()=>setViewMode('stack'));
+
+  // クイック期間
   document.getElementById('btnYesterday').addEventListener('click',()=>{
     const y=getPreviousBusinessDay(); dateFromStr=y; dateToStr=y;
     document.getElementById('dateFrom').value=y; document.getElementById('dateTo').value=y;
     document.getElementById('btnYesterday').classList.add('active'); document.getElementById('btnToday').classList.remove('active');
-    // 単日指定でも自動モードに切替（ご要望に合わせ期間指定＝自動）
     autoRangeActive=true; drawAllSparklines();
     applyFilters();
   });
@@ -970,7 +1047,7 @@
     applyFilters();
   });
 
-  // 任意日付変更時
+  // 任意期間
   function onDateChange(){
     const f=document.getElementById('dateFrom').value||null;
     const t=document.getElementById('dateTo').value||null;
@@ -978,7 +1055,6 @@
     document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
 
-    // 両端がどちらか入っていれば自動に
     if(f || t){ autoRangeActive=true; } else { autoRangeActive=false; sparkMode=lastManualSparkMode; }
     drawAllSparklines();
     applyFilters();
@@ -995,7 +1071,7 @@
     applyFilters();
   });
 
-  // 解除ボタン
+  // 解除ボタン群
   document.getElementById('btnClearDept').addEventListener('click',()=>{
     selectedDepts.clear(); document.querySelectorAll('#deptBar .btn-pill.active').forEach(b=>b.classList.remove('active'));
     applyFilters();
