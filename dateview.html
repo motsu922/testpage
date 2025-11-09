@@ -333,7 +333,15 @@ body.dark .btn-pill .spark-dates .spark-end{
   padding: 4px 8px;
   font-size: .78rem;
 }
-
+th.dragging {
+  opacity: 0.4;
+  background: var(--brand, #3b82f6);
+  color: #fff;
+}
+th {
+  cursor: move;
+  user-select: none;
+}
   
 </style>
 </head>
@@ -1593,8 +1601,60 @@ function renderTable(){
 
   document.getElementById('resultCount').textContent=display.length;
   document.getElementById('totalCount').textContent=filteredData.length;
+  enableHeaderReorder();
 }
+/* ==== 列並べ替え機能 ==== */
+function enableHeaderReorder() {
+  const thead = document.getElementById('tableHead');
+  if (!thead) return;
+  const ths = thead.querySelectorAll('th');
+  let dragSrcEl = null;
 
+  ths.forEach(th => {
+    th.draggable = true;
+
+    th.addEventListener('dragstart', (e)=>{
+      dragSrcEl = th;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', th.dataset.column);
+      th.classList.add('dragging');
+    });
+
+    th.addEventListener('dragover', (e)=>{
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+
+    th.addEventListener('drop', (e)=>{
+      e.stopPropagation();
+      const target = th;
+      if (dragSrcEl && dragSrcEl !== target) {
+        const headRow = thead.querySelector('tr');
+        const cols = Array.from(headRow.children);
+        const fromIndex = cols.indexOf(dragSrcEl);
+        const toIndex = cols.indexOf(target);
+
+        // DOM入れ替え
+        if (fromIndex < toIndex) {
+          headRow.insertBefore(dragSrcEl, target.nextSibling);
+        } else {
+          headRow.insertBefore(dragSrcEl, target);
+        }
+
+        // 並び替えた順序を保存
+        const newOrder = Array.from(headRow.querySelectorAll('th')).map(th=>th.dataset.column);
+        localStorage.setItem('columnOrder', JSON.stringify(newOrder));
+
+        // テーブル再描画
+        renderTable();
+      }
+    });
+
+    th.addEventListener('dragend', ()=>{
+      th.classList.remove('dragging');
+    });
+  });
+}
   function applySorting(){
     const col=currentSort.column, dir=currentSort.direction;
     filteredData.sort((a,b)=>{
@@ -1715,6 +1775,17 @@ try{
         document.getElementById('displayCount').value=String(v);
       }
     }
+    
+    // ★ 保存された列順を復元
+const savedOrder = localStorage.getItem('columnOrder');
+if (savedOrder) {
+ const order = JSON.parse(savedOrder);
+  const existingIds = allColumns.map(c=>c.id);
+   // 不正なIDを除外して順序反映
+   const valid = order.filter(id => existingIds.includes(id));
+   //並べ替えを反映
+allColumns.sort((a,b)=> valid.indexOf(a.id) - valid.indexOf(b.id));
+}
     // サイズ
     const pill = parseFloat(localStorage.getItem('pillScale'));           setPillScale(!Number.isNaN(pill)?pill:1.0,false);
     const base = parseFloat(localStorage.getItem('fontScale'));           setFontScale(!Number.isNaN(base)?base:1.0,false);
