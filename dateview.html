@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>異常履歴データシート（17時マーカー対応・欠損対策）</title>
+<title>異常履歴データシート（ワーストライン色分け・一括解除）</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f7;color:#1d1d1f}
@@ -52,8 +52,13 @@
     min-width:180px;
   }
   .btn-pill:hover{border-color:#667eea;background:#f8f9ff}
-  /* 元の仕様に戻す：選択時も白背景のまま、枠を強調（スパークラインが隠れない） */
+  /* 選択しても白背景のまま（スパークラインが隠れない） */
   .btn-pill.active{border-color:#667eea;background:#fff;color:#1d1d1f}
+
+  /* ワースト色分け（薄背景＋強め枠でスパークラインが透ける） */
+  .btn-pill.rank-1{ background:rgba(239,68,68,.16); border-color:#ef4444; }
+  .btn-pill.rank-2{ background:rgba(245,158,11,.16); border-color:#f59e0b; }
+  .btn-pill.rank-3{ background:rgba(234,179,8,.16);  border-color:#eab308; }
 
   /* スパークライン（中央重ね） */
   .btn-pill .sparkline{position:absolute; top:50%; left:6px; right:6px; transform:translateY(-50%); height:54px; opacity:.72; pointer-events:none; z-index:0}
@@ -94,7 +99,7 @@
   .photo-btn:hover{background:#1976d2}
   .photo-btn:disabled{background:#ccc;cursor:not-allowed}
 
-  /* 詳細モーダル（従来デザインを復元） */
+  /* 詳細モーダル（従来デザイン） */
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#fff;border-radius:16px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
@@ -103,28 +108,18 @@
   .btn-close{background:#f0f0f0;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:1.2rem;color:#666;transition:.2s}
   .btn-close:hover{background:#e0e0e0}
   .modal-body{padding:24px}
-  /* 復元スタイル */
   .detail-section { margin-bottom: 24px; }
   .section-title {
     font-size: 1rem; font-weight: 600; color: #667eea;
     margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e0e0e0;
   }
-  .detail-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px;
-  }
+  .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
   .detail-item { display: flex; flex-direction: column; gap: 4px; }
   .detail-label { font-size: .85rem; color: #888; font-weight: 500; }
   .detail-value { font-size: 1rem; color: #333; font-weight: 500; }
-  .detail-text-area {
-    background: #f8f9fa; padding: 12px; border-radius: 8px;
-    line-height: 1.6; white-space: pre-wrap;
-  }
-  .photo-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px; margin-top: 12px;
-  }
-  .photo-thumbnail { aspect-ratio: 1; border-radius: 8px; overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,.1); cursor: pointer; transition: transform .2s; }
+  .detail-text-area { background: #f8f9fa; padding: 12px; border-radius: 8px; line-height: 1.6; white-space: pre-wrap; }
+  .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+  .photo-thumbnail { aspect-ratio: 1; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.1); cursor: pointer; transition: transform .2s; }
   .photo-thumbnail:hover { transform: scale(1.05); }
   .photo-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
 
@@ -142,7 +137,7 @@
 <body>
   <div class="header">
     <div class="header-content">
-      <h1>📊 異常履歴データシート（17時マーカー対応・欠損対策）</h1>
+      <h1>📊 異常履歴データシート（ワーストライン色分け・一括解除）</h1>
       <div class="header-actions">
         <button class="btn-header" id="btnSettings">⚙️ 表示設定</button>
         <button class="btn-header" id="btnExport">📥 CSV出力</button>
@@ -185,9 +180,7 @@
       <div class="dept-filter-header">
         <div class="dept-filter-title">🏢 部署（横並び／複数選択可）</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn-tool" id="btnClearDept">部署解除</button>
-          <button class="btn-tool" id="btnClearLines">ライン解除</button>
-          <button class="btn-tool" id="btnClearSerials">整理No解除</button>
+          <button class="btn-tool" id="btnClearAll">一括解除</button>
         </div>
       </div>
       <div id="deptBar" class="dept-bar"></div>
@@ -200,7 +193,7 @@
             <button class="btn-tool" id="btnClosePanel">たたむ</button>
           </div>
         </div>
-        <div style="padding:8px 12px; color:#64748b;">ライン</div>
+        <div style="padding:8px 12px; color:#64748b;">ライン（同部署 合計停止時間ワースト3を色表示）</div>
         <div id="linesGrid" class="lines-grid"></div>
         <div id="serialsHolder" style="display:none;">
           <div style="padding:8px 12px; color:#64748b;">整理No</div>
@@ -290,7 +283,7 @@
   // スパークライン期間設定
   let sparkMode = '7d';            // '7d' | '30d' | '24h'
   let lastManualSparkMode = '7d';
-  let autoRangeActive = false;     // 任意期間指定がある時は true
+  let autoRangeActive = false;
 
   // 表示モード（合計/積み上げ）
   let viewMode = 'total';          // 'total' | 'stack'
@@ -307,7 +300,6 @@
   // ====== ユーティリティ ======
   const pad2 = n => String(n).padStart(2,'0');
   const clamp = (v,lo,hi)=>Math.max(lo,Math.min(hi,v));
-
   function formatDate(d){return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;}
   function getToday(){ return formatDate(new Date()); }
   function getPreviousBusinessDay(){
@@ -317,12 +309,10 @@
     else date.setDate(date.getDate()-1);
     return formatDate(date);
   }
-
   function normalizeWide(s){return s.replace(/[Ａ-Ｚａ-ｚ０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/　/g,' ').trim();}
   function normalizeDeptName(s){s=(s??'').toString();return normalizeWide(s).toUpperCase()||'未設定';}
   function normalizeLineName(s){s=(s??'').toString();return normalizeWide(s)||'未設定';}
 
-  // 日付ゆれ対応（文字列/Firestore Timestamp/Date/Unix/Epochなど）
   function parseDateFlexible(v){
     if(!v) return {iso:null,value:null};
     let d=null;
@@ -344,7 +334,6 @@
     const y=d.getFullYear(), m=d.getMonth()+1, dd=d.getDate();
     return {iso:`${y}-${pad2(m)}-${pad2(dd)}`, value:new Date(y,m-1,dd).getTime()};
   }
-
   function normalizeTime(v){
     if(!v) return null; const s=String(v).trim();
     let m=s.match(/^(\d{1,2}):(\d{1,2})$/);
@@ -356,13 +345,7 @@
     return null;
   }
 
-  function getSelectedDateStr(){
-    if(dateToStr) return dateToStr;
-    if(dateFromStr) return dateFromStr;
-    return getToday();
-  }
-
-  // 発生日時→だめなら createdAt を返す
+  // 発生日時→だめなら createdAt
   function getOccurrenceMsLocal(it){
     if (it.occurrenceDateISO) {
       const time = it.occurrenceTimeNorm || '00:00';
@@ -376,7 +359,7 @@
     return null;
   }
 
-  // ====== ビン構築 ======
+  // ====== スパークライン用ビン ======
   function buildBins(){
     if(autoRangeActive && dateFromStr && dateToStr){
       const to   = new Date(`${dateToStr}T23:59:59.999`).getTime();
@@ -390,8 +373,7 @@
       }
       return {type:'day', bins, markers:[]};
     }
-
-    const selStr = getSelectedDateStr();
+    const selStr = (dateToStr || dateFromStr) ?? getToday();
     const selDate = new Date(`${selStr}T00:00:00`);
     if(sparkMode==='24h'){
       const start = new Date(selDate); start.setHours(8,0,0,0);
@@ -401,9 +383,7 @@
         const e=new Date(start); e.setHours(e.getHours()+i+1); e.setMilliseconds(e.getMilliseconds()-1);
         bins.push({start:s.getTime(), end:e.getTime()});
       }
-      // 8:00起点 → 17:00は +9時間目（index=9）
-      const markers=[9];
-      return {type:'hour', bins, markers};
+      return {type:'hour', bins, markers:[9]}; // 8→17時の縦線
     }else{
       const days = (sparkMode==='30d')?30:7;
       const bins=[];
@@ -417,78 +397,17 @@
     }
   }
 
-  // ====== シリーズ作成 ======
-  function buildSeriesMapsFlexible(data){
-    const {bins} = buildBins();
-    const len=bins.length;
-
-    const deptSeries=new Map();   // dept -> [len]（合計）
-    const deptStack =new Map();   // dept -> Map(line->[len])（積層用）
-    const lineSeries=new Map();   // dept -> Map(line->[len])
-    const lineStack =new Map();   // dept -> Map(line -> Map(serial->[len]))
-
-    function binIndex(ms){
-      for(let i=0;i<len;i++){ const b=bins[i]; if(ms>=b.start && ms<=b.end) return i; }
-      return -1;
-    }
-
-    for(const it of data){
-      const ms = getOccurrenceMsLocal(it);
-      if(ms==null) continue;
-      const idx=binIndex(ms);
-      if(idx<0) continue;
-
-      const dept=it.departmentNormalized||'未設定';
-      const line=it.lineNameNormalized||'未設定';
-      const sn  =it.serialNo||'未設定';
-
-      if(!deptSeries.has(dept)) deptSeries.set(dept, Array(len).fill(0));
-      deptSeries.get(dept)[idx]+=1;
-
-      if(!deptStack.has(dept)) deptStack.set(dept,new Map());
-      if(!deptStack.get(dept).has(line)) deptStack.get(dept).set(line, Array(len).fill(0));
-      deptStack.get(dept).get(line)[idx]+=1;
-
-      if(!lineSeries.has(dept)) lineSeries.set(dept,new Map());
-      if(!lineSeries.get(dept).has(line)) lineSeries.get(dept).set(line, Array(len).fill(0));
-      lineSeries.get(dept).get(line)[idx]+=1;
-
-      if(!lineStack.has(dept)) lineStack.set(dept,new Map());
-      if(!lineStack.get(dept).has(line)) lineStack.get(dept).set(line,new Map());
-      if(!lineStack.get(dept).get(line).has(sn)) lineStack.get(dept).get(line).set(sn, Array(len).fill(0));
-      lineStack.get(dept).get(line).get(sn)[idx]+=1;
-    }
-
-    return {deptSeries,deptStack,lineSeries,lineStack};
-  }
-
-  // ====== スパークライン描画 ======
+  // ====== スパークライン描画（略：前回版と同） ======
   function drawShiftMarker(ctx, canvas, opts){
     if(!opts || opts.markerIndex==null) return;
     const dpr=window.devicePixelRatio||1;
     const pad=6*dpr;
     const step = (canvas.width - pad*2) / Math.max(1,(opts.count-1));
     const x = pad + step * opts.markerIndex;
-
-    ctx.save();
-    ctx.strokeStyle='rgba(255,0,0,0.45)';
-    ctx.setLineDash([3*dpr, 3*dpr]);
-    ctx.lineWidth = 1*dpr;
-    ctx.beginPath();
-    ctx.moveTo(x, pad);
-    ctx.lineTo(x, canvas.height - pad);
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.save();
-    ctx.fillStyle='rgba(255,0,0,0.7)';
-    ctx.font = `${10*dpr}px system-ui, -apple-system, Segoe UI, sans-serif`;
-    ctx.textAlign='center';
-    ctx.textBaseline='top';
-    ctx.fillText('17', x, pad+1*dpr);
-    ctx.restore();
+    ctx.save(); ctx.strokeStyle='rgba(255,0,0,0.45)'; ctx.setLineDash([3*dpr, 3*dpr]); ctx.lineWidth = 1*dpr;
+    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, canvas.height - pad); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.fillStyle='rgba(255,0,0,0.7)'; ctx.font = `${10*dpr}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText('17', x, pad+1*dpr); ctx.restore();
   }
-
   function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
     if(!canvas) return;
     const dpr=window.devicePixelRatio||1;
@@ -497,18 +416,12 @@
     canvas.height=Math.max(1,Math.floor(cssH*dpr));
     const ctx=canvas.getContext('2d'); if(!ctx) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
     const n=values.length; if(!n) return;
     const max=Math.max(...values,1), min=Math.min(...values,0);
     const pad=6*dpr; const xStep=n>1?(canvas.width-pad*2)/(n-1):0;
-
     ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1*dpr;
     ctx.beginPath(); ctx.moveTo(pad, canvas.height-pad); ctx.lineTo(canvas.width-pad, canvas.height-pad); ctx.stroke();
-
-    if(opts.type==='hour' && typeof opts.markerIndex==='number'){
-      drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:n});
-    }
-
+    if(opts.type==='hour' && typeof opts.markerIndex==='number'){ drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:n}); }
     ctx.strokeStyle=color; ctx.lineWidth=2*dpr; ctx.beginPath();
     for(let i=0;i<n;i++){
       const v=values[i];
@@ -518,7 +431,6 @@
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     }
     ctx.stroke();
-
     ctx.fillStyle=color;
     const lastX=pad+xStep*(n-1);
     const lastV=values[n-1];
@@ -526,13 +438,7 @@
     const lastY=canvas.height-pad - lastR*(canvas.height-pad*2);
     ctx.beginPath(); ctx.arc(lastX,lastY,2.5*dpr,0,Math.PI*2); ctx.fill();
   }
-
-  function hexToRgba(hex, alpha){
-    const h = hex.replace('#',''); const bigint = parseInt(h,16);
-    const r = (bigint>>16)&255, g=(bigint>>8)&255, b=bigint&255;
-    return `rgba(${r},${g},${b},${alpha})`;
-  }
-
+  function hexToRgba(hex, alpha){ const h=hex.replace('#',''); const n=parseInt(h,16); const r=(n>>16)&255,g=(n>>8)&255,b=n&255; return `rgba(${r},${g},${b},${alpha})`; }
   function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2'], opts={}){
     if(!canvas) return;
     const dpr=window.devicePixelRatio||1;
@@ -541,66 +447,28 @@
     canvas.height=Math.max(1,Math.floor(cssH*dpr));
     const ctx=canvas.getContext('2d'); if(!ctx) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    const L = seriesList?.[0]?.length || 0;
-    if(!L) return;
-
-    const sums = Array.from({length:L}, (_,i)=> seriesList.reduce((acc,s)=> acc+(s[i]||0), 0));
-    const maxSum = Math.max(...sums, 1);
-    const pad = 6*dpr;
-    const step = (canvas.width - pad*2) / Math.max(1,(L-1));
-    const baseY = canvas.height - pad;
-    const height = (canvas.height - pad*2);
-
-    ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1*dpr;
-    ctx.beginPath(); ctx.moveTo(pad, baseY); ctx.lineTo(canvas.width-pad, baseY); ctx.stroke();
-
-    if(opts.type==='hour' && typeof opts.markerIndex==='number'){
-      drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:L});
-    }
-
-    let accumPrev = Array(L).fill(0);
+    const L=seriesList?.[0]?.length||0; if(!L) return;
+    const sums = Array.from({length:L},(_,i)=> seriesList.reduce((a,s)=>a+(s[i]||0),0));
+    const maxSum=Math.max(...sums,1);
+    const pad=6*dpr, step=(canvas.width-pad*2)/Math.max(1,(L-1)), baseY=canvas.height-pad, height=(canvas.height-pad*2);
+    ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1*dpr; ctx.beginPath(); ctx.moveTo(pad,baseY); ctx.lineTo(canvas.width-pad,baseY); ctx.stroke();
+    if(opts.type==='hour' && typeof opts.markerIndex==='number'){ drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:L}); }
+    let accumPrev=Array(L).fill(0);
     seriesList.forEach((s,idx)=>{
-      const topY = s.map((v,i)=>{
-        const up = (accumPrev[i] + v) / maxSum;
-        return baseY - up * height;
-      });
-      const botY = accumPrev.map((v,i)=>{
-        const up = v / maxSum;
-        return baseY - up * height;
-      });
-
+      const topY=s.map((v,i)=> baseY - ((accumPrev[i]+v)/maxSum)*height);
+      const botY=accumPrev.map((v,i)=> baseY - (v/maxSum)*height);
       ctx.beginPath();
-      for(let i=0;i<L;i++){
-        const x = pad + step*i;
-        const y = topY[i];
-        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-      }
-      for(let i=L-1;i>=0;i--){
-        const x = pad + step*i;
-        const y = botY[i];
-        ctx.lineTo(x,y);
-      }
-      ctx.closePath();
-      ctx.fillStyle = hexToRgba(colors[idx%colors.length], 0.85);
-      ctx.fill();
-
-      accumPrev = accumPrev.map((v,i)=> v + (s[i]||0));
+      for(let i=0;i<L;i++){ const x=pad+step*i, y=topY[i]; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+      for(let i=L-1;i>=0;i--){ const x=pad+step*i, y=botY[i]; ctx.lineTo(x,y); }
+      ctx.closePath(); ctx.fillStyle=hexToRgba(colors[idx%colors.length],0.85); ctx.fill();
+      accumPrev=accumPrev.map((v,i)=>v+(s[i]||0));
     });
-
     ctx.beginPath();
-    for(let i=0;i<L;i++){
-      const x = pad + step*i;
-      const ratio = sums[i]/maxSum;
-      const y = baseY - ratio * height;
-      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-    ctx.lineWidth = 1*dpr;
-    ctx.stroke();
+    for(let i=0;i<L;i++){ const x=pad+step*i, y=baseY-(sums[i]/maxSum)*height; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+    ctx.strokeStyle='rgba(0,0,0,0.18)'; ctx.lineWidth=1*dpr; ctx.stroke();
   }
 
-  // ====== 列定義・テーブル ======
+  // ====== 列定義 ======
   const allColumns=[
     {id:'serialNo',label:'整理No',sortable:true,filterable:true},
     {id:'department',label:'部署',sortable:true,filterable:true},
@@ -646,7 +514,6 @@
       const deptNorm=normalizeDeptName(raw.department);
       const lineNorm=normalizeLineName(raw.lineName);
 
-      // フォールバック対象を拡充
       const occSource = raw.occurrenceDate ?? raw.occurrence_at ?? raw.date ?? raw.createdAt ?? raw.updatedAt;
       const occ      = parseDateFlexible(occSource);
       const created  = parseDateFlexible(raw.createdAt);
@@ -671,14 +538,14 @@
         createdAtValue: created.value,
         occurrenceTimeNorm:occTime,
         restartTimeNorm:resTime,
-        stopMinutes:stop
+        stopMinutes: (typeof raw.stopMinutes==='number') ? raw.stopMinutes : stop
       };
     });
     renderDeptBar();
     applyFilters();
   }
 
-  // ====== 部署バー描画 ======
+  // ====== 部署バー ======
   function renderDeptBar(){
     const bar=document.getElementById('deptBar');
     const counts = new Map();
@@ -718,7 +585,7 @@
     }, {passive:true});
   }
 
-  // ライン／整理Noの展開
+  // ====== 展開パネル（ライン：ワースト色分け） ======
   function renderExpandPanel(dept){
     const panel=document.getElementById('expandPanel');
     const title=document.getElementById('panelTitle');
@@ -732,24 +599,35 @@
     panel.classList.add('open');
     serialsHolder.style.display='none'; serialsGrid.innerHTML='';
 
-    // ライン総数
+    // ラインごとの件数と合計停止時間
     const base=allData.filter(it=>(it.departmentNormalized||'未設定')===dept);
-    const lineCounts=new Map();
+    const lineCount=new Map();
+    const lineStop =new Map();
     for(const it of base){
       const l=it.lineNameNormalized||'未設定';
-      lineCounts.set(l,(lineCounts.get(l)||0)+1);
+      lineCount.set(l,(lineCount.get(l)||0)+1);
+      const sm = typeof it.stopMinutes==='number' ? it.stopMinutes : 0;
+      lineStop.set(l,(lineStop.get(l)||0)+sm);
     }
-    const lines=[...lineCounts.keys()].sort();
+    const lines=[...lineCount.keys()].sort();
+
+    // 同部署内ワースト3（合計停止時間）
+    const top3 = [...lineStop.entries()]
+      .sort((a,b)=> b[1]-a[1])
+      .slice(0,3)
+      .map(([ln])=>ln);
 
     linesGrid.innerHTML = lines.map(line=>{
-      const total=lineCounts.get(line);
+      const totalCnt=lineCount.get(line)||0;
+      const totalMin=lineStop.get(line)||0;
       const key=`${dept}||${line}`;
       const active=selectedLines.has(key)?'active':'';
+      const rankCls = top3[0]===line ? 'rank-1' : top3[1]===line ? 'rank-2' : top3[2]===line ? 'rank-3' : '';
       return `
-        <div class="btn-pill ${active}" data-role="line" data-dept="${dept}" data-line="${line}">
+        <div class="btn-pill ${active} ${rankCls}" data-role="line" data-dept="${dept}" data-line="${line}" title="合計停止時間: ${totalMin}分">
           <canvas class="sparkline"></canvas>
           <div class="title">${line}</div>
-          <div class="sub">${total}件</div>
+          <div class="sub">${totalCnt}件</div>
         </div>`;
     }).join('');
 
@@ -812,19 +690,62 @@
     serialsHolder.style.display='block';
   }
 
-  // ====== すべてのスパークライン再描画 ======
+  // ====== スパークライン再描画 ======
+  function buildSeriesMapsFlexible(data){
+    const {bins} = buildBins();
+    const len=bins.length;
+
+    const deptSeries=new Map();   // dept -> [len]
+    const deptStack =new Map();   // dept -> Map(line->[len])
+    const lineSeries=new Map();   // dept -> Map(line->[len])
+    const lineStack =new Map();   // dept -> Map(line -> Map(serial->[len]))
+
+    function binIndex(ms){
+      for(let i=0;i<len;i++){ const b=bins[i]; if(ms>=b.start && ms<=b.end) return i; }
+      return -1;
+    }
+
+    for(const it of data){
+      const ms = getOccurrenceMsLocal(it);
+      if(ms==null) continue;
+      const idx=binIndex(ms);
+      if(idx<0) continue;
+
+      const dept=it.departmentNormalized||'未設定';
+      const line=it.lineNameNormalized||'未設定';
+      const sn  =it.serialNo||'未設定';
+
+      if(!deptSeries.has(dept)) deptSeries.set(dept, Array(len).fill(0));
+      deptSeries.get(dept)[idx]+=1;
+
+      if(!deptStack.has(dept)) deptStack.set(dept,new Map());
+      if(!deptStack.get(dept).has(line)) deptStack.get(dept).set(line, Array(len).fill(0));
+      deptStack.get(dept).get(line)[idx]+=1;
+
+      if(!lineSeries.has(dept)) lineSeries.set(dept,new Map());
+      if(!lineSeries.get(dept).has(line)) lineSeries.get(dept).set(line, Array(len).fill(0));
+      lineSeries.get(dept).get(line)[idx]+=1;
+
+      if(!lineStack.has(dept)) lineStack.set(dept,new Map());
+      if(!lineStack.get(dept).has(line)) lineStack.get(dept).set(line,new Map());
+      if(!lineStack.get(dept).get(line).has(sn)) lineStack.get(dept).get(line).set(sn, Array(len).fill(0));
+      lineStack.get(dept).get(line).get(sn)[idx]+=1;
+    }
+
+    return {deptSeries,deptStack,lineSeries,lineStack};
+  }
+
   function drawAllSparklines(){
-    const binsInfo = buildBins(); // {type, bins, markers}
+    const binsInfo = buildBins();
     const {deptSeries,deptStack,lineSeries,lineStack}=buildSeriesMapsFlexible(allData);
     const binsLen = binsInfo.bins.length;
 
     const drawOpts = (seriesLen)=>({
       type: binsInfo.type,
-      markerIndex: (binsInfo.type==='hour' ? 9 : null), // 8:00→17:00 の位置
+      markerIndex: (binsInfo.type==='hour' ? 9 : null),
       count: seriesLen
     });
 
-    // 部署
     document.querySelectorAll('#deptBar [data-role="dept"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const canvas=btn.querySelector('.sparkline');
@@ -838,7 +759,6 @@
       }
     });
 
-    // ライン
     document.querySelectorAll('#linesGrid [data-role="line"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const line=btn.getAttribute('data-line');
@@ -853,7 +773,6 @@
       }
     });
 
-    // 整理No
     document.querySelectorAll('#serialsGrid [data-role="serial"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const line=btn.getAttribute('data-line');
@@ -865,31 +784,31 @@
       drawLineSpark(canvas, bins, 'rgba(66,133,244,0.85)', drawOpts(binsLen));
     });
 
-    // ヒント（文言は元の簡潔さに）
     const hint=document.getElementById('modeHint');
     if(autoRangeActive && dateFromStr && dateToStr){
       hint.textContent = `期間（${dateFromStr}〜${dateToStr}）／表示:${viewMode==='stack'?'積み上げ':'合計'}`;
     }else{
-      const base = getSelectedDateStr();
+      const base = (dateToStr || dateFromStr) ?? getToday();
       const p = (sparkMode==='7d')?`7日`:(sparkMode==='30d')?`30日`:`24時間（8:00〜翌8:00）`;
       hint.textContent = `${base} を基準に ${p} ／表示:${viewMode==='stack'?'積み上げ':'合計'}`;
     }
   }
 
-  // ====== フィルタ・テーブル ======
+  // ====== テーブル ======
+  function getOccurrenceMsLocalForFilter(it){ return getOccurrenceMsLocal(it); }
+
   function applyFilters(){
     let fromMs=null, toMs=null;
     if(dateFromStr && /^\d{4}-\d{2}-\d{2}$/.test(dateFromStr)){ fromMs=new Date(`${dateFromStr}T00:00:00`).getTime(); }
     if(dateToStr   && /^\d{4}-\d{2}-\d{2}$/.test(dateToStr)){   toMs  =new Date(`${dateToStr}T23:59:59.999`).getTime(); }
 
     filteredData = allData.filter(it=>{
-      const occMs = getOccurrenceMsLocal(it); // 内部で createdAt までフォールバック
+      const occMs = getOccurrenceMsLocalForFilter(it);
       if(fromMs!==null || toMs!==null){
         if (occMs != null) {
           if(fromMs!==null && occMs<fromMs) return false;
           if(toMs!==null   && occMs>toMs)   return false;
         }
-        // occMs が取れなくても期間で落とさない方針
       }
 
       const dept=it.departmentNormalized||'未設定';
@@ -1134,7 +1053,6 @@
     dateFromStr=f; dateToStr=t;
     document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
-
     if(f || t){ autoRangeActive=true; } else { autoRangeActive=false; sparkMode=lastManualSparkMode; }
     drawAllSparklines();
     applyFilters();
@@ -1151,29 +1069,20 @@
     applyFilters();
   });
 
-  // 解除ボタン群
-  document.getElementById('btnClearDept').addEventListener('click',()=>{
-    selectedDepts.clear(); document.querySelectorAll('#deptBar .btn-pill.active').forEach(b=>b.classList.remove('active'));
-    applyFilters();
-  });
-  document.getElementById('btnClearLines').addEventListener('click',()=>{
-    selectedLines.clear(); document.querySelectorAll('#linesGrid .btn-pill.active').forEach(b=>b.classList.remove('active'));
-    applyFilters();
-  });
-  document.getElementById('btnClearSerials').addEventListener('click',()=>{
-    selectedSerials.clear(); document.querySelectorAll('#serialsGrid .btn-pill.active').forEach(b=>b.classList.remove('active'));
-    applyFilters();
-  });
-  document.getElementById('btnClosePanel').addEventListener('click', ()=>{
-    focusedDept=null;
+  // 一括解除
+  document.getElementById('btnClearAll').addEventListener('click',()=>{
+    selectedDepts.clear(); selectedLines.clear(); selectedSerials.clear();
+    document.querySelectorAll('.btn-pill.active').forEach(b=>b.classList.remove('active'));
+    // 展開パネル閉じ
     document.getElementById('expandPanel').classList.remove('open');
     document.getElementById('linesGrid').innerHTML='';
     document.getElementById('serialsGrid').innerHTML='';
     document.getElementById('serialsHolder').style.display='none';
+    applyFilters();
     drawAllSparklines();
   });
 
-  // フィルタリセット
+  // フィルタ/ソートリセット（従来機能のまま）
   document.getElementById('btnResetFilters').addEventListener('click',()=>{
     selectedDepts.clear(); selectedLines.clear(); selectedSerials.clear();
     document.querySelectorAll('.btn-pill.active').forEach(b=>b.classList.remove('active'));
@@ -1185,6 +1094,14 @@
     applyFilters();
   });
   document.getElementById('btnResetSort').addEventListener('click',()=>{ currentSort={column:null,direction:'asc'}; renderTable(); });
+
+  // 閉じる
+  document.getElementById('btnClosePanel').addEventListener('click', ()=>{
+    document.getElementById('expandPanel').classList.remove('open');
+    document.getElementById('linesGrid').innerHTML='';
+    document.getElementById('serialsGrid').innerHTML='';
+    document.getElementById('serialsHolder').style.display='none';
+  });
 
   // 初期化
   (async()=>{
