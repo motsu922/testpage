@@ -670,56 +670,143 @@ align-items: stretch;
   const db = getFirestore(app);
   const auth = getAuth(app);
 
-  // 全データ
   let allData = [];
   let filteredData = [];
   let selectedDepts = new Set();
-  let dateFrom = null;
-  let dateTo = null;
+
+  // ▼CHANGED: 入力欄は文字列(YYYY-MM-DD)のまま保持。比較は数値で行う
+  let dateFromStr = null; // 'YYYY-MM-DD' or null
+  let dateToStr   = null; // 'YYYY-MM-DD' or null
+
   let currentSort = { column: null, direction: 'asc' };
 
-  // 部署名を正規化（全角→半角、トリム、大文字小文字統一）
-  function normalizeDeptName(name) {
-    if (!name) return '未設定';
-    return name
-      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
-      .replace(/　/g, ' ')
-      .trim()
-      .toUpperCase();
-  }
-
-  // 平日の前日を取得（土日をスキップ）
-  function getPreviousBusinessDay() {
-    const date = new Date();
-    let dayOfWeek = date.getDay();
-    
-    // 今日が月曜日(1)なら金曜日(-3日)、それ以外は前日(-1日)
-    if (dayOfWeek === 1) {
-      date.setDate(date.getDate() - 3);
-    } else if (dayOfWeek === 0) {
-      // 日曜日なら金曜日(-2日)
-      date.setDate(date.getDate() - 2);
-    } else {
-      date.setDate(date.getDate() - 1);
-    }
-    
-    return formatDate(date);
-  }
-
-  // 今日の日付を取得
-  function getToday() {
-    return formatDate(new Date());
-  }
-
-  // 日付をYYYY-MM-DD形式にフォーマット
+  // ========= 共通ユーティリティ =========
   function formatDate(date) {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
+  function toStartOfDayMs(y, m, d){ return Date.UTC(y, m-1, d, 0,0,0,0); }
+  function toEndOfDayMs(y, m, d){   return Date.UTC(y, m-1, d, 23,59,59,999); }
 
-  // 列定義
+  // ▼NEW: 部署正規化はそのまま
+  function normalizeDeptName(name) {
+    if (!name) return '未設定';
+    return name
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+      .replace(/　/g, ' ')
+      .trim()
+      .toUpperCase();
+  }
+
+  // ▼NEW: 日付ゆれを吸収する柔軟パーサ
+  // 返り値: { iso: 'YYYY-MM-DD' | null, value: ミリ秒数 | null }
+  function parseDateFlexible(v) {
+    if (!v) return { iso: null, value: null };
+
+    let d = null;
+
+    // Firestore Timestamp
+    if (v && typeof v === 'object') {
+      if (typeof v.toDate === 'function') d = v.toDate();
+      else if ('seconds' in v && 'nanoseconds' in v) d = new Date(v.seconds * 1000 + Math.round(v.nanoseconds / 1e6));
+    }
+
+    // JS Date
+    if (!d && v instanceof Date) d = v;
+
+    // 数値: epoch millis
+    if (!d && typeof v === 'number') d = new Date(v);
+
+    // 文字列
+    if (!d && typeof v === 'string') {
+      const s = v.trim();
+
+      // 1) YYYY[-/.年]M[-/.月]D[日]   例) 2025/1/5, 2025-01-05, 2025.1.5, 2025年1月5日
+      let m = s.match(/^(\d{4})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})(?:日)?$/);
+      if (m) {
+        const y = +m[1], mo = +m[2], da = +m[3];
+        d = new Date(Date.UTC(y, mo-1, da));
+      }
+
+      // 2) YY/M/D（西暦2000年代想定）例) 25/1/5
+      if (!d) {
+        m = s.match(/^(\d{2})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})(?:日)?$/);
+        if (m) {
+          const yy = +m[1];
+          const y = 2000 + yy; // 必要ならしきい値で1900年代も扱える
+          const mo = +m[2], da = +m[3];
+          d = new Date(Date.UTC(y, mo-1, da));
+        }
+      }
+
+      // 3) 連結8桁 YYYYMMDD
+      if (!d) {
+        m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+        if (m) d = new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+      }
+
+      // 4) Date.parse() に頼れるケース（最後の手段）
+      if (!d) {
+        const p = Date.parse(s);
+        if (!Number.isNaN(p)) d = new Date(p);
+      }
+    }
+
+    if (!d || Number.isNaN(d.getTime())) return { iso: null, value: null };
+
+    const iso = formatDate(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())));
+    const value = toStartOfDayMs(d.getUTCFullYear(), d.getUTCMonth()+1, d.getUTCDate());
+    return { iso, value };
+  }
+
+  // ▼NEW: 時刻ゆれを吸収するパーサ（HH:MM へ正規化）
+  // 入力例: '9:5', '09:05', '9時5分', '0905'
+  function normalizeTime(v) {
+    if (!v) return null;
+    const s = String(v).trim();
+
+    // 1) すでに H(:)M 形式
+    let m = s.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (m) {
+      const hh = String(Math.min(+m[1], 23)).padStart(2, '0');
+      const mm = String(Math.min(+m[2], 59)).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+
+    // 2) 和式 '9時5分' などの数字抽出
+    m = s.match(/(\d{1,2})\D+(\d{1,2})/);
+    if (m) {
+      const hh = String(Math.min(+m[1], 23)).padStart(2, '0');
+      const mm = String(Math.min(+m[2], 59)).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+
+    // 3) 連結 3〜4桁 '905', '0905'
+    m = s.match(/^(\d{3,4})$/);
+    if (m) {
+      const raw = m[1].padStart(4, '0');
+      const hh = String(Math.min(+raw.slice(0,2), 23)).padStart(2, '0');
+      const mm = String(Math.min(+raw.slice(2,4), 59)).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+
+    return null; // 解釈不能
+  }
+
+  // ▼NEW: 平日前日/今日（既存）
+  function getPreviousBusinessDay() {
+    const date = new Date();
+    const dow = date.getDay();
+    if (dow === 1) date.setDate(date.getDate() - 3);     // 月→金
+    else if (dow === 0) date.setDate(date.getDate() - 2); // 日→金
+    else date.setDate(date.getDate() - 1);
+    return formatDate(date);
+  }
+  function getToday() { return formatDate(new Date()); }
+
+  // 列定義（変更なし）
   const allColumns = [
     { id: 'serialNo', label: '整理No', sortable: true, filterable: true },
     { id: 'department', label: '部署', sortable: true, filterable: true },
@@ -731,165 +818,156 @@ align-items: stretch;
     { id: 'handler', label: '処置者', sortable: true, filterable: true },
     { id: 'techHandler', label: '技術処置者', sortable: true, filterable: true },
     { id: 'status', label: '状態', sortable: true, filterable: true },
+    { id: 'photos', label: '写真', sortable: true, filterable: false },
     { id: 'anomalyContent', label: '異常内容', sortable: false, filterable: true },
     { id: 'actionTaken', label: '対応内容', sortable: false, filterable: true },
   ];
 
-  // デフォルト表示列
-  let visibleColumns = ['serialNo', 'department', 'lineName', 'occurrenceDate', 'occurrenceTime', 'stopMinutes', 'handler', 'status'];
-  let displayLimit = 25; // デフォルト表示件数
+  let visibleColumns = ['serialNo', 'department', 'lineName', 'occurrenceDate', 'occurrenceTime', 'stopMinutes', 'handler', 'photos', 'status'];
+  let displayLimit = 25;
 
-  // ローカルストレージから設定を読み込み
   function loadSettings() {
     const saved = localStorage.getItem('datasheetColumns');
-    if (saved) {
-      visibleColumns = JSON.parse(saved);
-    }
-    
+    if (saved) visibleColumns = JSON.parse(saved);
     const savedLimit = localStorage.getItem('displayLimit');
     if (savedLimit) {
       displayLimit = parseInt(savedLimit);
-      document.getElementById('displayCount').value = displayLimit.toString();
+      document.getElementById('displayCount').value = String(displayLimit);
     }
   }
+  function saveSettings(){ localStorage.setItem('datasheetColumns', JSON.stringify(visibleColumns)); }
+  function saveDisplayLimit(){ localStorage.setItem('displayLimit', String(displayLimit)); }
 
-  // 設定を保存
-  function saveSettings() {
-    localStorage.setItem('datasheetColumns', JSON.stringify(visibleColumns));
-  }
-  
-  // 表示件数を保存
-  function saveDisplayLimit() {
-    localStorage.setItem('displayLimit', displayLimit.toString());
-  }
-
-  // 認証
+  // 認証（既存）
   async function checkAuth() {
     return new Promise((resolve) => {
       onAuthStateChanged(auth, (user) => {
-        if (user) {
-          resolve(true);
-        } else {
+        if (user) resolve(true);
+        else {
           const email = prompt('メールアドレスを入力してください');
           const password = prompt('パスワードを入力してください');
           if (email && password) {
             setPersistence(auth, browserLocalPersistence)
               .then(() => signInWithEmailAndPassword(auth, email, password))
               .then(() => resolve(true))
-              .catch((e) => {
-                alert('ログインに失敗しました: ' + e.message);
-                resolve(false);
-              });
-          } else {
-            resolve(false);
-          }
+              .catch(e => { alert('ログインに失敗しました: ' + e.message); resolve(false); });
+          } else resolve(false);
         }
       });
     });
   }
 
-  // データ読み込み
+  // ▼CHANGED: データ読み込み時に日付＆時刻を正規化フィールドへ格納
   async function loadData() {
     const q = query(collection(db, 'anomalies'), orderBy('createdAt', 'desc'));
     const snapshot = await getDocs(q);
-    
+
     allData = snapshot.docs.map(doc => {
-      const data = { _id: doc.id, ...doc.data() };
-      
-      // 部署名を正規化
-      data.departmentNormalized = normalizeDeptName(data.department);
-      
-      // 停止時間を計算
-      if (data.occurrenceTime && data.restartTime) {
-        const [oh, om] = data.occurrenceTime.split(':').map(Number);
-        const [rh, rm] = data.restartTime.split(':').map(Number);
+      const raw = { _id: doc.id, ...doc.data() };
+
+      // 部署正規化
+      const departmentNormalized = normalizeDeptName(raw.department);
+
+      // 日付 正規化
+      const occDate = parseDateFlexible(raw.occurrenceDate || raw.occurrence_at || raw.date);
+      const occurrenceDateISO   = occDate.iso;        // 表示・CSV用
+      const occurrenceDateValue = occDate.value;      // フィルタ・ソート用（UTC 0時）
+
+      // 時刻 正規化
+      const occurrenceTimeNorm = normalizeTime(raw.occurrenceTime);
+      const restartTimeNorm    = normalizeTime(raw.restartTime);
+
+      // 停止時間 計算（翌日跨ぎ対応）
+      let stopMinutes = null;
+      if (occurrenceTimeNorm && restartTimeNorm) {
+        const [oh, om] = occurrenceTimeNorm.split(':').map(Number);
+        const [rh, rm] = restartTimeNorm.split(':').map(Number);
         let diff = (rh * 60 + rm) - (oh * 60 + om);
         if (diff < 0) diff += 1440;
-        data.stopMinutes = diff;
-      } else {
-        data.stopMinutes = null;
+        stopMinutes = diff;
       }
-      
-      return data;
+
+      return {
+        ...raw,
+        departmentNormalized,
+        occurrenceDateISO,
+        occurrenceDateValue,
+        occurrenceTimeNorm,
+        restartTimeNorm,
+        stopMinutes
+      };
     });
-    
-    filteredData = [...allData];
+
     renderDepartmentButtons();
-    renderTable();
+    applyFilters();
   }
 
-  // 部署ボタン描画
+  // 部署ボタン（既存）
   function renderDepartmentButtons() {
     const deptCounts = {};
-    allData.forEach(item => {
-      const dept = item.departmentNormalized;
-      deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+    allData.forEach(it => {
+      const d = it.departmentNormalized;
+      deptCounts[d] = (deptCounts[d] || 0) + 1;
     });
-    
-    const sortedDepts = Object.keys(deptCounts).sort();
+    const sorted = Object.keys(deptCounts).sort();
     const container = document.getElementById('deptButtons');
-    
-    container.innerHTML = sortedDepts.map(dept => `
+    container.innerHTML = sorted.map(dept => `
       <div class="dept-btn" data-dept="${dept}">
         <div>${dept}</div>
         <div class="dept-count">${deptCounts[dept]}件</div>
       </div>
     `).join('');
-    
-    // イベント設定
+
     container.querySelectorAll('.dept-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const dept = btn.getAttribute('data-dept');
-        if (selectedDepts.has(dept)) {
-          selectedDepts.delete(dept);
-          btn.classList.remove('active');
-        } else {
-          selectedDepts.add(dept);
-          btn.classList.add('active');
-        }
+        if (selectedDepts.has(dept)) { selectedDepts.delete(dept); btn.classList.remove('active'); }
+        else { selectedDepts.add(dept); btn.classList.add('active'); }
         applyFilters();
       });
     });
   }
 
-  // フィルタ適用
+  // ▼CHANGED: フィルタは「数値のUTC日付」で実施
   function applyFilters() {
+    // 入力側の日付をミリ秒へ
+    let fromMs = null, toMs = null;
+    if (dateFromStr) {
+      const m = dateFromStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) fromMs = toStartOfDayMs(+m[1], +m[2], +m[3]);
+    }
+    if (dateToStr) {
+      const m = dateToStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) toMs = toEndOfDayMs(+m[1], +m[2], +m[3]);
+    }
+
     filteredData = allData.filter(item => {
-      // 部署フィルター
-      if (selectedDepts.size > 0 && !selectedDepts.has(item.departmentNormalized)) {
-        return false;
-      }
-      
-      // 日付フィルター
-      if (dateFrom && item.occurrenceDate < dateFrom) {
-        return false;
-      }
-      if (dateTo && item.occurrenceDate > dateTo) {
-        return false;
-      }
-      
+      if (selectedDepts.size > 0 && !selectedDepts.has(item.departmentNormalized)) return false;
+
+      // 発生日が未設定のレコードは期間フィルタから除外
+      if ((fromMs !== null || toMs !== null) && item.occurrenceDateValue === null) return false;
+
+      if (fromMs !== null && item.occurrenceDateValue < fromMs) return false;
+      if (toMs   !== null && item.occurrenceDateValue > toMs)   return false;
+
       return true;
     });
-    
+
     // ソート維持
-    if (currentSort.column) {
-      applySorting();
-    } else {
-      renderTable();
-    }
+    if (currentSort.column) applySorting();
+    else renderTable();
   }
 
-  // テーブル描画
+  // ▼CHANGED: テーブル描画で正規化フィールドを表示に使用
   function renderTable() {
     const thead = document.getElementById('tableHead');
     const tbody = document.getElementById('tableBody');
-    
-    // ヘッダー
     const columns = allColumns.filter(col => visibleColumns.includes(col.id));
+
     thead.innerHTML = `
       <tr>
         ${columns.map(col => `
-          <th class="${col.sortable ? 'sortable' : ''} ${currentSort.column === col.id ? 'sort-' + currentSort.direction : ''}" 
+          <th class="${col.sortable ? 'sortable' : ''} ${currentSort.column === col.id ? 'sort-' + currentSort.direction : ''}"
               data-column="${col.id}">
             ${col.label}
             ${col.filterable ? '<span class="filter-icon">🔍</span>' : ''}
@@ -897,143 +975,127 @@ align-items: stretch;
         `).join('')}
       </tr>
     `;
-    
-    // ソートイベント
+
     thead.querySelectorAll('th.sortable').forEach(th => {
       th.addEventListener('click', () => {
         const column = th.getAttribute('data-column');
-        if (currentSort.column === column) {
-          currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
-        } else {
-          currentSort.column = column;
-          currentSort.direction = 'asc';
-        }
+        if (currentSort.column === column) currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        else { currentSort.column = column; currentSort.direction = 'asc'; }
         applySorting();
       });
     });
-    
-    // 表示件数で制限
+
     const displayData = filteredData.slice(0, displayLimit);
-    
-    // ボディ
+
     if (displayData.length === 0) {
       tbody.innerHTML = `
         <tr>
           <td colspan="${columns.length}">
-            <div class="empty-state">
-              <div class="empty-icon">📭</div>
-              <p>データがありません</p>
-            </div>
+            <div class="empty-state"><div class="empty-icon">📭</div><p>データがありません</p></div>
           </td>
-        </tr>
-      `;
+        </tr>`;
     } else {
       tbody.innerHTML = displayData.map(item => `
         <tr data-id="${item._id}">
           ${columns.map(col => {
-            let value = item[col.id] || '-';
-            
-            if (col.id === 'status') {
+            let value = item[col.id] ?? '-';
+
+            if (col.id === 'occurrenceDate') {
+              value = item.occurrenceDateISO || '-';
+            } else if (col.id === 'occurrenceTime') {
+              value = item.occurrenceTimeNorm || '-';
+            } else if (col.id === 'restartTime') {
+              value = item.restartTimeNorm || '-';
+            } else if (col.id === 'status') {
               const statusText = item.status === 'complete' ? '完了' : '技術入力待ち';
               const statusClass = item.status === 'complete' ? 'status-complete' : 'status-pending';
               value = `<span class="status-badge ${statusClass}">${statusText}</span>`;
+            } else if (col.id === 'photos') {
+              const mfgCount = (item.mfgPhotoUrls || []).length;
+              const techCount = (item.techPhotoUrls || []).length;
+              const total = mfgCount + techCount;
+              value = total > 0 ? `<button class="photo-btn" onclick="event.stopPropagation(); showPhotosOnly('${item._id}')">📷 ${total}枚</button>` : '-';
             } else if (col.id === 'stopMinutes' && item.stopMinutes !== null) {
               value = `${item.stopMinutes}分`;
             } else if (col.id === 'anomalyContent' || col.id === 'actionTaken') {
-              value = (value.length > 30 ? value.slice(0, 30) + '...' : value);
+              const t = value || '';
+              value = (t.length > 30 ? t.slice(0, 30) + '...' : t);
             }
-            
+
             return `<td>${value}</td>`;
           }).join('')}
         </tr>
       `).join('');
-      
-      // 行クリックイベント
+
       tbody.querySelectorAll('tr').forEach(tr => {
-        tr.addEventListener('click', () => {
-          const id = tr.getAttribute('data-id');
-          showDetail(id);
-        });
+        tr.addEventListener('click', () => showDetail(tr.getAttribute('data-id')));
       });
     }
-    
-    // 件数表示
+
     document.getElementById('resultCount').textContent = displayData.length;
     document.getElementById('totalCount').textContent = filteredData.length;
   }
 
-  // ソート適用
+  // ▼CHANGED: ソートも正規化フィールドで
   function applySorting() {
     const col = currentSort.column;
     const dir = currentSort.direction;
-    
+
     filteredData.sort((a, b) => {
-      let valA = a[col] || '';
-      let valB = b[col] || '';
-      
-      // 数値の場合
-      if (col === 'stopMinutes') {
-        valA = valA || 0;
-        valB = valB || 0;
+      let A, B;
+
+      if (col === 'occurrenceDate') {
+        A = a.occurrenceDateValue ?? -Infinity;
+        B = b.occurrenceDateValue ?? -Infinity;
+      } else if (col === 'occurrenceTime') {
+        A = a.occurrenceTimeNorm ?? '';
+        B = b.occurrenceTimeNorm ?? '';
+      } else if (col === 'restartTime') {
+        A = a.restartTimeNorm ?? '';
+        B = b.restartTimeNorm ?? '';
+      } else if (col === 'stopMinutes') {
+        A = a.stopMinutes ?? -Infinity;
+        B = b.stopMinutes ?? -Infinity;
+      } else {
+        A = a[col] ?? '';
+        B = b[col] ?? '';
       }
-      
-      if (valA < valB) return dir === 'asc' ? -1 : 1;
-      if (valA > valB) return dir === 'asc' ? 1 : -1;
+
+      if (A < B) return dir === 'asc' ? -1 : 1;
+      if (A > B) return dir === 'asc' ? 1 : -1;
       return 0;
     });
-    
+
     renderTable();
   }
 
-  // 詳細表示
+  // 詳細モーダル（表示側は既存、日付/時刻は正規化値を表示）
   function showDetail(id) {
     const item = allData.find(x => x._id === id);
     if (!item) return;
-    
+
     const modal = document.getElementById('detailModal');
     const title = document.getElementById('detailTitle');
-    const body = document.getElementById('detailBody');
-    
+    const body  = document.getElementById('detailBody');
+
     title.textContent = `整理No: ${item.serialNo || '-'}`;
-    
+
+    const mfgPhotos  = item.mfgPhotoUrls  || [];
+    const techPhotos = item.techPhotoUrls || [];
+
     body.innerHTML = `
       <div class="detail-section">
         <div class="section-title">📋 基本情報</div>
         <div class="detail-grid">
-          <div class="detail-item">
-            <div class="detail-label">整理No</div>
-            <div class="detail-value">${item.serialNo || '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">部署</div>
-            <div class="detail-value">${item.department || '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">ライン</div>
-            <div class="detail-value">${item.lineName || '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">発生日</div>
-            <div class="detail-value">${item.occurrenceDate || '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">発生時刻</div>
-            <div class="detail-value">${item.occurrenceTime || '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">再開時刻</div>
-            <div class="detail-value">${item.restartTime || '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">停止時間</div>
-            <div class="detail-value">${item.stopMinutes !== null ? item.stopMinutes + '分' : '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">処置者</div>
-            <div class="detail-value">${item.handler || '-'}</div>
-          </div>
-          <div class="detail-item">
-            <div class="detail-label">状態</div>
+          <div class="detail-item"><div class="detail-label">整理No</div><div class="detail-value">${item.serialNo || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">部署</div><div class="detail-value">${item.department || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">ライン</div><div class="detail-value">${item.lineName || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">発生日</div><div class="detail-value">${item.occurrenceDateISO || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">発生時刻</div><div class="detail-value">${item.occurrenceTimeNorm || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">再開時刻</div><div class="detail-value">${item.restartTimeNorm || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">停止時間</div><div class="detail-value">${item.stopMinutes !== null ? item.stopMinutes + '分' : '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">処置者</div><div class="detail-value">${item.handler || '-'}</div></div>
+          <div class="detail-item"><div class="detail-label">状態</div>
             <div class="detail-value">
               <span class="status-badge ${item.status === 'complete' ? 'status-complete' : 'status-pending'}">
                 ${item.status === 'complete' ? '完了' : '技術入力待ち'}
@@ -1042,94 +1104,92 @@ align-items: stretch;
           </div>
         </div>
       </div>
-      
+
       <div class="detail-section">
         <div class="section-title">🚨 異常内容</div>
         <div class="detail-text-area">${item.anomalyContent || '-'}</div>
       </div>
-      
+
       <div class="detail-section">
         <div class="section-title">🔧 対応内容</div>
         <div class="detail-text-area">${item.actionTaken || '-'}</div>
       </div>
-      
+
+      ${mfgPhotos.length ? `
+        <div class="detail-section">
+          <div class="section-title">📷 発信部署の写真（${mfgPhotos.length}枚）</div>
+          <div class="photo-grid">
+            ${mfgPhotos.map(url => `<div class="photo-thumbnail" onclick="window.open('${url}','_blank')"><img src="${url}" alt=""></div>`).join('')}
+          </div>
+        </div>` : ''}
+
       ${item.status === 'complete' && item.techRequest === '要請' ? `
         <div class="detail-section">
           <div class="section-title">⚙️ 技術対応</div>
           <div class="detail-grid">
-            <div class="detail-item">
-              <div class="detail-label">技術処置者</div>
-              <div class="detail-value">${item.techHandler || '-'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="detail-label">発見タイミング</div>
-              <div class="detail-value">${item.discoveryTiming || '-'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="detail-label">命数有無</div>
-              <div class="detail-value">${item.lifespan || '-'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="detail-label">命数到達</div>
-              <div class="detail-value">${item.lifespanReached || '-'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="detail-label">保全単位</div>
-              <div class="detail-value">${item.maintenanceUnit || '-'}</div>
-            </div>
-            <div class="detail-item">
-              <div class="detail-label">再発/新規</div>
-              <div class="detail-value">${item.recurrenceType || '-'}</div>
-            </div>
+            <div class="detail-item"><div class="detail-label">技術処置者</div><div class="detail-value">${item.techHandler || '-'}</div></div>
+            <div class="detail-item"><div class="detail-label">発見タイミング</div><div class="detail-value">${item.discoveryTiming || '-'}</div></div>
+            <div class="detail-item"><div class="detail-label">命数有無</div><div class="detail-value">${item.lifespan || '-'}</div></div>
+            <div class="detail-item"><div class="detail-label">命数到達</div><div class="detail-value">${item.lifespanReached || '-'}</div></div>
+            <div class="detail-item"><div class="detail-label">保全単位</div><div class="detail-value">${item.maintenanceUnit || '-'}</div></div>
+            <div class="detail-item"><div class="detail-label">再発/新規</div><div class="detail-value">${item.recurrenceType || '-'}</div></div>
           </div>
-          ${item.rootCauseAction ? `
-            <div style="margin-top:16px;">
-              <div class="detail-label" style="margin-bottom:8px;">技術対応内容</div>
-              <div class="detail-text-area">${item.rootCauseAction}</div>
-            </div>
-          ` : ''}
-        </div>
-      ` : ''}
+          ${item.rootCauseAction ? `<div style="margin-top:16px;"><div class="detail-label" style="margin-bottom:8px;">技術対応内容</div><div class="detail-text-area">${item.rootCauseAction}</div></div>` : ''}
+          ${techPhotos.length ? `<div style="margin-top:16px;"><div class="detail-label" style="margin-bottom:8px;">📷 技術部門の写真（${techPhotos.length}枚）</div><div class="photo-grid">${techPhotos.map(url => `<div class="photo-thumbnail" onclick="window.open('${url}','_blank')"><img src="${url}" alt=""></div>`).join('')}</div></div>` : ''}
+        </div>` : ''}
     `;
-    
     modal.classList.add('active');
   }
 
-  // 設定モーダル
+  // 写真のみ表示（既存）
+  window.showPhotosOnly = function(id) {
+    const item = allData.find(x => x._id === id);
+    if (!item) return;
+    const modal = document.getElementById('detailModal');
+    const title = document.getElementById('detailTitle');
+    const body  = document.getElementById('detailBody');
+    const mfgPhotos  = item.mfgPhotoUrls  || [];
+    const techPhotos = item.techPhotoUrls || [];
+    title.textContent = `📷 写真 - 整理No: ${item.serialNo || '-'}`;
+    body.innerHTML = `
+      ${mfgPhotos.length ? `<div class="detail-section"><div class="section-title">📷 発信部署の写真（${mfgPhotos.length}枚）</div><div class="photo-grid">${mfgPhotos.map(url => `<div class="photo-thumbnail" onclick="window.open('${url}','_blank')"><img src="${url}" alt=""></div>`).join('')}</div></div>` : ''}
+      ${techPhotos.length ? `<div class="detail-section"><div class="section-title">🔧 技術部門の写真（${techPhotos.length}枚）</div><div class="photo-grid">${techPhotos.map(url => `<div class="photo-thumbnail" onclick="window.open('${url}','_blank')"><img src="${url}" alt=""></div>`).join('')}</div></div>` : ''}
+      ${(!mfgPhotos.length && !techPhotos.length) ? `<div class="empty-state"><div class="empty-icon">📷</div><p>写真がありません</p></div>` : ''}
+    `;
+    modal.classList.add('active');
+  };
+
+  // 設定モーダル（既存）
   function showSettings() {
     const modal = document.getElementById('settingsModal');
     const container = document.getElementById('columnSettings');
-    
     container.innerHTML = allColumns.map(col => `
       <div class="column-checkbox">
         <input type="checkbox" id="col-${col.id}" ${visibleColumns.includes(col.id) ? 'checked' : ''}>
         <label for="col-${col.id}">${col.label}</label>
-      </div>
-    `).join('');
-    
+      </div>`).join('');
     modal.classList.add('active');
   }
 
-  // CSV出力
+  // ▼CHANGED: CSVも正規化値を出力（日付はISO、時刻はHH:MM）
   function exportCSV() {
     const columns = allColumns.filter(col => visibleColumns.includes(col.id));
     const headers = columns.map(col => col.label);
-    
     let csv = '\uFEFF' + headers.join(',') + '\n';
-    
+
     filteredData.forEach(item => {
       const row = columns.map(col => {
-        let value = item[col.id] || '';
-        if (col.id === 'status') {
-          value = item.status === 'complete' ? '完了' : '技術入力待ち';
-        } else if (col.id === 'stopMinutes' && item.stopMinutes !== null) {
-          value = item.stopMinutes;
-        }
-        return `"${value.toString().replace(/"/g, '""')}"`;
+        let value = item[col.id] ?? '';
+        if (col.id === 'occurrenceDate') value = item.occurrenceDateISO || '';
+        else if (col.id === 'occurrenceTime') value = item.occurrenceTimeNorm || '';
+        else if (col.id === 'restartTime') value = item.restartTimeNorm || '';
+        else if (col.id === 'status') value = (item.status === 'complete' ? '完了' : '技術入力待ち');
+        else if (col.id === 'stopMinutes' && item.stopMinutes !== null) value = item.stopMinutes;
+        return `"${String(value).replace(/"/g, '""')}"`;
       });
       csv += row.join(',') + '\n';
     });
-    
+
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1137,105 +1197,92 @@ align-items: stretch;
     link.click();
   }
 
-  // イベント設定
+  // ====== イベント ======
   document.getElementById('btnSettings').addEventListener('click', showSettings);
   document.getElementById('btnExport').addEventListener('click', exportCSV);
-  
-  // 表示件数変更
+
   document.getElementById('displayCount').addEventListener('change', (e) => {
     displayLimit = parseInt(e.target.value);
     saveDisplayLimit();
     renderTable();
   });
-  
-  // 部署フィルター
+
   document.getElementById('btnClearDept').addEventListener('click', () => {
     selectedDepts.clear();
     document.querySelectorAll('.dept-btn').forEach(btn => btn.classList.remove('active'));
     applyFilters();
   });
-  
-  // 日付フィルター
+
   document.getElementById('btnYesterday').addEventListener('click', () => {
-    const yesterday = getPreviousBusinessDay();
-    dateFrom = yesterday;
-    dateTo = yesterday;
-    document.getElementById('dateFrom').value = yesterday;
-    document.getElementById('dateTo').value = yesterday;
+    const y = getPreviousBusinessDay();
+    dateFromStr = y; dateToStr = y;
+    document.getElementById('dateFrom').value = y;
+    document.getElementById('dateTo').value = y;
     document.getElementById('btnYesterday').classList.add('active');
     document.getElementById('btnToday').classList.remove('active');
     applyFilters();
   });
-  
+
   document.getElementById('btnToday').addEventListener('click', () => {
-    const today = getToday();
-    dateFrom = today;
-    dateTo = today;
-    document.getElementById('dateFrom').value = today;
-    document.getElementById('dateTo').value = today;
+    const t = getToday();
+    dateFromStr = t; dateToStr = t;
+    document.getElementById('dateFrom').value = t;
+    document.getElementById('dateTo').value = t;
     document.getElementById('btnToday').classList.add('active');
     document.getElementById('btnYesterday').classList.remove('active');
     applyFilters();
   });
-  
+
   document.getElementById('dateFrom').addEventListener('change', (e) => {
-    dateFrom = e.target.value;
+    dateFromStr = e.target.value || null;
     document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
     applyFilters();
   });
-  
+
   document.getElementById('dateTo').addEventListener('change', (e) => {
-    dateTo = e.target.value;
+    dateToStr = e.target.value || null;
     document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
     applyFilters();
   });
-  
+
   document.getElementById('btnClearDate').addEventListener('click', () => {
-    dateFrom = null;
-    dateTo = null;
+    dateFromStr = null; dateToStr = null;
     document.getElementById('dateFrom').value = '';
     document.getElementById('dateTo').value = '';
     document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
     applyFilters();
   });
-  
+
   document.getElementById('btnResetFilters').addEventListener('click', () => {
-    // 部署フィルタークリア
     selectedDepts.clear();
     document.querySelectorAll('.dept-btn').forEach(btn => btn.classList.remove('active'));
-    // 日付フィルタークリア
-    dateFrom = null;
-    dateTo = null;
+    dateFromStr = null; dateToStr = null;
     document.getElementById('dateFrom').value = '';
     document.getElementById('dateTo').value = '';
     document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
     applyFilters();
   });
-  
+
   document.getElementById('btnResetSort').addEventListener('click', () => {
     currentSort = { column: null, direction: 'asc' };
     renderTable();
   });
-  
+
   document.getElementById('btnCloseDetail').addEventListener('click', () => {
     document.getElementById('detailModal').classList.remove('active');
   });
-  
   document.getElementById('btnCloseSettings').addEventListener('click', () => {
     document.getElementById('settingsModal').classList.remove('active');
   });
-  
   document.getElementById('btnSaveSettings').addEventListener('click', () => {
     visibleColumns = [];
     allColumns.forEach(col => {
-      const checkbox = document.getElementById(`col-${col.id}`);
-      if (checkbox && checkbox.checked) {
-        visibleColumns.push(col.id);
-      }
+      const cb = document.getElementById(`col-${col.id}`);
+      if (cb && cb.checked) visibleColumns.push(col.id);
     });
     saveSettings();
     document.getElementById('settingsModal').classList.remove('active');
@@ -1244,12 +1291,8 @@ align-items: stretch;
 
   // 初期化
   (async () => {
-    const authenticated = await checkAuth();
-    if (!authenticated) {
-      alert('認証が必要です');
-      return;
-    }
-    
+    const ok = await checkAuth();
+    if (!ok) { alert('認証が必要です'); return; }
     loadSettings();
     await loadData();
   })();
