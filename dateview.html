@@ -92,9 +92,21 @@
 
   .dept-count { font-size: .85rem; opacity: .8; margin-top: 4px; }
 
-  /* ▼ 部署ボタンにスパークラインを重ねる */
+  /* ▼ スパークラインを中央重ね配置（文字より下に描画） */
   .dept-btn .sparkline {
-    position: absolute; top: 6px; left: 8px; right: 8px; height: 24px; opacity: .35; pointer-events: none;
+    position: absolute;
+    top: 50%;
+    left: 6px;
+    right: 6px;
+    transform: translateY(-50%);
+    height: 44px;        /* 大きめ */
+    opacity: 0.5;        /* やや濃く */
+    pointer-events: none;
+    z-index: 0;          /* 文字の下 */
+  }
+  .dept-btn > div {      /* テキストは前面に */
+    position: relative;
+    z-index: 1;
   }
 
   /* データシートエリア */
@@ -303,7 +315,7 @@
     authDomain: "abnreport-fd733.firebaseapp.com",
     databaseURL: "https://abnreport-fd733-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "abnreport-fd733",
-    storageBucket: "abnreport-fd733.appspot.com",
+    storageBucket: "abnreport-fd733.firebasestorage.app",  // ← ご指定どおり
     messagingSenderId: "349748947315",
     appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
   };
@@ -331,7 +343,6 @@
     return `${y}-${m}-${d}`;
   }
   function toStartOfDayMs(y, m, d){ return Date.UTC(y, m-1, d, 0,0,0,0); }
-  function toEndOfDayMs(y, m, d){   return Date.UTC(y, m-1, d, 23,59,59,999); }
 
   function normalizeDeptName(name) {
     if (!name) return '未設定';
@@ -416,13 +427,13 @@
   }
   function getToday() { return formatDate(new Date()); }
 
-  // スパークライン用ユーティリティ
+  // スパークライン用（直近7日：古→新）
   function buildLastNDaysUTC(n = 7) {
     const today = new Date();
     const base = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0,0,0,0);
     const days = [];
     for (let i = n - 1; i >= 0; i--) days.push(base - i * 86400000);
-    return days; // 古→新
+    return days;
   }
 
   function buildDeptSparkSeries(data, daysUTC) {
@@ -462,18 +473,19 @@
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
     const cssW = canvas.clientWidth || 100;
-    const cssH = canvas.clientHeight || 24;
-    canvas.width = Math.max(1, Math.floor(cssW * dpr));
+    const cssH = canvas.clientHeight || 44; // 大きめ
+    canvas.width  = Math.max(1, Math.floor(cssW * dpr));
     canvas.height = Math.max(1, Math.floor(cssH * dpr));
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.lineWidth = 1 * dpr;
+
+    ctx.lineWidth = 2 * dpr;  // 太くして視認性UP
 
     const n = values.length;
     if (!n) return;
     const max = Math.max(...values), min = Math.min(...values);
-    const pad = 2 * dpr;
+    const pad = 3 * dpr;
     const xStep = n > 1 ? (canvas.width - pad*2) / (n-1) : 0;
 
     // ベースライン
@@ -481,7 +493,7 @@
     ctx.beginPath(); ctx.moveTo(pad, canvas.height - pad); ctx.lineTo(canvas.width - pad, canvas.height - pad); ctx.stroke();
 
     // 線
-    ctx.strokeStyle = 'rgba(51,102,255,0.45)';
+    ctx.strokeStyle = 'rgba(66,133,244,0.6)';
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
       const v = values[i];
@@ -493,12 +505,12 @@
     ctx.stroke();
 
     // 終端点
-    ctx.fillStyle = 'rgba(51,102,255,0.45)';
+    ctx.fillStyle = 'rgba(66,133,244,0.6)';
     const lastX = pad + xStep * (n - 1);
     const lastV = values[n - 1];
     const lastR = (max === min) ? 0.5 : (lastV - min) / (max - min);
     const lastY = canvas.height - pad - lastR * (canvas.height - pad*2);
-    ctx.beginPath(); ctx.arc(lastX, lastY, 1.5 * dpr, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(lastX, lastY, 2.5 * dpr, 0, Math.PI*2); ctx.fill();
   }
 
   // 列定義
@@ -597,7 +609,7 @@
   // 部署ボタン描画（スパークライン付き）
   function renderDepartmentButtons() {
     const daysUTC = buildLastNDaysUTC(7);
-    const seriesMap = buildDeptSparkSeries(allData, daysUTC); // フィルタ反映型にしたい場合は filteredData を使う
+    const seriesMap = buildDeptSparkSeries(allData, daysUTC); // フィルタ連動にしたいなら filteredData を使う
 
     const deptCounts = {};
     allData.forEach(item => {
@@ -629,6 +641,7 @@
       });
     });
 
+    // 描画
     requestAnimationFrame(() => {
       container.querySelectorAll('.dept-btn').forEach(btn => {
         const dept = btn.getAttribute('data-dept');
@@ -638,6 +651,7 @@
       });
     });
 
+    // リサイズで再描画
     let resizeTimer = null;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
