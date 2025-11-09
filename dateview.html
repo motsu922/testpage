@@ -617,7 +617,12 @@ let visibleColumns = [...DEFAULT_COLUMNS]; // ←常に既定を持つ
   function normalizeWide(s){return String(s??'').replace(/[Ａ-Ｚａ-ｚ０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/　/g,' ').trim();}
   function normalizeDeptName(s){return normalizeWide(s).toUpperCase()||'未設定';}
   function normalizeLineName(s){return normalizeWide(s)||'未設定';}
-
+// ★ 追加：8:00起点の“今日”を返す
+function getOperationalToday(){
+  const now = new Date();
+  if (now.getHours() < 8) now.setDate(now.getDate() - 1); // 8時前は前日扱い
+  return formatDate(now);
+}
   function parseDateFlexible(v){
     if(!v) return {iso:null,value:null};
     let d=null;
@@ -1873,7 +1878,7 @@ document.getElementById('detailModal').addEventListener('click', (e)=>{
     applyFilters();
   });
   document.getElementById('btnToday').addEventListener('click',()=>{
-    const t=getToday(); dateFromStr=t; dateToStr=t;
+    const t=getOperationalToday(); dateFromStr=t; dateToStr=t;
     document.getElementById('dateFrom').value=t; document.getElementById('dateTo').value=t;
     document.getElementById('btnToday').classList.add('active'); document.getElementById('btnYesterday').classList.remove('active');
     autoRangeActive=true; drawAllSparklines();
@@ -1939,6 +1944,27 @@ document.getElementById('detailModal').addEventListener('click', (e)=>{
   (async()=>{
     const ok=await checkAuth(); if(!ok){ alert('認証が必要です'); return; }
     loadSettings();
+      // ★ 追加：稼働日8時起点で“今日”をデフォルト入力
+  {
+    const t = getOperationalToday();
+    const df = document.getElementById('dateFrom');
+    const dt = document.getElementById('dateTo');
+
+    // 入力が空ならセット（ユーザーが事前に保存している場合は尊重）
+    if (df && !df.value) df.value = t;
+    if (dt && !dt.value) dt.value = t;
+
+    // まだ内部状態が未設定なら内部状態にも反映
+    if (!dateFromStr && !dateToStr) {
+      dateFromStr = t;
+      dateToStr   = t;
+      autoRangeActive = true;
+      const btnToday = document.getElementById('btnToday');
+      const btnYesterday = document.getElementById('btnYesterday');
+      if (btnToday) btnToday.classList.add('active');
+      if (btnYesterday) btnYesterday.classList.remove('active');
+    }
+  }
     await loadData();
   })();
 </script>
