@@ -1128,7 +1128,6 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
   if (!canvas) return;
 
   const dpr = window.devicePixelRatio || 1;
-  // 親カードの実幅に合わせて実ピクセルを揃える
   ensureCanvasResolution(canvas);
 
   const ctx = canvas.getContext('2d'); if (!ctx) return;
@@ -1164,6 +1163,22 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
   ctx.textBaseline = 'top';
   const yMaxLabel = String(Math.max(1, Math.round(max)));
   ctx.fillText(yMaxLabel, canvas.width - pad, pad * 0.5);
+
+  // ★ 最大値の高さに水平破線（MAX ガイド）
+  if (Number.isFinite(max)) {
+    const ratioMax = (max===min) ? 1 : (max-min)/(max-min); // =1
+    const yMax = canvas.height - pad - ratioMax * (canvas.height - pad*2);
+    ctx.save();
+    ctx.strokeStyle = document.body.classList.contains('theme-dark')
+      ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
+    ctx.setLineDash([4*dpr, 3*dpr]);
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(pad, yMax);
+    ctx.lineTo(canvas.width - pad, yMax);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // 折れ線
   ctx.strokeStyle = color;
@@ -1219,6 +1234,21 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
     drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: L, label: String(hour) });
   }
 
+  // ★ 合計の最大値高さに水平破線（MAX ガイド）
+  if (Number.isFinite(maxSum)) {
+    const yMax = baseY - (maxSum/maxSum)*height; // = baseY - height
+    ctx.save();
+    ctx.strokeStyle = document.body.classList.contains('theme-dark')
+      ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
+    ctx.setLineDash([4*dpr, 3*dpr]);
+    ctx.lineWidth = 1 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(pad, yMax);
+    ctx.lineTo(canvas.width - pad, yMax);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // 積み上げ塗り
   let accumPrev = Array(L).fill(0);
   seriesList.forEach((s,idx)=>{
@@ -1229,6 +1259,7 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
     for (let i=0;i<L;i++){ const x=pad+step*i, y=topY[i]; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
     for (let i=L-1;i>=0;i--){ const x=pad+step*i, y=botY[i]; ctx.lineTo(x,y); }
     ctx.closePath();
+    // 既定カラーを RGBA 化して塗り
     ctx.fillStyle = hexToRgba(colors[idx%colors.length], 0.85);
     ctx.fill();
 
