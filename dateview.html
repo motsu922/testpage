@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>異常履歴データシート（積み上げスパークライン対応）</title>
+<title>異常履歴データシート（17時マーカー対応）</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f7;color:#1d1d1f}
@@ -115,7 +115,7 @@
 <body>
   <div class="header">
     <div class="header-content">
-      <h1>📊 異常履歴データシート（積み上げスパークライン）</h1>
+      <h1>📊 異常履歴データシート（17時マーカー対応）</h1>
       <div class="header-actions">
         <button class="btn-header" id="btnSettings">⚙️ 表示設定</button>
         <button class="btn-header" id="btnExport">📥 CSV出力</button>
@@ -359,7 +359,7 @@
         const next=new Date(cur); next.setDate(next.getDate()+1); next.setHours(0,0,0,0);
         cur = next.getTime();
       }
-      return {type:'day', bins};
+      return {type:'day', bins, markers:[]};
     }
 
     const selStr = getSelectedDateStr();
@@ -372,7 +372,9 @@
         const e=new Date(start); e.setHours(e.getHours()+i+1); e.setMilliseconds(e.getMilliseconds()-1);
         bins.push({start:s.getTime(), end:e.getTime()});
       }
-      return {type:'hour', bins};
+      // 8:00起点 → 17:00は +9 時間目（index=9）
+      const markers=[9];
+      return {type:'hour', bins, markers};
     }else{
       const days = (sparkMode==='30d')?30:7;
       const bins=[];
@@ -382,7 +384,7 @@
         const e=new Date(d); e.setHours(23,59,59,999);
         bins.push({start:s.getTime(), end:e.getTime()});
       }
-      return {type:'day', bins};
+      return {type:'day', bins, markers:[]};
     }
   }
 
@@ -411,21 +413,17 @@
       const line=it.lineNameNormalized||'未設定';
       const sn  =it.serialNo||'未設定';
 
-      // 部署合計
       if(!deptSeries.has(dept)) deptSeries.set(dept, Array(len).fill(0));
       deptSeries.get(dept)[idx]+=1;
 
-      // 部署-ライン（積層用）
       if(!deptStack.has(dept)) deptStack.set(dept,new Map());
       if(!deptStack.get(dept).has(line)) deptStack.get(dept).set(line, Array(len).fill(0));
       deptStack.get(dept).get(line)[idx]+=1;
 
-      // ライン合計
       if(!lineSeries.has(dept)) lineSeries.set(dept,new Map());
       if(!lineSeries.get(dept).has(line)) lineSeries.get(dept).set(line, Array(len).fill(0));
       lineSeries.get(dept).get(line)[idx]+=1;
 
-      // ライン-整理No（積層用）
       if(!lineStack.has(dept)) lineStack.set(dept,new Map());
       if(!lineStack.get(dept).has(line)) lineStack.get(dept).set(line,new Map());
       if(!lineStack.get(dept).get(line).has(sn)) lineStack.get(dept).get(line).set(sn, Array(len).fill(0));
@@ -436,7 +434,36 @@
   }
 
   // ====== スパークライン描画 ======
-  function drawLineSpark(canvas, values, color='rgba(106,124,245,0.95)'){
+  function drawShiftMarker(ctx, canvas, opts){
+    // opts: { markerIndex, count } （hourモードのみ）
+    if(!opts || opts.markerIndex==null) return;
+    const dpr=window.devicePixelRatio||1;
+    const pad=6*dpr;
+    const step = (canvas.width - pad*2) / Math.max(1,(opts.count-1));
+    const x = pad + step * opts.markerIndex;
+
+    // 縦の点線ガイド
+    ctx.save();
+    ctx.strokeStyle='rgba(255,0,0,0.45)';
+    ctx.setLineDash([3*dpr, 3*dpr]);
+    ctx.lineWidth = 1*dpr;
+    ctx.beginPath();
+    ctx.moveTo(x, pad);
+    ctx.lineTo(x, canvas.height - pad);
+    ctx.stroke();
+    ctx.restore();
+
+    // 小さな“17”ラベル（上部）
+    ctx.save();
+    ctx.fillStyle='rgba(255,0,0,0.7)';
+    ctx.font = `${10*dpr}px system-ui, -apple-system, Segoe UI, sans-serif`;
+    ctx.textAlign='center';
+    ctx.textBaseline='top';
+    ctx.fillText('17', x, pad+1*dpr);
+    ctx.restore();
+  }
+
+  function drawLineSpark(canvas, values, color='rgba(106,124,245,0.95)', opts={}){
     if(!canvas) return;
     const dpr=window.devicePixelRatio||1;
     const cssW=canvas.clientWidth||120, cssH=canvas.clientHeight||54;
@@ -452,6 +479,11 @@
     // baseline
     ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1*dpr;
     ctx.beginPath(); ctx.moveTo(pad, canvas.height-pad); ctx.lineTo(canvas.width-pad, canvas.height-pad); ctx.stroke();
+
+    // 17時マーカー（hourモードのみ）
+    if(opts.type==='hour' && typeof opts.markerIndex==='number'){
+      drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:n});
+    }
 
     // line
     ctx.strokeStyle=color; ctx.lineWidth=2*dpr; ctx.beginPath();
@@ -479,7 +511,7 @@
     return `rgba(${r},${g},${b},${alpha})`;
   }
 
-  function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2']){
+  function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2'], opts={}){
     if(!canvas) return;
     const dpr=window.devicePixelRatio||1;
     const cssW=canvas.clientWidth||120, cssH=canvas.clientHeight||54;
@@ -497,6 +529,15 @@
     const step = (canvas.width - pad*2) / Math.max(1,(L-1));
     const baseY = canvas.height - pad;
     const height = (canvas.height - pad*2);
+
+    // baseline
+    ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1*dpr;
+    ctx.beginPath(); ctx.moveTo(pad, baseY); ctx.lineTo(canvas.width-pad, baseY); ctx.stroke();
+
+    // 17時マーカー（hourモードのみ）
+    if(opts.type==='hour' && typeof opts.markerIndex==='number'){
+      drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:L});
+    }
 
     let accumPrev = Array(L).fill(0);
     seriesList.forEach((s,idx)=>{
@@ -749,8 +790,15 @@
 
   // ====== すべてのスパークライン再描画 ======
   function drawAllSparklines(){
+    const binsInfo = buildBins(); // {type, bins, markers}
     const {deptSeries,deptStack,lineSeries,lineStack}=buildSeriesMapsFlexible(allData);
-    const binsLen = buildBins().bins.length;
+    const binsLen = binsInfo.bins.length;
+
+    const drawOpts = (seriesLen)=>({
+      type: binsInfo.type,
+      markerIndex: (binsInfo.type==='hour' ? 9 : null), // 8:00→17:00 の位置
+      count: seriesLen
+    });
 
     // 部署：合計 or ライン積層
     document.querySelectorAll('#deptBar [data-role="dept"]').forEach(btn=>{
@@ -760,10 +808,10 @@
       if(viewMode==='stack'){
         const stacks = [...(deptStack.get(dept)?.values()||[])];
         const fallback = stacks.length? stacks : [Array(binsLen).fill(0)];
-        drawStackedSpark(canvas, fallback);
+        drawStackedSpark(canvas, fallback, undefined, drawOpts(binsLen));
       }else{
         const vals=deptSeries.get(dept)||Array(binsLen).fill(0);
-        drawLineSpark(canvas, vals, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)');
+        drawLineSpark(canvas, vals, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)', drawOpts(binsLen));
       }
     });
 
@@ -776,14 +824,14 @@
       if(viewMode==='stack'){
         const stacks = [...(lineStack.get(dept)?.get(line)?.values()||[])];
         const fallback = stacks.length? stacks : [Array(binsLen).fill(0)];
-        drawStackedSpark(canvas, fallback);
+        drawStackedSpark(canvas, fallback, undefined, drawOpts(binsLen));
       }else{
         const vals=(lineSeries.get(dept)?.get(line))||Array(binsLen).fill(0);
-        drawLineSpark(canvas, vals, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)');
+        drawLineSpark(canvas, vals, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)', drawOpts(binsLen));
       }
     });
 
-    // 整理Noは単線（見やすさ重視）
+    // 整理No：単線
     document.querySelectorAll('#serialsGrid [data-role="serial"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const line=btn.getAttribute('data-line');
@@ -793,7 +841,7 @@
       const vals = map?.get(sn) || [];
       const bins = vals.length? vals : Array(binsLen).fill(0);
       const active=btn.classList.contains('active');
-      drawLineSpark(canvas, bins, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)');
+      drawLineSpark(canvas, bins, active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.85)', drawOpts(binsLen));
     });
 
     // モードヒント
@@ -803,7 +851,7 @@
     }else{
       const base = getSelectedDateStr();
       const p = (sparkMode==='7d')?`7日`:(sparkMode==='30d')?`30日`:`24時間（8:00〜翌8:00）`;
-      hint.textContent = `${base} を基準に ${p} ／表示:${viewMode==='stack'?'積み上げ':'合計'}`;
+      hint.textContent = `${base} を基準に ${p} ／表示:${viewMode==='stack'?'積み上げ':'合計'}${binsInfo.type==='hour'?' ／ 17時マーカー表示中':''}`;
     }
   }
 
