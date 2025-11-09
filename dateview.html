@@ -67,6 +67,69 @@ margin: 0 auto;
 padding: 20px;
 }
 
+/* 期間選択エリア */
+.date-filter {
+background: #fff;
+border-radius: 12px;
+padding: 20px;
+margin-bottom: 20px;
+box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+
+.date-filter-header {
+font-size: 1.1rem;
+font-weight: 600;
+color: #667eea;
+margin-bottom: 16px;
+}
+
+.date-controls {
+display: flex;
+gap: 12px;
+align-items: center;
+flex-wrap: wrap;
+}
+
+.date-input-group {
+display: flex;
+gap: 8px;
+align-items: center;
+}
+
+.date-input-group input[type=“date”] {
+padding: 10px 14px;
+border: 2px solid #e0e0e0;
+border-radius: 8px;
+font-size: .95rem;
+transition: .2s;
+}
+
+.date-input-group input[type=“date”]:focus {
+outline: none;
+border-color: #667eea;
+}
+
+.date-quick-btn {
+padding: 10px 20px;
+border: 2px solid #667eea;
+background: #fff;
+color: #667eea;
+border-radius: 8px;
+cursor: pointer;
+font-weight: 600;
+transition: .2s;
+white-space: nowrap;
+}
+
+.date-quick-btn:hover {
+background: #f8f9ff;
+}
+
+.date-quick-btn.active {
+background: #667eea;
+color: #fff;
+}
+
 /* 部署選択エリア */
 .dept-filter {
 background: #fff;
@@ -415,11 +478,24 @@ margin-bottom: 16px;
 }
 
 @media (max-width: 768px) {
-.dept-buttons {
-grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+.date-controls {
+flex-direction: column;
+align-items: stretch;
 }
 
 ```
+.date-input-group {
+  flex-direction: column;
+}
+
+.date-quick-btn {
+  width: 100%;
+}
+
+.dept-buttons {
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
 .dept-btn {
   padding: 12px 16px;
   font-size: .9rem;
@@ -451,18 +527,33 @@ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   </div>
 
   <div class="container">
-    <!-- 部署選択フィルター -->
-    <div class="dept-filter">
-      <div class="dept-filter-header">
-        <div class="dept-filter-title">🏢 部署で絞り込み（複数選択可）</div>
-        <button class="btn-tool" id="btnClearDept">すべて解除</button>
-      </div>
-      <div class="dept-buttons" id="deptButtons">
-        <!-- 動的に生成 -->
+    <!-- 期間選択フィルター -->
+    <div class="date-filter">
+      <div class="date-filter-header">📅 期間で絞り込み</div>
+      <div class="date-controls">
+        <button class="date-quick-btn" id="btnYesterday">前日（平日）</button>
+        <button class="date-quick-btn" id="btnToday">今日</button>
+        <div class="date-input-group">
+          <input type="date" id="dateFrom" placeholder="開始日">
+          <span style="color:#999;">〜</span>
+          <input type="date" id="dateTo" placeholder="終了日">
+        </div>
+        <button class="btn-tool" id="btnClearDate">期間クリア</button>
       </div>
     </div>
 
 ```
+<!-- 部署選択フィルター -->
+<div class="dept-filter">
+  <div class="dept-filter-header">
+    <div class="dept-filter-title">🏢 部署で絞り込み（複数選択可）</div>
+    <button class="btn-tool" id="btnClearDept">すべて解除</button>
+  </div>
+  <div class="dept-buttons" id="deptButtons">
+    <!-- 動的に生成 -->
+  </div>
+</div>
+
 <!-- データシート -->
 <div class="datasheet-container">
   <div class="datasheet-toolbar">
@@ -544,7 +635,50 @@ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   let allData = [];
   let filteredData = [];
   let selectedDepts = new Set();
+  let dateFrom = null;
+  let dateTo = null;
   let currentSort = { column: null, direction: 'asc' };
+
+  // 部署名を正規化（全角→半角、トリム、大文字小文字統一）
+  function normalizeDeptName(name) {
+    if (!name) return '未設定';
+    return name
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+      .replace(/　/g, ' ')
+      .trim()
+      .toUpperCase();
+  }
+
+  // 平日の前日を取得（土日をスキップ）
+  function getPreviousBusinessDay() {
+    const date = new Date();
+    let dayOfWeek = date.getDay();
+    
+    // 今日が月曜日(1)なら金曜日(-3日)、それ以外は前日(-1日)
+    if (dayOfWeek === 1) {
+      date.setDate(date.getDate() - 3);
+    } else if (dayOfWeek === 0) {
+      // 日曜日なら金曜日(-2日)
+      date.setDate(date.getDate() - 2);
+    } else {
+      date.setDate(date.getDate() - 1);
+    }
+    
+    return formatDate(date);
+  }
+
+  // 今日の日付を取得
+  function getToday() {
+    return formatDate(new Date());
+  }
+
+  // 日付をYYYY-MM-DD形式にフォーマット
+  function formatDate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
 
   // 列定義
   const allColumns = [
@@ -611,6 +745,9 @@ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     allData = snapshot.docs.map(doc => {
       const data = { _id: doc.id, ...doc.data() };
       
+      // 部署名を正規化
+      data.departmentNormalized = normalizeDeptName(data.department);
+      
       // 停止時間を計算
       if (data.occurrenceTime && data.restartTime) {
         const [oh, om] = data.occurrenceTime.split(':').map(Number);
@@ -634,7 +771,7 @@ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   function renderDepartmentButtons() {
     const deptCounts = {};
     allData.forEach(item => {
-      const dept = item.department || '未設定';
+      const dept = item.departmentNormalized;
       deptCounts[dept] = (deptCounts[dept] || 0) + 1;
     });
     
@@ -666,13 +803,22 @@ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
 
   // フィルタ適用
   function applyFilters() {
-    if (selectedDepts.size === 0) {
-      filteredData = [...allData];
-    } else {
-      filteredData = allData.filter(item => 
-        selectedDepts.has(item.department || '未設定')
-      );
-    }
+    filteredData = allData.filter(item => {
+      // 部署フィルター
+      if (selectedDepts.size > 0 && !selectedDepts.has(item.departmentNormalized)) {
+        return false;
+      }
+      
+      // 日付フィルター
+      if (dateFrom && item.occurrenceDate < dateFrom) {
+        return false;
+      }
+      if (dateTo && item.occurrenceDate > dateTo) {
+        return false;
+      }
+      
+      return true;
+    });
     
     // ソート維持
     if (currentSort.column) {
@@ -940,15 +1086,71 @@ grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   document.getElementById('btnSettings').addEventListener('click', showSettings);
   document.getElementById('btnExport').addEventListener('click', exportCSV);
   
+  // 部署フィルター
   document.getElementById('btnClearDept').addEventListener('click', () => {
     selectedDepts.clear();
     document.querySelectorAll('.dept-btn').forEach(btn => btn.classList.remove('active'));
     applyFilters();
   });
   
+  // 日付フィルター
+  document.getElementById('btnYesterday').addEventListener('click', () => {
+    const yesterday = getPreviousBusinessDay();
+    dateFrom = yesterday;
+    dateTo = yesterday;
+    document.getElementById('dateFrom').value = yesterday;
+    document.getElementById('dateTo').value = yesterday;
+    document.getElementById('btnYesterday').classList.add('active');
+    document.getElementById('btnToday').classList.remove('active');
+    applyFilters();
+  });
+  
+  document.getElementById('btnToday').addEventListener('click', () => {
+    const today = getToday();
+    dateFrom = today;
+    dateTo = today;
+    document.getElementById('dateFrom').value = today;
+    document.getElementById('dateTo').value = today;
+    document.getElementById('btnToday').classList.add('active');
+    document.getElementById('btnYesterday').classList.remove('active');
+    applyFilters();
+  });
+  
+  document.getElementById('dateFrom').addEventListener('change', (e) => {
+    dateFrom = e.target.value;
+    document.getElementById('btnYesterday').classList.remove('active');
+    document.getElementById('btnToday').classList.remove('active');
+    applyFilters();
+  });
+  
+  document.getElementById('dateTo').addEventListener('change', (e) => {
+    dateTo = e.target.value;
+    document.getElementById('btnYesterday').classList.remove('active');
+    document.getElementById('btnToday').classList.remove('active');
+    applyFilters();
+  });
+  
+  document.getElementById('btnClearDate').addEventListener('click', () => {
+    dateFrom = null;
+    dateTo = null;
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    document.getElementById('btnYesterday').classList.remove('active');
+    document.getElementById('btnToday').classList.remove('active');
+    applyFilters();
+  });
+  
   document.getElementById('btnResetFilters').addEventListener('click', () => {
+    // 部署フィルタークリア
     selectedDepts.clear();
     document.querySelectorAll('.dept-btn').forEach(btn => btn.classList.remove('active'));
+    // 日付フィルタークリア
+    dateFrom = null;
+    dateTo = null;
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    document.getElementById('btnYesterday').classList.remove('active');
+    document.getElementById('btnToday').classList.remove('active');
     applyFilters();
   });
   
