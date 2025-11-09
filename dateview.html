@@ -852,16 +852,73 @@ function setSparkDateLabels(containerSelector, binsInfo){
 }
 
   /* ===== スパークライン（描画） ===== */
-  function drawShiftMarker(ctx, canvas, opts){
-    if(!opts || opts.markerIndex==null) return;
-    const dpr=window.devicePixelRatio||1;
-    const pad=6*dpr;
-    const step = (canvas.width - pad*2) / Math.max(1,(opts.count-1));
-    const x = pad + step * opts.markerIndex;
-    ctx.save(); ctx.strokeStyle='rgba(255,0,0,0.45)'; ctx.setLineDash([3*dpr, 3*dpr]); ctx.lineWidth = 1*dpr;
-    ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, canvas.height - pad); ctx.stroke(); ctx.restore();
-    ctx.save(); ctx.fillStyle='rgba(255,0,0,0.7)'; ctx.font = `${10*dpr}px system-ui`; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText('17', x, pad+1*dpr); ctx.restore();
-  }
+// 角丸矩形の描画ヘルパ
+function rr(ctx, x, y, w, h, r, fill, stroke){
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y,   x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x,   y+h, r);
+  ctx.arcTo(x,   y+h, x,   y,   r);
+  ctx.arcTo(x,   y,   x+w, y,   r);
+  ctx.closePath();
+  if(fill){ ctx.fillStyle = fill; ctx.fill(); }
+  if(stroke){ ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+  ctx.restore();
+}
+
+// 見やすい縦マーカー＋ラベル
+function drawShiftMarker(ctx, canvas, opts){
+  if(!opts || opts.markerIndex==null) return;
+  const dpr = window.devicePixelRatio || 1;
+  const pad = 6 * dpr;
+  const step = (canvas.width - pad*2) / Math.max(1,(opts.count-1));
+  const x = pad + step * opts.markerIndex;
+
+  const dark = document.body.classList.contains('theme-dark');
+
+  // 破線の色・太さを強める
+  ctx.save();
+  ctx.strokeStyle = dark ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)';
+  ctx.setLineDash([4*dpr, 3*dpr]);
+  ctx.lineWidth = 1.5 * dpr;
+  ctx.beginPath();
+  ctx.moveTo(x, pad);
+  ctx.lineTo(x, canvas.height - pad);
+  ctx.stroke();
+  ctx.restore();
+
+  // ラベル文字（デフォルトは 17、渡されていれば opts.label を使用）
+  const label = (opts.label ?? '17') + '';
+
+  // ラベルの背景バッジ（白/黒で反転、枠付き）
+  ctx.save();
+  const fontPx = 11 * dpr;
+  ctx.font = `600 ${fontPx}px system-ui`;
+  const textW = ctx.measureText(label).width;
+  const px = 6 * dpr, py = 3 * dpr;
+  const boxW = textW + px*2;
+  const boxH = fontPx + py*2;
+  // 端で切れないように位置調整
+  const boxX = Math.min(Math.max(x - boxW/2, pad), canvas.width - pad - boxW);
+  const boxY = pad + 2 * dpr;
+
+  const bg     = dark ? 'rgba(0,0,0,0.80)'  : 'rgba(255,255,255,0.95)';
+  const border = dark ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.25)';
+  const text   = dark ? '#ffffff' : '#111111';
+
+  rr(ctx, boxX, boxY, boxW, boxH, 6*dpr, bg, border);
+
+  // 文字は中央・太字、ほんの少し影で浮かせる
+  ctx.fillStyle = text;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = dark ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.15)';
+  ctx.shadowBlur = 2 * dpr;
+  ctx.fillText(label, boxX + boxW/2, boxY + boxH/2);
+  ctx.restore();
+}
+
   function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
     if(!canvas) return;
     const dpr=window.devicePixelRatio||1;
@@ -876,7 +933,11 @@ function setSparkDateLabels(containerSelector, binsInfo){
     ctx.strokeStyle='rgba(0,0,0,0.12)'; if(document.body.classList.contains('theme-dark')) ctx.strokeStyle='rgba(255,255,255,0.18)';
     ctx.lineWidth=1*dpr;
     ctx.beginPath(); ctx.moveTo(pad, canvas.height-pad); ctx.lineTo(canvas.width-pad, canvas.height-pad); ctx.stroke();
-    if(opts.type==='hour' && typeof opts.markerIndex==='number'){ drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:n}); }
+ if(opts.type==='hour' && typeof opts.markerIndex==='number'){
+  const hour = (8 + opts.markerIndex) % 24; // 8:00 起点
+  drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:n, label:String(hour)});
+}
+
     ctx.strokeStyle=color; ctx.lineWidth=2*dpr; ctx.beginPath();
     for(let i=0;i<n;i++){
       const v=values[i];
@@ -908,7 +969,11 @@ function setSparkDateLabels(containerSelector, binsInfo){
     const pad=6*dpr, step=(canvas.width-pad*2)/Math.max(1,(L-1)), baseY=canvas.height-pad, height=(canvas.height-pad*2);
     ctx.strokeStyle='rgba(0,0,0,0.12)'; if(document.body.classList.contains('theme-dark')) ctx.strokeStyle='rgba(255,255,255,0.18)';
     ctx.lineWidth=1*dpr; ctx.beginPath(); ctx.moveTo(pad,baseY); ctx.lineTo(canvas.width-pad,baseY); ctx.stroke();
-    if(opts.type==='hour' && typeof opts.markerIndex==='number'){ drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:L}); }
+if(opts.type==='hour' && typeof opts.markerIndex==='number'){
+  const hour = (8 + opts.markerIndex) % 24; // 8:00 起点
+  drawShiftMarker(ctx, canvas, {markerIndex:opts.markerIndex, count:n, label:String(hour)});
+}
+
     let accumPrev=Array(L).fill(0);
     seriesList.forEach((s,idx)=>{
       const topY=s.map((v,i)=> baseY - ((accumPrev[i]+v)/maxSum)*height);
