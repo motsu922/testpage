@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>異常履歴データシート（階層フィルタ版）</title>
+<title>異常履歴データシート（横並び部署＋単一展開パネル）</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f5f5f7;color:#1d1d1f}
@@ -28,21 +28,19 @@
   .date-quick-btn:hover{background:#f8f9ff}
   .date-quick-btn.active{background:#667eea;color:#fff}
 
-  /* 部署→ライン→整理No の階層フィルタ */
+  /* 部署横並び＋単一展開パネル */
   .dept-filter{background:#fff;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-  .dept-filter-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+  .dept-filter-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
   .dept-filter-title{font-size:1.1rem;font-weight:600;color:#667eea}
   .btn-tool{padding:8px 16px;border:1px solid #e0e0e0;background:#fff;border-radius:6px;cursor:pointer;font-weight:500;transition:.2s}
   .btn-tool:hover{border-color:#667eea;background:#f8f9ff}
 
-  .hier{display:flex;flex-direction:column;gap:12px}
-  .dept-group{border:1px solid #e6e8ef;border-radius:10px;padding:12px}
-  .dept-header{display:flex;gap:12px;align-items:center;flex-wrap:wrap; margin-bottom:10px}
-
+  .dept-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
   .btn-pill{
     position:relative; overflow:hidden;
     padding:14px 18px; border:2px solid #e0e0e0; background:#fff; border-radius:10px;
     cursor:pointer; font-size:1rem; font-weight:700; transition:.2s; text-align:center; color:#1d1d1f;
+    min-width:180px;
   }
   .btn-pill:hover{border-color:#667eea;background:#f8f9ff}
   .btn-pill.active{border-color:#667eea;background:#667eea;color:#fff}
@@ -53,11 +51,13 @@
   .btn-pill .title{text-align:center}
   .btn-pill .sub{font-size:.85rem; opacity:.8; margin-top:3px}
 
-  .line-panel, .serial-panel{display:none; padding:8px 4px 4px}
-  .line-panel.open, .serial-panel.open{display:block}
-
-  .lines-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px}
-  .serials-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px}
+  /* 展開パネル（選択した部署のみ） */
+  .expand-panel{margin-top:14px; border:1px solid #e6e8ef; border-radius:10px; display:none}
+  .expand-panel.open{display:block}
+  .panel-head{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; background:#f9fafb; border-bottom:1px solid #e6e8ef}
+  .panel-title{font-weight:700; color:#334155}
+  .lines-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; padding:12px}
+  .serials-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; padding:0 12px 12px}
 
   /* データシート */
   .datasheet-container{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08);overflow:hidden}
@@ -85,7 +85,7 @@
   .photo-btn:hover{background:#1976d2}
   .photo-btn:disabled{background:#ccc;cursor:not-allowed}
 
-  /* モーダル（省略…既存同等） */
+  /* モーダル（簡略） */
   .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#fff;border-radius:16px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
@@ -101,13 +101,14 @@
     .date-controls{flex-direction:column;align-items:stretch}
     .date-input-group{flex-direction:column}
     .date-quick-btn{width:100%}
+    .btn-pill{min-width:140px}
   }
 </style>
 </head>
 <body>
   <div class="header">
     <div class="header-content">
-      <h1>📊 異常履歴データシート（階層フィルタ）</h1>
+      <h1>📊 異常履歴データシート（横並び部署＋単一展開）</h1>
       <div class="header-actions">
         <button class="btn-header" id="btnSettings">⚙️ 表示設定</button>
         <button class="btn-header" id="btnExport">📥 CSV出力</button>
@@ -131,18 +132,33 @@
       </div>
     </div>
 
-    <!-- 階層フィルタ -->
+    <!-- 部署横並び -->
     <div class="dept-filter">
       <div class="dept-filter-header">
-        <div class="dept-filter-title">🏢 部署 → ライン → 整理No で絞り込み（複数選択可／クリックで展開）</div>
+        <div class="dept-filter-title">🏢 部署（横並び／複数選択可）</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button class="btn-tool" id="btnClearSerials">整理No解除</button>
-          <button class="btn-tool" id="btnClearLines">ライン解除</button>
           <button class="btn-tool" id="btnClearDept">部署解除</button>
-          <button class="btn-tool" id="btnCollapseAll">全部たたむ</button>
+          <button class="btn-tool" id="btnClearLines">ライン解除</button>
+          <button class="btn-tool" id="btnClearSerials">整理No解除</button>
         </div>
       </div>
-      <div class="hier" id="hierRoot"><!-- 動的生成 --></div>
+      <div id="deptBar" class="dept-bar"><!-- 動的生成 --></div>
+
+      <!-- 単一展開パネル（選択した部署のライン・整理Noを表示） -->
+      <div id="expandPanel" class="expand-panel">
+        <div class="panel-head">
+          <div class="panel-title" id="panelTitle">選択中の部署</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-tool" id="btnClosePanel">たたむ</button>
+          </div>
+        </div>
+        <div style="padding:8px 12px; color:#64748b;">ライン</div>
+        <div id="linesGrid" class="lines-grid"></div>
+        <div id="serialsHolder" style="display:none;">
+          <div style="padding:8px 12px; color:#64748b;">整理No</div>
+          <div id="serialsGrid" class="serials-grid"></div>
+        </div>
+      </div>
     </div>
 
     <!-- データシート -->
@@ -225,6 +241,11 @@
   const selectedLines   = new Set();                // "DEPT||LINE"
   const selectedSerials = new Set();                // "DEPT||LINE||SERIAL"
 
+  // 展開中フォーカス部署（単一表示）
+  let focusedDept = null;
+  // 展開中のライン（パネル内で整理Noを出すため）
+  let focusedLineKey = null;
+
   let currentSort = { column:null, direction:'asc' };
 
   // ====== ユーティリティ ======
@@ -287,7 +308,7 @@
     return arr;
   }
 
-  // スパークライン描画（B案：色指定）
+  // スパークライン（B案：色指定）
   function drawSparkline(canvas, values, color='rgba(66,133,244,0.65)', pointColor=color){
     if(!canvas) return;
     const dpr=window.devicePixelRatio||1;
@@ -393,11 +414,11 @@
         stopMinutes:stop
       };
     });
-    renderHierarchy();   // 部署→ライン→整理No
+    renderDeptBar();     // 横並び部署
     applyFilters();      // テーブル
   }
 
-  // ====== スパークライン用シリーズ構築 ======
+  // ====== スパークライン用シリーズ ======
   function buildSeriesMaps(data){
     const days=buildLastNDaysUTC(7);
     const ONE=86400000;
@@ -425,16 +446,13 @@
         if(idx==null) continue;
       }
 
-      // dept
       if(!deptSeries.has(dept)) deptSeries.set(dept, Array(days.length).fill(0));
       deptSeries.get(dept)[idx]+=1;
 
-      // line
       if(!lineSeries.has(dept)) lineSeries.set(dept,new Map());
       if(!lineSeries.get(dept).has(line)) lineSeries.get(dept).set(line, Array(days.length).fill(0));
       lineSeries.get(dept).get(line)[idx]+=1;
 
-      // serial
       if(!serialSeries.has(dept)) serialSeries.set(dept,new Map());
       if(!serialSeries.get(dept).has(line)) serialSeries.get(dept).set(line,new Map());
       if(!serialSeries.get(dept).get(line).has(ser)) serialSeries.get(dept).get(line).set(ser, Array(days.length).fill(0));
@@ -444,145 +462,62 @@
     return {days, deptSeries, lineSeries, serialSeries};
   }
 
-  // ====== 階層レンダリング ======
-  function renderHierarchy(){
-    const root=document.getElementById('hierRoot');
-    // スパークラインは全件ベース：必要なら filteredData に変える
-    // const base = filteredData; // ←日付フィルタ連動にするならこちらに切替
-    const base = allData;
+  // ====== 部署バー描画 ======
+  function renderDeptBar(){
+    const bar=document.getElementById('deptBar');
+    const base=allData; // スパークラインは全件ベース。期間連動は必要なら filteredData に切替。
 
     // 件数集計
-    const counts = new Map(); // dept -> {total, lines: Map(line -> {total, serials: Map(serial -> total)})}
+    const counts = new Map(); // dept -> total
     for(const it of base){
       const d=it.departmentNormalized||'未設定';
-      const l=it.lineNameNormalized||'未設定';
-      const s=it.serialNo||'未設定';
-      if(!counts.has(d)) counts.set(d,{total:0, lines:new Map()});
-      counts.get(d).total++;
-      if(!counts.get(d).lines.has(l)) counts.get(d).lines.set(l,{total:0, serials:new Map()});
-      counts.get(d).lines.get(l).total++;
-      const mp=counts.get(d).lines.get(l).serials;
-      mp.set(s,(mp.get(s)||0)+1);
+      counts.set(d,(counts.get(d)||0)+1);
     }
-
     const {deptSeries,lineSeries,serialSeries}=buildSeriesMaps(base);
     const depts=[...counts.keys()].sort();
 
-    // 部署グループごとにHTML生成
-    root.innerHTML = depts.map(dept=>{
-      const total=counts.get(dept).total;
+    bar.innerHTML = depts.map(dept=>{
+      const total=counts.get(dept);
       const activeClass = selectedDepts.has(dept)?'active':'';
-      // ライン層
-      const lines=[...counts.get(dept).lines.keys()].sort();
-      const lineHTML = lines.map(line=>{
-        const ltotal=counts.get(dept).lines.get(line).total;
-        const lk=`${dept}||${line}`;
-        const lactive=selectedLines.has(lk)?'active':'';
-        // 整理No層
-        const serials=[...counts.get(dept).lines.get(line).serials.keys()].sort();
-        const serialHTML = serials.map(sn=>{
-          const stotal=counts.get(dept).lines.get(line).serials.get(sn);
-          const sk=`${dept}||${line}||${sn}`;
-          const sactive=selectedSerials.has(sk)?'active':'';
-          return `
-            <div class="btn-pill ${sactive}" data-role="serial" data-dept="${dept}" data-line="${line}" data-serial="${sn}">
-              <canvas class="sparkline"></canvas>
-              <div class="title">${sn}</div>
-              <div class="sub">${stotal}件</div>
-            </div>`;
-        }).join('');
-        return `
-          <div class="line-block">
-            <div class="btn-pill ${lactive}" data-role="line" data-dept="${dept}" data-line="${line}">
-              <canvas class="sparkline"></canvas>
-              <div class="title">${line}</div>
-              <div class="sub">${ltotal}件</div>
-            </div>
-            <div class="serial-panel" data-owner="${dept}||${line}">
-              <div class="serials-grid">${serialHTML}</div>
-            </div>
-          </div>`;
-      }).join('');
-
       return `
-        <div class="dept-group">
-          <div class="dept-header">
-            <div class="btn-pill ${activeClass}" data-role="dept" data-dept="${dept}">
-              <canvas class="sparkline"></canvas>
-              <div class="title">${dept}</div>
-              <div class="sub">${total}件</div>
-            </div>
-          </div>
-          <div class="line-panel" data-owner="${dept}">
-            <div class="lines-grid">${lineHTML}</div>
-          </div>
+        <div class="btn-pill ${activeClass}" data-role="dept" data-dept="${dept}">
+          <canvas class="sparkline"></canvas>
+          <div class="title">${dept}</div>
+          <div class="sub">${total}件</div>
         </div>`;
     }).join('');
 
-    // イベント付与
-    bindHierarchyEvents({deptSeries,lineSeries,serialSeries});
-    // 初回スパークライン描画
-    drawAllSparklines({deptSeries,lineSeries,serialSeries});
-  }
-
-  function bindHierarchyEvents(seriesMaps){
-    const root=document.getElementById('hierRoot');
-
-    // 部署クリック：選択ON/OFF＆パネル開閉
-    root.querySelectorAll('[data-role="dept"]').forEach(btn=>{
+    // クリック：選択トグル＋パネル更新（フォーカス切替）
+    bar.querySelectorAll('[data-role="dept"]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const dept=btn.getAttribute('data-dept');
-        const panel=root.querySelector(`.line-panel[data-owner="${dept}"]`);
         const isActive=btn.classList.toggle('active');
         if(isActive) selectedDepts.add(dept); else selectedDepts.delete(dept);
-        // 展開トグル
-        panel.classList.toggle('open');
+
+        // フォーカス先を更新（最後に触った部署）
+        focusedDept = dept;
+        focusedLineKey = null;
+        renderExpandPanel(dept, {lineSeries, serialSeries});
         applyFilters();
-        redrawSparklinesForHierarchy(seriesMaps);
+        // スパークライン再描画（白線化）
+        drawDeptSparklines(deptSeries);
       });
     });
 
-    // ラインクリック：選択ON/OFF＆パネル開閉
-    root.querySelectorAll('[data-role="line"]').forEach(btn=>{
-      btn.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        const dept=btn.getAttribute('data-dept');
-        const line=btn.getAttribute('data-line');
-        const key =`${dept}||${line}`;
-        const panel=root.querySelector(`.serial-panel[data-owner="${key}"]`);
-        const isActive=btn.classList.toggle('active');
-        if(isActive) selectedLines.add(key); else selectedLines.delete(key);
-        panel.classList.toggle('open');
-        applyFilters();
-        redrawSparklinesForHierarchy(seriesMaps);
-      });
-    });
+    // 初回描画
+    drawDeptSparklines(deptSeries);
 
-    // 整理Noクリック：選択ON/OFF
-    root.querySelectorAll('[data-role="serial"]').forEach(btn=>{
-      btn.addEventListener('click',(e)=>{
-        e.stopPropagation();
-        const dept=btn.getAttribute('data-dept');
-        const line=btn.getAttribute('data-line');
-        const sn  =btn.getAttribute('data-serial');
-        const key =`${dept}||${line}||${sn}`;
-        const isActive=btn.classList.toggle('active');
-        if(isActive) selectedSerials.add(key); else selectedSerials.delete(key);
-        applyFilters();
-        redrawSparklinesForHierarchy(seriesMaps);
-      });
-    });
-
-    // ユーティリティボタン
-    document.getElementById('btnCollapseAll').addEventListener('click', ()=>{
-      root.querySelectorAll('.line-panel.open, .serial-panel.open').forEach(p=>p.classList.remove('open'));
-    });
+    // リサイズ時再描画
+    let timer=null;
+    window.addEventListener('resize', ()=>{
+      clearTimeout(timer);
+      timer=setTimeout(()=>{ drawDeptSparklines(deptSeries); drawPanelSparklines({lineSeries,serialSeries}); }, 150);
+    }, {passive:true});
   }
 
-  function drawAllSparklines({deptSeries,lineSeries,serialSeries}){
-    const root=document.getElementById('hierRoot');
-    // 部署
-    root.querySelectorAll('[data-role="dept"]').forEach(btn=>{
+  function drawDeptSparklines(deptSeries){
+    const bar=document.getElementById('deptBar');
+    bar.querySelectorAll('[data-role="dept"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const canvas=btn.querySelector('.sparkline');
       const vals=deptSeries.get(dept)||Array(7).fill(0);
@@ -591,8 +526,107 @@
         active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)',
         active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)');
     });
+  }
+
+  // ====== 展開パネル（ライン／整理No） ======
+  function renderExpandPanel(dept, seriesMaps){
+    const panel=document.getElementById('expandPanel');
+    const title=document.getElementById('panelTitle');
+    const linesGrid=document.getElementById('linesGrid');
+    const serialsHolder=document.getElementById('serialsHolder');
+    const serialsGrid=document.getElementById('serialsGrid');
+
+    title.textContent=`部署：${dept}`;
+    panel.classList.add('open');
+    serialsHolder.style.display='none';
+    serialsGrid.innerHTML='';
+
+    // ライン集計
+    const base=allData.filter(it=>(it.departmentNormalized||'未設定')===dept);
+    const lineCounts=new Map(); // line -> total
+    for(const it of base){
+      const l=it.lineNameNormalized||'未設定';
+      lineCounts.set(l,(lineCounts.get(l)||0)+1);
+    }
+    const lines=[...lineCounts.keys()].sort();
+
+    linesGrid.innerHTML = lines.map(line=>{
+      const total=lineCounts.get(line);
+      const key=`${dept}||${line}`;
+      const active=selectedLines.has(key)?'active':'';
+      return `
+        <div class="btn-pill ${active}" data-role="line" data-dept="${dept}" data-line="${line}">
+          <canvas class="sparkline"></canvas>
+          <div class="title">${line}</div>
+          <div class="sub">${total}件</div>
+        </div>`;
+    }).join('');
+
+    // ライン押下：選択トグル＋整理No描画
+    linesGrid.querySelectorAll('[data-role="line"]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const d=btn.getAttribute('data-dept');
+        const l=btn.getAttribute('data-line');
+        const key=`${d}||${l}`;
+        const isActive=btn.classList.toggle('active');
+        if(isActive) selectedLines.add(key); else selectedLines.delete(key);
+        focusedLineKey=isActive ? key : null;
+        renderSerials(d,l, seriesMaps);
+        applyFilters();
+        drawPanelSparklines(seriesMaps);
+        e.stopPropagation();
+      });
+    });
+
+    drawPanelSparklines(seriesMaps);
+  }
+
+  function renderSerials(dept, line, seriesMaps){
+    const serialsHolder=document.getElementById('serialsHolder');
+    const serialsGrid=document.getElementById('serialsGrid');
+    if(!dept || !line){ serialsHolder.style.display='none'; serialsGrid.innerHTML=''; return; }
+
+    const base=allData.filter(it=>(it.departmentNormalized||'未設定')===dept && (it.lineNameNormalized||'未設定')===line);
+    const serialCounts=new Map(); // serial -> total
+    for(const it of base){
+      const s=it.serialNo||'未設定';
+      serialCounts.set(s,(serialCounts.get(s)||0)+1);
+    }
+    const serials=[...serialCounts.keys()].sort();
+    serialsGrid.innerHTML = serials.map(sn=>{
+      const total=serialCounts.get(sn);
+      const sk=`${dept}||${line}||${sn}`;
+      const active=selectedSerials.has(sk)?'active':'';
+      return `
+        <div class="btn-pill ${active}" data-role="serial" data-dept="${dept}" data-line="${line}" data-serial="${sn}">
+          <canvas class="sparkline"></canvas>
+          <div class="title">${sn}</div>
+          <div class="sub">${total}件</div>
+        </div>`;
+    }).join('');
+
+    // クリックでトグル
+    serialsGrid.querySelectorAll('[data-role="serial"]').forEach(btn=>{
+      btn.addEventListener('click',(e)=>{
+        const d=btn.getAttribute('data-dept');
+        const l=btn.getAttribute('data-line');
+        const s=btn.getAttribute('data-serial');
+        const key=`${d}||${l}||${s}`;
+        const isActive=btn.classList.toggle('active');
+        if(isActive) selectedSerials.add(key); else selectedSerials.delete(key);
+        applyFilters();
+        drawPanelSparklines(seriesMaps);
+        e.stopPropagation();
+      });
+    });
+
+    serialsHolder.style.display='block';
+  }
+
+  function drawPanelSparklines({lineSeries, serialSeries}){
     // ライン
-    root.querySelectorAll('[data-role="line"]').forEach(btn=>{
+    const linesGrid=document.getElementById('linesGrid');
+    linesGrid.querySelectorAll('[data-role="line"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const line=btn.getAttribute('data-line');
       const canvas=btn.querySelector('.sparkline');
@@ -603,7 +637,8 @@
         active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)');
     });
     // 整理No
-    root.querySelectorAll('[data-role="serial"]').forEach(btn=>{
+    const serialsGrid=document.getElementById('serialsGrid');
+    serialsGrid.querySelectorAll('[data-role="serial"]').forEach(btn=>{
       const dept=btn.getAttribute('data-dept');
       const line=btn.getAttribute('data-line');
       const sn  =btn.getAttribute('data-serial');
@@ -614,18 +649,6 @@
         active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)',
         active?'rgba(255,255,255,0.95)':'rgba(66,133,244,0.65)');
     });
-
-    // リサイズ時は再描画
-    let timer=null;
-    window.addEventListener('resize', ()=>{
-      clearTimeout(timer);
-      timer=setTimeout(()=>drawAllSparklines({deptSeries,lineSeries,serialSeries}), 150);
-    }, {passive:true});
-  }
-
-  function redrawSparklinesForHierarchy(seriesMaps){
-    // アクティブ色切替のため再描画
-    drawAllSparklines(seriesMaps);
   }
 
   // ====== フィルタ適用（階層選択＋日付） ======
@@ -641,7 +664,6 @@
     }
 
     filteredData = allData.filter(it=>{
-      // 日付
       if((fromMs!==null || toMs!==null) && (it.occurrenceDateValue==null)) return false;
       if(fromMs!==null && it.occurrenceDateValue<fromMs) return false;
       if(toMs!==null   && it.occurrenceDateValue>toMs)   return false;
@@ -650,13 +672,10 @@
       const line=it.lineNameNormalized||'未設定';
       const sn  =it.serialNo||'未設定';
 
-      // 階層選択（深い選択がある場合はそれを優先）
       if(selectedSerials.size>0){
-        const key=`${dept}||${line}||${sn}`;
-        if(!selectedSerials.has(key)) return false;
+        if(!selectedSerials.has(`${dept}||${line}||${sn}`)) return false;
       }else if(selectedLines.size>0){
-        const key=`${dept}||${line}`;
-        if(!selectedLines.has(key)) return false;
+        if(!selectedLines.has(`${dept}||${line}`)) return false;
       }else if(selectedDepts.size>0){
         if(!selectedDepts.has(dept)) return false;
       }
@@ -852,15 +871,25 @@
   document.getElementById('dateTo').addEventListener('change',e=>{dateToStr=e.target.value||null; document.getElementById('btnYesterday').classList.remove('active'); document.getElementById('btnToday').classList.remove('active'); applyFilters();});
   document.getElementById('btnClearDate').addEventListener('click',()=>{dateFromStr=null; dateToStr=null; document.getElementById('dateFrom').value=''; document.getElementById('dateTo').value=''; document.getElementById('btnYesterday').classList.remove('active'); document.getElementById('btnToday').classList.remove('active'); applyFilters();});
 
-  // 階層解除
+  // 解除ボタン
   document.getElementById('btnClearDept').addEventListener('click',()=>{
-    selectedDepts.clear(); document.querySelectorAll('[data-role="dept"].active').forEach(b=>b.classList.remove('active')); applyFilters();
+    selectedDepts.clear(); document.querySelectorAll('#deptBar .btn-pill.active').forEach(b=>b.classList.remove('active'));
+    applyFilters();
   });
   document.getElementById('btnClearLines').addEventListener('click',()=>{
-    selectedLines.clear(); document.querySelectorAll('[data-role="line"].active').forEach(b=>b.classList.remove('active')); applyFilters();
+    selectedLines.clear(); document.querySelectorAll('#linesGrid .btn-pill.active').forEach(b=>b.classList.remove('active'));
+    applyFilters();
   });
   document.getElementById('btnClearSerials').addEventListener('click',()=>{
-    selectedSerials.clear(); document.querySelectorAll('[data-role="serial"].active').forEach(b=>b.classList.remove('active')); applyFilters();
+    selectedSerials.clear(); document.querySelectorAll('#serialsGrid .btn-pill.active').forEach(b=>b.classList.remove('active'));
+    applyFilters();
+  });
+  document.getElementById('btnClosePanel').addEventListener('click', ()=>{
+    focusedDept=null; focusedLineKey=null;
+    document.getElementById('expandPanel').classList.remove('open');
+    document.getElementById('linesGrid').innerHTML='';
+    document.getElementById('serialsGrid').innerHTML='';
+    document.getElementById('serialsHolder').style.display='none';
   });
 
   // リセット
@@ -870,6 +899,11 @@
     dateFromStr=null; dateToStr=null;
     document.getElementById('dateFrom').value=''; document.getElementById('dateTo').value='';
     document.getElementById('btnYesterday').classList.remove('active'); document.getElementById('btnToday').classList.remove('active');
+    focusedDept=null; focusedLineKey=null;
+    document.getElementById('expandPanel').classList.remove('open');
+    document.getElementById('linesGrid').innerHTML='';
+    document.getElementById('serialsGrid').innerHTML='';
+    document.getElementById('serialsHolder').style.display='none';
     applyFilters();
   });
   document.getElementById('btnResetSort').addEventListener('click',()=>{ currentSort={column:null,direction:'asc'}; renderTable(); });
