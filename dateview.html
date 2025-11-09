@@ -283,7 +283,43 @@ body.dark .btn-pill .spark-dates .spark-end{
 .btn-pill{ min-height: 92px; }
 
 
- 
+ /* ===== 詳細モーダルの拡張 ===== */
+.modal-header{
+  gap: 12px;
+}
+.modal-title{
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+}
+.modal-title .sn{
+  font-size: calc(1.6rem * var(--modal-font-scale)); /* ←標準より大きく */
+  font-weight: 800; letter-spacing: .02em; color: var(--ink);
+}
+
+/* バッジ */
+.badge{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:6px 10px; border-radius:999px; font-size:.85rem; font-weight:700; line-height:1;
+  border:1px solid var(--border); background:rgba(148,163,184,.12); color:var(--ink-2);
+}
+.badge .dot{width:8px; height:8px; border-radius:50%}
+.badge-muted{ background:rgba(148,163,184,.18); }
+.badge-info { background:rgba(59,130,246,.12); border-color:rgba(59,130,246,.35); color:#2563eb; }
+.badge-good { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.35); color:#059669; }
+.badge-warn { background:rgba(245,158,11,.14); border-color:rgba(245,158,11,.35); color:#b45309; }
+.badge-danger{ background:rgba(239,68,68,.14); border-color:rgba(239,68,68,.35); color:#dc2626; }
+
+.badge-info  .dot{ background:#3b82f6; }
+.badge-good  .dot{ background:#10b981; }
+.badge-warn  .dot{ background:#f59e0b; }
+.badge-danger .dot{ background:#ef4444; }
+
+/* テーブル用の小さめバッジ */
+.badge-compact{
+  padding: 4px 8px;
+  font-size: .78rem;
+}
+
+  
 </style>
 </head>
 <body>
@@ -588,6 +624,18 @@ body.dark .btn-pill .spark-dates .spark-end{
     if (it.createdAtValue    != null) return it.createdAtValue;
     return null;
   }
+
+  // 停止時間のバッジHTML（詳細/テーブル共通で使用）
+function buildStopBadge(sm, {compact=true} = {}){
+  let cls='badge-muted', lbl='停止時間: -';
+  if (typeof sm === 'number' && !Number.isNaN(sm)){
+    if (sm >= 60){ cls='badge-danger'; lbl=`${sm}分`; }
+    else if (sm >= 15){ cls='badge-warn'; lbl=`${sm}分`; }
+    else if (sm > 0){ cls='badge-good'; lbl=`${sm}分`; }
+    else { cls='badge-muted'; lbl='0分'; }
+  }
+  return `<span class="badge ${compact?'badge-compact':''} ${cls}"><span class="dot"></span>${lbl}</span>`;
+}
 
   /* ===== 列定義 ===== */
   const allColumns=[
@@ -1364,6 +1412,8 @@ function filterByDate(dataArr){
               const m=(item.mfgPhotoUrls||[]).length, t=(item.techPhotoUrls||[]).length;
               const total=m+t; v = total>0?`<button class="photo-btn" onclick="event.stopPropagation(); showPhotosOnly('${item._id}')">📷 ${total}枚</button>`:'-';
             }else if(col.id==='stopMinutes' && item.stopMinutes!=null){ v=`${item.stopMinutes}分`; }
+              else if (col.id==='stopMinutes'){ v = buildStopBadge(item.stopMinutes, {compact:true}); }
+
             else if(col.id==='anomalyContent'||col.id==='actionTaken'){ const s=v||''; v=(s.length>30?s.slice(0,30)+'...':s); }
             return `<td>${v}</td>`;
           }).join('')}
@@ -1416,51 +1466,59 @@ function filterByDate(dataArr){
   }
 
   /* ===== 詳細・写真 ===== */
-  function showDetail(id){
-    const item=allData.find(x=>x._id===id); if(!item) return;
-    const modal=document.getElementById('detailModal');
-    const title=document.getElementById('detailTitle');
-    const body =document.getElementById('detailBody');
-    title.textContent=`整理No: ${item.serialNo||'-'}`;
-    const mfg=item.mfgPhotoUrls||[], tech=item.techPhotoUrls||[];
-    body.innerHTML=`
-      <div class="detail-section"><div class="section-title">📋 基本情報</div>
-        <div class="detail-grid">
-          <div class="detail-item"><div class="detail-label">整理No</div><div class="detail-value">${item.serialNo||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">部署</div><div class="detail-value">${item.department||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">ライン</div><div class="detail-value">${item.lineName||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">発生日</div><div class="detail-value">${item.occurrenceDateISO || item.createdAtISO || '-'}</div></div>
-          <div class="detail-item"><div class="detail-label">発生時刻</div><div class="detail-value">${item.occurrenceTimeNorm||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">再開時刻</div><div class="detail-value">${item.restartTimeNorm||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">停止時間</div><div class="detail-value">${item.stopMinutes!=null?item.stopMinutes+'分':'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">処置者</div><div class="detail-value">${item.handler||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">状態</div><div class="detail-value">
-            <span class="status-badge ${item.status==='complete'?'status-complete':'status-pending'}">${item.status==='complete'?'完了':'技術入力待ち'}</span>
-          </div></div>
-        </div>
-      </div>
-      <div class="detail-section"><div class="section-title">🚨 異常内容</div><div class="detail-text-area">${item.anomalyContent||'-'}</div></div>
-      <div class="detail-section"><div class="section-title">🔧 対応内容</div><div class="detail-text-area">${item.actionTaken||'-'}</div></div>
-      ${mfg.length?`<div class="detail-section"><div class="section-title">📷 発信部署の写真（${mfg.length}枚）</div><div class="photo-grid">${mfg.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
-      ${tech.length?`<div class="detail-section"><div class="section-title">🔧 技術部門の写真（${tech.length}枚）</div><div class="photo-grid">${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
-    `;
-    modal.classList.add('active');
-  }
-  window.showPhotosOnly=function(id){
-    const it=allData.find(x=>x._id===id); if(!it) return;
-    const modal=document.getElementById('detailModal');
-    const title=document.getElementById('detailTitle');
-    const body =document.getElementById('detailBody');
-    title.textContent=`📷 写真 - 整理No: ${it.serialNo||'-'}`;
-    const mfg=it.mfgPhotoUrls||[], tech=it.techPhotoUrls||[];
-    body.innerHTML = `
-      ${mfg.length?`<div class="detail-section"><div class="section-title">📷 発信部署の写真（${mfg.length}枚）</div><div class="photo-grid">${mfg.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
-      ${tech.length?`<div class="detail-section"><div class="section-title">🔧 技術部門の写真（${tech.length}枚）</div><div class="photo-grid">${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
-      ${(!mfg.length&&!tech.length)?`<div class="empty-state"><div class="empty-icon">📷</div><p>写真がありません</p></div>`:''}
-    `;
-    modal.classList.add('active');
-  };
+function showDetail(id){
+  const item=allData.find(x=>x._id===id); if(!item) return;
 
+  // === 停止時間バッジ（しきい値はお好みで調整可）
+  const sm = (typeof item.stopMinutes==='number') ? item.stopMinutes : null;
+  let stopBadgeCls='badge-muted', stopBadgeLbl='停止時間: -';
+  if (sm!=null){
+    if (sm >= 60){ stopBadgeCls='badge-danger'; stopBadgeLbl=`停止時間: ${sm}分`; }
+    else if (sm >= 15){ stopBadgeCls='badge-warn'; stopBadgeLbl=`停止時間: ${sm}分`; }
+    else if (sm > 0){ stopBadgeCls='badge-good'; stopBadgeLbl=`停止時間: ${sm}分`; }
+    else { stopBadgeCls='badge-muted'; stopBadgeLbl='停止時間: 0分'; }
+  }
+
+  // === 新規/再発バッジ（項目の有無に合わせて柔軟に判断）
+  const recRaw = (item.recurrenceType ?? item.recurrence ?? (item.isRepeat ? '再発' : '新規')) || null;
+  const isRepeat = typeof recRaw==='string' ? /再発|repeat/i.test(recRaw) : !!recRaw;
+  const recBadgeCls = isRepeat ? 'badge-danger' : 'badge-info';
+  const recBadgeLbl = isRepeat ? '再発' : '新規';
+
+  const modal=document.getElementById('detailModal');
+  const title=document.getElementById('detailTitle');
+  const body =document.getElementById('detailBody');
+
+  // タイトルを大きい整理No＋バッジ群で表示
+  const snText = item.serialNo || '-';
+  title.innerHTML = `
+    <span class="sn">整理No: ${snText}</span>
+    <span class="badge ${stopBadgeCls}"><span class="dot"></span>${stopBadgeLbl}</span>
+    <span class="badge ${recBadgeCls}"><span class="dot"></span>${recBadgeLbl}</span>
+  `;
+
+  const mfg=item.mfgPhotoUrls||[], tech=item.techPhotoUrls||[];
+  body.innerHTML=`
+    <div class="detail-section"><div class="section-title">📋 基本情報</div>
+      <div class="detail-grid">
+        <div class="detail-item"><div class="detail-label">部署</div><div class="detail-value">${item.department||'-'}</div></div>
+        <div class="detail-item"><div class="detail-label">ライン</div><div class="detail-value">${item.lineName||'-'}</div></div>
+        <div class="detail-item"><div class="detail-label">発生日</div><div class="detail-value">${item.occurrenceDateISO || item.createdAtISO || '-'}</div></div>
+        <div class="detail-item"><div class="detail-label">発生時刻</div><div class="detail-value">${item.occurrenceTimeNorm||'-'}</div></div>
+        <div class="detail-item"><div class="detail-label">再開時刻</div><div class="detail-value">${item.restartTimeNorm||'-'}</div></div>
+        <div class="detail-item"><div class="detail-label">処置者</div><div class="detail-value">${item.handler||'-'}</div></div>
+        <div class="detail-item"><div class="detail-label">状態</div><div class="detail-value">
+          <span class="status-badge ${item.status==='complete'?'status-complete':'status-pending'}">${item.status==='complete'?'完了':'技術入力待ち'}</span>
+        </div></div>
+      </div>
+    </div>
+    <div class="detail-section"><div class="section-title">🚨 異常内容</div><div class="detail-text-area">${item.anomalyContent||'-'}</div></div>
+    <div class="detail-section"><div class="section-title">🔧 対応内容</div><div class="detail-text-area">${item.actionTaken||'-'}</div></div>
+    ${mfg.length?`<div class="detail-section"><div class="section-title">📷 発信部署の写真（${mfg.length}枚）</div><div class="photo-grid">${mfg.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
+    ${tech.length?`<div class="detail-section"><div class="section-title">🔧 技術部門の写真（${tech.length}枚）</div><div class="photo-grid">${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
+  `;
+  modal.classList.add('active');
+}
   /* ===== 表示項目＆サイズ設定 ===== */
   function loadSettings(){
     // 列
@@ -1608,6 +1666,13 @@ function filterByDate(dataArr){
   document.getElementById('btnCloseDetail').addEventListener('click',()=>document.getElementById('detailModal').classList.remove('active'));
   document.getElementById('btnExport').addEventListener('click', exportCSV);
   document.getElementById('displayCount').addEventListener('change', e=>{displayLimit=parseInt(e.target.value,10); saveDisplayLimit(); renderTable();});
+
+  // × 以外に、モーダルの背景（外側）クリックでも閉じる
+document.getElementById('detailModal').addEventListener('click', (e)=>{
+  if (e.target === e.currentTarget) {
+    e.currentTarget.classList.remove('active');
+  }
+});
 
   // 期間モード
   function setManualMode(mode){
