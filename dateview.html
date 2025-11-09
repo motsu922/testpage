@@ -612,43 +612,50 @@ function startOfDay(d){ const t=new Date(d); t.setHours(0,0,0,0); return t; }
 function endOfDay(d){ const t=new Date(d); t.setHours(23,59,59,999); return t; }
 function isWeekend(d){ const w=d.getDay(); return w===0 || w===6; }
 
+// 今日の件数／時
 function getDeptTodayRate(dept){
   const now = new Date();
-  const from = setHours(8,0,0,0).getTime();
-  const to   = now.getTime();
-  const hoursElapsed = Math.max(1, (to - from) / 3600000); // 最低1hで割る
-  let cnt = 0;
-  for(const it of allData){
-    if((it.departmentNormalized||'未設定')!==dept) continue;
-    const ms = getOccurrenceMsLocal(it);
-    if(ms==null) continue;
-    if(ms>=from && ms<=to) cnt++;
-  }
-  return cnt / hoursElapsed; // 件/時
+  const start = new Date(now);
+  start.setHours(8,0,0,0);             // 当日8:00
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);      // 翌日8:00
+  end.setHours(8,0,0,0);
+
+  const deptData = allData.filter(it=>{
+    const d = getOccurrenceMsLocal(it);
+    if(!d) return false;
+    return (it.departmentNormalized === dept && d >= start && d < end);
+  });
+
+  const hours = Math.max(1, (Math.min(now, end) - start) / (1000*60*60));  // 経過時間(時)
+  return deptData.length / hours;
 }
 
+// 平日30日平均（8〜翌8）
 function getDeptWeekday30hAvgRate(dept){
-  const today = startOfDay(new Date());
-  let days = 0, total = 0;
+  const now = new Date();
+  const to = new Date(now);
+  const from = new Date(now);
+  from.setDate(to.getDate() - 45); // 約45日間で平日30日抽出
+  const deptData = allData.filter(it=>{
+    const d = getOccurrenceMsLocal(it);
+    if(!d) return false;
+    if(d < from || d > to) return false;
+    const wd = new Date(d).getDay();
+    return (it.departmentNormalized === dept && wd !== 0 && wd !== 6);
+  });
 
-  for(let i=1;i<=45 && days<30;i++){ // 余裕を持って45日さかのぼり→平日のみ30日集計
-    const d = new Date(today); d.setDate(d.getDate()-i);
-    if(isWeekend(d)) continue;
-    const from = startOfDay(d).getTime();
-    const to   = endOfDay(d).getTime();
-    let c = 0;
-    for(const it of allData){
-      if((it.departmentNormalized||'未設定')!==dept) continue;
-      const ms = getOccurrenceMsLocal(it);
-      if(ms==null) continue;
-      if(ms>=from && ms<=to) c++;
-    }
-    total += c;
-    days++;
-  }
-  if(days===0) return 0;
-  // 1日=24時間として時間あたり平均へ換算
-  return (total / days) / 24;
+  const weekdayCount = new Set(
+    deptData.map(it=>{
+      const d = new Date(getOccurrenceMsLocal(it));
+      d.setHours(8,0,0,0);
+      return d.toISOString().slice(0,10);
+    })
+  ).size;
+
+  const days = Math.max(1, Math.min(weekdayCount, 30));
+  const hours = days * 24;
+  return deptData.length / hours;
 }
 
 function getDeptSparkColor(dept){
