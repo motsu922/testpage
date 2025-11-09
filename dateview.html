@@ -782,52 +782,87 @@ function renderDeptBar(){
   }
 
   function renderSerials(dept,line){
-    const serialsHolder=document.getElementById('serialsHolder');
-    const serialsGrid=document.getElementById('serialsGrid');
-    const selCounter = document.getElementById('selCounter');
-    if(!dept || !line){ serialsHolder.style.display='none'; serialsGrid.innerHTML=''; selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`; return; }
+  const serialsHolder=document.getElementById('serialsHolder');
+  const serialsGrid=document.getElementById('serialsGrid');
+  const selCounter = document.getElementById('selCounter');
 
-    const base=filterByDate(allData).filter(it=>(it.departmentNormalized||'未設定')===dept && (it.lineNameNormalized||'未設定')===line);
-    const serialCounts=new Map();
-    for(const it of base){
-      const s=it.serialNo||'未設定';
-      serialCounts.set(s,(serialCounts.get(s)||0)+1);
-    }
-    const serials=[...serialCounts.keys()].sort();
-
-    serialsGrid.innerHTML = serials.map(sn=>{
-      const total=serialCounts.get(sn);
-      const sk=`${dept}||${line}||${sn}`;
-      const active=selectedSerials.has(sk)?'active':'';
-      return `
-        <div class="btn-pill ${active}" data-role="serial" data-dept="${dept}" data-line="${line}" data-serial="${sn}">
-          <span class="ribbon">✓ 選択中</span>
-         <canvas class="sparkline"></canvas>
-<div class="spark-dates"><span class="spark-start"></span><span class="spark-end"></span></div>
-          <div class="title">${sn}</div>
-          <div class="sub">${total}件</div>
-        </div>`;
-    }).join('');
-
-    serialsGrid.querySelectorAll('[data-role="serial"]').forEach(btn=>{
-      btn.addEventListener('click',(e)=>{
-        const d=btn.getAttribute('data-dept');
-        const l=btn.getAttribute('data-line');
-        const s=btn.getAttribute('data-serial');
-        const key=`${d}||${l}||${s}`;
-        const isActive=btn.classList.toggle('active');
-        if(isActive) selectedSerials.add(key); else selectedSerials.delete(key);
-        applyFilters();
-        drawAllSparklines();
-        const selCounter = document.getElementById('selCounter');
-        selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`;
-        e.stopPropagation();
-      });
-    });
-
-    serialsHolder.style.display='block';
+  if(!dept || !line){
+    serialsHolder.style.display='none';
+    serialsGrid.innerHTML='';
     selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`;
+    return;
   }
+
+  // ★ 期間内＆同ラインのみを基データに
+  const base = filterByDate(allData).filter(
+    it => (it.departmentNormalized||'未設定')===dept && (it.lineNameNormalized||'未設定')===line
+  );
+
+  // 件数と合計停止時間を集計
+  const serialCount = new Map();   // sn -> 件数
+  const serialStop  = new Map();   // sn -> 合計停止時間(分)
+  for(const it of base){
+    const sn = it.serialNo || '未設定';
+    serialCount.set(sn, (serialCount.get(sn)||0) + 1);
+    const sm = typeof it.stopMinutes==='number' ? it.stopMinutes : 0;
+    serialStop.set(sn, (serialStop.get(sn)||0) + sm);
+  }
+
+  const serials = [...serialCount.keys()].sort();
+
+  // ★ 同ライン内ワースト3（合計停止時間で判定）
+  const top3 = [...serialStop.entries()]
+    .sort((a,b)=> b[1]-a[1])
+    .slice(0,3)
+    .map(([sn])=>sn);
+
+  serialsGrid.innerHTML = serials.map(sn=>{
+    const totalCnt = serialCount.get(sn) || 0;
+    const totalMin = serialStop.get(sn)  || 0;
+    const key = `${dept}||${line}||${sn}`;
+    const active = selectedSerials.has(key) ? 'active' : '';
+
+    // rank クラスを付与（ラインと同じ色付け）
+    const rankCls =
+      top3[0]===sn ? 'rank-1' :
+      top3[1]===sn ? 'rank-2' :
+      top3[2]===sn ? 'rank-3' : '';
+
+    return `
+      <div class="btn-pill ${active} ${rankCls}"
+           data-role="serial"
+           data-dept="${dept}"
+           data-line="${line}"
+           data-serial="${sn}"
+           title="合計停止時間: ${totalMin}分">
+        <span class="ribbon">✓ 選択中</span>
+        <canvas class="sparkline"></canvas>
+        <div class="spark-dates"><span class="spark-start"></span><span class="spark-end"></span></div>
+        <div class="title">${sn}</div>
+        <div class="sub">${totalCnt}件</div>
+      </div>`;
+  }).join('');
+
+  // クリックで選択トグル
+  serialsGrid.querySelectorAll('[data-role="serial"]').forEach(btn=>{
+    btn.addEventListener('click',(e)=>{
+      const d = btn.getAttribute('data-dept');
+      const l = btn.getAttribute('data-line');
+      const s = btn.getAttribute('data-serial');
+      const key = `${d}||${l}||${s}`;
+      const isActive = btn.classList.toggle('active');
+      if(isActive) selectedSerials.add(key); else selectedSerials.delete(key);
+      applyFilters();
+      drawAllSparklines();
+      selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`;
+      e.stopPropagation();
+    });
+  });
+
+  serialsHolder.style.display='block';
+  selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`;
+}
+
 // MM/DD 形式
 function fmtMD(ts){
   const d = new Date(ts);
