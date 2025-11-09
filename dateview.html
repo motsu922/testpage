@@ -626,35 +626,26 @@ body.dark .btn-pill .spark-dates .spark-end{
   }
 
   // 停止時間のバッジHTML（詳細/テーブル共通で使用）
+// 停止時間のバッジ（テーブル/詳細 共通）
 function buildStopBadge(sm, {compact=true} = {}){
-  let cls='badge-muted', lbl='停止時間: -';
-  if (typeof sm === 'number' && !Number.isNaN(sm)){
-    if (sm >= 60){ cls='badge-danger'; lbl=`${sm}分`; }
-    else if (sm >= 15){ cls='badge-warn'; lbl=`${sm}分`; }
-    else if (sm > 0){ cls='badge-good'; lbl=`${sm}分`; }
-    else { cls='badge-muted'; lbl='0分'; }
-  }
-  return `<span class="badge ${compact?'badge-compact':''} ${cls}"><span class="dot"></span>${lbl}</span>`;
-}
+  // 数値化（"15" → 15, null/""/undefined → NaN）
+  const n = (typeof sm === 'number') ? sm : Number.parseInt(sm, 10);
 
-  /* ===== 列定義 ===== */
-  const allColumns=[
-    {id:'serialNo',label:'整理No',sortable:true,filterable:true},
-    {id:'department',label:'部署',sortable:true,filterable:true},
-    {id:'lineName',label:'ライン',sortable:true,filterable:true},
-    {id:'occurrenceDate',label:'発生日',sortable:true,filterable:true},
-    {id:'occurrenceTime',label:'発生時刻',sortable:true,filterable:false},
-    {id:'restartTime',label:'再開時刻',sortable:true,filterable:false},
-    {id:'stopMinutes',label:'停止時間',sortable:true,filterable:false},
-    {id:'handler',label:'処置者',sortable:true,filterable:true},
-    {id:'techHandler',label:'技術処置者',sortable:true,filterable:true},
-    {id:'status',label:'状態',sortable:true,filterable:true},
-    {id:'photos',label:'写真',sortable:true,filterable:false},
-    {id:'anomalyContent',label:'異常内容',sortable:false,filterable:true},
-    {id:'actionTaken',label:'対応内容',sortable:false,filterable:true},
-  ];
-  let visibleColumns=['serialNo','department','lineName','occurrenceDate','occurrenceTime','stopMinutes','handler','photos','status'];
-  let displayLimit=25;
+  let cls = 'badge-muted';
+  let txt = '—';
+
+  if (!Number.isNaN(n)) {
+    txt = `${n}分`;
+    if (n >= 60) cls = 'badge-danger';
+    else if (n >= 15) cls = 'badge-warn';
+    else if (n > 0) cls = 'badge-good';
+    else cls = 'badge-muted';
+  }
+
+  return `<span class="badge ${compact ? 'badge-compact' : ''} ${cls}">
+            <span class="dot"></span>${txt}
+          </span>`;
+}
 // ===== 部署スパーク色：今日の時間あたり件数 vs 直近平日30日の平均（時間あたり） =====
 function startOfDay(d){ const t=new Date(d); t.setHours(0,0,0,0); return t; }
 function endOfDay(d){ const t=new Date(d); t.setHours(23,59,59,999); return t; }
@@ -1371,59 +1362,61 @@ function filterByDate(dataArr){
     drawAllSparklines();
   }
 
-  function renderTable(){
-    const thead=document.getElementById('tableHead');
-    const tbody=document.getElementById('tableBody');
-    const columns=allColumns.filter(c=>visibleColumns.includes(c.id));
+function renderTable(){
+  const thead=document.getElementById('tableHead');
+  const tbody=document.getElementById('tableBody');
+  const columns=allColumns.filter(c=>visibleColumns.includes(c.id));
 
-    thead.innerHTML = `<tr>${
-      columns.map(col=>`
-        <th class="${col.sortable?'sortable':''} ${currentSort.column===col.id?('sort-'+currentSort.direction):''}" data-column="${col.id}">
-          ${col.label}${col.filterable?'<span class="filter-icon">🔍</span>':''}
-        </th>`).join('')}</tr>`;
+  thead.innerHTML = `<tr>${
+    columns.map(col=>`
+      <th class="${col.sortable?'sortable':''} ${currentSort.column===col.id?('sort-'+currentSort.direction):''}" data-column="${col.id}">
+        ${col.label}${col.filterable?'<span class="filter-icon">🔍</span>':''}
+      </th>`).join('')}</tr>`;
 
-    thead.querySelectorAll('th.sortable').forEach(th=>{
-      th.addEventListener('click', ()=>{
-        const col=th.getAttribute('data-column');
-        if(currentSort.column===col) currentSort.direction = currentSort.direction==='asc'?'desc':'asc';
-        else { currentSort.column=col; currentSort.direction='asc'; }
-        applySorting();
-      });
+  thead.querySelectorAll('th.sortable').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const col=th.getAttribute('data-column');
+      if(currentSort.column===col) currentSort.direction = currentSort.direction==='asc'?'desc':'asc';
+      else { currentSort.column=col; currentSort.direction='asc'; }
+      applySorting();
     });
+  });
 
-    const display=(displayLimit && displayLimit>0)? filteredData.slice(0, displayLimit) : filteredData;
+  const display=(displayLimit && displayLimit>0)? filteredData.slice(0, displayLimit) : filteredData;
 
-    if(display.length===0){
-      tbody.innerHTML = `<tr><td colspan="${columns.length}">
-        <div class="empty-state"><div class="empty-icon">📭</div><p>データがありません</p></div></td></tr>`;
-    }else{
-      tbody.innerHTML = display.map(item=>`
-        <tr data-id="${item._id}">
-          ${columns.map(col=>{
-            let v=item[col.id]??'-';
-            if(col.id==='occurrenceDate') v=item.occurrenceDateISO || item.createdAtISO || '-';
-            else if(col.id==='occurrenceTime') v=item.occurrenceTimeNorm||'-';
-            else if(col.id==='restartTime') v=item.restartTimeNorm||'-';
-            else if(col.id==='status'){
-              const t=item.status==='complete'?'完了':'技術入力待ち';
-              const cls=item.status==='complete'?'status-complete':'status-pending';
-              v=`<span class="status-badge ${cls}">${t}</span>`;
-            }else if(col.id==='photos'){
-              const m=(item.mfgPhotoUrls||[]).length, t=(item.techPhotoUrls||[]).length;
-              const total=m+t; v = total>0?`<button class="photo-btn" onclick="event.stopPropagation(); showPhotosOnly('${item._id}')">📷 ${total}枚</button>`:'-';
-            }else if(col.id==='stopMinutes' && item.stopMinutes!=null){ v=`${item.stopMinutes}分`; }
-              else if (col.id==='stopMinutes'){ v = buildStopBadge(item.stopMinutes, {compact:true}); }
-
-            else if(col.id==='anomalyContent'||col.id==='actionTaken'){ const s=v||''; v=(s.length>30?s.slice(0,30)+'...':s); }
-            return `<td>${v}</td>`;
-          }).join('')}
-        </tr>`).join('');
-      tbody.querySelectorAll('tr').forEach(tr=>tr.addEventListener('click',()=>showDetail(tr.getAttribute('data-id'))));
-    }
-
-    document.getElementById('resultCount').textContent=display.length;
-    document.getElementById('totalCount').textContent=filteredData.length;
+  if(display.length===0){
+    tbody.innerHTML = `<tr><td colspan="${columns.length}">
+      <div class="empty-state"><div class="empty-icon">📭</div><p>データがありません</p></div></td></tr>`;
+  }else{
+    tbody.innerHTML = display.map(item=>`
+      <tr data-id="${item._id}">
+        ${columns.map(col=>{
+          let v=item[col.id]??'-';
+          if(col.id==='occurrenceDate') v=item.occurrenceDateISO || item.createdAtISO || '-';
+          else if(col.id==='occurrenceTime') v=item.occurrenceTimeNorm||'-';
+          else if(col.id==='restartTime') v=item.restartTimeNorm||'-';
+          else if(col.id==='status'){
+            const t=item.status==='complete'?'完了':'技術入力待ち';
+            const cls=item.status==='complete'?'status-complete':'status-pending';
+            v=`<span class="status-badge ${cls}">${t}</span>`;
+          }else if(col.id==='photos'){
+            const m=(item.mfgPhotoUrls||[]).length, t=(item.techPhotoUrls||[]).length;
+            const total=m+t; v = total>0?`<button class="photo-btn" onclick="event.stopPropagation(); showPhotosOnly('${item._id}')">📷 ${total}枚</button>`:'-';
+          }else if(col.id==='stopMinutes'){
+            // ← ここをバッジ表示のみに統一
+            v = buildStopBadge(item.stopMinutes, {compact:true});
+          }else if(col.id==='anomalyContent'||col.id==='actionTaken'){
+            const s=v||''; v=(s.length>30?s.slice(0,30)+'...':s);
+          }
+          return `<td>${v}</td>`;
+        }).join('')}
+      </tr>`).join('');
+    tbody.querySelectorAll('tr').forEach(tr=>tr.addEventListener('click',()=>showDetail(tr.getAttribute('data-id'))));
   }
+
+  document.getElementById('resultCount').textContent=display.length;
+  document.getElementById('totalCount').textContent=filteredData.length;
+}
 
   function applySorting(){
     const col=currentSort.column, dir=currentSort.direction;
