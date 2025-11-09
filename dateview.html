@@ -857,39 +857,51 @@ bar.querySelectorAll('[data-role="dept"]').forEach(btn=>{
     const dept = btn.getAttribute('data-dept');
     const isActive = btn.classList.toggle('active');
 
-    // ▼ 部署セットの更新
     if (isActive) {
       selectedDepts.add(dept);
       focusedDept = dept;
+      // 部署を選択した場合は、その部署の展開パネルを表示
+      renderExpandPanel(dept);
     } else {
       selectedDepts.delete(dept);
       if (focusedDept === dept) focusedDept = null;
+      
+      // ★ 修正：解除した部署に属するライン・整理Noだけをクリア
+      const toRemoveLines = new Set();
+      const toRemoveSerials = new Set();
+      
+      selectedLines.forEach(key => {
+        if (key.startsWith(`${dept}||`)) toRemoveLines.add(key);
+      });
+      selectedSerials.forEach(key => {
+        if (key.startsWith(`${dept}||`)) toRemoveSerials.add(key);
+      });
+      
+      toRemoveLines.forEach(key => selectedLines.delete(key));
+      toRemoveSerials.forEach(key => selectedSerials.delete(key));
+      
+      // 展開パネルを閉じる
+      if (selectedDepts.size === 0) {
+        const panel = document.getElementById('expandPanel');
+        panel.classList.remove('open');
+        document.getElementById('linesGrid').innerHTML = '';
+        document.getElementById('serialsGrid').innerHTML = '';
+        document.getElementById('serialsHolder').style.display = 'none';
+      } else {
+        // 他の選択中部署がある場合は最後の部署を表示
+        const lastDept = [...selectedDepts].pop();
+        focusedDept = lastDept;
+        renderExpandPanel(lastDept);
+      }
     }
 
-    // ★ 重要：部署の選択が変わったら配下選択を必ずクリア（過去選択が残ってANDで詰むのを防止）
-    selectedLines.clear();
-    selectedSerials.clear();
-
-    // 展開パネルも初期化してから、必要なら再描画
-    const panel        = document.getElementById('expandPanel');
-    const linesGrid    = document.getElementById('linesGrid');
-    const serialsGrid  = document.getElementById('serialsGrid');
-    const serialsHolder= document.getElementById('serialsHolder');
-    const selCounter   = document.getElementById('selCounter');
-
-    panel.classList.remove('open');
-    linesGrid.innerHTML = '';
-    serialsGrid.innerHTML = '';
-    serialsHolder.style.display = 'none';
-    if (selCounter) selCounter.textContent = '';
-
-    // 選択状態に応じて展開パネル再描画
-    if (isActive) {
-      renderExpandPanel(dept);
-      applyWorst3LineRanks?.(dept); // あれば実行
+    // 選択カウンター更新
+    const selCounter = document.getElementById('selCounter');
+    if (selCounter) {
+      selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`;
     }
 
-    // 件数・テーブル・スパーク更新
+    // フィルタとスパーク更新
     applyFilters();
     drawAllSparklines();
   });
