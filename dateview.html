@@ -667,47 +667,52 @@ body.dark .btn-pill .spark-dates .spark-end{
   }
 
   /* ===== 部署バー ===== */
-  function renderDeptBar(){
-    const bar=document.getElementById('deptBar');
-    const counts = new Map();
-    for(const it of allData){
-      const d=it.departmentNormalized||'未設定';
-      counts.set(d,(counts.get(d)||0)+1);
-    }
-    const depts=[...counts.keys()].sort();
-    bar.innerHTML = depts.map(dept=>{
-      const total=counts.get(dept);
-      const activeClass = selectedDepts.has(dept)?'active':'';
-      return `
-        <div class="btn-pill ${activeClass}" data-role="dept" data-dept="${dept}" title="${dept}">
-          <span class="ribbon">✓ 選択中</span>
-           <canvas class="sparkline"></canvas>
- <div class="spark-dates"><span class="spark-start"></span><span class="spark-end"></span></div>
-          <div class="title">${dept}</div>
-          <div class="sub">${total}件</div>
-        </div>`;
-    }).join('');
+function renderDeptBar(){
+  const bar=document.getElementById('deptBar');
 
-    bar.querySelectorAll('[data-role="dept"]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const dept=btn.getAttribute('data-dept');
-        const isActive=btn.classList.toggle('active');
-        if(isActive) selectedDepts.add(dept); else selectedDepts.delete(dept);
-        focusedDept = dept;
-        renderExpandPanel(dept);
-        applyFilters();
-        drawAllSparklines();
-       applyWorst3LineRanks(dept);
-      });
-    });
+  // ★ ここを allData -> periodData に
+  const periodData = filterByDate(allData);
 
-    drawAllSparklines();
-    let timer=null;
-    window.addEventListener('resize', ()=>{
-      clearTimeout(timer);
-      timer=setTimeout(()=>{ drawAllSparklines(); }, 150);
-    }, {passive:true});
+  const counts = new Map();
+  for(const it of periodData){
+    const d=it.departmentNormalized||'未設定';
+    counts.set(d,(counts.get(d)||0)+1);
   }
+  const depts=[...counts.keys()].sort();
+
+  bar.innerHTML = depts.map(dept=>{
+    const total=counts.get(dept);
+    const activeClass = selectedDepts.has(dept)?'active':'';
+    return `
+      <div class="btn-pill ${activeClass}" data-role="dept" data-dept="${dept}" title="${dept}">
+        <span class="ribbon">✓ 選択中</span>
+        <canvas class="sparkline"></canvas>
+        <div class="spark-dates"><span class="spark-start"></span><span class="spark-end"></span></div>
+        <div class="title">${dept}</div>
+        <div class="sub">${total}件</div>
+      </div>`;
+  }).join('');
+
+  bar.querySelectorAll('[data-role="dept"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const dept=btn.getAttribute('data-dept');
+      const isActive=btn.classList.toggle('active');
+      if(isActive) selectedDepts.add(dept); else selectedDepts.delete(dept);
+      focusedDept = dept;
+      renderExpandPanel(dept);  // ← 展開パネルも期間内データで描画されるよう次の修正とセット
+      applyFilters();
+      drawAllSparklines();
+      applyWorst3LineRanks(dept);
+    });
+  });
+
+  drawAllSparklines();
+  let timer=null;
+  window.addEventListener('resize', ()=>{
+    clearTimeout(timer);
+    timer=setTimeout(()=>{ drawAllSparklines(); }, 150);
+  }, {passive:true});
+}
 
   /* ===== 展開パネル（ライン：ワースト色分け） ===== */
   function renderExpandPanel(dept){
@@ -725,7 +730,7 @@ body.dark .btn-pill .spark-dates .spark-end{
     serialsHolder.style.display='none'; serialsGrid.innerHTML='';
 
     // ラインごとの件数と合計停止時間
-    const base=allData.filter(it=>(it.departmentNormalized||'未設定')===dept);
+    const base=filterByDate(allData).filter(it=>(it.departmentNormalized||'未設定')===dept);
     const lineCount=new Map();
     const lineStop =new Map();
     for(const it of base){
@@ -782,7 +787,7 @@ body.dark .btn-pill .spark-dates .spark-end{
     const selCounter = document.getElementById('selCounter');
     if(!dept || !line){ serialsHolder.style.display='none'; serialsGrid.innerHTML=''; selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`; return; }
 
-    const base=allData.filter(it=>(it.departmentNormalized||'未設定')===dept && (it.lineNameNormalized||'未設定')===line);
+    const base=filterByDate(allData).filter(it=>(it.departmentNormalized||'未設定')===dept && (it.lineNameNormalized||'未設定')===line);
     const serialCounts=new Map();
     for(const it of base){
       const s=it.serialNo||'未設定';
@@ -919,7 +924,10 @@ function setSparkDateLabels(containerSelector, binsInfo){
     ctx.strokeStyle='rgba(0,0,0,0.18)'; if(document.body.classList.contains('theme-dark')) ctx.strokeStyle='rgba(255,255,255,0.24)';
     ctx.lineWidth=1*dpr; ctx.stroke();
   }
-
+function refreshPillsForDate(){
+  renderDeptBar();                 // 部署ボタン再生成（選択状態は Set で保持される）
+  if(focusedDept) renderExpandPanel(focusedDept);  // 展開中なら中身も更新
+}
   function buildBins(){
     if(autoRangeActive && dateFromStr && dateToStr){
       const to   = new Date(`${dateToStr}T23:59:59.999`).getTime();
@@ -1065,6 +1073,25 @@ setSparkDateLabels('#linesGrid', binsInfo);
 setSparkDateLabels('#serialsGrid', binsInfo);
 
   }
+// 現在の dateFromStr/dateToStr を使って、与えられた配列を日付だけで絞り込む
+function filterByDate(dataArr){
+  let fromMs=null, toMs=null;
+  if(dateFromStr && /^\d{4}-\d{2}-\d{2}$/.test(dateFromStr)){
+    fromMs = new Date(`${dateFromStr}T00:00:00`).getTime();
+  }
+  if(dateToStr && /^\d{4}-\d{2}-\d{2}$/.test(dateToStr)){
+    toMs = new Date(`${dateToStr}T23:59:59.999`).getTime();
+  }
+  if(fromMs===null && toMs===null) return dataArr;
+
+  return dataArr.filter(it=>{
+    const occMs = getOccurrenceMsLocal(it);
+    if(occMs==null) return false;
+    if(fromMs!==null && occMs<fromMs) return false;
+    if(toMs!==null   && occMs>toMs)   return false;
+    return true;
+  });
+}
 
   /* ===== フィルタ → テーブル ===== */
 
@@ -1419,6 +1446,7 @@ setSparkDateLabels('#serialsGrid', binsInfo);
     document.getElementById('dateFrom').value=y; document.getElementById('dateTo').value=y;
     document.getElementById('btnYesterday').classList.add('active'); document.getElementById('btnToday').classList.remove('active');
     autoRangeActive=true; drawAllSparklines();
+    refreshPillsForDate();            // ★ 追加
     applyFilters();
   });
   document.getElementById('btnToday').addEventListener('click',()=>{
@@ -1426,6 +1454,7 @@ setSparkDateLabels('#serialsGrid', binsInfo);
     document.getElementById('dateFrom').value=t; document.getElementById('dateTo').value=t;
     document.getElementById('btnToday').classList.add('active'); document.getElementById('btnYesterday').classList.remove('active');
     autoRangeActive=true; drawAllSparklines();
+    refreshPillsForDate();            // ★ 追加
     applyFilters();
   });
 
@@ -1439,6 +1468,7 @@ setSparkDateLabels('#serialsGrid', binsInfo);
 
     if(f || t){ autoRangeActive=true; } else { autoRangeActive=false; sparkMode=lastManualSparkMode; }
     drawAllSparklines();
+    refreshPillsForDate();  
     applyFilters();
   }
   document.getElementById('dateFrom').addEventListener('change', onDateChange);
@@ -1450,6 +1480,7 @@ setSparkDateLabels('#serialsGrid', binsInfo);
     document.getElementById('btnYesterday').classList.remove('active'); document.getElementById('btnToday').classList.remove('active');
     autoRangeActive=false; sparkMode=lastManualSparkMode;
     drawAllSparklines();
+    refreshPillsForDate();   
     applyFilters();
   });
 
@@ -1476,6 +1507,7 @@ setSparkDateLabels('#serialsGrid', binsInfo);
     autoRangeActive=false; sparkMode=lastManualSparkMode||'7d';
     const selCounter = document.getElementById('selCounter'); if(selCounter) selCounter.textContent='';
     drawAllSparklines();
+    refreshPillsForDate();  
     applyFilters();
   });
   document.getElementById('btnResetSort').addEventListener('click',()=>{ currentSort={column:null,direction:'asc'}; renderTable(); });
