@@ -1176,82 +1176,7 @@ document.addEventListener('click', (e)=>{
     '技術対応内容':'rootCauseAction','再発新規':'recurrenceType','対策状況':'measureStatus',
     '暫定':'affirmation','状態':'_statusText','停止時間(分)':'_stopMin','_id':'_id'
   };
-
-// 日付正規化関数を追加（CSVインポート前に配置）
-function normalizeDate(dateStr) {
-  if (!dateStr) return '';
-  const str = dateStr.toString().trim();
   
-  // 既に YYYY-MM-DD 形式の場合はそのまま
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  
-  // YYYY/MM/DD 形式を変換
-  if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(str)) {
-    const [y, m, d] = str.split('/');
-    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-  }
-  
-  // MM/DD/YYYY 形式を変換
-  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
-    const [m, d, y] = str.split('/');
-    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-  }
-  
-  // DD/MM/YYYY 形式（ヨーロッパ式）は判別困難だが一応対応
-  // Excel日付シリアル値（数値のみ）の場合
-  if (/^\d+$/.test(str)) {
-    const serial = parseInt(str, 10);
-    // Excel基準日: 1900年1月1日（シリアル値1 = 1900/1/1）
-    // ※ Excelのバグで1900年をうるう年扱いするため、60日以降は-1
-    const baseDate = new Date(1900, 0, serial > 59 ? serial - 1 : serial);
-    const y = baseDate.getFullYear();
-    const m = String(baseDate.getMonth() + 1).padStart(2, '0');
-    const d = String(baseDate.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  
-  // Date型として解釈を試みる
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime())) {
-    const y = parsed.getFullYear();
-    const m = String(parsed.getMonth() + 1).padStart(2, '0');
-    const d = String(parsed.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  
-  // どれにも該当しない場合は元の値を返す（エラーチェックで引っかかる）
-  return str;
-}
-
-function normalizeTime(timeStr) {
-  if (!timeStr) return '';
-  const str = timeStr.toString().trim();
-  
-  // 既に HH:MM 形式の場合はそのまま
-  if (/^\d{1,2}:\d{2}$/.test(str)) {
-    const [h, m] = str.split(':');
-    return `${h.padStart(2,'0')}:${m}`;
-  }
-  
-  // H:MM 形式（1桁時間）
-  if (/^\d:\d{2}$/.test(str)) {
-    const [h, m] = str.split(':');
-    return `${h.padStart(2,'0')}:${m}`;
-  }
-  
-  // Excel時刻シリアル値（0.0 ～ 1.0）の場合
-  if (/^0\.\d+$/.test(str)) {
-    const decimal = parseFloat(str);
-    const totalMinutes = Math.round(decimal * 24 * 60);
-    const h = Math.floor(totalMinutes / 60);
-    const m = totalMinutes % 60;
-    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-  }
-  
-  return str;
-}
-
- 
 /* CSVインポート */
   function parseCSVLoose(text){
     const rows=[]; let cur=''; let row=[]; let inQuotes=false;
@@ -1352,233 +1277,167 @@ const rows = anomalyCache.map(item=>{
     }
   });
 
-document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
-  const f = e.target.files?.[0]; if (!f) return;
-  const text = await f.text();
-  const rows = parseCSVLoose(text);
-  if (!rows.length){ 
-    document.getElementById('importPreview').innerHTML = '<span style="color:#c62828;">CSVが空です。</span>'; 
-    return; 
-  }
-  
-  const headers = rows[0];
-  
-  // ★ 必須ヘッダチェックを削除（どんなヘッダでもOK）
-  
-  const mapIdx = headers.map(h => HEADER_MAP[h] || null);
-  const dataRows = rows.slice(1).filter(r => r.some(c => (c??'').toString().trim() !== ''));
-  
-  const mappedRows = dataRows.map(r => {
-    const obj={};
-    mapIdx.forEach((key, i)=>{
-      if (!key) return;
-      obj[key] = (r[i]??'').toString().trim();
+  document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
+    const f = e.target.files?.[0]; if (!f) return;
+    const text = await f.text();
+    const rows = parseCSVLoose(text);
+    if (!rows.length){ document.getElementById('importPreview').innerHTML = '<span style="color:#c62828;">CSVが空です。</span>'; return; }
+    const headers = rows[0];
+    const miss = REQUIRED_HEADERS.filter(h => !headers.includes(h));
+    if (miss.length){
+      document.getElementById('importPreview').innerHTML =
+        `<div style="color:#c62828;">必須ヘッダが不足しています: ${miss.join(', ')}</div>`;
+      importParsed = null; return;
+    }
+
+    const mapIdx = headers.map(h => HEADER_MAP[h] || null);
+    const dataRows = rows.slice(1).filter(r => r.some(c => (c??'').toString().trim() !== ''));
+    const mappedRows = dataRows.map(r => {
+      const obj={};
+      mapIdx.forEach((key, i)=>{
+        if (!key) return;
+        obj[key] = (r[i]??'').toString().trim();
+      });
+      obj.techRequest = normalizeTechRequest(obj.techRequest);
+      if (obj._statusText){ obj.status = normalizeStatus(obj._statusText); delete obj._statusText; }
+      return obj;
     });
-    
-    // 日付・時刻の正規化を適用
-    if (obj.occurrenceDate) obj.occurrenceDate = normalizeDate(obj.occurrenceDate);
-    if (obj.occurrenceTime) obj.occurrenceTime = normalizeTime(obj.occurrenceTime);
-    if (obj.restartTime) obj.restartTime = normalizeTime(obj.restartTime);
-    
-    obj.techRequest = normalizeTechRequest(obj.techRequest);
-    if (obj._statusText){ 
-      obj.status = normalizeStatus(obj._statusText); 
-      delete obj._statusText; 
-    }
-    return obj;
-  });
 
-  const errors=[];
-  const warnings=[]; // ★ 警告用の配列を追加
-  
-  mappedRows.forEach((o, i)=>{
-    const rowNo = i+2;
-    
-    // ★ 必須チェックを警告に変更（エラーではなく警告として表示）
-    const missingFields = [];
-    if (!o.serialNo?.trim()) missingFields.push('整理No');
-    if (!o.department?.trim()) missingFields.push('部署');
-    if (!o.occurrenceDate?.trim()) missingFields.push('発生日');
-    if (!o.anomalyContent?.trim()) missingFields.push('異常内容');
-    if (!o.actionTaken?.trim()) missingFields.push('対応内容');
-    
-    if (missingFields.length > 0) {
-      warnings.push(`Row ${rowNo}: 推奨フィールドが空です [${missingFields.join(', ')}]`);
-    }
-    
-    // ★ 形式チェックのみエラーとして残す（データが入っている場合のみ）
-    if (o.occurrenceDate && !/^\d{4}-\d{2}-\d{2}$/.test(o.occurrenceDate)) { 
-      errors.push(`Row ${rowNo}: 発生日の形式が不正です（現在: ${o.occurrenceDate}）`); 
-    }
-    if (o.occurrenceTime && !/^\d{1,2}:\d{2}$/.test(o.occurrenceTime)) { 
-      errors.push(`Row ${rowNo}: 発生時刻の形式が不正です（現在: ${o.occurrenceTime}）`); 
-    }
-    if (o.restartTime && !/^\d{1,2}:\d{2}$/.test(o.restartTime)) { 
-      errors.push(`Row ${rowNo}: 再開時刻の形式が不正です（現在: ${o.restartTime}）`); 
-    }
-  });
+    const errors=[];
+    mappedRows.forEach((o, i)=>{
+      const rowNo = i+2;
+      ['serialNo','department','occurrenceDate','anomalyContent','actionTaken'].forEach(k=>{
+        if (!o[k] || !o[k].toString().trim()){ errors.push(`Row ${rowNo}: 必須「${k}」が空`); }
+      });
+      if (o.occurrenceTime && !/^\d{1,2}:\d{2}$/.test(o.occurrenceTime)){ errors.push(`Row ${rowNo}: 発生時刻はHH:MM`); }
+      if (o.restartTime && !/^\d{1,2}:\d{2}$/.test(o.restartTime)){ errors.push(`Row ${rowNo}: 再開時刻はHH:MM`); }
+    });
 
-  const previewCount = Math.min(5, mappedRows.length);
-  const sample = mappedRows.slice(0, previewCount).map(o => ({
-    整理No:o.serialNo||'(空)', 
-    部署:o.department||'(空)', 
-    発生日:o.occurrenceDate||'(空)',
-    異常内容:(o.anomalyContent||'-').slice(0,20)+(o.anomalyContent?.length>20?'...':''),
-    対応内容:(o.actionTaken||'-').slice(0,20)+(o.actionTaken?.length>20?'...':''), 
-    _id:o._id||''
-  }));
-
-  const previewEl = document.getElementById('importPreview');
-  previewEl.innerHTML = `
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
-      <div>総行数: <strong>${mappedRows.length}</strong></div>
-      <div>形式エラー: <strong style="color:${errors.length?'#d32f2f':'#2e7d32'};">${errors.length}</strong></div>
-      <div>警告: <strong style="color:${warnings.length?'#f57c00':'#2e7d32'};">${warnings.length}</strong></div>
-    </div>
-    <div style="overflow:auto;max-height:220px;border:1px solid #eee;border-radius:6px;">
-      <table style="width:100%;border-collapse:collapse;">
-        <thead><tr>
-          <th style="background:#667eea;color:#fff;padding:6px;">整理No</th>
-          <th style="background:#667eea;color:#fff;padding:6px;">部署</th>
-          <th style="background:#667eea;color:#fff;padding:6px;">発生日</th>
-          <th style="background:#667eea;color:#fff;padding:6px;">異常内容</th>
-          <th style="background:#667eea;color:#fff;padding:6px;">対応内容</th>
-          <th style="background:#667eea;color:#fff;padding:6px;">_id</th>
-        </tr></thead>
-        <tbody>
-          ${sample.map(r=>`
-            <tr>
-              <td style="border-bottom:1px solid #eee;padding:6px;">${r.整理No}</td>
-              <td style="border-bottom:1px solid #eee;padding:6px;">${r.部署}</td>
-              <td style="border-bottom:1px solid #eee;padding:6px;">${r.発生日}</td>
-              <td style="border-bottom:1px solid #eee;padding:6px;">${r.異常内容}</td>
-              <td style="border-bottom:1px solid #eee;padding:6px;">${r.対応内容}</td>
-              <td style="border-bottom:1px solid #eee;padding:6px;">${r._id}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-    <div style="margin-top:8px;color:#666;font-size:.9rem;">
-      ※ プレビューは先頭${previewCount}件のみ表示。形式エラーが0であればインポート可能です。
-    </div>
-    ${warnings.length ? `
-      <div style="margin-top:8px;color:#f57c00;font-size:.9rem;background:#fff4e6;padding:10px;border-radius:6px;">
-        <strong>⚠️ 警告（${warnings.length}件）</strong><br>
-        ${warnings.slice(0,5).map(w=>`・${w}`).join('<br>')}
-        ${warnings.length>5?'<br>...他 '+(warnings.length-5)+'件':''}
-        <div style="margin-top:8px;font-size:.85rem;">※ 警告があってもインポートは可能です</div>
-      </div>
-    ` : ''}
-    ${errors.length ? `
-      <div style="margin-top:8px;color:#d32f2f;font-size:.9rem;background:#ffebee;padding:10px;border-radius:6px;">
-        <strong>❌ 形式エラー（${errors.length}件）</strong><br>
-        ${errors.slice(0,5).map(e=>`・${e}`).join('<br>')}
-        ${errors.length>5?'<br>...他 '+(errors.length-5)+'件':''}
-      </div>
-    ` : ''}
-  `;
-  importParsed = { headers, rows:dataRows, mappedRows, errors, warnings };
-});
-
-document.getElementById('btnImportStart').addEventListener('click', async ()=>{
-  if (!importParsed){ alert('CSVを選択してください'); return; }
-  
-  // ★ 形式エラーのみをチェック（警告は無視）
-  if (importParsed.errors.length){ 
-    if (!confirm(`形式エラーが${importParsed.errors.length}件あります。\n\nこのままインポートを続行しますか？\n（エラー行はスキップされる可能性があります）`)) {
-      return;
-    }
-  }
-  
-  // 警告がある場合は確認
-  if (importParsed.warnings && importParsed.warnings.length > 0) {
-    if (!confirm(`推奨フィールドが空の行が${importParsed.warnings.length}件あります。\n\nこのままインポートを続行しますか？`)) {
-      return;
-    }
-  }
-  
-  const dryRun = document.getElementById('dryRun').checked;
-  const dupPolicy = document.getElementById('dupPolicy').value;
-  const useCreatedAtNow = document.getElementById('useCreatedAtNow').checked;
-
-  const cacheIdx = buildCacheIndex();
-  let ok=0, skip=0, upd=0, ng=0;
-  const problems=[];
-
-  // バッチ処理で効率化
-  const batchSize = 10;
-  for (let i=0; i<importParsed.mappedRows.length; i+=batchSize){
-    const batch = importParsed.mappedRows.slice(i, i+batchSize);
-    
-    await Promise.all(batch.map(async (row, batchIdx) => {
-      const globalIdx = i + batchIdx;
-      try{
-        const key = guessDuplicateKey(row);
-        const cacheHitId = cacheIdx.get(key) || null;
-
-        if (dupPolicy === 'skip' && cacheHitId){
-          skip++; return;
-        }
-
-        if (dupPolicy === 'overwrite_id' && row._id){
-          if (dryRun){ upd++; return; }
-          const updates = { ...row };
-          delete updates._id; delete updates._stopMin;
-          if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
-          await updateDoc(doc(db,'anomalies', row._id), updates);
-          upd++; return;
-        }
-
-        // ★ 必須項目が無くてもペイロード作成（空文字列で登録）
-        const payload = {
-          department: row.department||'',
-          lineName:   row.lineName||'',
-          serialNo:   row.serialNo||'',
-          occurrenceDate: row.occurrenceDate||'',
-          occurrenceTime: row.occurrenceTime||'',
-          restartTime: row.restartTime||'',
-          anomalyContent: row.anomalyContent||'',
-          actionTaken: row.actionTaken||'',
-          traceback: row.traceback||'',
-          qualityResponse: row.qualityResponse||'',
-          handler: row.handler||'',
-          techRequest: row.techRequest||'',
-          techHandler: row.techHandler||'',
-          discoveryTiming: row.discoveryTiming||'',
-          previousCheck: row.previousCheck||'',
-          lifespan: row.lifespan||'',
-          lifespanReached: row.lifespanReached||'',
-          maintenanceUnit: row.maintenanceUnit||'',
-          rootCauseAction: row.rootCauseAction||'',
-          recurrenceType: row.recurrenceType||'',
-          affirmation: row.affirmation||'',
-          measureStatus: row.measureStatus || '',
-          status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
-          mfgPhotoUrls: [], techPhotoUrls: []
-        };
-        if (useCreatedAtNow) payload.createdAt = serverTimestamp();
-
-        if (dryRun){ ok++; return; }
-        await addDoc(collection(db,'anomalies'), payload);
-        ok++;
-      }catch(e){
-        ng++; 
-        problems.push(`Row ${globalIdx+2}: ${e.code||e.message}`);
-      }
+    const previewCount = Math.min(5, mappedRows.length);
+    const sample = mappedRows.slice(0, previewCount).map(o => ({
+      整理No:o.serialNo, 部署:o.department, 発生日:o.occurrenceDate,
+      異常内容:(o.anomalyContent||'').slice(0,20)+(o.anomalyContent?.length>20?'...':''),
+      対応内容:(o.actionTaken||'').slice(0,20)+(o.actionTaken?.length>20?'...':''), _id:o._id||''
     }));
-  }
 
-  alert(`インポート結果
+    const previewEl = document.getElementById('importPreview');
+    previewEl.innerHTML = `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+        <div>総行数: <strong>${mappedRows.length}</strong></div>
+        <div>必須エラー: <strong style="color:${errors.length?'#d32f2f':'#2e7d32'};">${errors.length}</strong></div>
+      </div>
+      <div style="overflow:auto;max-height:220px;border:1px solid #eee;border-radius:6px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr>
+            <th style="background:#667eea;color:#fff;padding:6px;">整理No</th>
+            <th style="background:#667eea;color:#fff;padding:6px;">部署</th>
+            <th style="background:#667eea;color:#fff;padding:6px;">発生日</th>
+            <th style="background:#667eea;color:#fff;padding:6px;">異常内容</th>
+            <th style="background:#667eea;color:#fff;padding:6px;">対応内容</th>
+            <th style="background:#667eea;color:#fff;padding:6px;">_id</th>
+          </tr></thead>
+          <tbody>
+            ${sample.map(r=>`
+              <tr>
+                <td style="border-bottom:1px solid #eee;padding:6px;">${r.整理No}</td>
+                <td style="border-bottom:1px solid #eee;padding:6px;">${r.部署}</td>
+                <td style="border-bottom:1px solid #eee;padding:6px;">${r.発生日}</td>
+                <td style="border-bottom:1px solid #eee;padding:6px;">${r.異常内容}</td>
+                <td style="border-bottom:1px solid #eee;padding:6px;">${r.対応内容}</td>
+                <td style="border-bottom:1px solid #eee;padding:6px;">${r._id}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:8px;color:#666;font-size:.9rem;">
+        ※ プレビューは先頭${previewCount}件のみ表示。エラーが0であればインポート可能です。
+      </div>
+      ${errors.length ? `<div style="margin-top:8px;color:#d32f2f;font-size:.9rem;"><strong>検証エラー</strong><br>${errors.slice(0,10).map(e=>`・${e}`).join('<br>')}${errors.length>10?'<br>…':''}</div>`:''}
+    `;
+    importParsed = { headers, rows:dataRows, mappedRows, errors };
+  });
+
+  document.getElementById('btnImportStart').addEventListener('click', async ()=>{
+    if (!importParsed){ alert('CSVを選択してください'); return; }
+    if (importParsed.errors.length){ alert('エラーを解消してから実行してください'); return; }
+    const dryRun = document.getElementById('dryRun').checked;
+    const dupPolicy = document.getElementById('dupPolicy').value;
+    const useCreatedAtNow = document.getElementById('useCreatedAtNow').checked;
+
+    const cacheIdx = buildCacheIndex();
+    let ok=0, skip=0, upd=0, ng=0;
+    const problems=[];
+
+    // バッチ処理で効率化
+    const batchSize = 10;
+    for (let i=0; i<importParsed.mappedRows.length; i+=batchSize){
+      const batch = importParsed.mappedRows.slice(i, i+batchSize);
+      
+      await Promise.all(batch.map(async (row) => {
+        try{
+          const key = guessDuplicateKey(row);
+          const cacheHitId = cacheIdx.get(key) || null;
+
+          if (dupPolicy === 'skip' && cacheHitId){
+            skip++; return;
+          }
+
+          if (dupPolicy === 'overwrite_id' && row._id){
+            if (dryRun){ upd++; return; }
+            const updates = { ...row };
+            delete updates._id; delete updates._stopMin;
+            if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
+            await updateDoc(doc(db,'anomalies', row._id), updates);
+            upd++; return;
+          }
+
+          const payload = {
+            department: row.department||'',
+            lineName:   row.lineName||'',
+            serialNo:   row.serialNo||'',
+            occurrenceDate: row.occurrenceDate||'',
+            occurrenceTime: row.occurrenceTime||'',
+            restartTime: row.restartTime||'',
+            anomalyContent: row.anomalyContent||'',
+            actionTaken: row.actionTaken||'',
+            traceback: row.traceback||'',
+            handler: row.handler||'',
+            techRequest: row.techRequest||'',
+            techHandler: row.techHandler||'',
+            discoveryTiming: row.discoveryTiming||'',
+            previousCheck: row.previousCheck||'',
+            lifespan: row.lifespan||'',
+            lifespanReached: row.lifespanReached||'',
+            maintenanceUnit: row.maintenanceUnit||'',
+            rootCauseAction: row.rootCauseAction||'',
+            recurrenceType: row.recurrenceType||'',
+            affirmation: row.affirmation||'',
+             measureStatus: row.measureStatus || '',   // ← 追加
+            status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
+            mfgPhotoUrls: [], techPhotoUrls: []
+          };
+          if (useCreatedAtNow) payload.createdAt = serverTimestamp();
+
+          if (dryRun){ ok++; return; }
+          await addDoc(collection(db,'anomalies'), payload);
+          ok++;
+        }catch(e){
+          ng++; problems.push(`Row ${i+2}: ${e.code||e.message}`);
+        }
+      }));
+    }
+
+    alert(`インポート結果
 - 作成: ${ok}
 - 上書き: ${upd}
 - スキップ: ${skip}
 - 失敗: ${ng}
 ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
 
-  importModal.classList.remove('active'); 
-  importModal.setAttribute('aria-hidden','true');
-});
+    importModal.classList.remove('active'); importModal.setAttribute('aria-hidden','true');
+  });
+
  /* ワード候補 */
   function extractCommonWords(field, filterSerialNo = null){
     const words = {};
