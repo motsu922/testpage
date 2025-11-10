@@ -1095,7 +1095,7 @@ function setSparkDateLabels(containerSelector, binsInfo){
   });
 }
 
-  /* ===== スパークライン（描画） ===== */
+/* ===== スパークライン（描画） ===== */
 // 角丸矩形の描画ヘルパ
 function rr(ctx, x, y, w, h, r, fill, stroke){
   ctx.save();
@@ -1166,20 +1166,22 @@ function drawShiftMarker(ctx, canvas, opts){
 function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
   if (!canvas) return;
 
+  // ▼ 値のサニタイズ（NaN, undefined, null, 負数 → 0）
+  const arr = (Array.isArray(values) ? values : []).map(v=>{
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  });
+  const n = arr.length;
+  if (!n) return;
+
   const dpr = window.devicePixelRatio || 1;
   ensureCanvasResolution(canvas);
 
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // 実データの min/max をそのまま使う（0件でも 0 を表示）
-  const data = Array.isArray(values) ? values.map(v => Number(v) || 0) : [];
-  const n = data.length; if (!n) return;
-  const realMax = Math.max(...data, 0);
-  const realMin = Math.min(...data, 0);
-
-  // スケーリング用の分母（0除算回避のみ 1 を使用）— 表示は realMax をそのまま出す
-  const denom = (realMax === realMin) ? 1 : (realMax - realMin);
+  const max = Math.max(1, ...arr);
+  const min = 0;
 
   const pad = 6 * dpr;
   const xStep = n > 1 ? (canvas.width - pad*2)/(n-1) : 0;
@@ -1193,31 +1195,30 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
   ctx.lineTo(canvas.width - pad, canvas.height - pad);
   ctx.stroke();
 
-  // 24h の時間マーカー（8:00 起点）
+  // 時間マーカー（24hモード時）
   if (opts.type === 'hour' && typeof opts.markerIndex === 'number'){
-    drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: n, label: String((8 + opts.markerIndex) % 24) });
+    const hour = (8 + opts.markerIndex) % 24;
+    drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: n, label: String(hour) });
   }
 
-  // === Y軸最大値ラベル：実データの最大値をそのまま表示 ===
+  // Y軸MAXラベル
   ctx.font = `${10*dpr}px 'Segoe UI', sans-serif`;
   ctx.fillStyle = document.body.classList.contains('theme-dark')
     ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
-  ctx.fillText(String(realMax), canvas.width - pad, pad * 0.5);
+  ctx.fillText(String(Math.max(1, Math.round(max))), canvas.width - pad, pad * 0.5);
 
-  // ★ MAX ガイド（最大値の高さに水平破線）
-  const baseY = canvas.height - pad;
-  const height = canvas.height - pad*2;
-  const yAtMax = baseY - ((realMax - realMin)/denom) * height;
+  // MAXガイド
+  const yMax = canvas.height - pad - (canvas.height - pad*2);
   ctx.save();
   ctx.strokeStyle = document.body.classList.contains('theme-dark')
     ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
   ctx.setLineDash([4*dpr, 3*dpr]);
   ctx.lineWidth = 1 * dpr;
   ctx.beginPath();
-  ctx.moveTo(pad, yAtMax);
-  ctx.lineTo(canvas.width - pad, yAtMax);
+  ctx.moveTo(pad, yMax);
+  ctx.lineTo(canvas.width - pad, yMax);
   ctx.stroke();
   ctx.restore();
 
@@ -1226,23 +1227,41 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
   ctx.lineWidth = 2 * dpr;
   ctx.beginPath();
   for (let i=0;i<n;i++){
-    const v = data[i];
-    const ratio = (v - realMin) / denom;
+    const v = arr[i];
+    const ratio = (max === 0) ? 0 : (v / max);
     const x = pad + xStep * i;
-    const y = baseY - ratio * height;
+    const y = canvas.height - pad - ratio * (canvas.height - pad*2);
     if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  
+  }
   ctx.stroke();
 
   // 終端マーカー
   const lastX = pad + xStep*(n-1);
-  const lastRatio = (data[n-1] - realMin) / denom;
-  const lastY = baseY - lastRatio * height;
-  ctx.beginPath(); ctx.arc(lastX,lastY,2.5*dpr,0,Math.PI*2); ctx.fillStyle = color; ctx.fill();
+  const lastRatio = (max === 0) ? 0 : (arr[n-1] / max);
+  const lastY = canvas.height - pad - lastRatio*(canvas.height - pad*2);
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(lastX,lastY,2.5*dpr,0,Math.PI*2); ctx.fill();
+}
+
+function hexToRgba(hex, alpha){ 
+  const h=hex.replace('#',''); 
+  const n=parseInt(h,16); 
+  const r=(n>>16)&255,g=(n>>8)&255,b=n&255; 
+  return `rgba(${r},${g},${b},${alpha})`; 
 }
 
 function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2'], opts={}){
   if (!canvas) return;
+
+  // ▼ 2次元配列を安全化
+  const clean = (seriesList || []).map(s =>
+    (Array.isArray(s)? s: []).map(v=>{
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    })
+  );
+  const L = clean?.[0]?.length || 0;
+  if (!L) return;
 
   const dpr = window.devicePixelRatio || 1;
   ensureCanvasResolution(canvas);
@@ -1250,12 +1269,8 @@ function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c5
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  const L = seriesList?.[0]?.length || 0; if (!L) return;
-  // 合計系列の実 max を使用
-  const sums = Array.from({length:L},(_,i)=> seriesList.reduce((a,s)=> a + (Number(s[i])||0), 0));
-  const realMax = Math.max(...sums, 0);
-  const realMin = 0; // 積み上げは 0 起点
-  const denom = Math.max(1, realMax - realMin);
+  const sums = Array.from({length:L},(_,i)=> clean.reduce((a,s)=> a + (s[i]||0), 0));
+  const maxSum = Math.max(1, ...sums);
 
   const pad = 6 * dpr;
   const step = (canvas.width - pad*2) / Math.max(1,(L-1));
@@ -1273,38 +1288,36 @@ function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c5
 
   // 24h の時間マーカー（8:00 起点）
   if (opts.type === 'hour' && typeof opts.markerIndex === 'number'){
-    drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: L, label: String((8 + opts.markerIndex) % 24) });
+    const hour = (8 + opts.markerIndex) % 24;
+    drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: L, label: String(hour) });
   }
 
-  // ★ MAX ガイド（最大合計の高さに水平破線）＋ ラベル表示
-  const yAtMax = baseY - ((realMax - realMin)/denom)*height;
+  // MAXガイド
+  const yMax = baseY - height;
   ctx.save();
   ctx.strokeStyle = document.body.classList.contains('theme-dark')
     ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
   ctx.setLineDash([4*dpr, 3*dpr]);
   ctx.lineWidth = 1 * dpr;
   ctx.beginPath();
-  ctx.moveTo(pad, yAtMax);
-  ctx.lineTo(canvas.width - pad, yAtMax);
+  ctx.moveTo(pad, yMax);
+  ctx.lineTo(canvas.width - pad, yMax);
   ctx.stroke();
   ctx.restore();
 
-  // 最大値ラベル（右上）
+  // Y軸MAXラベル
   ctx.font = `${10*dpr}px 'Segoe UI', sans-serif`;
   ctx.fillStyle = document.body.classList.contains('theme-dark')
     ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
-  ctx.fillText(String(realMax), canvas.width - pad, pad * 0.5);
+  ctx.fillText(String(Math.round(maxSum)), canvas.width - pad, pad * 0.5);
 
   // 積み上げ塗り
   let accumPrev = Array(L).fill(0);
-  const hexToRgba = (hex, alpha)=>{ const h=hex.replace('#',''); const n=parseInt(h,16); const r=(n>>16)&255,g=(n>>8)&255,b=n&255; return `rgba(${r},${g},${b},${alpha})`; };
-
-  seriesList.forEach((s,idx)=>{
-    const data = s.map(v => Number(v)||0);
-    const topY = data.map((v,i)=> baseY - ((accumPrev[i]+v - realMin)/denom)*height);
-    const botY = accumPrev.map((v,i)=>   baseY - ((v           - realMin)/denom)*height);
+  clean.forEach((s,idx)=>{
+    const topY = s.map((v,i)=> baseY - ((accumPrev[i]+v)/maxSum)*height);
+    const botY = accumPrev.map((v,i)=> baseY - (v/maxSum)*height);
 
     ctx.beginPath();
     for (let i=0;i<L;i++){ const x=pad+step*i, y=topY[i]; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
@@ -1313,14 +1326,14 @@ function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c5
     ctx.fillStyle = hexToRgba(colors[idx%colors.length], 0.85);
     ctx.fill();
 
-    accumPrev = accumPrev.map((v,i)=> v + data[i]);
+    accumPrev = accumPrev.map((v,i)=> v + (s[i]||0));
   });
 
-  // 外周の細線（合計の折れ線）
+  // 外周の細線
   ctx.beginPath();
   for (let i=0;i<L;i++){
     const x = pad + step*i;
-    const y = baseY - ((sums[i]-realMin)/denom)*height;
+    const y = baseY - (sums[i]/maxSum)*height;
     if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.strokeStyle = (opts && opts.edgeColor)
@@ -1339,8 +1352,18 @@ function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c5
   ctx.beginPath(); ctx.arc(lastX,lastY,2.5*dpr,0,Math.PI*2); ctx.fill();
 }
   function hexToRgba(hex, alpha){ const h=hex.replace('#',''); const n=parseInt(h,16); const r=(n>>16)&255,g=(n>>8)&255,b=n&255; return `rgba(${r},${g},${b},${alpha})`; }
-  function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2'], opts={}){
+ function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2'], opts={}){
   if (!canvas) return;
+
+  // ▼ 2次元配列を安全化
+  const clean = (seriesList || []).map(s =>
+    (Array.isArray(s)? s: []).map(v=>{
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    })
+  );
+  const L = clean?.[0]?.length || 0;
+  if (!L) return;
 
   const dpr = window.devicePixelRatio || 1;
   ensureCanvasResolution(canvas);
@@ -1348,9 +1371,8 @@ function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c5
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  const L = seriesList?.[0]?.length || 0; if (!L) return;
-  const sums = Array.from({length:L},(_,i)=> seriesList.reduce((a,s)=> a + (s[i]||0), 0));
-  const maxSum = Math.max(...sums, 1);
+  const sums = Array.from({length:L},(_,i)=> clean.reduce((a,s)=> a + (s[i]||0), 0));
+  const maxSum = Math.max(1, ...sums);
 
   const pad = 6 * dpr;
   const step = (canvas.width - pad*2) / Math.max(1,(L-1));
