@@ -1481,86 +1481,104 @@ document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
   importParsed = { headers, rows:dataRows, mappedRows, errors, warnings };
 });
 
-  document.getElementById('btnImportStart').addEventListener('click', async ()=>{
-    if (!importParsed){ alert('CSVを選択してください'); return; }
-    if (importParsed.errors.length){ alert('エラーを解消してから実行してください'); return; }
-    const dryRun = document.getElementById('dryRun').checked;
-    const dupPolicy = document.getElementById('dupPolicy').value;
-    const useCreatedAtNow = document.getElementById('useCreatedAtNow').checked;
-
-    const cacheIdx = buildCacheIndex();
-    let ok=0, skip=0, upd=0, ng=0;
-    const problems=[];
-
-    // バッチ処理で効率化
-    const batchSize = 10;
-    for (let i=0; i<importParsed.mappedRows.length; i+=batchSize){
-      const batch = importParsed.mappedRows.slice(i, i+batchSize);
-      
-      await Promise.all(batch.map(async (row) => {
-        try{
-          const key = guessDuplicateKey(row);
-          const cacheHitId = cacheIdx.get(key) || null;
-
-          if (dupPolicy === 'skip' && cacheHitId){
-            skip++; return;
-          }
-
-          if (dupPolicy === 'overwrite_id' && row._id){
-            if (dryRun){ upd++; return; }
-            const updates = { ...row };
-            delete updates._id; delete updates._stopMin;
-            if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
-            await updateDoc(doc(db,'anomalies', row._id), updates);
-            upd++; return;
-          }
-
-          const payload = {
-            department: row.department||'',
-            lineName:   row.lineName||'',
-            serialNo:   row.serialNo||'',
-            occurrenceDate: row.occurrenceDate||'',
-            occurrenceTime: row.occurrenceTime||'',
-            restartTime: row.restartTime||'',
-            anomalyContent: row.anomalyContent||'',
-            actionTaken: row.actionTaken||'',
-            traceback: row.traceback||'',
-            handler: row.handler||'',
-            techRequest: row.techRequest||'',
-            techHandler: row.techHandler||'',
-            discoveryTiming: row.discoveryTiming||'',
-            previousCheck: row.previousCheck||'',
-            lifespan: row.lifespan||'',
-            lifespanReached: row.lifespanReached||'',
-            maintenanceUnit: row.maintenanceUnit||'',
-            rootCauseAction: row.rootCauseAction||'',
-            recurrenceType: row.recurrenceType||'',
-            affirmation: row.affirmation||'',
-             measureStatus: row.measureStatus || '',   // ← 追加
-            status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
-            mfgPhotoUrls: [], techPhotoUrls: []
-          };
-          if (useCreatedAtNow) payload.createdAt = serverTimestamp();
-
-          if (dryRun){ ok++; return; }
-          await addDoc(collection(db,'anomalies'), payload);
-          ok++;
-        }catch(e){
-          ng++; problems.push(`Row ${i+2}: ${e.code||e.message}`);
-        }
-      }));
+document.getElementById('btnImportStart').addEventListener('click', async ()=>{
+  if (!importParsed){ alert('CSVを選択してください'); return; }
+  
+  // ★ 形式エラーのみをチェック（警告は無視）
+  if (importParsed.errors.length){ 
+    if (!confirm(`形式エラーが${importParsed.errors.length}件あります。\n\nこのままインポートを続行しますか？\n（エラー行はスキップされる可能性があります）`)) {
+      return;
     }
+  }
+  
+  // 警告がある場合は確認
+  if (importParsed.warnings && importParsed.warnings.length > 0) {
+    if (!confirm(`推奨フィールドが空の行が${importParsed.warnings.length}件あります。\n\nこのままインポートを続行しますか？`)) {
+      return;
+    }
+  }
+  
+  const dryRun = document.getElementById('dryRun').checked;
+  const dupPolicy = document.getElementById('dupPolicy').value;
+  const useCreatedAtNow = document.getElementById('useCreatedAtNow').checked;
 
-    alert(`インポート結果
+  const cacheIdx = buildCacheIndex();
+  let ok=0, skip=0, upd=0, ng=0;
+  const problems=[];
+
+  // バッチ処理で効率化
+  const batchSize = 10;
+  for (let i=0; i<importParsed.mappedRows.length; i+=batchSize){
+    const batch = importParsed.mappedRows.slice(i, i+batchSize);
+    
+    await Promise.all(batch.map(async (row, batchIdx) => {
+      const globalIdx = i + batchIdx;
+      try{
+        const key = guessDuplicateKey(row);
+        const cacheHitId = cacheIdx.get(key) || null;
+
+        if (dupPolicy === 'skip' && cacheHitId){
+          skip++; return;
+        }
+
+        if (dupPolicy === 'overwrite_id' && row._id){
+          if (dryRun){ upd++; return; }
+          const updates = { ...row };
+          delete updates._id; delete updates._stopMin;
+          if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
+          await updateDoc(doc(db,'anomalies', row._id), updates);
+          upd++; return;
+        }
+
+        // ★ 必須項目が無くてもペイロード作成（空文字列で登録）
+        const payload = {
+          department: row.department||'',
+          lineName:   row.lineName||'',
+          serialNo:   row.serialNo||'',
+          occurrenceDate: row.occurrenceDate||'',
+          occurrenceTime: row.occurrenceTime||'',
+          restartTime: row.restartTime||'',
+          anomalyContent: row.anomalyContent||'',
+          actionTaken: row.actionTaken||'',
+          traceback: row.traceback||'',
+          qualityResponse: row.qualityResponse||'',
+          handler: row.handler||'',
+          techRequest: row.techRequest||'',
+          techHandler: row.techHandler||'',
+          discoveryTiming: row.discoveryTiming||'',
+          previousCheck: row.previousCheck||'',
+          lifespan: row.lifespan||'',
+          lifespanReached: row.lifespanReached||'',
+          maintenanceUnit: row.maintenanceUnit||'',
+          rootCauseAction: row.rootCauseAction||'',
+          recurrenceType: row.recurrenceType||'',
+          affirmation: row.affirmation||'',
+          measureStatus: row.measureStatus || '',
+          status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
+          mfgPhotoUrls: [], techPhotoUrls: []
+        };
+        if (useCreatedAtNow) payload.createdAt = serverTimestamp();
+
+        if (dryRun){ ok++; return; }
+        await addDoc(collection(db,'anomalies'), payload);
+        ok++;
+      }catch(e){
+        ng++; 
+        problems.push(`Row ${globalIdx+2}: ${e.code||e.message}`);
+      }
+    }));
+  }
+
+  alert(`インポート結果
 - 作成: ${ok}
 - 上書き: ${upd}
 - スキップ: ${skip}
 - 失敗: ${ng}
 ${problems.length?'\n一部エラー:\n'+problems.slice(0,10).join('\n'):''}`);
 
-    importModal.classList.remove('active'); importModal.setAttribute('aria-hidden','true');
-  });
-
+  importModal.classList.remove('active'); 
+  importModal.setAttribute('aria-hidden','true');
+});
  /* ワード候補 */
   function extractCommonWords(field, filterSerialNo = null){
     const words = {};
