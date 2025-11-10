@@ -1362,13 +1362,9 @@ document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
   }
   
   const headers = rows[0];
-  const miss = REQUIRED_HEADERS.filter(h => !headers.includes(h));
-  if (miss.length){
-    document.getElementById('importPreview').innerHTML =
-      `<div style="color:#c62828;">必須ヘッダが不足しています: ${miss.join(', ')}</div>`;
-    importParsed = null; return;
-  }
-
+  
+  // ★ 必須ヘッダチェックを削除（どんなヘッダでもOK）
+  
   const mapIdx = headers.map(h => HEADER_MAP[h] || null);
   const dataRows = rows.slice(1).filter(r => r.some(c => (c??'').toString().trim() !== ''));
   
@@ -1379,7 +1375,7 @@ document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
       obj[key] = (r[i]??'').toString().trim();
     });
     
-    // ★ 日付・時刻の正規化を適用
+    // 日付・時刻の正規化を適用
     if (obj.occurrenceDate) obj.occurrenceDate = normalizeDate(obj.occurrenceDate);
     if (obj.occurrenceTime) obj.occurrenceTime = normalizeTime(obj.occurrenceTime);
     if (obj.restartTime) obj.restartTime = normalizeTime(obj.restartTime);
@@ -1393,76 +1389,97 @@ document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
   });
 
   const errors=[];
+  const warnings=[]; // ★ 警告用の配列を追加
+  
   mappedRows.forEach((o, i)=>{
     const rowNo = i+2;
     
-    // 必須フィールドチェック
-    ['serialNo','department','occurrenceDate','anomalyContent','actionTaken'].forEach(k=>{
-      if (!o[k] || !o[k].toString().trim()){ 
-        errors.push(`Row ${rowNo}: 必須「${k}」が空`); 
-      }
-    });
+    // ★ 必須チェックを警告に変更（エラーではなく警告として表示）
+    const missingFields = [];
+    if (!o.serialNo?.trim()) missingFields.push('整理No');
+    if (!o.department?.trim()) missingFields.push('部署');
+    if (!o.occurrenceDate?.trim()) missingFields.push('発生日');
+    if (!o.anomalyContent?.trim()) missingFields.push('異常内容');
+    if (!o.actionTaken?.trim()) missingFields.push('対応内容');
     
-    // 日付形式チェック（正規化後）
-    if (o.occurrenceDate && !/^\d{4}-\d{2}-\d{2}$/.test(o.occurrenceDate)) { 
-      errors.push(`Row ${rowNo}: 発生日はYYYY-MM-DD形式にしてください（現在: ${o.occurrenceDate}）`); 
+    if (missingFields.length > 0) {
+      warnings.push(`Row ${rowNo}: 推奨フィールドが空です [${missingFields.join(', ')}]`);
     }
     
-    // 時刻形式チェック（正規化後）
+    // ★ 形式チェックのみエラーとして残す（データが入っている場合のみ）
+    if (o.occurrenceDate && !/^\d{4}-\d{2}-\d{2}$/.test(o.occurrenceDate)) { 
+      errors.push(`Row ${rowNo}: 発生日の形式が不正です（現在: ${o.occurrenceDate}）`); 
+    }
     if (o.occurrenceTime && !/^\d{1,2}:\d{2}$/.test(o.occurrenceTime)) { 
-      errors.push(`Row ${rowNo}: 発生時刻はHH:MM形式にしてください（現在: ${o.occurrenceTime}）`); 
+      errors.push(`Row ${rowNo}: 発生時刻の形式が不正です（現在: ${o.occurrenceTime}）`); 
     }
     if (o.restartTime && !/^\d{1,2}:\d{2}$/.test(o.restartTime)) { 
-      errors.push(`Row ${rowNo}: 再開時刻はHH:MM形式にしてください（現在: ${o.restartTime}）`); 
+      errors.push(`Row ${rowNo}: 再開時刻の形式が不正です（現在: ${o.restartTime}）`); 
     }
   });
 
-  // 以降は既存のプレビュー表示コードと同じ...
+  const previewCount = Math.min(5, mappedRows.length);
+  const sample = mappedRows.slice(0, previewCount).map(o => ({
+    整理No:o.serialNo||'(空)', 
+    部署:o.department||'(空)', 
+    発生日:o.occurrenceDate||'(空)',
+    異常内容:(o.anomalyContent||'-').slice(0,20)+(o.anomalyContent?.length>20?'...':''),
+    対応内容:(o.actionTaken||'-').slice(0,20)+(o.actionTaken?.length>20?'...':''), 
+    _id:o._id||''
+  }));
 
-    const previewCount = Math.min(5, mappedRows.length);
-    const sample = mappedRows.slice(0, previewCount).map(o => ({
-      整理No:o.serialNo, 部署:o.department, 発生日:o.occurrenceDate,
-      異常内容:(o.anomalyContent||'').slice(0,20)+(o.anomalyContent?.length>20?'...':''),
-      対応内容:(o.actionTaken||'').slice(0,20)+(o.actionTaken?.length>20?'...':''), _id:o._id||''
-    }));
-
-    const previewEl = document.getElementById('importPreview');
-    previewEl.innerHTML = `
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
-        <div>総行数: <strong>${mappedRows.length}</strong></div>
-        <div>必須エラー: <strong style="color:${errors.length?'#d32f2f':'#2e7d32'};">${errors.length}</strong></div>
+  const previewEl = document.getElementById('importPreview');
+  previewEl.innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+      <div>総行数: <strong>${mappedRows.length}</strong></div>
+      <div>形式エラー: <strong style="color:${errors.length?'#d32f2f':'#2e7d32'};">${errors.length}</strong></div>
+      <div>警告: <strong style="color:${warnings.length?'#f57c00':'#2e7d32'};">${warnings.length}</strong></div>
+    </div>
+    <div style="overflow:auto;max-height:220px;border:1px solid #eee;border-radius:6px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="background:#667eea;color:#fff;padding:6px;">整理No</th>
+          <th style="background:#667eea;color:#fff;padding:6px;">部署</th>
+          <th style="background:#667eea;color:#fff;padding:6px;">発生日</th>
+          <th style="background:#667eea;color:#fff;padding:6px;">異常内容</th>
+          <th style="background:#667eea;color:#fff;padding:6px;">対応内容</th>
+          <th style="background:#667eea;color:#fff;padding:6px;">_id</th>
+        </tr></thead>
+        <tbody>
+          ${sample.map(r=>`
+            <tr>
+              <td style="border-bottom:1px solid #eee;padding:6px;">${r.整理No}</td>
+              <td style="border-bottom:1px solid #eee;padding:6px;">${r.部署}</td>
+              <td style="border-bottom:1px solid #eee;padding:6px;">${r.発生日}</td>
+              <td style="border-bottom:1px solid #eee;padding:6px;">${r.異常内容}</td>
+              <td style="border-bottom:1px solid #eee;padding:6px;">${r.対応内容}</td>
+              <td style="border-bottom:1px solid #eee;padding:6px;">${r._id}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px;color:#666;font-size:.9rem;">
+      ※ プレビューは先頭${previewCount}件のみ表示。形式エラーが0であればインポート可能です。
+    </div>
+    ${warnings.length ? `
+      <div style="margin-top:8px;color:#f57c00;font-size:.9rem;background:#fff4e6;padding:10px;border-radius:6px;">
+        <strong>⚠️ 警告（${warnings.length}件）</strong><br>
+        ${warnings.slice(0,5).map(w=>`・${w}`).join('<br>')}
+        ${warnings.length>5?'<br>...他 '+(warnings.length-5)+'件':''}
+        <div style="margin-top:8px;font-size:.85rem;">※ 警告があってもインポートは可能です</div>
       </div>
-      <div style="overflow:auto;max-height:220px;border:1px solid #eee;border-radius:6px;">
-        <table style="width:100%;border-collapse:collapse;">
-          <thead><tr>
-            <th style="background:#667eea;color:#fff;padding:6px;">整理No</th>
-            <th style="background:#667eea;color:#fff;padding:6px;">部署</th>
-            <th style="background:#667eea;color:#fff;padding:6px;">発生日</th>
-            <th style="background:#667eea;color:#fff;padding:6px;">異常内容</th>
-            <th style="background:#667eea;color:#fff;padding:6px;">対応内容</th>
-            <th style="background:#667eea;color:#fff;padding:6px;">_id</th>
-          </tr></thead>
-          <tbody>
-            ${sample.map(r=>`
-              <tr>
-                <td style="border-bottom:1px solid #eee;padding:6px;">${r.整理No}</td>
-                <td style="border-bottom:1px solid #eee;padding:6px;">${r.部署}</td>
-                <td style="border-bottom:1px solid #eee;padding:6px;">${r.発生日}</td>
-                <td style="border-bottom:1px solid #eee;padding:6px;">${r.異常内容}</td>
-                <td style="border-bottom:1px solid #eee;padding:6px;">${r.対応内容}</td>
-                <td style="border-bottom:1px solid #eee;padding:6px;">${r._id}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+    ` : ''}
+    ${errors.length ? `
+      <div style="margin-top:8px;color:#d32f2f;font-size:.9rem;background:#ffebee;padding:10px;border-radius:6px;">
+        <strong>❌ 形式エラー（${errors.length}件）</strong><br>
+        ${errors.slice(0,5).map(e=>`・${e}`).join('<br>')}
+        ${errors.length>5?'<br>...他 '+(errors.length-5)+'件':''}
       </div>
-      <div style="margin-top:8px;color:#666;font-size:.9rem;">
-        ※ プレビューは先頭${previewCount}件のみ表示。エラーが0であればインポート可能です。
-      </div>
-      ${errors.length ? `<div style="margin-top:8px;color:#d32f2f;font-size:.9rem;"><strong>検証エラー</strong><br>${errors.slice(0,10).map(e=>`・${e}`).join('<br>')}${errors.length>10?'<br>…':''}</div>`:''}
-    `;
-    importParsed = { headers, rows:dataRows, mappedRows, errors };
-  });
+    ` : ''}
+  `;
+  importParsed = { headers, rows:dataRows, mappedRows, errors, warnings };
+});
 
   document.getElementById('btnImportStart').addEventListener('click', async ()=>{
     if (!importParsed){ alert('CSVを選択してください'); return; }
