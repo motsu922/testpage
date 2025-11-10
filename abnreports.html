@@ -1404,8 +1404,7 @@ document.getElementById('btnImportStart').addEventListener('click', async ()=>{
   }
 
   // 確認ダイアログ
-  const confirmMsg = `
-【インポート確認】
+  const confirmMsg = `【インポート確認】
 ・処理可能な行: ${successRows.length}行
 ・エラーのある行: ${ng}行（スキップされます）
 ${dryRun ? '\n※ ドライランモード（実際の書き込みは行いません）' : ''}
@@ -1417,6 +1416,7 @@ ${dryRun ? '\n※ ドライランモード（実際の書き込みは行いま�
   // 正常な行のみ処理
   const batchSize = 10;
   ok = 0; skip = 0; upd = 0;
+  const processErrors = [];
   
   for (let i=0; i<successRows.length; i+=batchSize){
     const batch = successRows.slice(i, i+batchSize);
@@ -1464,7 +1464,8 @@ ${dryRun ? '\n※ ドライランモード（実際の書き込みは行いま�
           affirmation: row.affirmation||'',
           measureStatus: row.measureStatus || '',
           status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
-          mfgPhotoUrls: [], techPhotoUrls: []
+          mfgPhotoUrls: [], 
+          techPhotoUrls: []
         };
         if (useCreatedAtNow) payload.createdAt = serverTimestamp();
 
@@ -1472,20 +1473,20 @@ ${dryRun ? '\n※ ドライランモード（実際の書き込みは行いま�
         await addDoc(collection(db,'anomalies'), payload);
         ok++;
       }catch(e){
-        problems.push(`Row ${globalIdx + 2}: ${e.code||e.message}`);
+        processErrors.push(`Row ${globalIdx + 2}: ${e.code||e.message}`);
       }
     }));
   }
 
   // 結果レポート
-  const resultMsg = `
-【インポート結果】
+  const allErrors = [...problems, ...processErrors];
+  const resultMsg = `【インポート結果】
 ✅ 成功: ${ok}件
 🔄 上書き: ${upd}件
 ⏭️ スキップ: ${skip}件
 ❌ エラー: ${ng}件
 ${dryRun ? '\n※ ドライランモードのため実際の書き込みは行われていません' : ''}
-${problems.length > 0 ? `\n\n【エラー詳細】（最大10件表示）\n${problems.slice(0,10).join('\n')}${problems.length > 10 ? `\n...他${problems.length - 10}件` : ''}` : ''}`;
+${allErrors.length > 0 ? `\n\n【エラー詳細】（最大10件表示）\n${allErrors.slice(0,10).join('\n')}${allErrors.length > 10 ? `\n...他${allErrors.length - 10}件` : ''}` : ''}`;
 
   alert(resultMsg);
   importModal.classList.remove('active'); 
