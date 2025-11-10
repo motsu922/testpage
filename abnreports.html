@@ -1080,46 +1080,124 @@ document.addEventListener('click', (e)=>{
     return `${y}-${m}-${day}`;
   }
 
-  function applyFilter() {
-    const filterDept = document.getElementById('filterDepartment').value;
-    const filterSerial = document.getElementById('filterSerialNo').value.trim().toLowerCase();
-    const filterLine = document.getElementById('filterLine').value;
-    const filterDateFrom = document.getElementById('filterDateFrom').value;
-    const filterDateTo = document.getElementById('filterDateTo').value;
+ async function applyFilter() {
+  const filterDept = document.getElementById('filterDepartment').value;
+  const filterSerial = document.getElementById('filterSerialNo').value.trim().toLowerCase();
+  const filterLine = document.getElementById('filterLine').value;
+  const filterDateFrom = document.getElementById('filterDateFrom').value;
+  const filterDateTo = document.getElementById('filterDateTo').value;
 
-    filteredCache = anomalyCache.filter(item => {
-      if (filterDept && item.department !== filterDept) return false;
-      if (filterSerial && !(item.serialNo||'').toLowerCase().includes(filterSerial)) return false;
-      if (filterLine && item.lineName !== filterLine) return false;
-      if (filterDateFrom && item.occurrenceDate < filterDateFrom) return false;
-      if (filterDateTo && item.occurrenceDate > filterDateTo) return false;
-      return true;
-    });
-
+  // フィルター条件をFirestoreクエリで構築
+  let q = collection(db, 'anomalies');
+  const conditions = [];
+  
+  if (filterDept) {
+    q = query(q, where('department', '==', filterDept));
+  }
+  if (filterLine) {
+    q = query(q, where('lineName', '==', filterLine));
+  }
+  
+  // 日付範囲フィルター
+  if (filterDateFrom) {
+    q = query(q, where('occurrenceDate', '>=', filterDateFrom));
+  }
+  if (filterDateTo) {
+    q = query(q, where('occurrenceDate', '<=', filterDateTo));
+  }
+  
+  // orderByを追加（日付順）
+  q = query(q, orderBy('occurrenceDate', 'desc'), limit(PAGE_SIZE));
+  
+  try {
+    const snapshot = await getDocs(q);
+    let results = snapshot.docs.map(d => ({_id: d.id, ...d.data()}));
+    
+    // 整理No検索はクライアント側で（部分一致のため）
+    if (filterSerial) {
+      results = results.filter(item => 
+        (item.serialNo || '').toLowerCase().includes(filterSerial)
+      );
+    }
+    
+    filteredCache = results;
+    lastVisibleDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+    hasMoreData = snapshot.docs.length === PAGE_SIZE;
+    
     const resultCount = document.getElementById('filterResultCount');
-    resultCount.innerHTML = `<strong>${filteredCache.length}</strong> 件の履歴が見つかりました`;
+    resultCount.innerHTML = '<strong>' + filteredCache.length + '</strong> 件の履歴が見つかりました' + 
+      (hasMoreData ? '（さらに読み込み可能）' : '');
     resultCount.style.display = 'block';
-
-    renderHistory();
-  }
-
-  function clearFilter() {
-    document.getElementById('filterDepartment').value = '';
-    document.getElementById('filterSerialNo').value = '';
-    document.getElementById('filterLine').value = '';
-    document.getElementById('filterDateFrom').value = '';
-    document.getElementById('filterDateTo').value = '';
-    document.getElementById('filterResultCount').style.display = 'none';
     
-    document.getElementById('btnFilterYesterday').classList.remove('active');
-    document.getElementById('btnFilterToday').classList.remove('active');
-    
-    filteredCache = [...anomalyCache];
     renderHistory();
+  } catch (error) {
+    console.error('フィルター検索エラー:', error);
+    
+    // Firestoreインデックスエラーの場合はクライアント側で全データ検索
+    if (error.code === 'failed-precondition' || error.code === 9) {
+      alert('複合検索にはFirestoreインデックスが必要です。\nクライアント側で全データから検索します...');
+      await applyFilterClientSide();
+    } else {
+      alert('検索エラー: ' + error.message);
+    }
   }
+}
 
-  document.getElementById('btnApplyFilter').addEventListener('click', applyFilter);
-  document.getElementById('btnClearFilter').addEventListener('click', clearFilter);
+// クライアント側で全データ検索（フォールバック）
+async function applyFilterClientSide() {
+  const filterDept = document.getElementById('filterDepartment').value;
+  const filterSerial = document.getElementById('filterSerialNo').value.trim().toLowerCase();
+  const filterLine = document.getElementById('filterLine').value;
+  const filterDateFrom = document.getElementById('filterDateFrom').value;
+  const filterDateTo = document.getElementById('filterDateTo').value;
+
+  // 全データを取得
+  const snapshot = await getDocs(collection(db, 'anomalies'));
+  let allData = snapshot.docs.map(d => ({_id: d.id, ...d.data()}));
+  
+  // クライアント側でフィルタリング
+  filteredCache = allData.filter(item => {
+    if (filterDept && item.department !== filterDept) return false;
+    if (filterSerial && !(item.serialNo||'').toLowerCase().includes(filterSerial)) return false;
+    if (filterLine && item.lineName !== filterLine) return false;
+    
+    const itemDate = item.occurrenceDate || '';
+    if (filterDateFrom && itemDate < filterDateFrom) return false;
+    if (filterDateTo && itemDate > filterDateTo) return false;
+    
+    return true;
+  });
+  
+  // 日付順にソート
+  filteredCache.sort((a, b) => (b.occurrenceDate || '').localeCompare(a.occurrenceDate || ''));
+  
+  const resultCount = document.getElementById('filterResultCount');
+  resultCount.innerHTML = '<strong>' + filteredCache.length + '</strong> 件の履歴が見つかりました';
+  resultCount.style.display = 'block';
+  
+  renderHistory();
+}
+async function clearFilter() {
+  document.getElementById('filterDepartment').value = '';
+  document.getElementById('filterSerialNo').value = '';
+  document.getElementById('filterLine').value = '';
+  document.getElementById('filterDateFrom').value = '';
+  document.getElementById('filterDateTo').value = '';
+  document.getElementById('filterResultCount').style.display = 'none';
+  
+  document.getElementById('btnFilterYesterday').classList.remove('active');
+  document.getElementById('btnFilterToday').classList.remove('active');
+  
+  // フィルターをクリアして通常の25件表示に戻す
+  resetPaging();
+  await loadInitialData();
+}
+document.getElementById('btnApplyFilter').addEventListener('click', async () => {
+  await applyFilter();
+});
+document.getElementById('btnClearFilter').addEventListener('click', async () => {
+  await clearFilter();
+});
 
   document.getElementById('btnFilterYesterday').addEventListener('click', () => {
     const yesterday = getDateString(-1);
