@@ -1172,9 +1172,14 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
   const ctx = canvas.getContext('2d'); if (!ctx) return;
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  const n = values.length; if (!n) return;
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
+  // 実データの min/max をそのまま使う（0件でも 0 を表示）
+  const data = Array.isArray(values) ? values.map(v => Number(v) || 0) : [];
+  const n = data.length; if (!n) return;
+  const realMax = Math.max(...data, 0);
+  const realMin = Math.min(...data, 0);
+
+  // スケーリング用の分母（0除算回避のみ 1 を使用）— 表示は realMax をそのまま出す
+  const denom = (realMax === realMin) ? 1 : (realMax - realMin);
 
   const pad = 6 * dpr;
   const xStep = n > 1 ? (canvas.width - pad*2)/(n-1) : 0;
@@ -1190,47 +1195,141 @@ function drawLineSpark(canvas, values, color='rgba(66,133,244,0.85)', opts={}){
 
   // 24h の時間マーカー（8:00 起点）
   if (opts.type === 'hour' && typeof opts.markerIndex === 'number'){
-    const hour = (8 + opts.markerIndex) % 24;
-    drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: n, label: String(hour) });
+    drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: n, label: String((8 + opts.markerIndex) % 24) });
   }
 
-  // === Y軸最大値ラベル（数値のみ） ===
+  // === Y軸最大値ラベル：実データの最大値をそのまま表示 ===
   ctx.font = `${10*dpr}px 'Segoe UI', sans-serif`;
   ctx.fillStyle = document.body.classList.contains('theme-dark')
     ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
-  const yMaxLabel = String(Math.max(1, Math.round(max)));
-  ctx.fillText(yMaxLabel, canvas.width - pad, pad * 0.5);
+  ctx.fillText(String(realMax), canvas.width - pad, pad * 0.5);
 
-  // ★ 最大値の高さに水平破線（MAX ガイド）
-  if (Number.isFinite(max)) {
-    const ratioMax = (max===min) ? 1 : (max-min)/(max-min); // =1
-    const yMax = canvas.height - pad - ratioMax * (canvas.height - pad*2);
-    ctx.save();
-    ctx.strokeStyle = document.body.classList.contains('theme-dark')
-      ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
-    ctx.setLineDash([4*dpr, 3*dpr]);
-    ctx.lineWidth = 1 * dpr;
-    ctx.beginPath();
-    ctx.moveTo(pad, yMax);
-    ctx.lineTo(canvas.width - pad, yMax);
-    ctx.stroke();
-    ctx.restore();
-  }
+  // ★ MAX ガイド（最大値の高さに水平破線）
+  const baseY = canvas.height - pad;
+  const height = canvas.height - pad*2;
+  const yAtMax = baseY - ((realMax - realMin)/denom) * height;
+  ctx.save();
+  ctx.strokeStyle = document.body.classList.contains('theme-dark')
+    ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
+  ctx.setLineDash([4*dpr, 3*dpr]);
+  ctx.lineWidth = 1 * dpr;
+  ctx.beginPath();
+  ctx.moveTo(pad, yAtMax);
+  ctx.lineTo(canvas.width - pad, yAtMax);
+  ctx.stroke();
+  ctx.restore();
 
   // 折れ線
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * dpr;
   ctx.beginPath();
   for (let i=0;i<n;i++){
-    const v = values[i];
-    const ratio = (max===min) ? 0.5 : (v-min)/(max-min);
+    const v = data[i];
+    const ratio = (v - realMin) / denom;
     const x = pad + xStep * i;
-    const y = canvas.height - pad - ratio * (canvas.height - pad*2);
+    const y = baseY - ratio * height;
     if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.stroke();
+
+  // 終端マーカー
+  const lastX = pad + xStep*(n-1);
+  const lastRatio = (data[n-1] - realMin) / denom;
+  const lastY = baseY - lastRatio * height;
+  ctx.beginPath(); ctx.arc(lastX,lastY,2.5*dpr,0,Math.PI*2); ctx.fillStyle = color; ctx.fill();
+}
+
+function drawStackedSpark(canvas, seriesList, colors=['#8ab4f8','#a3e0c0','#f9c58d','#f7a9b8','#c9b6f2'], opts={}){
+  if (!canvas) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  ensureCanvasResolution(canvas);
+
+  const ctx = canvas.getContext('2d'); if (!ctx) return;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  const L = seriesList?.[0]?.length || 0; if (!L) return;
+  // 合計系列の実 max を使用
+  const sums = Array.from({length:L},(_,i)=> seriesList.reduce((a,s)=> a + (Number(s[i])||0), 0));
+  const realMax = Math.max(...sums, 0);
+  const realMin = 0; // 積み上げは 0 起点
+  const denom = Math.max(1, realMax - realMin);
+
+  const pad = 6 * dpr;
+  const step = (canvas.width - pad*2) / Math.max(1,(L-1));
+  const baseY = canvas.height - pad;
+  const height = canvas.height - pad*2;
+
+  // ベース線
+  ctx.strokeStyle = document.body.classList.contains('theme-dark')
+    ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 1 * dpr;
+  ctx.beginPath();
+  ctx.moveTo(pad, baseY);
+  ctx.lineTo(canvas.width - pad, baseY);
+  ctx.stroke();
+
+  // 24h の時間マーカー（8:00 起点）
+  if (opts.type === 'hour' && typeof opts.markerIndex === 'number'){
+    drawShiftMarker(ctx, canvas, { markerIndex: opts.markerIndex, count: L, label: String((8 + opts.markerIndex) % 24) });
+  }
+
+  // ★ MAX ガイド（最大合計の高さに水平破線）＋ ラベル表示
+  const yAtMax = baseY - ((realMax - realMin)/denom)*height;
+  ctx.save();
+  ctx.strokeStyle = document.body.classList.contains('theme-dark')
+    ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)';
+  ctx.setLineDash([4*dpr, 3*dpr]);
+  ctx.lineWidth = 1 * dpr;
+  ctx.beginPath();
+  ctx.moveTo(pad, yAtMax);
+  ctx.lineTo(canvas.width - pad, yAtMax);
+  ctx.stroke();
+  ctx.restore();
+
+  // 最大値ラベル（右上）
+  ctx.font = `${10*dpr}px 'Segoe UI', sans-serif`;
+  ctx.fillStyle = document.body.classList.contains('theme-dark')
+    ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(String(realMax), canvas.width - pad, pad * 0.5);
+
+  // 積み上げ塗り
+  let accumPrev = Array(L).fill(0);
+  const hexToRgba = (hex, alpha)=>{ const h=hex.replace('#',''); const n=parseInt(h,16); const r=(n>>16)&255,g=(n>>8)&255,b=n&255; return `rgba(${r},${g},${b},${alpha})`; };
+
+  seriesList.forEach((s,idx)=>{
+    const data = s.map(v => Number(v)||0);
+    const topY = data.map((v,i)=> baseY - ((accumPrev[i]+v - realMin)/denom)*height);
+    const botY = accumPrev.map((v,i)=>   baseY - ((v           - realMin)/denom)*height);
+
+    ctx.beginPath();
+    for (let i=0;i<L;i++){ const x=pad+step*i, y=topY[i]; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+    for (let i=L-1;i>=0;i--){ const x=pad+step*i, y=botY[i]; ctx.lineTo(x,y); }
+    ctx.closePath();
+    ctx.fillStyle = hexToRgba(colors[idx%colors.length], 0.85);
+    ctx.fill();
+
+    accumPrev = accumPrev.map((v,i)=> v + data[i]);
+  });
+
+  // 外周の細線（合計の折れ線）
+  ctx.beginPath();
+  for (let i=0;i<L;i++){
+    const x = pad + step*i;
+    const y = baseY - ((sums[i]-realMin)/denom)*height;
+    if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle = (opts && opts.edgeColor)
+    ? opts.edgeColor
+    : (document.body.classList.contains('theme-dark') ? 'rgba(255,255,255,0.24)' : 'rgba(0,0,0,0.18)');
+  ctx.lineWidth = 1 * dpr;
+  ctx.stroke();
+}
+
 
   // 終端マーカー
   const lastX = pad + xStep*(n-1);
