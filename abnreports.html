@@ -1358,75 +1358,139 @@ const rows = anomalyCache.map(item=>{
     importParsed = { headers, rows:dataRows, mappedRows, errors };
   });
 
-  document.getElementById('btnImportStart').addEventListener('click', async ()=>{
-    if (!importParsed){ alert('CSVを選択してください'); return; }
-    if (importParsed.errors.length){ alert('エラーを解消してから実行してください'); return; }
-    const dryRun = document.getElementById('dryRun').checked;
-    const dupPolicy = document.getElementById('dupPolicy').value;
-    const useCreatedAtNow = document.getElementById('useCreatedAtNow').checked;
+document.getElementById('btnImportStart').addEventListener('click', async ()=>{
+  if (!importParsed){ alert('CSVを選択してください'); return; }
+  
+  const dryRun = document.getElementById('dryRun').checked;
+  const dupPolicy = document.getElementById('dupPolicy').value;
+  const useCreatedAtNow = document.getElementById('useCreatedAtNow').checked;
 
-    const cacheIdx = buildCacheIndex();
-    let ok=0, skip=0, upd=0, ng=0;
-    const problems=[];
+  const cacheIdx = buildCacheIndex();
+  let ok=0, skip=0, upd=0, ng=0;
+  const problems=[];
+  const successRows = [];
 
-    // バッチ処理で効率化
-    const batchSize = 10;
-    for (let i=0; i<importParsed.mappedRows.length; i+=batchSize){
-      const batch = importParsed.mappedRows.slice(i, i+batchSize);
-      
-      await Promise.all(batch.map(async (row) => {
-        try{
-          const key = guessDuplicateKey(row);
-          const cacheHitId = cacheIdx.get(key) || null;
-
-          if (dupPolicy === 'skip' && cacheHitId){
-            skip++; return;
-          }
-
-          if (dupPolicy === 'overwrite_id' && row._id){
-            if (dryRun){ upd++; return; }
-            const updates = { ...row };
-            delete updates._id; delete updates._stopMin;
-            if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
-            await updateDoc(doc(db,'anomalies', row._id), updates);
-            upd++; return;
-          }
-
-          const payload = {
-            department: row.department||'',
-            lineName:   row.lineName||'',
-            serialNo:   row.serialNo||'',
-            occurrenceDate: row.occurrenceDate||'',
-            occurrenceTime: row.occurrenceTime||'',
-            restartTime: row.restartTime||'',
-            anomalyContent: row.anomalyContent||'',
-            actionTaken: row.actionTaken||'',
-            traceback: row.traceback||'',
-            handler: row.handler||'',
-            techRequest: row.techRequest||'',
-            techHandler: row.techHandler||'',
-            discoveryTiming: row.discoveryTiming||'',
-            previousCheck: row.previousCheck||'',
-            lifespan: row.lifespan||'',
-            lifespanReached: row.lifespanReached||'',
-            maintenanceUnit: row.maintenanceUnit||'',
-            rootCauseAction: row.rootCauseAction||'',
-            recurrenceType: row.recurrenceType||'',
-            affirmation: row.affirmation||'',
-             measureStatus: row.measureStatus || '',   // ← 追加
-            status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
-            mfgPhotoUrls: [], techPhotoUrls: []
-          };
-          if (useCreatedAtNow) payload.createdAt = serverTimestamp();
-
-          if (dryRun){ ok++; return; }
-          await addDoc(collection(db,'anomalies'), payload);
-          ok++;
-        }catch(e){
-          ng++; problems.push(`Row ${i+2}: ${e.code||e.message}`);
-        }
-      }));
+  // 各行を個別にバリデーション
+  importParsed.mappedRows.forEach((row, i) => {
+    const rowNo = i + 2;
+    const rowErrors = [];
+    
+    // 必須項目チェック
+    ['serialNo','department','occurrenceDate','anomalyContent','actionTaken'].forEach(k=>{
+      if (!row[k] || !row[k].toString().trim()){ 
+        rowErrors.push(`必須「${k}」が空`); 
+      }
+    });
+    
+    // 時刻形式チェック
+    if (row.occurrenceTime && !/^\d{1,2}:\d{2}$/.test(row.occurrenceTime)){ 
+      rowErrors.push(`発生時刻はHH:MM形式で入力`); 
     }
+    if (row.restartTime && !/^\d{1,2}:\d{2}$/.test(row.restartTime)){ 
+      rowErrors.push(`再開時刻はHH:MM形式で入力`); 
+    }
+    
+    if (rowErrors.length > 0) {
+      ng++;
+      problems.push(`Row ${rowNo}: ${rowErrors.join(', ')}`);
+    } else {
+      successRows.push(row);
+    }
+  });
+
+  if (successRows.length === 0) {
+    alert('エラー: すべての行にエラーがあります。CSVを修正してください。\n\n' + problems.slice(0,10).join('\n'));
+    return;
+  }
+
+  // 確認ダイアログ
+  const confirmMsg = `
+【インポート確認】
+・処理可能な行: ${successRows.length}行
+・エラーのある行: ${ng}行（スキップされます）
+${dryRun ? '\n※ ドライランモード（実際の書き込みは行いません）' : ''}
+
+続行しますか？`;
+
+  if (!confirm(confirmMsg)) return;
+
+  // 正常な行のみ処理
+  const batchSize = 10;
+  ok = 0; skip = 0; upd = 0;
+  
+  for (let i=0; i<successRows.length; i+=batchSize){
+    const batch = successRows.slice(i, i+batchSize);
+    
+    await Promise.all(batch.map(async (row, batchIdx) => {
+      const globalIdx = i + batchIdx;
+      try{
+        const key = guessDuplicateKey(row);
+        const cacheHitId = cacheIdx.get(key) || null;
+
+        if (dupPolicy === 'skip' && cacheHitId){
+          skip++; return;
+        }
+
+        if (dupPolicy === 'overwrite_id' && row._id){
+          if (dryRun){ upd++; return; }
+          const updates = { ...row };
+          delete updates._id; delete updates._stopMin;
+          if (updates.status && !['complete','pending'].includes(updates.status)) delete updates.status;
+          await updateDoc(doc(db,'anomalies', row._id), updates);
+          upd++; return;
+        }
+
+        const payload = {
+          department: row.department||'',
+          lineName:   row.lineName||'',
+          serialNo:   row.serialNo||'',
+          occurrenceDate: row.occurrenceDate||'',
+          occurrenceTime: row.occurrenceTime||'',
+          restartTime: row.restartTime||'',
+          anomalyContent: row.anomalyContent||'',
+          actionTaken: row.actionTaken||'',
+          traceback: row.traceback||'',
+          qualityResponse: row.qualityResponse||'',
+          handler: row.handler||'',
+          techRequest: row.techRequest||'',
+          techHandler: row.techHandler||'',
+          discoveryTiming: row.discoveryTiming||'',
+          previousCheck: row.previousCheck||'',
+          lifespan: row.lifespan||'',
+          lifespanReached: row.lifespanReached||'',
+          maintenanceUnit: row.maintenanceUnit||'',
+          rootCauseAction: row.rootCauseAction||'',
+          recurrenceType: row.recurrenceType||'',
+          affirmation: row.affirmation||'',
+          measureStatus: row.measureStatus || '',
+          status: row.status || (row.techRequest==='完結' ? 'complete' : 'pending'),
+          mfgPhotoUrls: [], techPhotoUrls: []
+        };
+        if (useCreatedAtNow) payload.createdAt = serverTimestamp();
+
+        if (dryRun){ ok++; return; }
+        await addDoc(collection(db,'anomalies'), payload);
+        ok++;
+      }catch(e){
+        problems.push(`Row ${globalIdx + 2}: ${e.code||e.message}`);
+      }
+    }));
+  }
+
+  // 結果レポート
+  const resultMsg = `
+【インポート結果】
+✅ 成功: ${ok}件
+🔄 上書き: ${upd}件
+⏭️ スキップ: ${skip}件
+❌ エラー: ${ng}件
+${dryRun ? '\n※ ドライランモードのため実際の書き込みは行われていません' : ''}
+${problems.length > 0 ? `\n\n【エラー詳細】（最大10件表示）\n${problems.slice(0,10).join('\n')}${problems.length > 10 ? `\n...他${problems.length - 10}件` : ''}` : ''}`;
+
+  alert(resultMsg);
+  importModal.classList.remove('active'); 
+  importModal.setAttribute('aria-hidden','true');
+});
 
     alert(`インポート結果
 - 作成: ${ok}
