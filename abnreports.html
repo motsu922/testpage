@@ -1176,7 +1176,82 @@ document.addEventListener('click', (e)=>{
     '技術対応内容':'rootCauseAction','再発新規':'recurrenceType','対策状況':'measureStatus',
     '暫定':'affirmation','状態':'_statusText','停止時間(分)':'_stopMin','_id':'_id'
   };
+
+// 日付正規化関数を追加（CSVインポート前に配置）
+function normalizeDate(dateStr) {
+  if (!dateStr) return '';
+  const str = dateStr.toString().trim();
   
+  // 既に YYYY-MM-DD 形式の場合はそのまま
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  
+  // YYYY/MM/DD 形式を変換
+  if (/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(str)) {
+    const [y, m, d] = str.split('/');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  
+  // MM/DD/YYYY 形式を変換
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+    const [m, d, y] = str.split('/');
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+  
+  // DD/MM/YYYY 形式（ヨーロッパ式）は判別困難だが一応対応
+  // Excel日付シリアル値（数値のみ）の場合
+  if (/^\d+$/.test(str)) {
+    const serial = parseInt(str, 10);
+    // Excel基準日: 1900年1月1日（シリアル値1 = 1900/1/1）
+    // ※ Excelのバグで1900年をうるう年扱いするため、60日以降は-1
+    const baseDate = new Date(1900, 0, serial > 59 ? serial - 1 : serial);
+    const y = baseDate.getFullYear();
+    const m = String(baseDate.getMonth() + 1).padStart(2, '0');
+    const d = String(baseDate.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  
+  // Date型として解釈を試みる
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  
+  // どれにも該当しない場合は元の値を返す（エラーチェックで引っかかる）
+  return str;
+}
+
+function normalizeTime(timeStr) {
+  if (!timeStr) return '';
+  const str = timeStr.toString().trim();
+  
+  // 既に HH:MM 形式の場合はそのまま
+  if (/^\d{1,2}:\d{2}$/.test(str)) {
+    const [h, m] = str.split(':');
+    return `${h.padStart(2,'0')}:${m}`;
+  }
+  
+  // H:MM 形式（1桁時間）
+  if (/^\d:\d{2}$/.test(str)) {
+    const [h, m] = str.split(':');
+    return `${h.padStart(2,'0')}:${m}`;
+  }
+  
+  // Excel時刻シリアル値（0.0 ～ 1.0）の場合
+  if (/^0\.\d+$/.test(str)) {
+    const decimal = parseFloat(str);
+    const totalMinutes = Math.round(decimal * 24 * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+  }
+  
+  return str;
+}
+
+ 
 /* CSVインポート */
   function parseCSVLoose(text){
     const rows=[]; let cur=''; let row=[]; let inQuotes=false;
@@ -1277,41 +1352,72 @@ const rows = anomalyCache.map(item=>{
     }
   });
 
-  document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
-    const f = e.target.files?.[0]; if (!f) return;
-    const text = await f.text();
-    const rows = parseCSVLoose(text);
-    if (!rows.length){ document.getElementById('importPreview').innerHTML = '<span style="color:#c62828;">CSVが空です。</span>'; return; }
-    const headers = rows[0];
-    const miss = REQUIRED_HEADERS.filter(h => !headers.includes(h));
-    if (miss.length){
-      document.getElementById('importPreview').innerHTML =
-        `<div style="color:#c62828;">必須ヘッダが不足しています: ${miss.join(', ')}</div>`;
-      importParsed = null; return;
+document.getElementById('csvFileInput').addEventListener('change', async (e)=>{
+  const f = e.target.files?.[0]; if (!f) return;
+  const text = await f.text();
+  const rows = parseCSVLoose(text);
+  if (!rows.length){ 
+    document.getElementById('importPreview').innerHTML = '<span style="color:#c62828;">CSVが空です。</span>'; 
+    return; 
+  }
+  
+  const headers = rows[0];
+  const miss = REQUIRED_HEADERS.filter(h => !headers.includes(h));
+  if (miss.length){
+    document.getElementById('importPreview').innerHTML =
+      `<div style="color:#c62828;">必須ヘッダが不足しています: ${miss.join(', ')}</div>`;
+    importParsed = null; return;
+  }
+
+  const mapIdx = headers.map(h => HEADER_MAP[h] || null);
+  const dataRows = rows.slice(1).filter(r => r.some(c => (c??'').toString().trim() !== ''));
+  
+  const mappedRows = dataRows.map(r => {
+    const obj={};
+    mapIdx.forEach((key, i)=>{
+      if (!key) return;
+      obj[key] = (r[i]??'').toString().trim();
+    });
+    
+    // ★ 日付・時刻の正規化を適用
+    if (obj.occurrenceDate) obj.occurrenceDate = normalizeDate(obj.occurrenceDate);
+    if (obj.occurrenceTime) obj.occurrenceTime = normalizeTime(obj.occurrenceTime);
+    if (obj.restartTime) obj.restartTime = normalizeTime(obj.restartTime);
+    
+    obj.techRequest = normalizeTechRequest(obj.techRequest);
+    if (obj._statusText){ 
+      obj.status = normalizeStatus(obj._statusText); 
+      delete obj._statusText; 
     }
+    return obj;
+  });
 
-    const mapIdx = headers.map(h => HEADER_MAP[h] || null);
-    const dataRows = rows.slice(1).filter(r => r.some(c => (c??'').toString().trim() !== ''));
-    const mappedRows = dataRows.map(r => {
-      const obj={};
-      mapIdx.forEach((key, i)=>{
-        if (!key) return;
-        obj[key] = (r[i]??'').toString().trim();
-      });
-      obj.techRequest = normalizeTechRequest(obj.techRequest);
-      if (obj._statusText){ obj.status = normalizeStatus(obj._statusText); delete obj._statusText; }
-      return obj;
+  const errors=[];
+  mappedRows.forEach((o, i)=>{
+    const rowNo = i+2;
+    
+    // 必須フィールドチェック
+    ['serialNo','department','occurrenceDate','anomalyContent','actionTaken'].forEach(k=>{
+      if (!o[k] || !o[k].toString().trim()){ 
+        errors.push(`Row ${rowNo}: 必須「${k}」が空`); 
+      }
     });
+    
+    // 日付形式チェック（正規化後）
+    if (o.occurrenceDate && !/^\d{4}-\d{2}-\d{2}$/.test(o.occurrenceDate)) { 
+      errors.push(`Row ${rowNo}: 発生日はYYYY-MM-DD形式にしてください（現在: ${o.occurrenceDate}）`); 
+    }
+    
+    // 時刻形式チェック（正規化後）
+    if (o.occurrenceTime && !/^\d{1,2}:\d{2}$/.test(o.occurrenceTime)) { 
+      errors.push(`Row ${rowNo}: 発生時刻はHH:MM形式にしてください（現在: ${o.occurrenceTime}）`); 
+    }
+    if (o.restartTime && !/^\d{1,2}:\d{2}$/.test(o.restartTime)) { 
+      errors.push(`Row ${rowNo}: 再開時刻はHH:MM形式にしてください（現在: ${o.restartTime}）`); 
+    }
+  });
 
-    const errors=[];
-    mappedRows.forEach((o, i)=>{
-      const rowNo = i+2;
-      ['serialNo','department','occurrenceDate','anomalyContent','actionTaken'].forEach(k=>{
-        if (!o[k] || !o[k].toString().trim()){ errors.push(`Row ${rowNo}: 必須「${k}」が空`); }
-      });
-      if (o.occurrenceTime && !/^\d{1,2}:\d{2}$/.test(o.occurrenceTime)){ errors.push(`Row ${rowNo}: 発生時刻はHH:MM`); }
-      if (o.restartTime && !/^\d{1,2}:\d{2}$/.test(o.restartTime)){ errors.push(`Row ${rowNo}: 再開時刻はHH:MM`); }
-    });
+  // 以降は既存のプレビュー表示コードと同じ...
 
     const previewCount = Math.min(5, mappedRows.length);
     const sample = mappedRows.slice(0, previewCount).map(o => ({
