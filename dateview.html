@@ -1499,6 +1499,7 @@ null;
     const thead=document.getElementById('tableHead');
     const tbody=document.getElementById('tableBody');
     const columns=allColumns.filter(c=>visibleColumns.includes(c.id));
+    
 
     thead.innerHTML = `<tr>${
       columns.map(col=>`
@@ -1569,54 +1570,57 @@ null;
     enableHeaderReorder();
   }
 
-  function enableHeaderReorder() {
-    const thead = document.getElementById('tableHead');
-    if (!thead) return;
-    const ths = thead.querySelectorAll('th');
-    let dragSrcEl = null;
+// 列のドラッグ入れ替え機能（PC対応）
+function enableHeaderReorder(){
+  const ths = document.querySelectorAll('#tableHead th');
+  ths.forEach(th=>{
+    th.draggable = true;
 
-    ths.forEach(th => {
-      th.draggable = true;
-
-      th.addEventListener('dragstart', (e)=>{
-        dragSrcEl = th;
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', th.dataset.column);
-        th.classList.add('dragging');
-      });
-
-      th.addEventListener('dragover', (e)=>{
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-      });
-
-      th.addEventListener('drop', (e)=>{
-        e.stopPropagation();
-        const target = th;
-        if (dragSrcEl && dragSrcEl !== target) {
-          const headRow = thead.querySelector('tr');
-          const cols = Array.from(headRow.children);
-          const fromIndex = cols.indexOf(dragSrcEl);
-          const toIndex = cols.indexOf(target);
-
-          if (fromIndex < toIndex) {
-            headRow.insertBefore(dragSrcEl, target.nextSibling);
-          } else {
-            headRow.insertBefore(dragSrcEl, target);
-          }
-
-          const newOrder = Array.from(headRow.querySelectorAll('th')).map(th=>th.dataset.column);
-          localStorage.setItem('columnOrder', JSON.stringify(newOrder));
-
-          renderTable();
-        }
-      });
-
-      th.addEventListener('dragend', ()=>{
-        th.classList.remove('dragging');
-      });
+    th.addEventListener('dragstart', e=>{
+      e.dataTransfer.setData('colId', th.dataset.column);
+      th.classList.add('dragging');
     });
-  }
+
+    th.addEventListener('dragend', ()=>{
+      th.classList.remove('dragging');
+    });
+
+    th.addEventListener('dragover', e=>{
+      e.preventDefault();
+      th.style.borderLeft = '3px solid var(--brand)';
+    });
+
+    th.addEventListener('dragleave', ()=>{
+      th.style.borderLeft = '';
+    });
+
+    th.addEventListener('drop', e=>{
+      e.preventDefault();
+      th.style.borderLeft = '';
+      const from = e.dataTransfer.getData('colId');
+      const to = th.dataset.column;
+      reorderColumns(from, to);
+    });
+  });
+}
+
+// 列順を入れ替えて再描画
+function reorderColumns(fromId, toId){
+  const fromIndex = visibleColumns.indexOf(fromId);
+  const toIndex = visibleColumns.indexOf(toId);
+  if(fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+
+  // 移動処理
+  const moved = visibleColumns.splice(fromIndex,1)[0];
+  visibleColumns.splice(toIndex,0,moved);
+
+  // 保存
+  localStorage.setItem('datasheetColumns', JSON.stringify(visibleColumns));
+
+  // 再描画
+  renderTable();
+  enableHeaderReorder();
+}
 
   function applySorting(){
     const col=currentSort.column, dir=currentSort.direction;
@@ -1704,6 +1708,10 @@ null;
       </div>
       <div class="detail-section"><div class="section-title">🚨 異常内容</div><div class="detail-text-area">${item.anomalyContent||'-'}</div></div>
       <div class="detail-section"><div class="section-title">🔧 対応内容</div><div class="detail-text-area">${item.actionTaken||'-'}</div></div>
+           <div class="detail-section">
+       <div class="section-title">🛠️ 技術対応内容</div>
+       <div class="detail-text-area">${item.rootCauseAction || '-'}</div>
+     </div>
       ${mfg.length?`<div class="detail-section"><div class="section-title">📷 発信部署の写真（${mfg.length}枚）</div><div class="photo-grid">${mfg.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
       ${tech.length?`<div class="detail-section"><div class="section-title">🔧 技術部門の写真（${tech.length}枚）</div><div class="photo-grid">${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
     `;
@@ -1732,6 +1740,15 @@ null;
       if([25,50,75,100].includes(v)){
         displayLimit=v;
         document.getElementById('displayCount').value=String(v);
+         const savedOrder = localStorage.getItem('columnOrder');
+ if (savedOrder) {
+   const order = JSON.parse(savedOrder);
+   const existingIds = allColumns.map(c=>c.id);
+   // 不正なIDを除外して順序反映
+   const valid = order.filter(id => existingIds.includes(id));
+   // 並べ替えを反映
+   allColumns.sort((a,b)=> valid.indexOf(a.id) - valid.indexOf(b.id));
+ }
       }
     }
     
