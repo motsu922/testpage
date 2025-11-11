@@ -516,6 +516,8 @@
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
   import { getFirestore, collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
 
+  let headerDragActive = false;
+  
   const firebaseConfig = {
     apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
     authDomain: "abnreport-fd733.firebaseapp.com",
@@ -1498,7 +1500,9 @@ null;
   function renderTable(){
     const thead=document.getElementById('tableHead');
     const tbody=document.getElementById('tableBody');
-    const columns=allColumns.filter(c=>visibleColumns.includes(c.id));
+const columns = visibleColumns
+  .map(id => allColumns.find(c => c.id === id))
+  .filter(Boolean);
     
 
     thead.innerHTML = `<tr>${
@@ -1577,12 +1581,15 @@ function enableHeaderReorder(){
     th.draggable = true;
 
     th.addEventListener('dragstart', e=>{
+      headerDragActive = true;
       e.dataTransfer.setData('colId', th.dataset.column);
       th.classList.add('dragging');
     });
 
     th.addEventListener('dragend', ()=>{
       th.classList.remove('dragging');
+      // 同期タスク終わった次フレームで解除（click誤発火対策）
+      setTimeout(()=>{ headerDragActive = false; }, 0);
     });
 
     th.addEventListener('dragover', e=>{
@@ -1600,6 +1607,15 @@ function enableHeaderReorder(){
       const from = e.dataTransfer.getData('colId');
       const to = th.dataset.column;
       reorderColumns(from, to);
+    });
+
+    // ← click（昇順/降順トグル）は drag のとき無視
+    th.addEventListener('click', (ev)=>{
+      if (headerDragActive) return;
+      const col = th.getAttribute('data-column');
+      if(currentSort.column===col) currentSort.direction = currentSort.direction==='asc'?'desc':'asc';
+      else { currentSort.column=col; currentSort.direction='asc'; }
+      applySorting();
     });
   });
 }
@@ -1752,13 +1768,7 @@ function reorderColumns(fromId, toId){
       }
     }
     
-    const savedOrder = localStorage.getItem('columnOrder');
-    if (savedOrder) {
-      const order = JSON.parse(savedOrder);
-      const existingIds = allColumns.map(c=>c.id);
-      const valid = order.filter(id => existingIds.includes(id));
-      allColumns.sort((a,b)=> valid.indexOf(a.id) - valid.indexOf(b.id));
-    }
+
 
     const pill = parseFloat(localStorage.getItem('pillScale'));           setPillScale(!Number.isNaN(pill)?pill:1.0,false);
     const base = parseFloat(localStorage.getItem('fontScale'));           setFontScale(!Number.isNaN(base)?base:1.0,false);
