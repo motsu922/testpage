@@ -711,66 +711,76 @@ body.fullscreen-active {
             </span>`;
   }
 
-  function getDeptTodayRate(dept){
-    const now = new Date();
-    const start = new Date(now);
-    start.setHours(8,0,0,0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    end.setHours(8,0,0,0);
+/* ===== 赤/緑判定を「フィルター期間の時間当たり平均」vs「30日平均」で比較 ===== */
 
-    const deptData = allData.filter(it=>{
-      const d = getOccurrenceMsLocal(it);
-      if(!d) return false;
-      return (it.departmentNormalized === dept && d >= start && d < end);
-    });
-
-    const hours = Math.max(1, (Math.min(now, end) - start) / (1000*60*60));
-    return deptData.length / hours;
+// いま画面に適用されている「日付フィルター」のウィンドウ（ms）を取得
+function getCurrentFilterWindow(){
+  // 明示的な期間指定がある場合（前日/今日ボタン、またはdateFrom/dateTo入力）
+  if (dateFromStr || dateToStr){
+    const from = dateFromStr ? new Date(`${dateFromStr}T00:00:00`).getTime() : -Infinity;
+    const to   = dateToStr   ? new Date(`${dateToStr}T23:59:59.999`).getTime() :  Infinity;
+    return [from, to];
   }
-
-  function getDeptWeekday30hAvgRate(dept){
-    const now = new Date();
-    const to = new Date(now);
-    const from = new Date(now);
-    from.setDate(to.getDate() - 45);
-    const deptData = allData.filter(it=>{
-      const d = getOccurrenceMsLocal(it);
-      if(!d) return false;
-      if(d < from || d > to) return false;
-      const wd = new Date(d).getDay();
-      return (it.departmentNormalized === dept && wd !== 0 && wd !== 6);
-    });
-
-    const weekdayCount = new Set(
-      deptData.map(it=>{
-        const d = new Date(getOccurrenceMsLocal(it));
-        d.setHours(8,0,0,0);
-        return d.toISOString().slice(0,10);
-      })
-    ).size;
-
-    const days = Math.max(1, Math.min(weekdayCount, 30));
-    const hours = days * 24;
-    return deptData.length / hours;
+  // ない場合は、スパークラインの表示レンジ（buildBins）を使う
+  const binsInfo = buildBins();
+  const bins = binsInfo?.bins || [];
+  if (!bins.length){
+    // フォールバック：今日の0:00〜23:59:59
+    const t = new Date(); t.setHours(0,0,0,0);
+    const from = t.getTime();
+    const to = from + 24*60*60*1000 - 1;
+    return [from, to];
   }
+  const from = bins[0].start;
+  const to   = bins[bins.length - 1].end;
+  return [from, to];
+}
 
-  function ensureCanvasResolution(canvas){
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = Math.floor(canvas.clientWidth  || 120);
-    const cssH = Math.floor(parseFloat(getComputedStyle(canvas).height) || 40);
-    const needW = Math.max(1, Math.floor(cssW * dpr));
-    const needH = Math.max(1, Math.floor(cssH * dpr));
-    if (canvas.width !== needW)  canvas.width  = needW;
-    if (canvas.height !== needH) canvas.height = needH;
+// フィルター期間における、部署ごとの「時間当たり平均件数」
+function getDeptFilteredAvgRate(dept){
+  const [from, to] = getCurrentFilterWindow();
+  if (!(Number.isFinite(from) && Number.isFinite(to) && to > from)) return 0;
+  let count = 0;
+  for (const it of allData){
+    if ((it.departmentNormalized||'未設定') !== dept) continue;
+    const ms = getOccurrenceMsLocal(it);
+    if (ms==null) continue;
+    if (ms >= from && ms <= to) count++;
   }
+  const hours = Math.max(1, (to - from) / 36e5);
+  return count / hours;
+}
 
-  function getDeptSparkColor(dept){
-    const rateToday = getDeptTodayRate(dept);
-    const baseRate  = getDeptWeekday30hAvgRate(dept);
-    if(baseRate===0 && rateToday===0) return 'rgba(66,133,244,0.85)';
-    return (rateToday <= baseRate) ? 'rgba(22,163,74,0.95)' : 'rgba(239,68,68,0.95)';
+// 直近30日の（同一終端日ベース）時間当たり平均件数
+function getDeptRolling30dAvgRate(dept){
+  // 比較の終端は「現在のフィルター期間の終端」に合わせる
+  const [, to] = getCurrentFilterWindow();
+  const endMs = Number.isFinite(to) ? to : Date.now();
+  const startMs = endMs - 30*24*60*60*1000; // 30日
+  let count = 0;
+  for (const it of allData){
+    if ((it.departmentNormalized||'未設定') !== dept) continue;
+    const ms = getOccurrenceMsLocal(it);
+    if (ms==null) continue;
+    if (ms >= startMs && ms <= endMs) count++;
   }
+  const hours = 30*24; // 30日を固定時間で正規化
+  return count / hours;
+}
+
+// 色決定：フィルター平均 <= 30日平均 なら「緑」、超えると「赤」。
+// どちらも0なら青（ニュートラル）
+function getDeptSparkColor(dept){
+  const cur = getDeptFilteredAvgRate(dept);
+  const base = getDeptRolling30dAvgRate(dept);
+
+  if (base === 0 && cur === 0) return 'rgba(66,133,244,0.85)'; // データなし：青
+  // しきい値を少し緩めたい場合は以下のイプシロンを調整（±5%）
+  const eps = Math.max(0.0001, base * 0.05);
+  return (cur <= base + eps) ? 'rgba(22,163,74,0.95)'     // 緑（良化 or 同等）
+                             : 'rgba(239,68,68,0.95)';    // 赤（悪化）
+}
+
 
   /* ===== 認証・ロード ===== */
   async function checkAuth(){
