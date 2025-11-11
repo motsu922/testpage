@@ -440,15 +440,37 @@
 <div class="form-group"><label>遡り *</label>
   <input type="text" id="traceback" required placeholder="例: 300個廃却　品質判断より生産分流動 など">
 </div>
-         <div class="form-group">
+<!-- 品質対応 -->
+<div class="form-group">
   <label>品質対応</label>
   <textarea id="qualityResponse" placeholder="品質判定履歴・備考など"></textarea>
 </div>
-          <div class="form-group"><label>対応区分 *</label>
-            <select id="techRequest" required>
-              <option value="">選択</option><option value="要請">技術・生技対応</option><option value="完結">完了</option>
-            </select>
-          </div>
+
+<!-- 再発/新規（発信部署でも入力可） -->
+<div class="form-group">
+  <label>再発 / 新規</label>
+  <select id="mfg_recurrenceType">
+    <option value="">選択</option>
+    <option value="再発">再発</option>
+    <option value="新規">新規</option>
+  </select>
+</div>
+
+<!-- 対策状況（再発のときだけ表示） -->
+<div class="form-group" id="mfg_measureStatusGroup" style="display:none;">
+  <label>対策状況（再発の場合）</label>
+  <textarea id="mfg_measureStatus" placeholder="例）再発要因／恒久対策の進捗・期限など"></textarea>
+</div>
+
+<!-- 対応区分（既存のtechRequest） -->
+<div class="form-group">
+  <label>対応区分 *</label>
+  <select id="techRequest" required>
+    <option value="">選択</option>
+    <option value="要請">技術・生技対応</option>
+    <option value="完結">完了</option>
+  </select>
+</div>
 
           <button type="button" id="btnShowPastOnMfg" class="btn btn-secondary" style="background:#1976d2;">過去の異常履歴</button>
 
@@ -896,6 +918,18 @@ function resetPaging(){
   lastVisibleDoc = null;
   hasMoreData = true;
   isLoadingMore = false;
+}
+// 発信部署側：再発/新規の切り替えで対策状況の表示制御
+const mfgRecSel = document.getElementById('mfg_recurrenceType');
+const mfgMsGroup = document.getElementById('mfg_measureStatusGroup');
+if (mfgRecSel && mfgMsGroup) {
+  mfgRecSel.addEventListener('change', () => {
+    mfgMsGroup.style.display = (mfgRecSel.value === '再発') ? 'block' : 'none';
+    if (mfgRecSel.value !== '再発') {
+      const ms = document.getElementById('mfg_measureStatus');
+      if (ms) ms.value = '';
+    }
+  });
 }
 
 // 発信部署タブの更新：マスタ再取得＋シリアル候補再構築
@@ -2087,7 +2121,23 @@ document.getElementById('manufacturingForm').addEventListener('submit', async (e
   
   try {
     const techReq = document.getElementById('techRequest').value;
-    
+
+    /* ▼▼ ここが「追加」する2行＋任意バリデーション ▼▼ */
+    const mRec = (document.getElementById('mfg_recurrenceType')?.value || '').trim();
+    const mMs  = (document.getElementById('mfg_measureStatus')?.value || '').trim();
+
+    // 再発が選択されていて対策状況が空なら確認（不要ならこの if は削除OK）
+    if (mRec === '再発' && !mMs) {
+      const go = confirm('「再発」が選択されていますが、対策状況が未入力です。\nこのまま登録しますか？');
+      if (!go) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '登録';
+        isSubmittingMfg = false;
+        return;
+      }
+    }
+    /* ▲▲ 追加ここまで ▲▲ */
+
     const base = {
       department: document.getElementById('department').value,
       lineName: document.getElementById('lineName').value,
@@ -2098,22 +2148,26 @@ document.getElementById('manufacturingForm').addEventListener('submit', async (e
       anomalyContent: document.getElementById('anomalyContent').value,
       actionTaken: document.getElementById('actionTaken').value,
       traceback: document.getElementById('traceback').value,
-     qualityResponse: document.getElementById('qualityResponse').value || '',
+      qualityResponse: document.getElementById('qualityResponse').value || '',
       handler: document.getElementById('handler').value,
       techRequest: techReq,
       status: techReq === '完結' ? 'complete' : 'pending',
       createdAt: serverTimestamp(),
-      techHandler: '', 
-      lifespan: '', 
-      maintenanceUnit: '', 
-      rootCauseAction: '', 
-      recurrenceType: '',
-      discoveryTiming: '', 
-      previousCheck: '', 
-      lifespanReached: '', 
+      techHandler: '',
+      lifespan: '',
+      maintenanceUnit: '',
+      rootCauseAction: '',
+
+      /* ▼▼ ここを“ユーザー入力”で上書き ▼▼ */
+      recurrenceType: mRec,                       // '再発' / '新規' / ''
+      measureStatus: (mRec === '再発') ? mMs : '',// 再発のときだけ保存
+      /* ▲▲ 上書きここまで ▲▲ */
+
+      discoveryTiming: '',
+      previousCheck: '',
+      lifespanReached: '',
       affirmation: '',
-      measureStatus: '',
-      mfgPhotoUrls: [], 
+      mfgPhotoUrls: [],
       techPhotoUrls: []
     };
     
@@ -2156,7 +2210,16 @@ document.getElementById('manufacturingForm').addEventListener('submit', async (e
     document.getElementById('mfgPhotoPreview').innerHTML = '';
     document.getElementById('lineName').innerHTML = '<option value="">部署を先に選択してください</option>';
     document.getElementById('handler').innerHTML = '<option value="">部署を先に選択してください</option>';
-    
+
+    /* ▼ 新規追加フィールドのUIもリセット */
+    const mfgRecSel2 = document.getElementById('mfg_recurrenceType');
+    const mfgMs2 = document.getElementById('mfg_measureStatus');
+    const mfgMsGrp2 = document.getElementById('mfg_measureStatusGroup');
+    if (mfgRecSel2) mfgRecSel2.value = '';
+    if (mfgMs2) mfgMs2.value = '';
+    if (mfgMsGrp2) mfgMsGrp2.style.display = 'none';
+    /* ▲ リセットここまで */
+
     alert('登録が完了しました！');
     console.log('=== Form submission completed successfully ===');
     
@@ -2169,6 +2232,7 @@ document.getElementById('manufacturingForm').addEventListener('submit', async (e
     isSubmittingMfg = false;
   }
 });
+
 
 
 // 技術フォームも同様に修正
@@ -2239,6 +2303,12 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
     }
     
     e.target.reset();
+   const mfgRecSel2 = document.getElementById('mfg_recurrenceType');
+const mfgMs2 = document.getElementById('mfg_measureStatus');
+const mfgMsGrp2 = document.getElementById('mfg_measureStatusGroup');
+if (mfgRecSel2) mfgRecSel2.value = '';
+if (mfgMs2) mfgMs2.value = '';
+if (mfgMsGrp2) mfgMsGrp2.style.display = 'none';
     techPhotos = [];
     document.getElementById('techPhotoPreview').innerHTML = '';
     document.getElementById('selectedDataDisplay').style.display = 'none';
