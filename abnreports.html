@@ -912,6 +912,15 @@ let editTechPhotos = [];
     renderTechTargetSelect();
     updateSerialNoList();
   }
+  function normalizeSerial(s){
+  if (!s) return '';
+  // 全角英数→半角
+  const z2h = s.replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch =>
+    String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)
+  );
+  return z2h.trim().toUpperCase();
+}
+  
 // ==== リフレッシュ系ユーティリティ ====
 // 履歴のページング状態を初期化
 function resetPaging(){
@@ -1809,23 +1818,30 @@ document.getElementById('btnImportStart').addEventListener('click', async functi
 // DOMできたら一回だけ
 window.addEventListener('DOMContentLoaded', bindPhotoInputsOnce);
 
-  function findSimilarCandidates(base, limitN=10){
-    if (!base) return [];
-    let candidates = anomalyCache
-      .filter(x => x._id !== base._id && x.status==='complete');
-    if (base.serialNo) {
-      const same = candidates.filter(x => x.serialNo === base.serialNo);
-      if (same.length >= 1) candidates = same;
-    }
-    const withScore = candidates.map(it => ({
-      ...it,
-      similarity: calculateSimilarity(base.anomalyContent||'', it.anomalyContent||'')
-    }));
-    return withScore
-      .filter(x => x.similarity >= 30)
-      .sort((a,b) => (b.similarity!==a.similarity) ? (b.similarity-a.similarity) : (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''))
-      .slice(0, limitN);
-  }
+ function findSimilarCandidates(base, limitN = 10){
+  if (!base) return [];
+  const baseSN = normalizeSerial(base.serialNo);
+
+  // 完了データのうち、同一整理No限定
+  let candidates = anomalyCache
+    .filter(x => x._id !== base._id && x.status === 'complete')
+    .filter(x => normalizeSerial(x.serialNo) === baseSN);
+
+  // 類似度計算（異常内容を基準）
+  const withScore = candidates.map(it => ({
+    ...it,
+    similarity: calculateSimilarity(base.anomalyContent || '', it.anomalyContent || '')
+  }));
+
+  // 類似度降順 → 発生日降順
+  return withScore
+    .filter(x => x.similarity >= 30)
+    .sort((a,b) => (b.similarity !== a.similarity)
+        ? (b.similarity - a.similarity)
+        : (b.occurrenceDate || '').localeCompare(a.occurrenceDate || '')
+    )
+    .slice(0, limitN);
+}
   
   function renderSimilarList(items){
     return items.map((item) => {
