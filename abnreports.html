@@ -2617,86 +2617,71 @@ ${(item.recurrenceType==='再発' && item.measureStatus) ?
   }
 
 
-  document.getElementById('selectSerialNo').addEventListener('change', ()=>{
-    const id = document.getElementById('selectSerialNo').value;
-    const d = anomalyCache.find(it=> it._id===id);
-    const box=document.getElementById('selectedDataDisplay'), wrap=document.getElementById('displayContent');
-    showingAllCases = false;
-    if (!d){
-      box.style.display='none';
-      wrap.innerHTML='';
-      document.getElementById('similarCasesBox').classList.remove('active');
-      return;
-    }
-    wrap.innerHTML = `
-      <div style="display:grid;gap:8px;">
-        <div><strong>整理No:</strong> ${d.serialNo}</div>
-        ${d.department?`<div><strong>部署:</strong> ${d.department}</div>`:''}
-        ${d.lineName?`<div><strong>ライン名:</strong> ${d.lineName}</div>`:''}
-        <div><strong>異常内容:</strong> ${d.anomalyContent||''}</div>
-        <div><strong>対応内容:</strong> ${d.actionTaken||''}</div>
-        <div><strong>発生日:</strong> ${d.occurrenceDate||''}</div>
-        <div><strong>処置者:</strong> ${d.handler||''}</div>
-      </div>
-    `;
-    box.style.display='block';
-
-    const candidates = findSimilarCandidates(d, 10);
-    allSimilarCases = candidates;
-    const content = document.getElementById('similarCasesContent');
-    const simBox = document.getElementById('similarCasesBox');
-    if (candidates.length){
-      content.innerHTML = renderSimilarList(showingAllCases ? candidates : candidates.slice(0,1));
-      const showMoreBtn = document.getElementById('showMoreCases');
-      if (candidates.length > 1 && !showingAllCases) {
-        showMoreBtn.style.display = 'block';
-        showMoreBtn.textContent = `他の類似案件を表示（あと${candidates.length - 1}件）`;
-      } else {
-        showMoreBtn.style.display = 'none';
-      }
-      simBox.classList.add('active');
-    }else{
-      simBox.classList.remove('active');
-    }
-  });
-
-  document.getElementById('showMoreCases').addEventListener('click', () => {
-    showingAllCases = true;
-    const content = document.getElementById('similarCasesContent');
-    content.innerHTML = renderSimilarList(allSimilarCases);
-    document.getElementById('showMoreCases').style.display='none';
-  });
-
-document.getElementById('btnShowPastOnTech').addEventListener('click', async ()=>{
+document.getElementById('selectSerialNo').addEventListener('change', async ()=>{
   const id = document.getElementById('selectSerialNo').value;
-  if (!id){ alert('対象案件を選択してください'); return; }
+  const box   = document.getElementById('selectedDataDisplay');
+  const wrap  = document.getElementById('displayContent');
+  const simBox= document.getElementById('similarCasesBox');
+  const content = document.getElementById('similarCasesContent');
+  const showMoreBtn = document.getElementById('showMoreCases');
 
-  const d = anomalyCache.find(it=> it._id===id);
-  if (!d){ alert('対象案件が見つかりません'); return; }
-
-  // 整理No未入力（=選択案件にserialNo無し）の場合は検索しない
-  const serialNo = (d.serialNo||'').trim();
-  if (!serialNo){
-    alert('選択中の案件に整理Noがありません（検索を開始しません）');
+  // 初期化
+  showingAllCases = false;
+  allSimilarCases = [];
+  if (!id){
+    box.style.display='none';
+    wrap.innerHTML='';
+    simBox.classList.remove('active');
     return;
   }
 
-  // 全データから該当整理Noを取得し、選択中案件自身は除外
+  const d = anomalyCache.find(it=> it._id===id);
+  if (!d){
+    box.style.display='none';
+    wrap.innerHTML='';
+    simBox.classList.remove('active');
+    return;
+  }
+
+  // 上部の選択中案件表示は従来通り
+  wrap.innerHTML = `
+    <div style="display:grid;gap:8px;">
+      <div><strong>整理No:</strong> ${d.serialNo||'-'}</div>
+      ${d.department?`<div><strong>部署:</strong> ${d.department}</div>`:''}
+      ${d.lineName?`<div><strong>ライン名:</strong> ${d.lineName}</div>`:''}
+      <div><strong>異常内容:</strong> ${d.anomalyContent||''}</div>
+      <div><strong>対応内容:</strong> ${d.actionTaken||''}</div>
+      <div><strong>発生日:</strong> ${d.occurrenceDate||''}</div>
+      <div><strong>処置者:</strong> ${d.handler||''}</div>
+    </div>
+  `;
+  box.style.display='block';
+
+  // ▼ ここから変更点：同じ整理Noで Firestore 全体検索（自分自身は除外）
+  const serialNo = (d.serialNo||'').trim();
+  if (!serialNo){
+    simBox.classList.add('active');
+    content.innerHTML = '<div style="color:#666;">整理Noが未入力のため、過去履歴を検索できません</div>';
+    showMoreBtn.style.display = 'none';
+    return;
+  }
+
+  // Firestore全体から該当整理Noを取得（あなたの fetchAllBySerialNo を利用）
   const all = (await fetchAllBySerialNo(serialNo)).filter(x => x._id !== d._id);
 
-  // 類似度は「選択案件の異常内容」を基準に算出
+  // 類似度は選択中案件の異常内容を基準に算出（しきい値は従来と同じ 30）
   const withScore = all.map(it => ({
-    ...it,
-    similarity: calculateSimilarity(d.anomalyContent||'', it.anomalyContent||'')
-  }))
-  .filter(x => x.similarity >= 30)
-  .sort((a,b)=> (b.similarity!==a.similarity) ? (b.similarity-a.similarity) : (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+      ...it,
+      similarity: calculateSimilarity(d.anomalyContent||'', it.anomalyContent||'')
+    }))
+    .filter(x => x.similarity >= 30)
+    .sort((a,b)=> (b.similarity!==a.similarity)
+        ? (b.similarity-a.similarity)
+        : (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
 
-  const content = document.getElementById('similarCasesContent');
-  const simBox = document.getElementById('similarCasesBox');
-  const showMoreBtn = document.getElementById('showMoreCases');
-
+  // レンダリング
   if (withScore.length){
+    allSimilarCases = withScore;
     content.innerHTML = renderSimilarList(withScore.slice(0,1));
     if (withScore.length > 1) {
       showMoreBtn.style.display = 'block';
@@ -2709,7 +2694,6 @@ document.getElementById('btnShowPastOnTech').addEventListener('click', async ()=
       showMoreBtn.style.display = 'none';
     }
     simBox.classList.add('active');
-    simBox.scrollIntoView({behavior:'smooth', block:'start'});
   }else{
     simBox.classList.add('active');
     content.innerHTML = '<div style="color:#666;">候補がありません</div>';
