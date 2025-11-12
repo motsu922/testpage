@@ -8,7 +8,7 @@
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 <style>
 /* テーマ変数 */
 :root {
@@ -326,6 +326,22 @@
       <div class="kpi"><div class="t">R²</div><div class="v" id="mR2">-</div></div>
     </div>
     <div class="panel" style="margin-top:10px">
+      <!-- 📝 対応メモ -->
+<div class="panel" id="memoPanel" style="margin-top:12px">
+  <h3>📝 対応メモ（この項目に紐づくメモ）</h3>
+  <div class="row" style="gap:8px;align-items:flex-start;margin:8px 0 6px;flex-wrap:wrap">
+    <textarea id="memoText" rows="3" placeholder="対応内容を入力" 
+      style="flex:1;min-width:320px;padding:10px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-primary);color:var(--text-primary)"></textarea>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <input type="datetime-local" id="memoAt" 
+        style="padding:8px 10px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-primary);color:var(--text-primary)">
+      <button class="btn primary" id="btnMemoSave">💾 保存</button>
+    </div>
+  </div>
+  <div class="hint" style="margin-bottom:6px">※ メモはファイル別に保存／共有されます</div>
+  <div id="memoList" style="display:grid;gap:8px"></div>
+</div>
+
       <h3>推移（選択粒度）</h3>
       <svg class="svg" id="svgDetail"></svg>
     </div>
@@ -348,21 +364,60 @@ const firebaseConfig = {
 let db = null;
 let firebaseInitialized = false;
 
-function initFirebase() {
+async function initFirebase() {
   try {
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
+    // 匿名サインイン（必要に応じてルールは anon write を許可）
+    await firebase.auth().signInAnonymously();
+
     db = firebase.firestore();
     firebaseInitialized = true;
-    updateFirebaseStatus('接続済み ✓');
+    updateFirebaseStatus('接続済み ✓（匿名）');
     enableFirebaseButtons();
-    console.log('Firebase初期化成功');
+    console.log('Firebase初期化成功（匿名サインイン完了）');
   } catch (error) {
     console.error('Firebase初期化エラー:', error);
     updateFirebaseStatus('接続エラー ✗');
     firebaseInitialized = false;
   }
+}
+
+// ===== Firestore: refs =====
+function fileDocRef() {
+  if (!firebaseInitialized || !currentFileName) return null;
+  return db.collection('anomaly-configs').doc(getFileKey(currentFileName));
+}
+function memoColRef() {
+  const fd = fileDocRef();
+  return fd ? fd.collection('memos') : null;
+}
+  async function addMemoToFirebase(msg, note, atISO) {
+  const col = memoColRef();
+  if (!col) throw new Error('Firebase未接続またはファイル未選択です');
+  const now = firebase.firestore.FieldValue.serverTimestamp();
+  const docRef = await col.add({
+    msg, note, atISO,
+    createdAt: now,
+    updatedAt: now,
+    updatedBy: 'user-' + Date.now().toString(36)
+  });
+  return docRef.id;
+}
+
+async function deleteMemoFromFirebase(memoId) {
+  const col = memoColRef();
+  if (!col) throw new Error('Firebase未接続またはファイル未選択です');
+  await col.doc(memoId).delete();
+}
+
+async function fetchMemosFromFirebase(msg) {
+  const col = memoColRef();
+  if (!col) return [];
+  // msg で絞り、対応日時（文字列）降順で
+  const snap = await col.where('msg', '==', msg).orderBy('atISO', 'desc').get();
+  return snap.docs.map(d => ({ id: d.id, ...(d.data()||{}) }));
 }
 
 function updateFirebaseStatus(text) {
@@ -391,6 +446,7 @@ async function saveToFirebase() {
       fileName: currentFileName,
       marked: [...marked],
       ignored: [...ignored],
+      memos, 
       lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
       updatedBy: 'user-' + Date.now().toString(36) // 簡易的なユーザー識別子
     };
@@ -427,7 +483,7 @@ async function loadFromFirebase() {
     const data = doc.data();
     marked = new Set(data.marked || []);
     ignored = new Set(data.ignored || []);
-    
+    memos  = (data.memos && typeof data.memos === 'object') ? data.memos : {};
     // UI更新
     renderChipSets(allMessages);
     renderAll();
@@ -481,6 +537,48 @@ function toggleTheme() {
   // SVG再描画（色が変わるため）
   if (rawRows.length > 0) renderAll();
 }
+function toLocalDatetimeValue(date = new Date()){
+  // YYYY-MM-DDTHH:mm（ローカル）を生成
+  const pad = n => String(n).padStart(2,'0');
+  const y = date.getFullYear();
+  const m = pad(date.getMonth()+1);
+  const d = pad(date.getDate());
+  const hh= pad(date.getHours());
+  const mm= pad(date.getMinutes());
+  return `${y}-${m}-${d}T${hh}:${mm}`;
+}
+
+function renderMemoList(msg){
+  const list = $('memoList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  const arr = (memos[msg] || []).slice().sort((a,b)=> (b.atISO||'').localeCompare(a.atISO||''));
+  if (!arr.length){
+    list.innerHTML = '<div class="hint">メモはまだありません</div>';
+    return;
+  }
+
+  arr.forEach((it, idx) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'card';
+    wrap.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="font-size:${fs(12)}px;color:var(--text-secondary)">対応日時：${(it.atISO||'').replace('T',' ')}</div>
+        <button class="btn ghost" data-idx="${idx}">🗑 削除</button>
+      </div>
+      <div style="margin-top:6px;font-size:${fs(14)}px;color:var(--text-primary);white-space:pre-wrap;line-height:1.4">${it.note || ''}</div>
+    `;
+    wrap.querySelector('button')?.addEventListener('click', () => {
+      // idx は並び替え後の相対なので、削除は atISO で同定
+      const targetAt = it.atISO;
+      memos[msg] = (memos[msg] || []).filter(x => x.atISO !== targetAt);
+      if (currentFileName) saveFileConfig(currentFileName);
+      renderMemoList(msg);
+    });
+    list.appendChild(wrap);
+  });
+}
 
 function updateThemeButton(theme) {
   const btn = $('btnTheme');
@@ -502,13 +600,13 @@ function loadFileConfig(filename) {
   const key = getFileKey(filename);
   try {
     const configs = JSON.parse(localStorage.getItem(LS_FILE_CONFIGS) || '{}');
-    const config = configs[key] || { marked: [], ignored: [] };
-    marked = new Set(config.marked.filter(x => typeof x === 'string'));
-    ignored = new Set(config.ignored.filter(x => typeof x === 'string'));
-    console.log(`設定読み込み: ${filename} => マーク:${marked.size}, 無視:${ignored.size}`);
+    const config = configs[key] || { marked: [], ignored: [], memos: {} };
+    marked = new Set((config.marked || []).filter(x => typeof x === 'string'));
+    ignored = new Set((config.ignored || []).filter(x => typeof x === 'string'));
+    memos  = (config.memos && typeof config.memos === 'object') ? config.memos : {};
+    console.log(`設定読み込み: ${filename} => マーク:${marked.size}, 無視:${ignored.size}, メモ項目数:${Object.keys(memos).length}`);
   } catch {
-    marked = new Set();
-    ignored = new Set();
+    marked = new Set(); ignored = new Set(); memos = {};
   }
 }
 
@@ -519,14 +617,16 @@ function saveFileConfig(filename) {
     configs[key] = {
       marked: [...marked],
       ignored: [...ignored],
+      memos, // 追加
       lastUpdated: new Date().toISOString()
     };
     localStorage.setItem(LS_FILE_CONFIGS, JSON.stringify(configs));
-    console.log(`設定保存: ${filename} => マーク:${marked.size}, 無視:${ignored.size}`);
+    console.log(`設定保存: ${filename} => マーク:${marked.size}, 無視:${ignored.size}, メモ項目数:${Object.keys(memos).length}`);
   } catch (e) {
     console.error('設定保存エラー:', e);
   }
 }
+
 
 function updateCurrentFileName(filename) {
   currentFileName = filename;
@@ -590,6 +690,7 @@ let rowsWithDT=[];         // {ts:Date, message:string}
 let marked = new Set();    // マーク対象
 let ignored = new Set();   // 無視対象
 let allMessages=[];
+  let memos = {};
 
 /* ====== CSV I/O（手動のみ） ====== */
 $('btnPick').addEventListener('click', ()=> $('fileInput').click());
@@ -896,126 +997,128 @@ function renderTrends(){
     month: {panel:'cardsMonth', look:DEFAULT_LOOKBACK.month, title:'月'},
   };
 
+  // 48h件数（全MESSAGE）を一度だけ作る
+  const rowsAll = filteredRows();
+  const count48All = {};
+  if (rowsAll.length) {
+    const latest = rowsAll[rowsAll.length - 1].ts;
+    const start48 = new Date(latest.getTime() - 48 * 3600 * 1000);
+    rowsAll.forEach(r => {
+      if (r.ts >= start48 && r.ts <= latest) {
+        count48All[r.message] = (count48All[r.message] || 0) + 1;
+      }
+    });
+  }
+
   for (const gran of ['day','week','month']) {
     const { periods, byMsg } = groupByPeriod(gran);
     const container = $(cfg[gran].panel);
     container.innerHTML = '';
-    if (periods.length === 0) { container.innerHTML = '<div class="hint">データなし</div>'; continue; }
+    if (periods.length === 0) {
+      container.innerHTML = '<div class="hint">データなし</div>';
+      continue;
+    }
 
     const look = Math.min(cfg[gran].look, periods.length);
     const usePeriods = periods.slice(-look);
 
-// --- recs作成 ---
-// --- recs作成（置換） ---
-const recs = [];
-const r2Min = 0.20;
-const sumMin = 10;
-const recentMin = 5;
-const baseMin = 5;
+    // ===== recs をここで作る（必ず定義）=====
+    const recs = [];
+    const r2Min = 0.20;
+    const sumMin = 10;
+    const recentMin = 5;
+    const baseMin = 5;
 
-for (const [msg, obj] of byMsg.entries()) {
-  const y = usePeriods.map(p => obj[p.key] || 0);
-  const n = y.length;
-  const sum = y.reduce((a,b)=>a+b, 0);
-  if (sum < sumMin) continue;          // 全体として少なすぎる
+    for (const [msg, obj] of byMsg.entries()) {
+      const y = usePeriods.map(p => obj[p.key] || 0);
+      const n = y.length;
+      const sum = y.reduce((a,b)=>a+b, 0);
+      if (sum < sumMin) continue;
+      if (y.every(v => v === y[0])) continue; // 完全フラット除外
 
-  // 完全フラット除外
-  if (y.every(v => v === y[0])) continue;
+      // 後半重み付き回帰
+      const xs = [...y.keys()];
+      const w  = xs.map(i => 0.6 + 0.4 * (i / Math.max(1, n-1)));
+      const W  = w.reduce((a,b)=>a+b,0);
+      const xw = xs.reduce((a,i)=>a + w[i]*i, 0) / W;
+      const yw = y.reduce((a,yi,i)=>a + w[i]*yi, 0) / W;
 
-  // ---- 後半重み付きの傾き・R² ----
-  const xs = [...y.keys()];
-  // 線形に後半重視（0.6～1.0の重み）
-  const w  = xs.map(i => 0.6 + 0.4 * (i / Math.max(1, n-1)));
-  const W  = w.reduce((a,b)=>a+b,0);
-  const xw = xs.reduce((a,i)=>a + w[i]*i, 0) / W;
-  const yw = y.reduce((a,yi,i)=>a + w[i]*yi, 0) / W;
-  let num=0, den=0, sst=0, ssr=0;
-  for (let i=0;i<n;i++){
-    num += w[i]*(i - xw)*(y[i] - yw);
-    den += w[i]*(i - xw)*(i - xw);
-  }
-  const slope = den ? (num/den) : 0;
-  const intercept = yw - slope*xw;
-  for (let i=0;i<n;i++){
-    const yhat = slope*i + intercept;
-    sst += w[i]*(y[i] - yw)*(y[i] - yw);
-    ssr += w[i]*(y[i] - yhat)*(y[i] - yhat);
-  }
-  const r2 = sst ? Math.max(0, 1 - ssr/sst) : 0;
+      let num=0, den=0, sst=0, ssr=0;
+      for (let i=0;i<n;i++){
+        num += w[i]*(i - xw)*(y[i] - yw);
+        den += w[i]*(i - xw)*(i - xw);
+      }
+      const slope = den ? (num/den) : 0;
+      const intercept = yw - slope*xw;
 
-  if (r2 < r2Min) continue;            // トレンドが弱い
+      for (let i=0;i<n;i++){
+        const yhat = slope*i + intercept;
+        sst += w[i]*(y[i] - yw)*(y[i] - yw);
+        ssr += w[i]*(y[i] - yhat)*(y[i] - yhat);
+      }
+      const r2 = sst ? Math.max(0, 1 - ssr/sst) : 0;
+      if (r2 < r2Min) continue;
 
-  const mean = sum / n || 0;
-  const slopePct = slope / Math.max(1, mean);   // 相対傾き
+      const mean = sum / n || 0;
+      const slopePct = slope / Math.max(1, mean);
 
-  // ---- 直近 vs 直前のリフト ----
-  const cut = Math.max(2, Math.floor(n*2/3));   // 先行2/3 + 直近1/3
-  const base = y.slice(0, cut);
-  const recent = y.slice(cut);
+      const cut = Math.max(2, Math.floor(n*2/3));
+      const base = y.slice(0, cut);
+      const recent = y.slice(cut);
 
-  const baseMean = base.length ? base.reduce((a,b)=>a+b,0)/base.length : 0;
-  const recentMean = recent.length ? recent.reduce((a,b)=>a+b,0)/recent.length : 0;
-  const recentSum = recent.reduce((a,b)=>a+b,0);
+      const baseMean = base.length ? base.reduce((a,b)=>a+b,0)/base.length : 0;
+      const recentMean = recent.length ? recent.reduce((a,b)=>a+b,0)/recent.length : 0;
+      const recentSum = recent.reduce((a,b)=>a+b,0);
 
-  const lift = recentMean / Math.max(1, baseMean);
-  const liftDown = baseMean / Math.max(1, recentMean);
+      const lift = recentMean / Math.max(1, baseMean);
+      const liftDown = baseMean / Math.max(1, recentMean);
+      const stability = Math.min(1, sum / 30);
 
-  // 安定度（件数少は減衰）
-  const stability = Math.min(1, sum / 30);
+      let scoreUp = 0, scoreDn = 0;
+      if (slopePct > 0 && recentSum >= recentMin) {
+        scoreUp = slopePct * r2 * lift * stability;
+        if (lift < 1.2) scoreUp *= 0.5;
+      }
+      if (slopePct < 0 && baseMean >= baseMin) {
+        scoreDn = (-slopePct) * r2 * liftDown * stability;
+        if (liftDown < 1.2) scoreDn *= 0.5;
+      }
+      if (scoreUp  < 0.01) scoreUp  = 0;
+      if (scoreDn  < 0.01) scoreDn  = 0;
 
-  // ---- スコア ----
-  let scoreUp = 0, scoreDn = 0;
+      recs.push({
+        msg, y,
+        labels: usePeriods.map(p=>p.label),
+        slope, r2, sum, mean, scoreUp, scoreDn,
+        baseMean, recentMean, lift, liftDown
+      });
+    }
+    // ===== ここまで recs =====
 
-  if (slopePct > 0 && recentSum >= recentMin) {
-    scoreUp = slopePct * r2 * lift * stability;
-    // 小幅なリフトは弱める（例：<1.2は半減）
-    if (lift < 1.2) scoreUp *= 0.5;
-  }
-
-  if (slopePct < 0 && baseMean >= baseMin) {
-    scoreDn = (-slopePct) * r2 * liftDown * stability;
-    if (liftDown < 1.2) scoreDn *= 0.5;
-  }
-
-  // ノイズ除外
-  if (scoreUp  < 0.01) scoreUp  = 0;
-  if (scoreDn  < 0.01) scoreDn  = 0;
-
-  recs.push({
-    msg, y, labels: usePeriods.map(p=>p.label),
-    slope, r2, sum, mean, scoreUp, scoreDn,
-    baseMean, recentMean, lift, liftDown
-  });
-}
-
-
-// --- ランキング ---
-const up = recs.filter(r => r.scoreUp > 0).sort((a,b) => b.scoreUp - a.scoreUp).slice(0,3);
-const dn = recs.filter(r => r.scoreDn > 0).sort((a,b) => b.scoreDn - a.scoreDn).slice(0,3);
-
+    const up = recs.filter(r => r.scoreUp > 0).sort((a,b) => b.scoreUp - a.scoreUp).slice(0,3);
+    const dn = recs.filter(r => r.scoreDn > 0).sort((a,b) => b.scoreDn - a.scoreDn).slice(0,3);
 
     const makeCard = (r, dir) => {
+      const msg = r.msg; // ← ここで必ずローカル化
       const card = document.createElement('div');
       card.className = dir === 'up' ? 'card trend-up' : 'card trend-down';
 
-      const theme = (dir === 'up')
-        ? { accent:'#db2777', label:'↗︎ 上昇' } // ピンク系
-        : { accent:'#15803d', label:'↘︎ 改善' }; // 緑系
+      const lastMemoAt = (memos[msg] && memos[msg].length)
+        ? memos[msg].map(x=>x.atISO).sort().slice(-1)[0].replace('T',' ')
+        : null;
 
       card.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <span class="tag" style="background:${theme.accent};color:#fff;border:none;">${cfg[gran].title}</span>
-          <span style="color:${theme.accent};font-weight:700;">${theme.label}</span>
+          <div style="font-size:${fs(14)}px;color:var(--text-primary)">${msg}</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="tag">48h: ${fmt(count48All[msg] || 0)}</span>
+            ${ lastMemoAt ? `<span class="tag" title="最後の対応日時">🕒 ${lastMemoAt}</span>` : '' }
+          </div>
         </div>
-        <div style="font-size:14px;color:var(--text-primary);margin-top:6px">${r.msg}</div>
-        <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">傾き ${r.slope.toFixed(2)} ／ R² ${r.r2.toFixed(2)}</div>
         <svg class="svg-s"></svg>
       `;
-      card.addEventListener('click', () => openDetail(r.msg, $('granularity').value));
-
-      const svg = card.querySelector('svg');
-      drawMiniLineWithAxes(svg, r.labels, r.y, { showValues:true });
-
+      card.addEventListener('click', () => openDetail(msg, $('granularity').value));
+      drawMiniLineWithAxes(card.querySelector('svg'), r.labels, r.y, { showValues:true });
       return card;
     };
 
@@ -1023,6 +1126,7 @@ const dn = recs.filter(r => r.scoreDn > 0).sort((a,b) => b.scoreDn - a.scoreDn).
     dn.forEach(r => container.appendChild(makeCard(r, 'down')));
   }
 }
+
 
 
 
@@ -1163,7 +1267,43 @@ function openDetail(msg, gran) {
     sel.value = gran;
     sel.onchange = () => openDetail(msg, sel.value); // 粒度変更→再構築
   }
+$('memoText') && ($('memoText').value = '');
+$('memoAt')   && ($('memoAt').value   = toLocalDatetimeValue(new Date()));
+renderMemoList(msg); // ← Firebaseから表示
 
+const btnSave = $('btnMemoSave');
+if (btnSave) {
+  btnSave.onclick = async () => {
+    const note = ($('memoText')?.value || '').trim();
+    const at   = $('memoAt')?.value || '';
+    if (!note) { alert('対応内容を入力してください'); return; }
+    if (!at)   { alert('対応日時を指定してください'); return; }
+
+    // UIロック
+    btnSave.disabled = true;
+    const orig = btnSave.textContent;
+    btnSave.textContent = '保存中...';
+
+    try{
+      // ▼ 必ず Firebase に保存
+      await addMemoToFirebase(msg, note, at);
+
+      // ローカルは同期したい場合のみ反映（任意）
+      if (!memos[msg]) memos[msg] = [];
+      memos[msg].push({ note, atISO: at });
+
+      // 入力クリア＆再読込
+      $('memoText').value = '';
+      $('memoAt').value   = toLocalDatetimeValue(new Date());
+      await renderMemoList(msg);
+    }catch(err){
+      alert('Firebaseへの保存に失敗しました: ' + err.message);
+    }finally{
+      btnSave.disabled = false;
+      btnSave.textContent = orig;
+    }
+  };
+}
   // スライダーイベント
   const rW = $('rangeWindow'), rO = $('rangeOffset');
   if (rW) {
@@ -1188,6 +1328,7 @@ function openDetail(msg, gran) {
     modalView.window = modalView.y.length;
     modalView.offset = 0;
     renderDetailChart();
+    
   });
 
   // マウスホイールでズーム、ドラッグでスクロール（任意）
@@ -1205,6 +1346,9 @@ function openDetail(msg, gran) {
       // オフセット調整（左右に寄りすぎないよう軽く補正）
       modalView.offset = Math.max(0, Math.min(n - modalView.window, modalView.offset));
       renderDetailChart();
+
+
+      
     };
 
     // ドラッグ・パン
