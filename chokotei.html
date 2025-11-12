@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>異常履歴ダッシュボード（48h＋トレンド 即時反映＋自動読込）</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+<style>
+/* テーマ変数 */
+:root {
+  --bg-primary: #fff;
+  --bg-secondary: #f8f9fb;
+  --bg-tertiary: #f8fafc;
+  --border-color: #e5e7eb;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-tertiary: #64748b;
+  --card-bg: #fff;
+  --grid-line: #e5e7eb;
+  --shadow: rgba(0,0,0,.05);
+  --shadow-lg: rgba(0,0,0,.25);
+}
+
+[data-theme="dark"] {
+  --bg-primary: #1e293b;
+  --bg-secondary: #0f172a;
+  --bg-tertiary: #334155;
+  --border-color: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --card-bg: #1e293b;
+  --grid-line: #334155;
+  --shadow: rgba(0,0,0,.3);
+  --shadow-lg: rgba(0,0,0,.5);
+}
+
+.legend { gap: 8px; }
+.legend-item {
+  max-width: 100%;
+}
+.legend-item span {
+  display: inline-block;
+  max-width: 420px;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',Meiryo,sans-serif;
+    background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+    min-height:100vh;padding:20px;
+    transition: background 0.3s ease;
+  }
+  .container{
+    max-width:1480px;margin:0 auto;background:var(--bg-primary);border-radius:20px;
+    box-shadow:0 20px 60px var(--shadow-lg);overflow:hidden;
+    transition: background 0.3s ease;
+  }
+  .header{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:18px 24px;}
+  .header-row{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .header h1{font-size:22px}
+  .header .sub{opacity:.9;font-size:13px;margin-top:4px}
+  .controls{padding:16px 20px 8px;border-bottom:1px solid var(--border-color);background:var(--bg-secondary);transition: all 0.3s ease;}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .file-input-wrapper{position:relative;overflow:hidden;display:inline-block}
+  .btn{
+    padding:10px 16px;border:none;border-radius:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+    background:#e2e8f0;color:#0f172a;
+    transition: all 0.2s ease;
+  }
+  .btn.primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}
+  .btn.ghost{background:transparent;color:#4f46e5;border:1px solid var(--border-color);}
+  .btn:hover{opacity:.92;transform: translateY(-1px);}
+  .btn-theme{
+    background:var(--bg-tertiary);
+    color:var(--text-primary);
+    border:1px solid var(--border-color);
+  }
+  input[type=file]{position:absolute;left:-9999px}
+  select,input[type=number],input[type=text]{
+    padding:9px 12px;border:2px solid var(--border-color);border-radius:10px;background:var(--bg-primary);
+    color:var(--text-primary);
+    transition: all 0.3s ease;
+  }
+  .content{padding:18px 20px 24px}
+  .grid{display:grid;gap:14px}
+  .grid-2{grid-template-columns:2fr 1fr}
+  .panel{
+    background:var(--card-bg);border:1px solid var(--border-color);border-radius:16px;padding:16px 16px 12px;
+    box-shadow:0 1px 4px var(--shadow);
+    transition: all 0.3s ease;
+  }
+  .panel h3{font-size:14px;color:var(--text-secondary);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+  .hint{font-size:12px;color:var(--text-tertiary);}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:6px}
+  .kpi{border:1px solid var(--border-color);border-radius:14px;padding:12px;background:var(--bg-tertiary);transition: all 0.3s ease;}
+  .kpi .t{font-size:12px;color:var(--text-tertiary);}
+  .kpi .v{font-size:26px;font-weight:800;color:var(--text-primary);margin-top:4px}
+  .svg{width:100%;height:440px;overflow:visible}
+  .svg-s{width:100%;height:150px;overflow:visible}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+  .card{
+    border:1px solid var(--border-color);border-radius:14px;padding:12px;background:var(--card-bg);cursor:pointer;transition:.15s;
+  }
+  .card:hover{box-shadow:0 2px 10px var(--shadow);transform:translateY(-1px)}
+  
+  /* トレンドカード：ダークモード対応 */
+  .card.trend-up{
+    background:var(--card-bg);
+    border:2px solid #fb7185;
+  }
+  [data-theme="dark"] .card.trend-up{
+    background:#2d1a1f;
+    border-color:#fb7185;
+  }
+  .card.trend-down{
+    background:var(--card-bg);
+    border:2px solid #4ade80;
+  }
+  [data-theme="dark"] .card.trend-down{
+    background:#1a2d1f;
+    border-color:#4ade80;
+  }
+  
+  .tag{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--border-color);color:var(--text-secondary);background:var(--bg-tertiary);}
+  .trend-up{color:#b91c1c;font-weight:700}
+  .trend-down{color:#065f46;font-weight:700}
+  .section-title{font-size:15px;color:var(--text-primary);margin:4px 2px 8px;font-weight:800}
+  .marked-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:8px 2px 0}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);background:var(--bg-tertiary);border:1px solid var(--border-color);padding:4px 8px;border-radius:999px}
+  .dot{width:10px;height:10px;border-radius:50%}
+  /* modal */
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:20px}
+  .modal.active{display:flex}
+  .modal-content{background:var(--bg-primary);border-radius:20px;max-width:1000px;width:100%;max-height:90vh;overflow:auto;position:relative;padding:20px;transition: all 0.3s ease;}
+  .modal-close{position:absolute;right:16px;top:16px;border:none;background:#e5e7eb;width:38px;height:38px;border-radius:50%;font-size:22px;cursor:pointer}
+  .modal-close:hover{background:#ef4444;color:#fff}
+  #modalTitle{
+    word-break:break-word;
+    overflow-wrap:break-word;
+    line-height:1.4;
+    max-width:calc(100% - 60px);
+    color:var(--text-primary);
+  }
+  /* settings */
+  .settings{display:none;border-top:1px dashed var(--border-color);margin-top:10px;padding-top:12px}
+  .settings.active{display:block}
+  .search{padding:8px 10px;border:1px solid var(--border-color);border-radius:10px;width:260px;background:var(--bg-primary);color:var(--text-primary);}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;max-height:180px;overflow:auto}
+  .chip{border:1px solid var(--border-color);padding:6px 10px;border-radius:999px;cursor:pointer;background:var(--card-bg);color:var(--text-primary);transition: all 0.2s ease;}
+  .chip.active{background:#eef2ff;border-color:#c7d2fe;color:#3730a3}
+  .loading{display:none;text-align:center;padding:40px}
+  .loading.active{display:block}
+  .spinner{border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;width:48px;height:48px;animation:spin 1s linear infinite;margin:0 auto}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  
+  /* ファイル選択表示 */
+  .file-info{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:6px 12px;
+    background:var(--bg-tertiary);
+    border:1px solid var(--border-color);
+    border-radius:999px;
+    font-size:12px;
+    color:var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-row">
+      <div>
+        <h1>🔍 異常履歴ダッシュボード</h1>
+        <div class="sub">直近48時間の状況を強調＋トレンドで対策効果を可視化</div>
+      </div>
+      <div class="row">
+        <div class="file-input-wrapper">
+          <button class="btn primary" id="btnPick">📁 CSVを選択</button>
+          <input type="file" id="fileInput" accept=".csv,.txt">
+        </div>
+        <select id="granularity">
+          <option value="day">日</option>
+          <option value="week">週</option>
+          <option value="month" selected>月</option>
+        </select>
+        <button class="btn" id="btnSettings">⚙️ 設定</button>
+        <button class="btn btn-theme" id="btnTheme" title="テーマ切り替え">🌓</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="row" style="gap:12px;align-items:end">
+      <div>
+        <div class="hint" style="margin-bottom:6px">現在のファイル</div>
+        <div class="file-info" id="currentFile">未選択</div>
+      </div>
+      <div class="hint">必須列：<b>DATE</b>, <b>MESSAGE</b>（任意：<b>TIME</b>）</div>
+    </div>
+<!-- 文字サイズ -->
+<div class="row" style="gap:6px;margin-top:6px">
+  <span class="hint">文字サイズ</span>
+  <input type="range" id="fontScale" min="80" max="160" step="5" value="100">
+  <span class="hint" id="fontScaleVal">100%</span>
+</div>
+
+<!-- コントロールの中（URL設定の直後など）に置く -->
+<div id="settings" class="settings">
+  <div style="display:grid;gap:14px;grid-template-columns:1fr 1fr">
+    <div>
+      <div class="section-title">🎯 マークする異常（MESSAGE）</div>
+      <input class="search" id="searchMsg" placeholder="MESSAGEを検索">
+      <div class="chips" id="chipsMark"></div>
+    </div>
+    <div>
+      <div class="section-title">🙈 無視する異常（MESSAGE）</div>
+      <input class="search" id="searchIgnore" placeholder="MESSAGEを検索">
+      <div class="chips" id="chipsIgnore"></div>
+    </div>
+  </div>
+  
+  <!-- Firebase同期設定 -->
+  <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border-color);">
+    <div class="section-title">☁️ Firebase設定共有</div>
+    <div class="row" style="gap:8px;margin-bottom:8px;">
+      <span class="hint" id="firebaseStatus">未接続</span>
+      <button class="btn" id="btnFirebaseSync" disabled>🔄 Firebaseから読込</button>
+      <button class="btn" id="btnFirebaseSave" disabled>☁️ Firebaseに保存</button>
+    </div>
+    <div class="hint" style="font-size:11px;">※ 設定はファイル名ごとに保存され、チーム全体で共有されます</div>
+  </div>
+  
+  <div class="row" style="margin-top:8px;gap:8px">
+    <button class="btn primary" id="saveSettings">✅ ローカル保存</button>
+    <button class="btn ghost" id="clearSettings">🧹 すべて解除</button>
+    <span class="hint" id="marksHint">（クリックでも即保存＆反映します）</span>
+  </div>
+</div>
+
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <div class="hint" style="margin-top:10px">データを解析中...</div>
+  </div>
+
+  <div class="content" id="content" style="display:none">
+<!-- TOP: 直近48h（そのまま） -->
+<div class="grid grid-2">
+  <div class="panel">
+    <h3>⏱ 直近48時間の異常件数（1時間ごと） <span class="hint" id="h48Range">-</span></h3>
+    <svg class="svg" id="svg48h"></svg>
+    <div class="legend" id="legendTop5"></div>
+  </div>
+  <div class="panel">
+    <h3>原因TOP5（直近24時間）</h3>
+    <div class="kpis">
+      <div class="kpi"><div class="t">直近48h 合計</div><div class="v" id="vTotal48">-</div></div>
+      <div class="kpi"><div class="t">ピーク時刻（件数）</div><div class="v" id="vPeak">-</div></div>
+    </div>
+    <svg class="svg" id="svgTopCauses24"></svg>
+  </div>
+</div>
+
+<!-- 🎯 マーク異常（直近48h） ← トレンドより上に移動 -->
+<div class="section-title" style="margin-top:14px">🎯 マークした異常のモニタ（直近48h）</div>
+<div class="marked-grid" id="markedGrid"></div>
+
+<!-- 📈 粒度別トレンドTOP3 -->
+<div class="section-title" style="margin-top:14px">📈 粒度別トレンド解析 TOP3（上昇/改善）</div>
+<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(360px,1fr))">
+  <div class="panel" id="panelDay">
+    <h3>日トレンド TOP3</h3>
+    <div class="cards" id="cardsDay"></div>
+  </div>
+  <div class="panel" id="panelWeek">
+    <h3>週トレンド TOP3</h3>
+    <div class="cards" id="cardsWeek"></div>
+  </div>
+  <div class="panel" id="panelMonth">
+    <h3>月トレンド TOP3</h3>
+    <div class="cards" id="cardsMonth"></div>
+  </div>
+</div>
+
+
+<!-- 詳細モーダル -->
+<div class="modal" id="detailModal" aria-hidden="true">
+  <div class="modal-content">
+    <button class="modal-close" id="modalClose" aria-label="閉じる">×</button>
+    <h2 id="modalTitle" style="margin-bottom:10px"></h2>
+  <!-- 🔽 追加：粒度切替 -->
+  <div style="margin-bottom:8px;">
+    <label for="modalGran" style="font-size:13px;color:#334155;">粒度：</label>
+    <select id="modalGran" style="padding:4px 8px;border-radius:6px;border:1px solid #e5e7eb;">
+      <option value="day">日</option>
+      <option value="week">週</option>
+      <option value="month">月</option>
+    </select>
+  </div>
+
+<!-- 粒度切替の直後に追加 -->
+<div id="detailControls" style="display:flex;gap:8px;align-items:center;margin:8px 0 6px;">
+  <button class="btn" id="btnZoomOut"  title="縮小">－</button>
+  <button class="btn" id="btnZoomIn"   title="拡大">＋</button>
+  <button class="btn ghost" id="btnZoomReset" title="全体表示">⟳ リセット</button>
+  <div class="hint">表示幅</div>
+  <input id="rangeWindow" type="range" min="3" max="60" step="1" value="12" style="width:140px">
+  <span class="hint" id="lblWindow">12</span>
+  <div class="hint">位置</div>
+  <input id="rangeOffset" type="range" min="0" max="0" step="1" value="0" style="flex:1;min-width:200px">
+</div>
+    <div class="kpis">
+      <div class="kpi"><div class="t">期間合計</div><div class="v" id="mTotal">-</div></div>
+      <div class="kpi"><div class="t">平均/期間</div><div class="v" id="mAvg">-</div></div>
+      <div class="kpi"><div class="t">傾き（回帰）</div><div class="v" id="mSlope">-</div></div>
+      <div class="kpi"><div class="t">R²</div><div class="v" id="mR2">-</div></div>
+    </div>
+    <div class="panel" style="margin-top:10px">
+      <h3>推移（選択粒度）</h3>
+      <svg class="svg" id="svgDetail"></svg>
+    </div>
+  </div>
+</div>
+
+<script>
+
+// ===== Firebase設定 =====
+const firebaseConfig = {
+  apiKey: "AIzaSyCep92sxUf_X_1OLXUa3C73UdOwk00n7Pw",
+  authDomain: "chokotei-ef572.firebaseapp.com",
+  projectId: "chokotei-ef572",
+  storageBucket: "chokotei-ef572.firebasestorage.app",
+  messagingSenderId: "520522241295",
+  appId: "1:520522241295:web:a7e9b338ace97307ef5a7a"
+};
+
+// Firebase初期化
+let db = null;
+let firebaseInitialized = false;
+
+function initFirebase() {
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    db = firebase.firestore();
+    firebaseInitialized = true;
+    updateFirebaseStatus('接続済み ✓');
+    enableFirebaseButtons();
+    console.log('Firebase初期化成功');
+  } catch (error) {
+    console.error('Firebase初期化エラー:', error);
+    updateFirebaseStatus('接続エラー ✗');
+    firebaseInitialized = false;
+  }
+}
+
+function updateFirebaseStatus(text) {
+  const status = document.getElementById('firebaseStatus');
+  if (status) status.textContent = text;
+}
+
+function enableFirebaseButtons() {
+  const syncBtn = document.getElementById('btnFirebaseSync');
+  const saveBtn = document.getElementById('btnFirebaseSave');
+  if (syncBtn) syncBtn.disabled = false;
+  if (saveBtn) saveBtn.disabled = false;
+}
+
+// ===== Firestore操作 =====
+async function saveToFirebase() {
+  if (!firebaseInitialized || !currentFileName) {
+    alert('Firebaseが初期化されていないか、ファイルが選択されていません');
+    return;
+  }
+
+  try {
+    updateFirebaseStatus('保存中...');
+    const fileKey = getFileKey(currentFileName);
+    const configData = {
+      fileName: currentFileName,
+      marked: [...marked],
+      ignored: [...ignored],
+      lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: 'user-' + Date.now().toString(36) // 簡易的なユーザー識別子
+    };
+
+    await db.collection('anomaly-configs').doc(fileKey).set(configData);
+    
+    updateFirebaseStatus('保存完了 ✓');
+    alert(`✅ ${currentFileName} の設定をFirebaseに保存しました`);
+    console.log('Firebase保存成功:', fileKey);
+  } catch (error) {
+    console.error('Firebase保存エラー:', error);
+    updateFirebaseStatus('保存エラー ✗');
+    alert('Firebaseへの保存に失敗しました: ' + error.message);
+  }
+}
+
+async function loadFromFirebase() {
+  if (!firebaseInitialized || !currentFileName) {
+    alert('Firebaseが初期化されていないか、ファイルが選択されていません');
+    return;
+  }
+
+  try {
+    updateFirebaseStatus('読込中...');
+    const fileKey = getFileKey(currentFileName);
+    const doc = await db.collection('anomaly-configs').doc(fileKey).get();
+
+    if (!doc.exists) {
+      updateFirebaseStatus('データなし');
+      alert(`ℹ️ ${currentFileName} の設定がFirebaseに見つかりません`);
+      return;
+    }
+
+    const data = doc.data();
+    marked = new Set(data.marked || []);
+    ignored = new Set(data.ignored || []);
+    
+    // UI更新
+    renderChipSets(allMessages);
+    renderAll();
+    
+    // ローカルにも保存
+    saveFileConfig(currentFileName);
+    
+    updateFirebaseStatus('読込完了 ✓');
+    
+    const updatedDate = data.lastUpdated?.toDate?.();
+    const dateStr = updatedDate ? updatedDate.toLocaleString('ja-JP') : '不明';
+    alert(`✅ ${currentFileName} の設定をFirebaseから読み込みました\n最終更新: ${dateStr}`);
+    console.log('Firebase読込成功:', fileKey, data);
+  } catch (error) {
+    console.error('Firebase読込エラー:', error);
+    updateFirebaseStatus('読込エラー ✗');
+    alert('Firebaseからの読込に失敗しました: ' + error.message);
+  }
+}
+
+// フォント拡大率（ローカル保存）
+const LS_FONT = 'fontScale.v1';
+let FONT_SCALE = parseFloat(localStorage.getItem(LS_FONT) || '1');
+const fs = (px) => Math.max(8, Math.round(px * FONT_SCALE));
+
+/* ====== 定数/ユーティリティ ====== */
+const LS_MARKS = 'markedMessages.v1';
+const LS_IGNORES = 'ignoredMessages.v1';
+const LS_THEME = 'theme.v1';
+const LS_FILE_CONFIGS = 'fileConfigs.v1';  // ファイル別設定
+const DEFAULT_LOOKBACK = { day: 10, week: 8, month: 6 };
+const COLORS = ['#ef4444','#22c55e','#3b82f6','#f59e0b','#a855f7','#06b6d4','#eab308'];
+
+const $ = (id)=>document.getElementById(id);
+const fmt = (n)=>n.toLocaleString();
+const debounce = (fn,ms=150)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+
+/* ====== テーマ管理 ====== */
+function initTheme() {
+  const saved = localStorage.getItem(LS_THEME) || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+  updateThemeButton(saved);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = current === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem(LS_THEME, next);
+  updateThemeButton(next);
+  // SVG再描画（色が変わるため）
+  if (rawRows.length > 0) renderAll();
+}
+
+function updateThemeButton(theme) {
+  const btn = $('btnTheme');
+  if (btn) {
+    btn.textContent = theme === 'light' ? '🌙' : '☀️';
+    btn.title = theme === 'light' ? 'ダークモードに切り替え' : 'ライトモードに切り替え';
+  }
+}
+
+/* ====== ファイル別設定管理 ====== */
+let currentFileName = '';  // 現在読み込んでいるファイル名
+
+function getFileKey(filename) {
+  // ファイル名から拡張子を除いた部分をキーとして使用
+  return filename.replace(/\.[^/.]+$/, '').toLowerCase();
+}
+
+function loadFileConfig(filename) {
+  const key = getFileKey(filename);
+  try {
+    const configs = JSON.parse(localStorage.getItem(LS_FILE_CONFIGS) || '{}');
+    const config = configs[key] || { marked: [], ignored: [] };
+    marked = new Set(config.marked.filter(x => typeof x === 'string'));
+    ignored = new Set(config.ignored.filter(x => typeof x === 'string'));
+    console.log(`設定読み込み: ${filename} => マーク:${marked.size}, 無視:${ignored.size}`);
+  } catch {
+    marked = new Set();
+    ignored = new Set();
+  }
+}
+
+function saveFileConfig(filename) {
+  const key = getFileKey(filename);
+  try {
+    const configs = JSON.parse(localStorage.getItem(LS_FILE_CONFIGS) || '{}');
+    configs[key] = {
+      marked: [...marked],
+      ignored: [...ignored],
+      lastUpdated: new Date().toISOString()
+    };
+    localStorage.setItem(LS_FILE_CONFIGS, JSON.stringify(configs));
+    console.log(`設定保存: ${filename} => マーク:${marked.size}, 無視:${ignored.size}`);
+  } catch (e) {
+    console.error('設定保存エラー:', e);
+  }
+}
+
+function updateCurrentFileName(filename) {
+  currentFileName = filename;
+  const display = $('currentFile');
+  if (display) {
+    display.innerHTML = `📄 ${filename}`;
+  }
+}
+
+function parseDateValue(dv){
+  if (dv instanceof Date) return dv;
+  if (typeof dv === 'number'){ return new Date((dv - 25569) * 86400 * 1000); }
+  const t = new Date(dv);
+  return isNaN(+t) ? null : t;
+}
+function parseTimeValue(tv){
+  if (tv == null || tv === '') return {h:0,m:0};
+  if (typeof tv === 'number'){
+    const totalMin = Math.round(tv * 24 * 60);
+    const h = Math.floor(totalMin/60), m = totalMin % 60;
+    return {h,m};
+  }
+  const m = String(tv).match(/^(\d{1,2}):(\d{2})/);
+  if (m){ return {h:parseInt(m[1]), m:parseInt(m[2])}; }
+  return {h:0,m:0};
+}
+function toYMD(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), da=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${da}`; }
+function getWeekKey(d){
+  const du = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = du.getUTCDay() || 7;
+  du.setUTCDate(du.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(du.getUTCFullYear(),0,1));
+  const week = Math.ceil((((du - yearStart)/86400000)+1)/7);
+  const weekStart = new Date(du);
+  const wsDay = weekStart.getUTCDay()||7;
+  weekStart.setUTCDate(weekStart.getUTCDate() - (wsDay-1));
+  const ws = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate()));
+  return { key:`${du.getUTCFullYear()}-W${String(week).padStart(2,'0')}`, startLabel:`${ws.getUTCMonth()+1}/${String(ws.getUTCDate()).padStart(2,'0')}` };
+}
+function getMonthKey(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'); return `${y}-${m}`; }
+function computeTrend(y){
+  const n=y.length; if(!n) return {slope:0,intercept:0,r2:0};
+  const xs=Array.from({length:n},(_,i)=>i);
+  const sumX=xs.reduce((a,b)=>a+b,0);
+  const sumY=y.reduce((a,b)=>a+b,0);
+  const sumXX=xs.reduce((a,b)=>a+b*b,0);
+  const sumXY=xs.reduce((a,xi,i)=>a+xi*y[i],0);
+  const denom = n*sumXX - sumX*sumX || 1;
+  const slope=(n*sumXY - sumX*sumY)/denom;
+  const intercept=(sumY - slope*sumX)/n;
+  const avg=sumY/n;
+  const ssTot=y.reduce((a,yi)=>a+(yi-avg)**2,0) || 1e-9;
+  const ssRes=y.reduce((a,yi,i)=>a+(yi-(slope*xs[i]+intercept))**2,0);
+  const r2=Math.max(0, Math.min(1, 1-ssRes/ssTot));
+  return {slope,intercept,r2};
+}
+
+/* ====== 状態 ====== */
+let rawRows=[];            // 正規化済み
+let rowsWithDT=[];         // {ts:Date, message:string}
+let marked = new Set();    // マーク対象
+let ignored = new Set();   // 無視対象
+let allMessages=[];
+
+/* ====== CSV I/O（手動のみ） ====== */
+$('btnPick').addEventListener('click', ()=> $('fileInput').click());
+$('fileInput').addEventListener('change', handlePickedFile);
+
+// テーマ切り替えボタン
+$('btnTheme')?.addEventListener('click', toggleTheme);
+
+
+async function handlePickedFile(e){
+  const f=e.target.files?.[0]; if(!f) return;
+  updateCurrentFileName(f.name);
+  loadFileConfig(f.name);
+  $('loading').classList.add('active'); $('content').style.display='none';
+  const buf = await f.arrayBuffer();
+  let text = new TextDecoder('utf-8',{fatal:false}).decode(buf);
+  if ((text.match(/\uFFFD/g)||[]).length>0){
+    text = new TextDecoder('shift_jis',{fatal:false}).decode(buf);
+  }
+  await parseAndRender(text);
+  $('loading').classList.remove('active'); $('content').style.display='block';
+}
+
+// 起動時の初期化
+window.addEventListener('DOMContentLoaded', async () => {
+  // テーマ初期化
+  initTheme();
+  
+  // Firebase初期化
+  initFirebase();
+  
+  // Firebaseボタンのイベントリスナー
+  const syncBtn = document.getElementById('btnFirebaseSync');
+  const saveBtn = document.getElementById('btnFirebaseSave');
+  if (syncBtn) syncBtn.addEventListener('click', loadFromFirebase);
+  if (saveBtn) saveBtn.addEventListener('click', saveToFirebase);
+  
+  // フォントサイズスライダー初期化
+  const fsInput = document.getElementById('fontScale');
+  const fsVal   = document.getElementById('fontScaleVal');
+  if (fsInput && fsVal) {
+    fsInput.value = String(Math.round(FONT_SCALE * 100));
+    fsVal.textContent = `${Math.round(FONT_SCALE * 100)}%`;
+    fsInput.addEventListener('input', (e) => {
+      FONT_SCALE = Math.max(0.6, Math.min(2, (Number(e.target.value)||100)/100));
+      localStorage.setItem(LS_FONT, String(FONT_SCALE));
+      fsVal.textContent = `${Math.round(FONT_SCALE * 100)}%`;
+      renderAll();
+    });
+  }
+});
+
+/* ====== 解析＆レンダリング ====== */
+async function parseAndRender(text){
+  const rows = parseCSV(text);
+  rawRows = normalizeHeaders(rows);
+  const okDATE = rawRows.some(r=>'DATE' in r), okMSG = rawRows.some(r=>'MESSAGE' in r);
+  if(!okDATE || !okMSG){ alert('ヘッダに「DATE」「MESSAGE」が見つかりません。'); return; }
+
+  rowsWithDT = rawRows.map(r=>{
+    const d = parseDateValue(r.DATE);
+    if(!d) return null;
+    const t = 'TIME' in r ? parseTimeValue(r.TIME) : {h:0,m:0};
+    const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate(), t.h, t.m, 0, 0);
+    const msg = String(r.MESSAGE||'').trim();
+    return {ts:dt, message:msg};
+  }).filter(Boolean).sort((a,b)=>a.ts-b.ts);
+
+  allMessages = [...new Set(rowsWithDT.map(r=>r.message))].sort();
+  renderChipSets(allMessages);
+  loadSettings();
+  renderAll();
+}
+
+/* CSV utils */
+function parseCSV(text){
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.length);
+  if(!lines.length) return [];
+  const headers = splitCsvLine(lines[0]).map(h=>h.replace(/^\uFEFF/,''));
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const cols = splitCsvLine(lines[i]);
+    const row={}; headers.forEach((h,idx)=>row[h]= (cols[idx]??'').trim());
+    rows.push(row);
+  }
+  return rows;
+  function splitCsvLine(line){
+    const out=[]; let cur=''; let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const c=line[i];
+      if(inQ){
+        if(c==='"'){ if(line[i+1]==='"'){cur+='"'; i++;} else {inQ=false;} }
+        else cur+=c;
+      }else{
+        if(c===','){ out.push(cur); cur=''; }
+        else if(c==='"'){ inQ=true; }
+        else cur+=c;
+      }
+    }
+    out.push(cur); return out;
+  }
+}
+function normalizeHeaders(rows){
+  if(!rows.length) return rows;
+  const map = k=>k.replace(/^\uFEFF/,'').trim().toUpperCase();
+  const hmap = Object.fromEntries(Object.keys(rows[0]).map(k=>[k,map(k)]));
+  return rows.map(r=>{
+    const o={}; for(const k in r){ o[hmap[k]]=r[k]; } return o;
+  });
+}
+
+/* ====== 設定（マーク／無視） ====== */
+function loadSettings(){
+  // ファイル別設定は既にloadFileConfigで読み込み済み
+  // UI反映のみ行う
+  document.querySelectorAll('#chipsMark .chip').forEach(ch=> ch.classList.toggle('active', marked.has(ch.dataset.v)));
+  document.querySelectorAll('#chipsIgnore .chip').forEach(ch=> ch.classList.toggle('active', ignored.has(ch.dataset.v)));
+}
+function saveSettings(){
+  // ファイル別設定として保存
+  if (currentFileName) {
+    saveFileConfig(currentFileName);
+    $('marksHint').textContent=`${currentFileName} の設定を保存しました`;
+  } else {
+    // フォールバック：グローバル設定
+    localStorage.setItem(LS_MARKS, JSON.stringify([...marked]));
+    localStorage.setItem(LS_IGNORES, JSON.stringify([...ignored]));
+    $('marksHint').textContent='保存しました（このブラウザのみ）';
+  }
+  setTimeout(()=>$('marksHint').textContent='（クリックでも即保存＆反映します）',2000);
+}
+function instantApply(){
+  saveSettings();
+  renderAll();
+}
+
+// 開閉状態を保存するキー
+const LS_SETTINGS_OPEN = 'settingsOpen.v1';
+
+// 設定パネルの開閉
+function toggleSettings(open) {
+  const btn = document.getElementById('btnSettings');
+  const panel = document.getElementById('settings');
+  if (!panel || !btn) return;
+
+  const willOpen = (typeof open === 'boolean') ? open : !panel.classList.contains('active');
+  panel.classList.toggle('active', willOpen);
+  btn.setAttribute('aria-expanded', String(willOpen));
+  localStorage.setItem(LS_SETTINGS_OPEN, JSON.stringify(willOpen));
+
+  if (willOpen) {
+    // チップを最新の全MESSAGEで再描画（検索語を反映）
+    renderChipSets(allMessages);
+    // 画面内に収める
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+// ボタンにトグルを割り当て
+document.getElementById('btnSettings')?.addEventListener('click', (e)=>{
+  e.preventDefault();
+  toggleSettings();
+});
+
+// 起動時に前回の開閉状態を復元
+document.addEventListener('DOMContentLoaded', ()=>{
+  const saved = localStorage.getItem(LS_SETTINGS_OPEN);
+  const open = saved ? JSON.parse(saved) : false;
+  toggleSettings(open);
+});
+
+
+
+
+
+function renderChipSets(list){
+  const kw = $('searchMsg').value?.toLowerCase()||'';
+  const kw2= $('searchIgnore').value?.toLowerCase()||'';
+  const wrapM = $('chipsMark'); const wrapI = $('chipsIgnore');
+  wrapM.innerHTML=''; wrapI.innerHTML='';
+  list.filter(m=>m.toLowerCase().includes(kw)).forEach(m=>{
+    const div = document.createElement('div'); div.className='chip'; div.dataset.v=m;
+    if(marked.has(m)) div.classList.add('active');
+    div.textContent = m;
+    div.addEventListener('click',()=>{
+      div.classList.toggle('active');
+      if(div.classList.contains('active')) marked.add(m); else marked.delete(m);
+      instantApply();        // ← クリック即保存＆即反映
+    });
+    wrapM.appendChild(div);
+  });
+  list.filter(m=>m.toLowerCase().includes(kw2)).forEach(m=>{
+    const div = document.createElement('div'); div.className='chip'; div.dataset.v=m;
+    if(ignored.has(m)) div.classList.add('active');
+    div.textContent = m;
+    div.addEventListener('click',()=>{
+      div.classList.toggle('active');
+      if(div.classList.contains('active')) ignored.add(m); else ignored.delete(m);
+      instantApply();        // ← クリック即保存＆即反映
+    });
+    wrapI.appendChild(div);
+  });
+}
+
+/* ====== フィルタ済みデータ ====== */
+function filteredRows(){
+  if(ignored.size===0) return rowsWithDT;
+  return rowsWithDT.filter(r=>!ignored.has(r.message));
+}
+
+/* ====== 48h 可視化 ====== */
+function render48h(){
+  const rows = filteredRows();
+  const svg = $('svg48h'); svg.innerHTML='';
+  const legend = $('legendTop5'); legend.innerHTML='';
+  const svgCause = $('svgTopCauses24'); svgCause.innerHTML='';
+  if(!rows.length){ $('h48Range').textContent='-'; $('vTotal48').textContent='-'; $('vPeak').textContent='-'; return; }
+
+  const latest = rows[rows.length-1].ts;
+  const end = new Date(latest);
+  const start48 = new Date(latest.getTime() - 48*3600*1000);
+  const start24 = new Date(latest.getTime() - 24*3600*1000);
+  $('h48Range').textContent = `${start48.toLocaleString()} ～ ${end.toLocaleString()}`;
+
+  // 48h ビン作成
+  const bins48=[], labels48=[], labelsFull=[];
+  for(let i=0;i<48;i++){
+    const from = new Date(start48.getTime()+i*3600*1000);
+    const to   = new Date(from.getTime()+3600*1000);
+    bins48.push({from,to,count:0});
+    labels48.push(from.getHours().toString().padStart(2,'0')+':00');
+    labelsFull.push(`${from.getMonth()+1}/${String(from.getDate()).padStart(2,'0')} ${String(from.getHours()).padStart(2,'0')}:00`);
+  }
+
+  rows.forEach(r=>{
+    if(r.ts<start48 || r.ts>end) return;
+    const idx = Math.floor((r.ts - start48)/3600000);
+    if(idx>=0 && idx<48) bins48[idx].count++;
+  });
+  const counts48 = bins48.map(b=>b.count);
+  const total48 = counts48.reduce((a,b)=>a+b,0);
+  const peakIdx = counts48.indexOf(Math.max(...counts48));
+  $('vTotal48').textContent = fmt(total48);
+  $('vPeak').textContent = peakIdx>=0 ? `${labelsFull[peakIdx]}（${fmt(counts48[peakIdx])}）` : '-';
+
+  // 24h 原因TOP5
+  const cause24 = new Map();
+  rows.forEach(r=>{
+    if(r.ts<start24 || r.ts>end) return;
+    cause24.set(r.message, (cause24.get(r.message)||0)+1);
+  });
+  const top5 = [...cause24.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5);
+  top5.forEach((pair,i)=>{
+    const li = document.createElement('div'); li.className='legend-item';
+    const c = document.createElement('div'); c.className='dot'; c.style.background=COLORS[i%COLORS.length];
+    const t = document.createElement('span'); t.textContent = `${pair[0]}（${pair[1]}）`;
+    li.appendChild(c); li.appendChild(t); legend.appendChild(li);
+  });
+
+  // 各MESSAGEの48h系列（オーバーレイ）
+  const series48 = top5.map((pair,i)=>{
+    const name = pair[0];
+    const arr = new Array(48).fill(0);
+    rows.forEach(r=>{
+      if(r.ts<start48 || r.ts>end) return;
+      if(r.message!==name) return;
+      const idx = Math.floor((r.ts - start48)/3600000);
+      if(idx>=0 && idx<48) arr[idx]++;
+    });
+    return {name, y:arr, color:COLORS[i%COLORS.length]};
+  });
+
+  drawBarWithOverlays(svg, labelsFull, counts48, series48, {height:440, bottom:140, top:40, showDaySplit:true});
+  drawHBar(svgCause, top5, {height:440});
+}
+
+/* ====== 粒度別トレンド TOP3 ====== */
+function groupByPeriod(gran){
+  const map = new Map(); // key: period|message -> count
+  const periodsSet = new Set();
+  for(const r of filteredRows()){
+    let keyPeriod, xLabel;
+    if(gran==='day'){ keyPeriod = toYMD(r.ts); xLabel = keyPeriod.replace(/^\d{4}-/,''); }
+    else if(gran==='week'){ const wk = getWeekKey(r.ts); keyPeriod = wk.key; xLabel = wk.startLabel; }
+    else { keyPeriod = getMonthKey(r.ts); xLabel = keyPeriod.replace(/^(\d{4})-(\d{2})$/,'$1/$2'); }
+    periodsSet.add(JSON.stringify({key:keyPeriod, label:xLabel}));
+    const key = keyPeriod+'|'+r.message;
+    map.set(key, (map.get(key)||0)+1);
+  }
+  const periods = [...periodsSet].map(s=>JSON.parse(s)).sort((a,b)=>a.key.localeCompare(b.key));
+  const byMsg = new Map(); // message -> {period->count}
+  for(const [k,v] of map.entries()){
+    const [p,msg] = k.split('|');
+    if(!byMsg.has(msg)) byMsg.set(msg,{});
+    byMsg.get(msg)[p]=v;
+  }
+  return {periods, byMsg};
+}
+
+function renderTrends(){
+  const cfg = {
+    day:   {panel:'cardsDay',   look:DEFAULT_LOOKBACK.day,   title:'日'},
+    week:  {panel:'cardsWeek',  look:DEFAULT_LOOKBACK.week,  title:'週'},
+    month: {panel:'cardsMonth', look:DEFAULT_LOOKBACK.month, title:'月'},
+  };
+
+  for (const gran of ['day','week','month']) {
+    const { periods, byMsg } = groupByPeriod(gran);
+    const container = $(cfg[gran].panel);
+    container.innerHTML = '';
+    if (periods.length === 0) { container.innerHTML = '<div class="hint">データなし</div>'; continue; }
+
+    const look = Math.min(cfg[gran].look, periods.length);
+    const usePeriods = periods.slice(-look);
+
+// --- recs作成 ---
+// --- recs作成（置換） ---
+const recs = [];
+const r2Min = 0.20;
+const sumMin = 10;
+const recentMin = 5;
+const baseMin = 5;
+
+for (const [msg, obj] of byMsg.entries()) {
+  const y = usePeriods.map(p => obj[p.key] || 0);
+  const n = y.length;
+  const sum = y.reduce((a,b)=>a+b, 0);
+  if (sum < sumMin) continue;          // 全体として少なすぎる
+
+  // 完全フラット除外
+  if (y.every(v => v === y[0])) continue;
+
+  // ---- 後半重み付きの傾き・R² ----
+  const xs = [...y.keys()];
+  // 線形に後半重視（0.6～1.0の重み）
+  const w  = xs.map(i => 0.6 + 0.4 * (i / Math.max(1, n-1)));
+  const W  = w.reduce((a,b)=>a+b,0);
+  const xw = xs.reduce((a,i)=>a + w[i]*i, 0) / W;
+  const yw = y.reduce((a,yi,i)=>a + w[i]*yi, 0) / W;
+  let num=0, den=0, sst=0, ssr=0;
+  for (let i=0;i<n;i++){
+    num += w[i]*(i - xw)*(y[i] - yw);
+    den += w[i]*(i - xw)*(i - xw);
+  }
+  const slope = den ? (num/den) : 0;
+  const intercept = yw - slope*xw;
+  for (let i=0;i<n;i++){
+    const yhat = slope*i + intercept;
+    sst += w[i]*(y[i] - yw)*(y[i] - yw);
+    ssr += w[i]*(y[i] - yhat)*(y[i] - yhat);
+  }
+  const r2 = sst ? Math.max(0, 1 - ssr/sst) : 0;
+
+  if (r2 < r2Min) continue;            // トレンドが弱い
+
+  const mean = sum / n || 0;
+  const slopePct = slope / Math.max(1, mean);   // 相対傾き
+
+  // ---- 直近 vs 直前のリフト ----
+  const cut = Math.max(2, Math.floor(n*2/3));   // 先行2/3 + 直近1/3
+  const base = y.slice(0, cut);
+  const recent = y.slice(cut);
+
+  const baseMean = base.length ? base.reduce((a,b)=>a+b,0)/base.length : 0;
+  const recentMean = recent.length ? recent.reduce((a,b)=>a+b,0)/recent.length : 0;
+  const recentSum = recent.reduce((a,b)=>a+b,0);
+
+  const lift = recentMean / Math.max(1, baseMean);
+  const liftDown = baseMean / Math.max(1, recentMean);
+
+  // 安定度（件数少は減衰）
+  const stability = Math.min(1, sum / 30);
+
+  // ---- スコア ----
+  let scoreUp = 0, scoreDn = 0;
+
+  if (slopePct > 0 && recentSum >= recentMin) {
+    scoreUp = slopePct * r2 * lift * stability;
+    // 小幅なリフトは弱める（例：<1.2は半減）
+    if (lift < 1.2) scoreUp *= 0.5;
+  }
+
+  if (slopePct < 0 && baseMean >= baseMin) {
+    scoreDn = (-slopePct) * r2 * liftDown * stability;
+    if (liftDown < 1.2) scoreDn *= 0.5;
+  }
+
+  // ノイズ除外
+  if (scoreUp  < 0.01) scoreUp  = 0;
+  if (scoreDn  < 0.01) scoreDn  = 0;
+
+  recs.push({
+    msg, y, labels: usePeriods.map(p=>p.label),
+    slope, r2, sum, mean, scoreUp, scoreDn,
+    baseMean, recentMean, lift, liftDown
+  });
+}
+
+
+// --- ランキング ---
+const up = recs.filter(r => r.scoreUp > 0).sort((a,b) => b.scoreUp - a.scoreUp).slice(0,3);
+const dn = recs.filter(r => r.scoreDn > 0).sort((a,b) => b.scoreDn - a.scoreDn).slice(0,3);
+
+
+    const makeCard = (r, dir) => {
+      const card = document.createElement('div');
+      card.className = dir === 'up' ? 'card trend-up' : 'card trend-down';
+
+      const theme = (dir === 'up')
+        ? { accent:'#db2777', label:'↗︎ 上昇' } // ピンク系
+        : { accent:'#15803d', label:'↘︎ 改善' }; // 緑系
+
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <span class="tag" style="background:${theme.accent};color:#fff;border:none;">${cfg[gran].title}</span>
+          <span style="color:${theme.accent};font-weight:700;">${theme.label}</span>
+        </div>
+        <div style="font-size:14px;color:var(--text-primary);margin-top:6px">${r.msg}</div>
+        <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">傾き ${r.slope.toFixed(2)} ／ R² ${r.r2.toFixed(2)}</div>
+        <svg class="svg-s"></svg>
+      `;
+      card.addEventListener('click', () => openDetail(r.msg, $('granularity').value));
+
+      const svg = card.querySelector('svg');
+      drawMiniLineWithAxes(svg, r.labels, r.y, { showValues:true });
+
+      return card;
+    };
+
+    up.forEach(r => container.appendChild(makeCard(r, 'up')));
+    dn.forEach(r => container.appendChild(makeCard(r, 'down')));
+  }
+}
+
+
+
+/* ====== マーク異常の個別モニタ ====== */
+/* ====== マーク異常の個別モニタ ====== */
+function renderMarked() {
+  const rows = filteredRows();
+  const wrap = $('markedGrid');
+  wrap.innerHTML = '';
+
+  if (marked.size === 0) {
+    wrap.innerHTML = '<div class="hint">（設定でMESSAGEをマークするとここに表示されます）</div>';
+    return;
+  }
+  if (!rows.length) return;
+
+  // 直近48h範囲
+  const latest = rows[rows.length - 1].ts;
+  const start48 = new Date(latest.getTime() - 48 * 3600 * 1000);
+
+  // 48hの件数
+  const count48 = {};
+  rows.forEach(r => {
+    if (r.ts < start48 || r.ts > latest) return;
+    if (!marked.has(r.message)) return;
+    count48[r.message] = (count48[r.message] || 0) + 1;
+  });
+
+  // 直近14日（日粒度）スパーク
+  const dayMap = new Map();
+  const periodsSet = new Set();
+  for (const r of rows) {
+    const p = toYMD(r.ts);
+    periodsSet.add(p);
+    if (marked.has(r.message)) {
+      const k = p + '|' + r.message;
+      dayMap.set(k, (dayMap.get(k) || 0) + 1);
+    }
+  }
+
+  const days   = [...periodsSet].sort();
+  const useDays = days.slice(-14);
+  const labels = useDays.map(d => d.replace(/^\d{4}-/, ''));
+
+  // マーク済みMESSAGEごとにカード生成
+  marked.forEach(msg => {
+    const y = useDays.map(p => dayMap.get(p + '|' + msg) || 0);
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:${fs(14)}px;color:var(--text-primary)">${msg}</div>
+        <span class="tag">48h: ${fmt(count48[msg] || 0)}</span>
+      </div>
+      <svg class="svg-s"></svg>
+    `;
+
+    card.addEventListener('click', () => openDetail(msg, $('granularity').value));
+
+    const svg = card.querySelector('svg');
+    drawMiniLineWithAxes(svg, labels, y, { showValues: true });
+
+    wrap.appendChild(card);
+  });
+}
+
+
+// ===== モーダル表示範囲の状態 =====
+const modalView = {
+  msg: '', gran: 'day',
+  y: [], labels: [],
+  window: 12,   // 表示幅（期間数）
+  offset: 0     // 左端インデックス
+};
+
+// 範囲に応じてサブセットを作って描画
+function renderDetailChart() {
+  const n = modalView.y.length;
+  if (!n) { $('svgDetail').innerHTML = '<text x="10" y="24">データなし</text>'; return; }
+
+  // ガード＆クランプ
+  modalView.window = Math.max(3, Math.min(n, modalView.window));
+  modalView.offset = Math.max(0, Math.min(n - modalView.window, modalView.offset));
+
+  const i0 = modalView.offset;
+  const i1 = i0 + modalView.window;
+  const ySub = modalView.y.slice(i0, i1);
+  const lSub = modalView.labels.slice(i0, i1);
+
+  // KPI（合計・平均・傾き・R2）もサブセットに合わせて更新するならここで計算
+  const sum = ySub.reduce((a,b)=>a+b,0);
+  const avg = ySub.length ? sum / ySub.length : 0;
+  const { slope, r2 } = computeTrend(ySub);
+  $('mTotal').textContent = fmt(sum);
+  $('mAvg').textContent   = avg.toFixed(2);
+  $('mSlope').textContent = slope.toFixed(2);
+  $('mR2').textContent    = r2.toFixed(2);
+
+  // 描画
+  drawMiniLineWithAxes($('svgDetail'), lSub, ySub, { large:true, showValues:true, xTitle:'期間', yTitle:'件数' });
+
+  // スライダー表示値の同期
+  const rW = $('rangeWindow'), rO = $('rangeOffset');
+  const lblW = $('lblWindow');
+  if (rW && rO && lblW) {
+    rW.max = String(n);         // 上限＝全期間
+    rW.value = String(modalView.window);
+    lblW.textContent = String(modalView.window);
+
+    rO.max = String(Math.max(0, n - modalView.window));
+    rO.value = String(modalView.offset);
+  }
+}
+
+/* ====== 詳細モーダル ====== */
+function openDetail(msg, gran) {
+  // データ組み立て（全期間）
+  const { periods, byMsg } = groupByPeriod(gran);
+  const series = (byMsg.get(msg) || {});
+  const y = periods.map(p => series[p.key] || 0);
+  const labels = periods.map(p => p.label);
+
+  modalView.msg = msg;
+  modalView.gran = gran;
+  modalView.y = y;
+  modalView.labels = labels;
+
+  // 初回は「最近12期間」を表示（足りなければ全体）
+  const n = y.length;
+  modalView.window = Math.min(12, n || 12);
+  modalView.offset = Math.max(0, n - modalView.window);
+
+  // タイトル＆粒度セレクト
+  $('modalTitle').textContent = `${msg}（${gran.toUpperCase()}）`;
+  const sel = $('modalGran');
+  if (sel) {
+    sel.value = gran;
+    sel.onchange = () => openDetail(msg, sel.value); // 粒度変更→再構築
+  }
+
+  // スライダーイベント
+  const rW = $('rangeWindow'), rO = $('rangeOffset');
+  if (rW) {
+    rW.oninput = () => { modalView.window = Number(rW.value) || modalView.window; renderDetailChart(); };
+  }
+  if (rO) {
+    rO.oninput = () => { modalView.offset = Number(rO.value) || modalView.offset; renderDetailChart(); };
+  }
+
+  // ズームボタン
+  $('btnZoomIn')?.addEventListener('click', () => {
+    // 1段階拡大（表示幅を縮める）
+    modalView.window = Math.max(3, modalView.window - Math.ceil(modalView.window * 0.2) || 1);
+    renderDetailChart();
+  });
+  $('btnZoomOut')?.addEventListener('click', () => {
+    // 1段階縮小（表示幅を広げる）
+    modalView.window = Math.min(modalView.y.length, modalView.window + Math.ceil(modalView.window * 0.2) || 1);
+    renderDetailChart();
+  });
+  $('btnZoomReset')?.addEventListener('click', () => {
+    modalView.window = modalView.y.length;
+    modalView.offset = 0;
+    renderDetailChart();
+  });
+
+  // マウスホイールでズーム、ドラッグでスクロール（任意）
+  const svg = $('svgDetail');
+  if (svg) {
+    // wheel ズーム（カーソル位置を中心っぽく調整）
+    svg.onwheel = (ev) => {
+      ev.preventDefault();
+      const dir = Math.sign(ev.deltaY);
+      const n = modalView.y.length;
+      const delta = Math.max(1, Math.round(modalView.window * 0.1));
+      if (dir > 0) modalView.window = Math.min(n, modalView.window + delta);
+      else         modalView.window = Math.max(3, modalView.window - delta);
+
+      // オフセット調整（左右に寄りすぎないよう軽く補正）
+      modalView.offset = Math.max(0, Math.min(n - modalView.window, modalView.offset));
+      renderDetailChart();
+    };
+
+    // ドラッグ・パン
+    let dragging = false, startX = 0, startOffset = 0;
+    svg.onmousedown = (e) => { dragging = true; startX = e.clientX; startOffset = modalView.offset; };
+    window.onmouseup = () => { dragging = false; };
+    window.onmousemove = (e) => {
+      if (!dragging) return;
+      const n = modalView.y.length;
+      // ざっくり 20px で 1インデックス動く感じの簡易パン
+      const dx = e.clientX - startX;
+      const step = Math.round(-dx / 20);
+      modalView.offset = Math.max(0, Math.min(n - modalView.window, startOffset + step));
+      renderDetailChart();
+    };
+  }
+
+  // 表示＆初回描画
+  const md = $('detailModal');
+  md.classList.add('active');
+  md.style.display = 'flex';
+  md.setAttribute('aria-hidden', 'false');
+
+  renderDetailChart();
+}
+
+
+function closeModal(){
+  const md=$('detailModal');
+  md.classList.remove('active'); md.style.display='none'; md.setAttribute('aria-hidden','true');
+}
+$('modalClose').addEventListener('click', closeModal);
+$('detailModal').addEventListener('click',(e)=>{ if(!e.target.closest('.modal-content')) closeModal(); });
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape' && $('detailModal').classList.contains('active')) closeModal(); });
+
+/* ====== 描画関数 ====== */
+// テーマに応じた色を取得
+function getThemeColor(lightColor, darkColor) {
+  const theme = document.documentElement.getAttribute('data-theme') || 'light';
+  return theme === 'dark' ? darkColor : lightColor;
+}
+
+function drawBarWithOverlays(svgEl, labelsFull, data, overlays, opts={}){
+  const width = svgEl.clientWidth || 900;
+  const height = opts.height || 440;
+  const pad = {t:opts.top??40,r:40,b:opts.bottom??140,l:54};
+  svgEl.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  svgEl.innerHTML='';
+  const maxV = Math.max(...data, ...overlays.flatMap(o=>o.y), 1);
+  const n = data.length || 1;
+  const chartW = width - pad.l - pad.r;
+  const chartH = height - pad.t - pad.b;
+  const space = chartW / n;
+  const bw = Math.max(2, space*0.7);
+
+  // 背景
+  svgEl.appendChild(rect(0,0,width,height,getThemeColor('#fff','#1e293b')));
+
+  // Yグリッド＆ラベル
+  for(let i=0;i<=4;i++){
+    const y = pad.t + chartH*i/4;
+    svgEl.appendChild(line(pad.l,y,width-pad.r,y,getThemeColor('#e5e7eb','#334155'),1));
+    const val = Math.round(maxV*(1 - i/4));
+    svgEl.appendChild(text(pad.l-8, y+4, String(val), fs(10), getThemeColor('#475569','#94a3b8'), 'end'));
+  }
+
+  // X軸
+  svgEl.appendChild(line(pad.l, height-pad.b, width-pad.r, height-pad.b, getThemeColor('#cbd5e1','#475569'), 1.5));
+
+  // 0時の縦分割線＆上部日付ラベル
+  if(opts.showDaySplit){
+    for(let i=0;i<n;i++){
+      const lbl = labelsFull[i]; // "MM/DD HH:00"
+      const isZero = /\s00:00$/.test(lbl);
+      if(isZero){
+        const x = pad.l + i*space + space/2;
+        svgEl.appendChild(line(x, pad.t, x, height-pad.b, getThemeColor('#e2e8f0','#334155'), 1));
+        const d = lbl.split(' ')[0]; // "MM/DD"
+        svgEl.appendChild(text(x, pad.t-8, d, 11, getThemeColor('#334155','#cbd5e1'), 'middle'));
+      }
+    }
+  }
+
+  // 棒
+  const step = Math.max(1, Math.ceil(n / Math.max(12, Math.min(24, Math.floor(chartW/48)))));
+  for(let i=0;i<n;i++){
+    const v = data[i];
+    const cx = pad.l + i*space + space/2;
+    const barH = (v/maxV)*chartH;
+    const x = cx - bw/2;
+    const y = height - pad.b - barH;
+    const r = rect(x,y,bw,Math.max(0,barH),'#667eea'); r.setAttribute('rx','3');
+    svgEl.appendChild(r);
+
+    if (i%step===0 || i===n-1 || i===0){
+      const ty1 = height - pad.b, ty2 = ty1 + 6;
+      svgEl.appendChild(line(cx,ty1,cx,ty2,getThemeColor('#94a3b8','#64748b'),1));
+     const baseY = ty2 + 18;
+      // 時刻のみ（HH:00）を表示。重なり軽減のため短くする
+      const lab = (labelsFull[i].split(' ')[1] || labelsFull[i]); // "HH:00"
+      const t = text(cx, baseY, lab, fs(10), getThemeColor('#334155','#cbd5e1'), 'start');
+      t.setAttribute('transform',`rotate(-60 ${cx} ${baseY})`);
+      svgEl.appendChild(t);
+    }
+  }
+
+  // オーバーレイ折れ線
+  overlays.forEach((s)=>{
+    const path = [];
+    for(let i=0;i<n;i++){
+      const x = pad.l + i*space + space/2;
+      const y = height - pad.b - (s.y[i]/maxV)*chartH;
+      path.push(i===0?`M${x} ${y}`:`L${x} ${y}`);
+      svgEl.appendChild(circle(x,y,2.5,s.color));
+    }
+    const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d', path.join(' '));
+    p.setAttribute('fill','none');
+    p.setAttribute('stroke', s.color);
+    p.setAttribute('stroke-width','2');
+    svgEl.appendChild(p);
+  });
+
+  function line(x1,y1,x2,y2,stroke,w){
+    const el=document.createElementNS('http://www.w3.org/2000/svg','line');
+    el.setAttribute('x1',x1); el.setAttribute('y1',y1); el.setAttribute('x2',x2); el.setAttribute('y2',y2);
+    el.setAttribute('stroke',stroke); el.setAttribute('stroke-width',w); return el;
+  }
+  function text(x,y,str,fs,fill,anchor='start'){
+    const el=document.createElementNS('http://www.w3.org/2000/svg','text');
+    el.setAttribute('x',x); el.setAttribute('y',y); el.setAttribute('font-size',fs);
+    el.setAttribute('fill',fill); el.setAttribute('text-anchor',anchor);
+    el.textContent=str; return el;
+  }
+  function rect(x,y,w,h,fill){ const el=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    el.setAttribute('x',x);el.setAttribute('y',y);el.setAttribute('width',w);el.setAttribute('height',h);
+    el.setAttribute('fill',fill); return el;
+  }
+  function circle(cx,cy,r,fill){ const el=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    el.setAttribute('cx',cx); el.setAttribute('cy',cy); el.setAttribute('r',r); el.setAttribute('fill',fill); return el;
+  }
+}
+
+// --- 置換：原因TOP5（横棒） ---
+function drawHBar(svgEl, pairs, opts = {}) {
+  const width = svgEl.clientWidth || 640;
+  const height = opts.height || 440;
+  const pad = { t: 18, r: 24, b: 16, l: 320 };
+  svgEl.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svgEl.innerHTML = "";
+
+  if (!pairs.length) {
+    svgEl.innerHTML =
+      '<text x="20" y="30" fill="' + getThemeColor('#64748b','#94a3b8') + '" font-size="' +
+      fs(12) +
+      '">データなし</text>';
+    return;
+  }
+
+  // --- 折り返しヘルパー ---
+  function wrapSvgText(svg, x, y, text, maxWidth, lineHeight, fontSize, fill, anchor = "end") {
+    const breakers = /([ 　、。・／\/\-（）\(\)＿_])/;
+    const tokens = text.split(breakers).filter((s) => s !== "");
+
+    const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    txt.setAttribute("x", x);
+    txt.setAttribute("y", y);
+    txt.setAttribute("text-anchor", anchor);
+    txt.setAttribute("font-size", fontSize);
+    txt.setAttribute("fill", fill);
+    svg.appendChild(txt);
+
+    let line = "";
+    let tspan = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+    tspan.setAttribute("x", x);
+    tspan.setAttribute("dy", 0);
+    txt.appendChild(tspan);
+
+    const testLen = () => tspan.getComputedTextLength();
+
+    tokens.forEach((tok) => {
+      const probe = line + tok;
+      tspan.textContent = probe;
+      if (line === "") {
+        line = tok;
+        return;
+      }
+      if (testLen() <= maxWidth) {
+        line = probe;
+      } else {
+        tspan.textContent = line;
+        line = tok;
+        tspan = document.createElementNS("http://www.w3.org/2000/svg", "tspan");
+        tspan.setAttribute("x", x);
+        tspan.setAttribute("dy", lineHeight);
+        txt.appendChild(tspan);
+        tspan.textContent = line;
+      }
+    });
+    tspan.textContent = line;
+    return txt;
+  }
+
+  const maxV = Math.max(...pairs.map((p) => p[1]), 1);
+  const n = pairs.length;
+  const rowH = Math.max(18, (height - pad.t - pad.b) / n - 8);
+
+  pairs.forEach((p, idx) => {
+    const label = p[0],
+      v = p[1];
+    const y = pad.t + idx * (rowH + 8);
+    const x = pad.l;
+    const w = (width - pad.l - pad.r) * (v / maxV);
+
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    r.setAttribute("x", x);
+    r.setAttribute("y", y);
+    r.setAttribute("width", w);
+    r.setAttribute("height", rowH);
+    r.setAttribute("fill", "#764ba2");
+    r.setAttribute("rx", "4");
+    svgEl.appendChild(r);
+
+    const fontSize = fs(13);
+    const lineHeight = Math.max(14, Math.round(fontSize * 1.2));
+    const maxLabelWidth = pad.l - 40;
+
+    wrapSvgText(
+      svgEl,
+      x - 10,
+      y + rowH / 2,
+      label,
+      maxLabelWidth,
+      lineHeight,
+      fontSize,
+      getThemeColor("#0f172a","#f1f5f9"),
+      "end"
+    ).addEventListener('click', () => openDetail(label, $('granularity').value));
+
+    const t2 = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t2.setAttribute("x", x + w + 8);
+    t2.setAttribute("y", y + rowH / 2 + 4);
+    t2.setAttribute("font-size", fs(12));
+    t2.setAttribute("fill", getThemeColor("#334155","#cbd5e1"));
+    t2.textContent = String(v);
+    svgEl.appendChild(t2);
+  });
+}
+
+
+function drawMiniLineWithAxes(svgEl, labels, y, opts={}){
+  const w = svgEl.clientWidth || (opts.large?900:360), h = opts.large?300:150;
+  const pad = opts.large 
+    ? {l:54,r:48,t:20,b:88}
+    : {l:44,r:36,t:16,b:52};
+  
+  svgEl.setAttribute('viewBox',`0 0 ${w} ${h}`); 
+  svgEl.innerHTML='';
+  
+  if(!y.length){ 
+    svgEl.innerHTML='<text x="10" y="24" fill="' + getThemeColor('#64748b','#94a3b8') + '" font-size="12">データなし</text>'; 
+    return; 
+  }
+  
+  const maxV = Math.max(...y,1);
+  const n=y.length;
+  const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
+  const sx = cw/(Math.max(1,n-1));
+
+  // Y軸グリッド
+  for(let i=0;i<=4;i++){
+    const yy = pad.t + ch*i/4;
+    const val = Math.round(maxV*(1 - i/4));
+    svgEl.appendChild(line(pad.l,yy,w-pad.r,yy,getThemeColor('#e5e7eb','#334155'),1));
+    const t = text(pad.l-8, yy+4, String(val), 10, getThemeColor('#475569','#94a3b8'), 'end'); 
+    svgEl.appendChild(t);
+  }
+  
+  // X軸
+  svgEl.appendChild(line(pad.l, h-pad.b, w-pad.r, h-pad.b, getThemeColor('#cbd5e1','#475569'), 1.5));
+
+  // X軸ラベル
+  const step = opts.large 
+    ? Math.max(1, Math.ceil(n / 14))
+    : Math.max(1, Math.ceil(n / 8));
+  
+  labels.forEach((lb,i)=>{
+    if(i%step!==0 && i!==n-1 && i!==0) return;
+    
+    let tx = pad.l + i*sx;
+    const ty1 = h-pad.b, ty2 = ty1 + 6;
+    svgEl.appendChild(line(tx,ty1,tx,ty2,getThemeColor('#94a3b8','#64748b'),1));
+    
+    const baseY = ty2 + (opts.large ? 20 : 18);
+    const isLast = (i===n-1);
+    if(isLast) tx -= 6;
+    
+    const t = text(tx, baseY, lb, fs(10), getThemeColor('#334155','#cbd5e1'), isLast?'end':'start');
+    t.setAttribute('transform',`rotate(-45 ${tx} ${baseY})`);
+    svgEl.appendChild(t);
+  });
+
+  // 折れ線パス
+  const path=[]; 
+  let xPrev=pad.l;
+  for(let i=0;i<n;i++){
+    const x = pad.l + i*sx;
+    const yv = h-pad.b - (y[i]/maxV)*ch;
+    path.push(i===0?`M${x} ${yv}`:`L${x} ${yv}`); 
+    xPrev=x;
+  }
+  
+  // 塗りつぶしエリア
+  const area = document.createElementNS('http://www.w3.org/2000/svg','path');
+  area.setAttribute('d', path.join(' ') + `L ${xPrev} ${h-pad.b} L ${pad.l} ${h-pad.b} Z`);
+  area.setAttribute('fill','rgba(59,130,246,.12)'); 
+  svgEl.appendChild(area);
+  
+  // 折れ線
+  const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d', path.join(' ')); 
+  p.setAttribute('fill','none'); 
+  p.setAttribute('stroke','#3b82f6'); 
+  p.setAttribute('stroke-width','2');
+  svgEl.appendChild(p);
+
+  // データポイント＆値ラベル
+  if(opts.showValues){
+    for(let i=0;i<n;i++){
+      let x = pad.l + i*sx;
+      const yy = h-pad.b - (y[i]/maxV)*ch;
+      svgEl.appendChild(circle(x,yy,2.8,getThemeColor('#1f2937','#f1f5f9')));
+      
+      const isLast = (i===n-1);
+      if(isLast) x -= 6;
+      
+      const t = text(x, yy - 6, String(y[i]), 10, getThemeColor('#0f172a','#f1f5f9'), isLast?'end':'middle');
+      
+      if(!opts.large && n>18 && i%2===1) t.textContent='';
+      
+      svgEl.appendChild(t);
+    }
+  }
+
+  // 軸タイトル
+  if(opts.xTitle){ 
+    svgEl.appendChild(text(w/2, h-6, opts.xTitle, 11, getThemeColor('#475569','#94a3b8'), 'middle')); 
+  }
+  if(opts.yTitle){
+    const yt=text(12, h/2, opts.yTitle, 11, getThemeColor('#475569','#94a3b8'), 'middle');
+    yt.setAttribute('transform', `rotate(-90 12 ${h/2})`); 
+    svgEl.appendChild(yt);
+  }
+
+  function line(x1,y1,x2,y2,stroke,w){ 
+    const el=document.createElementNS('http://www.w3.org/2000/svg','line'); 
+    el.setAttribute('x1',x1); el.setAttribute('y1',y1); 
+    el.setAttribute('x2',x2); el.setAttribute('y2',y2); 
+    el.setAttribute('stroke',stroke); el.setAttribute('stroke-width',w); 
+    return el; 
+  }
+  function text(x,y,str,fs,fill,anchor='start'){ 
+    const el=document.createElementNS('http://www.w3.org/2000/svg','text'); 
+    el.setAttribute('x',x); el.setAttribute('y',y); 
+    el.setAttribute('font-size',fs); 
+    el.setAttribute('fill',fill); 
+    el.setAttribute('text-anchor',anchor); 
+    el.textContent=str; 
+    return el; 
+  }
+  function circle(cx,cy,r,fill){ 
+    const el=document.createElementNS('http://www.w3.org/2000/svg','circle'); 
+    el.setAttribute('cx',cx); el.setAttribute('cy',cy); 
+    el.setAttribute('r',r); el.setAttribute('fill',fill); 
+    return el; 
+  }
+}
+
+/* ====== 全レンダー/イベント ====== */
+function renderAll(){ render48h(); renderTrends(); renderMarked(); }
+$('granularity').addEventListener('change', ()=> renderTrends());
+
+/* 初期（設定UIだけ用意） */
+renderChipSets(allMessages);
+
+/* ====== モーダル ====== */
+function line(){} // (空定義の混入防止対策ではなく、上の関数で定義済なので不要です)
+</script>
+</body>
+</html>
