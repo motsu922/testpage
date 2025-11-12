@@ -415,11 +415,11 @@ async function deleteMemoFromFirebase(memoId) {
 async function fetchMemosFromFirebase(msg) {
   const col = memoColRef();
   if (!col) return [];
-  // msg で絞り、対応日時（文字列）降順で
-  const snap = await col.where('msg', '==', msg).orderBy('atISO', 'desc').get();
-  return snap.docs.map(d => ({ id: d.id, ...(d.data()||{}) }));
+  const snap = await col.where('msg', '==', msg).get(); // orderBy外す
+  const arr = snap.docs.map(d => ({ id: d.id, ...(d.data()||{}) }));
+  // atISO 降順
+  return arr.sort((a,b)=> (b.atISO||'').localeCompare(a.atISO||''));
 }
-
 function updateFirebaseStatus(text) {
   const status = document.getElementById('firebaseStatus');
   if (status) status.textContent = text;
@@ -691,6 +691,13 @@ let marked = new Set();    // マーク対象
 let ignored = new Set();   // 無視対象
 let allMessages=[];
   let memos = {};
+async function syncMemosFromFirebase(msg){
+  if (!firebaseInitialized || !currentFileName) return;
+  const list = await fetchMemosFromFirebase(msg);
+  memos[msg] = list.map(x => ({ note: x.note || '', atISO: x.atISO || '' }));
+  // ファイル別設定にも反映（オフライン閲覧のため）
+  if (currentFileName) saveFileConfig(currentFileName);
+}
 
 /* ====== CSV I/O（手動のみ） ====== */
 $('btnPick').addEventListener('click', ()=> $('fileInput').click());
@@ -1243,7 +1250,7 @@ function renderDetailChart() {
 }
 
 /* ====== 詳細モーダル ====== */
-function openDetail(msg, gran) {
+async function openDetail(msg, gran) {
   // データ組み立て（全期間）
   const { periods, byMsg } = groupByPeriod(gran);
   const series = (byMsg.get(msg) || {});
@@ -1269,6 +1276,8 @@ function openDetail(msg, gran) {
   }
 $('memoText') && ($('memoText').value = '');
 $('memoAt')   && ($('memoAt').value   = toLocalDatetimeValue(new Date()));
+  await syncMemosFromFirebase(msg);   // ← これを追加
+
 renderMemoList(msg); // ← Firebaseから表示
 
 const btnSave = $('btnMemoSave');
@@ -1293,9 +1302,16 @@ if (btnSave) {
       memos[msg].push({ note, atISO: at });
 
       // 入力クリア＆再読込
-      $('memoText').value = '';
-      $('memoAt').value   = toLocalDatetimeValue(new Date());
-      await renderMemoList(msg);
+    // 入力クリア
+$('memoText').value = '';
+$('memoAt').value   = toLocalDatetimeValue(new Date());
+
+// Firebase → ローカル再同期してから描画
+await syncMemosFromFirebase(msg);
+renderMemoList(msg);
+renderTrends();
+renderMarked();
+
     }catch(err){
       alert('Firebaseへの保存に失敗しました: ' + err.message);
     }finally{
