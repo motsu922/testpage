@@ -565,17 +565,38 @@ function renderMemoList(msg){
     wrap.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
         <div style="font-size:${fs(12)}px;color:var(--text-secondary)">対応日時：${(it.atISO||'').replace('T',' ')}</div>
-        <button class="btn ghost" data-idx="${idx}">🗑 削除</button>
+        <button class="btn ghost" data-idx="${idx}" data-id="${it.id || ''}" data-at="${it.atISO || ''}">🗑 削除</button>
       </div>
       <div style="margin-top:6px;font-size:${fs(14)}px;color:var(--text-primary);white-space:pre-wrap;line-height:1.4">${it.note || ''}</div>
     `;
-    wrap.querySelector('button')?.addEventListener('click', () => {
-      // idx は並び替え後の相対なので、削除は atISO で同定
-      const targetAt = it.atISO;
-      memos[msg] = (memos[msg] || []).filter(x => x.atISO !== targetAt);
+const btn = wrap.querySelector('button');
+  btn?.addEventListener('click', async () => {
+    try {
+      btn.disabled = true;
+      const id = btn.dataset.id || null;
+      const targetAt = btn.dataset.at || it.atISO || '';
+
+      // 1) Firebase を削除（id がある場合のみ）
+      if (id && firebaseInitialized && currentFileName) {
+        await deleteMemoFromFirebase(id);
+      }
+      // 2) ローカルも削除（id 優先、なければ atISO で後方互換）
+      memos[msg] = (memos[msg] || []).filter(x => {
+        if (id) return x.id !== id;
+        return x.atISO !== targetAt;
+      });
       if (currentFileName) saveFileConfig(currentFileName);
+
+      // 3) 再描画（一覧/カード/KPI）
       renderMemoList(msg);
-    });
+      renderTrends();
+      renderMarked();
+    } catch (e) {
+      alert('削除に失敗しました: ' + (e?.message || e));
+    } finally {
+      btn.disabled = false;
+    }
+  });
     list.appendChild(wrap);
   });
 }
@@ -694,7 +715,7 @@ let allMessages=[];
 async function syncMemosFromFirebase(msg){
   if (!firebaseInitialized || !currentFileName) return;
   const list = await fetchMemosFromFirebase(msg);
-  memos[msg] = list.map(x => ({ note: x.note || '', atISO: x.atISO || '' }));
+  memos[msg] = list.map(x => ({ id: x.id, note: x.note || '', atISO: x.atISO || '' }));
   // ファイル別設定にも反映（オフライン閲覧のため）
   if (currentFileName) saveFileConfig(currentFileName);
 }
@@ -1295,11 +1316,11 @@ if (btnSave) {
 
     try{
       // ▼ 必ず Firebase に保存
-      await addMemoToFirebase(msg, note, at);
+      const newId = await addMemoToFirebase(msg, note, at);
 
       // ローカルは同期したい場合のみ反映（任意）
       if (!memos[msg]) memos[msg] = [];
-      memos[msg].push({ note, atISO: at });
+      memos[msg].push({ id: newId, note, atISO: at });
 
       // 入力クリア＆再読込
     // 入力クリア
