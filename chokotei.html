@@ -541,7 +541,7 @@ const LS_MARKS = 'markedMessages.v1';
 const LS_IGNORES = 'ignoredMessages.v1';
 const LS_THEME = 'theme.v1';
 const LS_FILE_CONFIGS = 'fileConfigs.v1';  // ファイル別設定
-const DEFAULT_LOOKBACK = { day: 10, week: 8, month: 6 };
+const DEFAULT_LOOKBACK = { day: 10, week: 4, month: 3 };
 const COLORS = ['#ef4444','#22c55e','#3b82f6','#f59e0b','#a855f7','#06b6d4','#eab308'];
 
 const $ = (id)=>document.getElementById(id);
@@ -1278,12 +1278,38 @@ function renderTrends(){
       const mean = sum / n || 0;
       const slopePct = slope / Math.max(1, mean);
 
-      const cut = Math.max(2, Math.floor(n*2/3));
-      const base = y.slice(0, cut);
-      const recent = y.slice(cut);
+      // ===== ここから「過去／最近」の比率ロジック（日7:3 / 週3:1 / 月2:1） =====
+      let base = [];
+      let recent = [];
 
-      const baseMean = base.length ? base.reduce((a,b)=>a+b,0)/base.length : 0;
-      const recentMean = recent.length ? recent.reduce((a,b)=>a+b,0)/recent.length : 0;
+      if (gran === 'day') {
+        // 直近10日 → 過去7日 / 最近3日
+        const total = Math.min(10, n);          // 実データが10日未満の時もケア
+        const start = n - total;                // 直近 total 日の先頭
+        const baseEnd = start + Math.min(7, total - 1); // 最低1日は最近側に残す
+        base   = y.slice(start, baseEnd);
+        recent = y.slice(baseEnd, start + total);
+      } else if (gran === 'week') {
+        // 直近4週 → 過去3週 / 最近1週
+        const total = Math.min(4, n);
+        const start = n - total;
+        const baseEnd = start + Math.min(3, total - 1);
+        base   = y.slice(start, baseEnd);
+        recent = y.slice(baseEnd, start + total);
+      } else {
+        // month：直近3ヶ月 → 過去2ヶ月 / 最近1ヶ月
+        const total = Math.min(3, n);
+        const start = n - total;
+        const baseEnd = start + Math.min(2, total - 1);
+        base   = y.slice(start, baseEnd);
+        recent = y.slice(baseEnd, start + total);
+      }
+
+      // データが足りない場合はスキップ
+      if (!base.length || !recent.length) continue;
+
+      const baseMean = base.reduce((a,b)=>a+b,0) / base.length;
+      const recentMean = recent.reduce((a,b)=>a+b,0) / recent.length;
       const recentSum = recent.reduce((a,b)=>a+b,0);
 
       const lift = recentMean / Math.max(1, baseMean);
