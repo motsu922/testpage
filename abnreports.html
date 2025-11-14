@@ -429,6 +429,26 @@
               <div id="anomalyWords"></div>
             </div>
           </div>
+            <div class="form-group">
+          <label>発見タイミング *</label>
+          <select id="discoveryTiming" required>
+            <option value="">選択</option>
+            <option value="運転中">運転中</option>
+            <option value="頭出し">頭出し</option>
+            <option value="初物">初物</option>
+            <option value="終物">終物</option>
+            <option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="form-group" id="previousCheckGroup" style="display:none;">
+          <label>前回終物確認（発見タイミングが初物の場合）</label>
+          <select id="previousCheck">
+            <option value="">選択</option>
+            <option value="不要">不要</option>
+            <option value="未">未</option>
+            <option value="確認済">確認済</option>
+          </select>
+        </div>
           <div class="form-group word-suggestions">
             <label>対応内容 *</label>
             <textarea id="actionTaken" required></textarea>
@@ -522,26 +542,7 @@
 
       <form id="technicalForm">
         <div class="form-group"><label>技術処置者 *</label><input type="text" id="techHandler"></div>
-        <div class="form-group">
-          <label>発見タイミング *</label>
-          <select id="discoveryTiming" required>
-            <option value="">選択</option>
-            <option value="運転中">運転中</option>
-            <option value="頭出し">頭出し</option>
-            <option value="初物">初物</option>
-            <option value="終物">終物</option>
-            <option value="その他">その他</option>
-          </select>
-        </div>
-        <div class="form-group" id="previousCheckGroup" style="display:none;">
-          <label>前回終物確認（発見タイミングが初物の場合）</label>
-          <select id="previousCheck">
-            <option value="">選択</option>
-            <option value="不要">不要</option>
-            <option value="未">未</option>
-            <option value="確認済">確認済</option>
-          </select>
-        </div>
+     
         <div class="form-group"><label>命数有無 *</label><select id="lifespan"><option value="">選択</option><option value="有">有</option><option value="無">無</option></select></div>
         <div class="form-group">
           <label>命数到達 *</label>
@@ -2154,38 +2155,41 @@ document.getElementById('manufacturingForm').addEventListener('submit', async (e
     }
     /* ▲▲ 追加ここまで ▲▲ */
 
-    const base = {
-      department: document.getElementById('department').value,
-      lineName: document.getElementById('lineName').value,
-      serialNo: document.getElementById('serialNo').value,
-      occurrenceDate: document.getElementById('occurrenceDate').value,
-      occurrenceTime: document.getElementById('occurrenceTime').value || '',
-      restartTime: document.getElementById('restartTime').value || '',
-      anomalyContent: document.getElementById('anomalyContent').value,
-      actionTaken: document.getElementById('actionTaken').value,
-      traceback: document.getElementById('traceback').value,
-      qualityResponse: document.getElementById('qualityResponse').value || '',
-      handler: document.getElementById('handler').value,
-      techRequest: techReq,
-      status: techReq === '完結' ? 'complete' : 'pending',
-      createdAt: serverTimestamp(),
-      techHandler: '',
-      lifespan: '',
-      maintenanceUnit: '',
-      rootCauseAction: '',
+const base = {
+  department: document.getElementById('department').value,
+  lineName: document.getElementById('lineName').value,
+  serialNo: document.getElementById('serialNo').value,
+  occurrenceDate: document.getElementById('occurrenceDate').value,
+  occurrenceTime: document.getElementById('occurrenceTime').value || '',
+  restartTime: document.getElementById('restartTime').value || '',
+  anomalyContent: document.getElementById('anomalyContent').value,
+  actionTaken: document.getElementById('actionTaken').value,
+  traceback: document.getElementById('traceback').value,
+  qualityResponse: document.getElementById('qualityResponse').value || '',
+  handler: document.getElementById('handler').value,
+  techRequest: techReq,
+  status: techReq === '完結' ? 'complete' : 'pending',
+  createdAt: serverTimestamp(),
+  techHandler: '',
+  lifespan: '',
+  maintenanceUnit: '',
+  rootCauseAction: '',
 
-      /* ▼▼ ここを“ユーザー入力”で上書き ▼▼ */
-      recurrenceType: mRec,                       // '再発' / '新規' / ''
-      measureStatus: (mRec === '再発') ? mMs : '',// 再発のときだけ保存
-      /* ▲▲ 上書きここまで ▲▲ */
+  // ▼ 発信部署が入力した発見タイミングを保存
+  discoveryTiming: document.getElementById('discoveryTiming').value || '',
 
-      discoveryTiming: '',
-      previousCheck: '',
-      lifespanReached: '',
-      affirmation: '',
-      mfgPhotoUrls: [],
-      techPhotoUrls: []
-    };
+  /* ▼▼ ここを“ユーザー入力”で上書き ▼▼ */
+  recurrenceType: mRec,
+  measureStatus: (mRec === '再発') ? mMs : '',
+  /* ▲▲ 上書きここまで ▲▲ */
+
+  previousCheck: '',
+  lifespanReached: '',
+  affirmation: '',
+  mfgPhotoUrls: [],
+  techPhotoUrls: []
+};
+
     
     console.log('Creating document with data:', base);
     const docRef = await addDoc(collection(db, 'anomalies'), base);
@@ -2280,20 +2284,20 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
     const recType = document.getElementById('recurrenceType').value;
     const ms = (document.getElementById('measureStatus')?.value || '').trim();
     
-    const updates = {
-      techHandler: document.getElementById('techHandler').value,
-      discoveryTiming: document.getElementById('discoveryTiming').value,
-      previousCheck: document.getElementById('previousCheck').value || '',
-      lifespan: document.getElementById('lifespan').value,
-      lifespanReached: document.getElementById('lifespanReached').value,
-      maintenanceUnit: document.getElementById('maintenanceUnit').value,
-      rootCauseAction: document.getElementById('rootCauseAction').value,
-      recurrenceType: recType,
-      measureStatus: (recType === '再発') ? ms : '',
-      affirmation: document.getElementById('affirmation').value,
-      status: 'complete',
-      completedAt: serverTimestamp()
-    };
+const updates = {
+  techHandler: document.getElementById('techHandler').value,
+  previousCheck: document.getElementById('previousCheck').value || '',
+  lifespan: document.getElementById('lifespan').value,
+  lifespanReached: document.getElementById('lifespanReached').value,
+  maintenanceUnit: document.getElementById('maintenanceUnit').value,
+  rootCauseAction: document.getElementById('rootCauseAction').value,
+  recurrenceType: recType,
+  measureStatus: (recType === '再発') ? ms : '',
+  affirmation: document.getElementById('affirmation').value,
+  status: 'complete',
+  completedAt: serverTimestamp()
+};
+
     
     console.log('Updating document:', id, updates);
     
