@@ -173,6 +173,58 @@
     font-size:12px;
     color:var(--text-secondary);
   }
+  /* ==== 🔥 トピックス（急増・連続増加）専用レイアウト ==== */
+#panelTopics {
+  border: 2px solid #fb7185;                 /* パネル枠を強調 */
+  background: rgba(248, 250, 252, 0.95);
+}
+
+[data-theme="dark"] #panelTopics {
+  background: #020617;
+}
+
+#panelTopics h3 {
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#panelTopics h3::before {
+  content: "🔥";
+  font-size: 18px;
+}
+
+/* カードを中央寄せ＆大きめ表示 */
+#panelTopics .cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: center;   /* 1件でも真ん中に */
+  align-items: stretch;
+}
+
+#panelTopics .section-title {
+  flex-basis: 100%;
+  margin: 4px 4px 0;
+}
+
+/* トピックカード自体を少し大きく＆目立たせる */
+#panelTopics .card {
+  max-width: 620px;
+  width: 100%;
+  border-width: 2px;
+  box-shadow: 0 8px 18px var(--shadow);
+  transform: translateY(0);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+#panelTopics .card:hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 0 12px 24px var(--shadow-lg);
+}
+
 </style>
 </head>
 <body>
@@ -547,7 +599,19 @@ const COLORS = ['#ef4444','#22c55e','#3b82f6','#f59e0b','#a855f7','#06b6d4','#ea
 const $ = (id)=>document.getElementById(id);
 const fmt = (n)=>n.toLocaleString();
 const debounce = (fn,ms=150)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
-const DEFAULT_TOPICS = { baselineDays:7, liftMin:1.5, absMin:8, consecDays:3, minDaily:2, maxCards:5 };
+const DEFAULT_TOPICS = {
+  baselineDays: 7,
+  liftMin:      1.5,
+  absMin:       8,
+  consecDays:   3,
+  minDaily:     2,
+  maxCards:     5,
+  minTotal:     20,   // 対象期間の合計件数がこれ未満なら除外
+  liftCap:      3.0,  // 倍率の上限（極端なスパイクを抑制）
+  weight48:     0.5,  // 48h 件数のスコア寄与
+  bonusConsec:  10    // 連続増加ボーナス
+};
+
 let topicsConfig = { ...DEFAULT_TOPICS };
 
 /* ====== テーマ管理 ====== */
@@ -913,50 +977,81 @@ function computeTopics() {
   const rows = filteredRows();
   if (!rows.length) return { items: [], lastKey: null, lastLabel: null };
 
+  // ★ 48h の MESSAGE 別件数をここで一括計算
+  const latest = rows[rows.length - 1].ts;
+  const start48 = new Date(latest.getTime() - 48 * 3600 * 1000);
+  const count48 = {};
+  rows.forEach(r => {
+    if (r.ts < start48 || r.ts > latest) return;
+    const m = r.message;
+    count48[m] = (count48[m] || 0) + 1;
+  });
+
   const { periods, byMsg } = groupByPeriod('day');
   if (!periods.length) return { items: [], lastKey: null, lastLabel: null };
 
-  const keys = periods.map(p => p.key);
+  const keys   = periods.map(p => p.key);
   const labels = periods.map(p => p.label);
   const lastIdx = keys.length - 1;
   if (lastIdx < 0) return { items: [], lastKey: null, lastLabel: null };
 
-  const baselineDays = Math.max(1, topicsConfig.baselineDays|0);
-  const consecNeed   = Math.max(3, topicsConfig.consecDays|0);
-  const minDaily     = Math.max(0, topicsConfig.minDaily|0);
-  const maxCards     = Math.max(1, topicsConfig.maxCards|0);
+  const baselineDays = Math.max(1, topicsConfig.baselineDays | 0);
+  const consecNeed   = Math.max(3, topicsConfig.consecDays   | 0);
+  const minDaily     = Math.max(0, topicsConfig.minDaily     | 0);
+  const maxCards     = Math.max(1, topicsConfig.maxCards     | 0);
+  const minTotal     = Math.max(0, topicsConfig.minTotal     | 0);   // 合計件数しきい値
 
   const items = [];
+
   for (const [msg, obj] of byMsg.entries()) {
-    // 対象メッセージの全日系列
     const yAll = keys.map(k => obj[k] || 0);
-    if (yAll.length < Math.max(baselineDays+1, consecNeed)) continue;
+    if (yAll.length < Math.max(baselineDays + 1, consecNeed)) continue;
+
+    const total = yAll.reduce((a, b) => a + b, 0);
+    if (total < minTotal) continue;  // ★ 合計件数が少なすぎる項目は除外
 
     const last = yAll[lastIdx];
+    const recent48 = count48[msg] || 0;
 
-    // ベースライン（直近日を除く baselineDays 日）
+    // ★ 昨日も48hも「最小日件数」未満ならトピックから除外
+    if (last < minDaily && recent48 < minDaily) continue;
+
     const baseStart = Math.max(0, lastIdx - baselineDays);
     const baseSlice = yAll.slice(baseStart, lastIdx);
-    const baseMean  = baseSlice.length ? (baseSlice.reduce((a,b)=>a+b,0) / baseSlice.length) : 0;
+    const baseMean  = baseSlice.length
+      ? baseSlice.reduce((a, b) => a + b, 0) / baseSlice.length
+      : 0;
 
-    // ── 条件1: 急増（倍率 or 絶対値）
-    const surgeByLift = baseMean > 0 && last >= topicsConfig.liftMin * baseMean;
+    const liftRaw = baseMean > 0 ? last / baseMean : 0;
+    const liftCap = topicsConfig.liftCap ?? 0;        // 0 なら無制限
+    const lift = liftCap > 0 ? Math.min(liftRaw, liftCap) : liftRaw;
+
+    // 急増（倍率 or 絶対値）
+    const surgeByLift = baseMean > 0 &&
+      last >= minDaily &&
+      liftRaw >= topicsConfig.liftMin;
+
     const surgeByAbs  = last >= topicsConfig.absMin;
     const isSurge     = surgeByLift || surgeByAbs;
 
-    // ── 条件2: 連続増加（直近 N 日で単調増加＆各日が閾値以上）
+    // 連続増加
     let isConsec = false;
     if (yAll.length >= consecNeed) {
       const tail = yAll.slice(-consecNeed);
-      isConsec = tail.every((v,i)=> (i===0 || v > tail[i-1])) && tail.every(v => v >= minDaily);
+      isConsec = tail.every((v, i) => (i === 0 || v > tail[i - 1])) &&
+                 tail.every(v => v >= minDaily);
     }
 
     if (!(isSurge || isConsec)) continue;
 
-    // スコア（並び順用）：急増寄与 + 連続増加ボーナス
-    const lift = baseMean > 0 ? (last / Math.max(1, baseMean)) : 1;
-    let score = last * (surgeByLift ? lift : 1);
-    if (isConsec) score += 10 + 2 * (consecNeed); // 連増ボーナス
+    // スコア計算（48h＋連続増加ボーナス）
+    const w48    = topicsConfig.weight48    ?? 0.5;
+    const bonusC = topicsConfig.bonusConsec ?? 10;
+
+    let score = 0;
+    if (isSurge)  score += last * lift;
+    if (isConsec) score += bonusC;
+    score += w48 * recent48;
 
     const labelsView = labels.slice(-14);
     const yView      = yAll.slice(-14);
@@ -967,13 +1062,19 @@ function computeTopics() {
       y: yView, labels: labelsView,
       last, baseMean, lift,
       surgeByLift, surgeByAbs, isConsec,
+      recent48, total,
       score
     });
   }
 
-  items.sort((a,b)=> b.score - a.score);
-  return { items: items.slice(0, maxCards), lastKey: keys[lastIdx], lastLabel: labels[lastIdx] };
+  items.sort((a, b) => b.score - a.score);
+  return {
+    items: items.slice(0, maxCards),
+    lastKey: keys[lastIdx],
+    lastLabel: labels[lastIdx]
+  };
 }
+
 
 function renderTopics() {
   const panel = document.getElementById('panelTopics');
@@ -991,7 +1092,12 @@ function renderTopics() {
   panel.style.display = 'block';
   hint.textContent = lastLabel ? `対象日：${lastLabel}` : '';
 
-  items.forEach(it => {
+  // ★ グループ分け
+  const both      = items.filter(it => (it.surgeByLift || it.surgeByAbs) && it.isConsec);
+  const surgeOnly = items.filter(it => (it.surgeByLift || it.surgeByAbs) && !it.isConsec);
+  const consecOnly= items.filter(it => it.isConsec && !(it.surgeByLift || it.surgeByAbs));
+
+  const makeCard = (it) => {
     const badges = [];
     if (it.surgeByLift) badges.push(`📈 急増×倍率(${it.lift.toFixed(2)}x)`);
     if (it.surgeByAbs)  badges.push(`🔢 急増×絶対(${it.last})`);
@@ -1006,16 +1112,32 @@ function renderTopics() {
           ${badges.map(b=>`<span class="tag">${b}</span>`).join('')}
         </div>
       </div>
-      <div class="hint" style="margin-top:6px">
-        昨日比: ${it.last} ／ ベース平均(${topicsConfig.baselineDays}日): ${it.baseMean.toFixed(2)}
+      <div class="hint" style="margin-top:4px">
+        昨日: ${it.last}件 ／ ベース平均(${topicsConfig.baselineDays}日): ${it.baseMean.toFixed(2)}件
+        ／ 48h: ${it.recent48}件 ／ 合計: ${it.total}件
       </div>
       <svg class="svg-s"></svg>
     `;
     card.addEventListener('click', () => openDetail(it.msg, 'day'));
     const svg = card.querySelector('svg');
     drawMiniLineWithAxes(svg, it.labels, it.y, { showValues:true });
-    cards.appendChild(card);
-  });
+    return card;
+  };
+
+  const renderGroup = (title, arr) => {
+    if (!arr.length) return;
+    const h = document.createElement('div');
+    h.className = 'section-title';
+    h.style.margin = '6px 2px 4px';
+    h.textContent = title;
+    cards.appendChild(h);
+    arr.forEach(it => cards.appendChild(makeCard(it)));
+  };
+
+  // ★ 表示順：両方満たす → 急増 → 連続増加
+  renderGroup('📊 急増＋連続増加', both);
+  renderGroup('📈 急増トピック', surgeOnly);
+  renderGroup('⤴️ 連続増加トピック', consecOnly);
 }
 
 /* ====== 設定（マーク／無視） ====== */
