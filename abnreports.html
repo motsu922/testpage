@@ -2306,22 +2306,31 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
       return;
     }
     
-    const recType = document.getElementById('recurrenceType').value;
-    const ms = (document.getElementById('measureStatus')?.value || '').trim();
-    
+const recType = document.getElementById('recurrenceType').value;
+const ms = (document.getElementById('measureStatus')?.value || '').trim();
+const rootText = document.getElementById('rootCauseAction').value || '';
+
 const updates = {
   techHandler: document.getElementById('techHandler').value,
   previousCheck: document.getElementById('previousCheck').value || '',
   lifespan: document.getElementById('lifespan').value,
   lifespanReached: document.getElementById('lifespanReached').value,
   maintenanceUnit: document.getElementById('maintenanceUnit').value,
-  rootCauseAction: document.getElementById('rootCauseAction').value,
+  rootCauseAction: rootText,
   recurrenceType: recType,
   measureStatus: (recType === '再発') ? ms : '',
-  affirmation: document.getElementById('affirmation').value,
-  status: 'complete',
-  completedAt: serverTimestamp()
+  affirmation: document.getElementById('affirmation').value
 };
+
+// ★ 技術対応内容が埋まっていたら完了、それ以外は技術入力待ち
+if (rootText.trim()) {
+  updates.status = 'complete';
+  updates.completedAt = serverTimestamp();
+} else {
+  updates.status = 'pending';
+  // completedAt は未設定のまま（既存値があればそれを維持）
+}
+
 
     
     console.log('Updating document:', id, updates);
@@ -3114,39 +3123,45 @@ document.getElementById('btnEditSave').addEventListener('click', async () => {
   saveBtn.textContent = '保存中...';
   
   try {
-    const updates = {
-      occurrenceDate: document.getElementById('edit_occurrenceDate').value||'',
-      occurrenceTime: document.getElementById('edit_occurrenceTime').value||'',
-      restartTime: document.getElementById('edit_restartTime').value||'',
-      department: document.getElementById('edit_department').value||'',
-      lineName: document.getElementById('edit_lineName').value||'',
-      handler: document.getElementById('edit_handler').value||'',
-      serialNo: document.getElementById('edit_serialNo').value||'',
-      anomalyContent: document.getElementById('edit_anomalyContent').value||'',
-      actionTaken: document.getElementById('edit_actionTaken').value||'',
-      traceback: document.getElementById('edit_traceback').value||'',
-     qualityResponse: document.getElementById('edit_qualityResponse').value||'',
-      techRequest: document.getElementById('edit_techRequest').value||'',
-      techHandler: document.getElementById('edit_techHandler').value||'',
-      discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
-      previousCheck: document.getElementById('edit_previousCheck').value||'',
-      lifespan: document.getElementById('edit_lifespan').value||'',
-      lifespanReached: document.getElementById('edit_lifespanReached').value||'',
-      maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
-      rootCauseAction: document.getElementById('edit_rootCauseAction').value||'',
-      recurrenceType: document.getElementById('edit_recurrenceType').value||'',
-      affirmation: document.getElementById('edit_affirmation').value||'',
-      measureStatus: (document.getElementById('edit_recurrenceType').value === '再発')
-        ? (document.getElementById('edit_measureStatus').value || '')
-        : ''
-    };
+const rootEdit = document.getElementById('edit_rootCauseAction').value || '';
+const recTypeEdit = document.getElementById('edit_recurrenceType').value || '';
+const techReqEdit = document.getElementById('edit_techRequest').value || '';
 
-    if (updates.techRequest === '完結') {
-      updates.status = 'complete';
-    } else {
-      const hasTech = (updates.techHandler || updates.lifespan || updates.maintenanceUnit || updates.rootCauseAction || updates.recurrenceType);
-      updates.status = hasTech ? 'complete' : 'pending';
-    }
+const updates = {
+  occurrenceDate: document.getElementById('edit_occurrenceDate').value||'',
+  occurrenceTime: document.getElementById('edit_occurrenceTime').value||'',
+  restartTime: document.getElementById('edit_restartTime').value||'',
+  department: document.getElementById('edit_department').value||'',
+  lineName: document.getElementById('edit_lineName').value||'',
+  handler: document.getElementById('edit_handler').value||'',
+  serialNo: document.getElementById('edit_serialNo').value||'',
+  anomalyContent: document.getElementById('edit_anomalyContent').value||'',
+  actionTaken: document.getElementById('edit_actionTaken').value||'',
+  traceback: document.getElementById('edit_traceback').value||'',
+  qualityResponse: document.getElementById('edit_qualityResponse').value||'',
+  techRequest: techReqEdit,
+  techHandler: document.getElementById('edit_techHandler').value||'',
+  discoveryTiming: document.getElementById('edit_discoveryTiming').value||'',
+  previousCheck: document.getElementById('edit_previousCheck').value||'',
+  lifespan: document.getElementById('edit_lifespan').value||'',
+  lifespanReached: document.getElementById('edit_lifespanReached').value||'',
+  maintenanceUnit: document.getElementById('edit_maintenanceUnit').value||'',
+  rootCauseAction: rootEdit,
+  recurrenceType: recTypeEdit,
+  affirmation: document.getElementById('edit_affirmation').value||'',
+  measureStatus: (recTypeEdit === '再発')
+    ? (document.getElementById('edit_measureStatus').value || '')
+    : ''
+};
+
+// ★ 発信部署完結は例外的に完了
+if (techReqEdit === '完結') {
+  updates.status = 'complete';
+} else {
+  // それ以外は「技術対応内容」が埋まっているかどうかで判定
+  updates.status = rootEdit.trim() ? 'complete' : 'pending';
+}
+
     
     // 削除する写真を処理
     if (editPhotosToDelete.length > 0) {
