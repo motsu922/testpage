@@ -560,7 +560,7 @@ if (typeof window.ensureCanvasResolution !== 'function') {
 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
-  import { getFirestore, collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+  import { getFirestore, collection, query, orderBy, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
 
   let headerDragActive = false;
   
@@ -811,64 +811,95 @@ function getDeptSparkColor(/* dept */){
       });
     });
   }
+function convertAnomalyDoc(doc){
+  const raw = { _id: doc.id, ...doc.data() };
+  const deptNorm = normalizeDeptName(raw.department);
+  const lineNorm = normalizeLineName(raw.lineName);
 
-  async function loadData(){
-    const q=query(collection(db,'anomalies'), orderBy('createdAt','desc'));
-    const snap=await getDocs(q);
-    allData=snap.docs.map(doc=>{
-      const raw={_id:doc.id, ...doc.data()};
-      const deptNorm=normalizeDeptName(raw.department);
-      const lineNorm=normalizeLineName(raw.lineName);
-const rootCauseAction =
-raw.rootCauseAction ??
-raw.techAction ??
-raw.techResponse ??
-raw.techRootCause ??
-raw.countermeasure ??
-raw.qualityRootCauseAction ??
-null;
+  const rootCauseAction =
+    raw.rootCauseAction ??
+    raw.techAction ??
+    raw.techResponse ??
+    raw.techRootCause ??
+    raw.countermeasure ??
+    raw.qualityRootCauseAction ??
+    null;
 
+  const occSource =
+    raw.occurrenceDate ??
+    raw.occurrence_at ??
+    raw.date ??
+    raw.createdAt ??
+    raw.updatedAt;
 
-      const occSource = raw.occurrenceDate ?? raw.occurrence_at ?? raw.date ?? raw.createdAt ?? raw.updatedAt;
-      const occ      = parseDateFlexible(occSource);
-      const created  = parseDateFlexible(raw.createdAt);
+  const occ     = parseDateFlexible(occSource);
+  const created = parseDateFlexible(raw.createdAt);
 
-      const occTime=normalizeTime(raw.occurrenceTime);
-      const resTime=normalizeTime(raw.restartTime);
-      let stop=null;
-      if(occTime && resTime){
-        const [oh,om]=occTime.split(':').map(Number);
-        const [rh,rm]=resTime.split(':').map(Number);
-        let diff=(rh*60+rm)-(oh*60+om);
-        if(diff<0) diff+=1440;
-        stop=diff;
-      }
-      return {
-        ...raw,
-        rootCauseAction,
-        departmentNormalized:deptNorm,
-        lineNameNormalized:lineNorm,
-        occurrenceDateISO:occ.iso,
-        occurrenceDateValue:occ.value,
-        createdAtISO: created.iso,
-        createdAtValue: created.value,
-        occurrenceTimeNorm:occTime,
-        restartTimeNorm:resTime,
-        stopMinutes: (typeof raw.stopMinutes==='number') ? raw.stopMinutes : stop
-      };
-    });
-    renderDeptBar();
-    applyFilters();
-    drawAllSparklines();
+  const occTime = normalizeTime(raw.occurrenceTime);
+  const resTime = normalizeTime(raw.restartTime);
 
-    const ro = new ResizeObserver(() => {
-      requestAnimationFrame(() => drawAllSparklines());
-    });
-    ['deptBar','linesGrid','serialsGrid'].forEach(id=>{
-      const el = document.getElementById(id);
-      if (el) ro.observe(el);
-    });
+  let stop = null;
+  if (occTime && resTime) {
+    const [oh, om] = occTime.split(':').map(Number);
+    const [rh, rm] = resTime.split(':').map(Number);
+    let diff = (rh * 60 + rm) - (oh * 60 + om);
+    if (diff < 0) diff += 1440;
+    stop = diff;
   }
+
+  return {
+    ...raw,
+    rootCauseAction,
+    departmentNormalized: deptNorm,
+    lineNameNormalized:   lineNorm,
+    occurrenceDateISO:    occ.iso,
+    occurrenceDateValue:  occ.value,
+    createdAtISO:         created.iso,
+    createdAtValue:       created.value,
+    occurrenceTimeNorm:   occTime,
+    restartTimeNorm:      resTime,
+    stopMinutes: (typeof raw.stopMinutes === 'number') ? raw.stopMinutes : stop
+  };
+}
+
+let unsubscribeAnomalies = null;
+
+function startAnomaliesListener(){
+  const q = query(collection(db, 'anomalies'), orderBy('createdAt', 'desc'));
+
+  // 既にリスナーがあれば一度止める
+  if (unsubscribeAnomalies) {
+    unsubscribeAnomalies();
+    unsubscribeAnomalies = null;
+  }
+
+  // リサイズ監視は1回だけでOK
+  const ro = new ResizeObserver(() => {
+    requestAnimationFrame(() => drawAllSparklines());
+  });
+  ['deptBar','linesGrid','serialsGrid'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) ro.observe(el);
+  });
+
+  // ★ onSnapshot でリアルタイム監視
+  unsubscribeAnomalies = onSnapshot(
+    q,
+    (snap) => {
+      allData = snap.docs.map(convertAnomalyDoc);
+
+      // データ更新のたびにUI再描画
+      renderDeptBar();
+      applyFilters();
+      drawAllSparklines();
+    },
+    (err) => {
+      console.error('onSnapshot error:', err);
+      alert('データの取得中にエラーが発生しました: ' + err.message);
+    }
+  );
+}
+
 
   /* ===== 部署バー ===== */
   function renderDeptBar(){
@@ -2077,10 +2108,15 @@ btnFullscreen.addEventListener('click', () => {
 });
 
   (async()=>{
-    const ok=await checkAuth(); if(!ok){ alert('認証が必要です'); return; }
+    const ok = await checkAuth();
+    if (!ok) {
+      alert('認証が必要です');
+      return;
+    }
+
     loadSettings();
 
-    const t = getOperationalToday();
+    const t  = getOperationalToday();
     const df = document.getElementById('dateFrom');
     const dt = document.getElementById('dateTo');
 
@@ -2088,17 +2124,19 @@ btnFullscreen.addEventListener('click', () => {
     if (dt && !dt.value) dt.value = t;
 
     if (!dateFromStr && !dateToStr) {
-      dateFromStr = t;
-      dateToStr   = t;
+      dateFromStr     = t;
+      dateToStr       = t;
       autoRangeActive = true;
-      const btnToday = document.getElementById('btnToday');
+      const btnToday     = document.getElementById('btnToday');
       const btnYesterday = document.getElementById('btnYesterday');
-      if (btnToday) btnToday.classList.add('active');
+      if (btnToday)     btnToday.classList.add('active');
       if (btnYesterday) btnYesterday.classList.remove('active');
     }
 
-    await loadData();
+    // ★ ここからリアルタイム監視開始
+    startAnomaliesListener();
   })();
+
 </script>
 </body>
 </html>
