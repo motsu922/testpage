@@ -467,8 +467,8 @@
         <div class="date-filter-title">📅 期間で絞り込み</div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
           <div class="seg" title="保全単位フィルタ">
-            <button id="modeWithMU" class="active">保全単位あり</button>
-            <button id="modeAllData">全データ</button>
+  <button id="modeWithMU">保全単位あり</button>
+  <button id="modeAllData" class="active">全データ</button>
           </div>
         </div>
       </div>
@@ -588,7 +588,7 @@
 <script type="module">
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
-  import { getFirestore, collection, getDocs, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+  import { getFirestore, collection, query, orderBy, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
 
   const firebaseConfig = {
     apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
@@ -600,217 +600,290 @@
     appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
   };
 
-  const app = initializeApp(firebaseConfig);
-  const db  = getFirestore(app);
-  const auth= getAuth(app);
+  const app  = initializeApp(firebaseConfig);
+  const db   = getFirestore(app);
+  const auth = getAuth(app);
 
   /* テーマ */
   const THEME_KEY = 'datasheetTheme';
-  const themeBtn = document.getElementById('btnTheme');
+  const themeBtn  = document.getElementById('btnTheme');
+
   function applyTheme(t){
-    document.body.classList.toggle('theme-dark', t==='dark');
-    themeBtn.textContent = (t==='dark') ? '☀️ ライト' : '🌙 ダーク';
+    document.body.classList.toggle('theme-dark', t === 'dark');
+    themeBtn.textContent = (t === 'dark') ? '☀️ ライト' : '🌙 ダーク';
   }
   function getInitialTheme(){
     const saved = localStorage.getItem(THEME_KEY);
-    if(saved==='dark' || saved==='light') return saved;
+    if (saved === 'dark' || saved === 'light') return saved;
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     return prefersDark ? 'dark' : 'light';
   }
+
   let currentTheme = getInitialTheme();
   applyTheme(currentTheme);
   themeBtn.addEventListener('click', ()=>{
-    currentTheme = (currentTheme==='dark') ? 'light' : 'dark';
+    currentTheme = (currentTheme === 'dark') ? 'light' : 'dark';
     localStorage.setItem(THEME_KEY, currentTheme);
     applyTheme(currentTheme);
-    // グラフの色を更新
-    if(serialChart) renderChart();
+    if (serialChart) renderChart(); // グラフの色を更新
   });
 
   /* 状態 */
   let allData = [];
   let filteredData = [];
   let dateFromStr = null, dateToStr = null;
-  const selectedDepts = new Set();
-  const selectedLines = new Set();
-  const selectedSerials = new Set();
+  const selectedDepts         = new Set();
+  const selectedLines         = new Set();
+  const selectedSerials       = new Set();
   const selectedSerialsByLine = new Set();
   let focusedSerial = null;
-  let focusedDept = null;
-  let currentSort = { column:null, direction:'asc' };
-  let displayLimit = 25;
-  let serialChart = null;
+  let focusedDept   = null;
+  let currentSort   = { column:null, direction:'asc' };
+  let displayLimit  = 25;
+  let serialChart   = null;
   let maintenanceUnitMode = 'withMU'; // 'withMU' or 'all'
+  let unsubscribeAnomalies = null;
 
   const allColumns = [
-    { id:'serialNo', label:'整理No', sortable:true },
-    { id:'maintenanceUnit', label:'保全単位', sortable:true },
-    { id:'department', label:'部署', sortable:true },
-    { id:'lineName', label:'ライン', sortable:true },
-    { id:'occurrenceDate', label:'発生日', sortable:true },
-    { id:'occurrenceTime', label:'発生時刻', sortable:true },
-    { id:'anomalyContent', label:'異常内容', sortable:false },
-    { id:'actionTaken', label:'対応内容', sortable:false },
+    { id:'serialNo',        label:'整理No',       sortable:true  },
+    { id:'maintenanceUnit', label:'保全単位',     sortable:true  },
+    { id:'department',      label:'部署',         sortable:true  },
+    { id:'lineName',        label:'ライン',       sortable:true  },
+    { id:'occurrenceDate',  label:'発生日',       sortable:true  },
+    { id:'occurrenceTime',  label:'発生時刻',     sortable:true  },
+    { id:'anomalyContent',  label:'異常内容',     sortable:false },
+    { id:'actionTaken',     label:'対応内容',     sortable:false },
     { id:'rootCauseAction', label:'技術対応内容', sortable:false },
-    { id:'photos', label:'写真', sortable:false },
-    { id:'status', label:'状態', sortable:true }
+    { id:'photos',          label:'写真',         sortable:false },
+    { id:'status',          label:'状態',         sortable:true  }
   ];
 
-  let visibleColumns = ['occurrenceDate','occurrenceTime','department','lineName','serialNo','anomalyContent','actionTaken','rootCauseAction','photos','maintenanceUnit','status'];
+  let visibleColumns = [
+    'occurrenceDate','occurrenceTime','department','lineName',
+    'serialNo','anomalyContent','actionTaken','rootCauseAction',
+    'photos','maintenanceUnit','status'
+  ];
 
   /* ユーティリティ */
   const pad2 = n => String(n).padStart(2,'0');
-  function formatDate(d){return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;}
+  function formatDate(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
   function getToday(){ return formatDate(new Date()); }
   function getPreviousBusinessDay(){
-    const date=new Date();const dow=date.getDay();
-    if(dow===1) date.setDate(date.getDate()-3);
-    else if(dow===0) date.setDate(date.getDate()-2);
-    else date.setDate(date.getDate()-1);
+    const date = new Date();
+    const dow  = date.getDay();
+    if (dow === 1)      date.setDate(date.getDate() - 3); // 月曜 → 金曜
+    else if (dow === 0) date.setDate(date.getDate() - 2); // 日曜 → 金曜
+    else                date.setDate(date.getDate() - 1); // それ以外 → 前日
     return formatDate(date);
   }
-  function normalizeWide(s){return String(s??'').replace(/[Ａ-Ｚａ-ｚ０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/　/g,' ').trim();}
-  function normalizeDeptName(s){return normalizeWide(s).toUpperCase()||'未設定';}
-  function normalizeLineName(s){return normalizeWide(s)||'未設定';}
+  function normalizeWide(s){
+    return String(s ?? '')
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+      .replace(/　/g, ' ')
+      .trim();
+  }
+  function normalizeDeptName(s){ return normalizeWide(s).toUpperCase() || '未設定'; }
+  function normalizeLineName(s){ return normalizeWide(s) || '未設定'; }
 
   function parseDateFlexible(v){
-    if(!v) return {iso:null,value:null};
-    let d=null;
-    if(typeof v==='object'){
-      if(typeof v.toDate==='function') d=v.toDate();
-      else if('seconds'in v&&'nanoseconds'in v) d=new Date(v.seconds*1000+Math.round(v.nanoseconds/1e6));
+    if (!v) return { iso:null, value:null };
+    let d = null;
+
+    if (typeof v === 'object'){
+      if (typeof v.toDate === 'function') {
+        d = v.toDate();
+      } else if ('seconds' in v && 'nanoseconds' in v) {
+        d = new Date(v.seconds * 1000 + Math.round(v.nanoseconds / 1e6));
+      }
     }
-    if(!d && v instanceof Date) d=v;
-    if(!d && typeof v==='number') d=new Date(v);
-    if(!d && typeof v==='string'){
-      const s=v.trim();
-      let m=s.match(/^(\d{4})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})(?:日)?$/);
-      if(m) d=new Date(+m[1],+m[2]-1,+m[3]);
-      if(!d){ m=s.match(/^(\d{2})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})(?:日)?$/); if(m) d=new Date(2000+(+m[1]),+m[2]-1,+m[3]); }
-      if(!d){ m=s.match(/^(\d{4})(\d{2})(\d{2})$/); if(m) d=new Date(+m[1],+m[2]-1,+m[3]); }
-      if(!d){ const p=Date.parse(s); if(!Number.isNaN(p)) d=new Date(p); }
+    if (!d && v instanceof Date)   d = v;
+    if (!d && typeof v === 'number') d = new Date(v);
+
+    if (!d && typeof v === 'string'){
+      const s = v.trim();
+      let m = s.match(/^(\d{4})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})(?:日)?$/);
+      if (m) d = new Date(+m[1], +m[2]-1, +m[3]);
+
+      if (!d){
+        m = s.match(/^(\d{2})[.\-\/年](\d{1,2})[.\-\/月](\d{1,2})(?:日)?$/);
+        if (m) d = new Date(2000 + (+m[1]), +m[2]-1, +m[3]);
+      }
+      if (!d){
+        m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+        if (m) d = new Date(+m[1], +m[2]-1, +m[3]);
+      }
+      if (!d){
+        const p = Date.parse(s);
+        if (!Number.isNaN(p)) d = new Date(p);
+      }
     }
-    if(!d || Number.isNaN(d.getTime())) return {iso:null,value:null};
-    const y=d.getFullYear(), m=d.getMonth()+1, dd=d.getDate();
-    return {iso:`${y}-${pad2(m)}-${pad2(dd)}`, value:new Date(y,m-1,dd).getTime()};
+
+    if (!d || Number.isNaN(d.getTime())) return { iso:null, value:null };
+    const y = d.getFullYear(), m = d.getMonth()+1, dd = d.getDate();
+    return {
+      iso:   `${y}-${pad2(m)}-${pad2(dd)}`,
+      value: new Date(y, m-1, dd).getTime()
+    };
   }
 
   function normalizeTime(v){
-    if(!v) return null; const s=String(v).trim();
-    let m=s.match(/^(\d{1,2}):(\d{1,2})$/);
-    if(m){ return `${pad2(Math.max(0,Math.min(23,+m[1])))}:${pad2(Math.max(0,Math.min(59,+m[2])))}`; }
-    m=s.match(/(\d{1,2})\D+(\d{1,2})/);
-    if(m){ return `${pad2(Math.max(0,Math.min(23,+m[1])))}:${pad2(Math.max(0,Math.min(59,+m[2])))}`; }
-    m=s.match(/^(\d{3,4})$/);
-    if(m){ const raw=m[1].padStart(4,'0'); return `${pad2(Math.max(0,Math.min(23,+raw.slice(0,2))))}:${pad2(Math.max(0,Math.min(59,+raw.slice(2,4))))}`; }
+    if (!v) return null;
+    const s = String(v).trim();
+
+    let m = s.match(/^(\d{1,2}):(\d{1,2})$/);
+    if (m){
+      return `${pad2(Math.max(0,Math.min(23,+m[1])))}:${pad2(Math.max(0,Math.min(59,+m[2])))}`;
+    }
+    m = s.match(/(\d{1,2})\D+(\d{1,2})/);
+    if (m){
+      return `${pad2(Math.max(0,Math.min(23,+m[1])))}:${pad2(Math.max(0,Math.min(59,+m[2])))}`;
+    }
+    m = s.match(/^(\d{3,4})$/);
+    if (m){
+      const raw = m[1].padStart(4,'0');
+      return `${pad2(Math.max(0,Math.min(23,+raw.slice(0,2))))}:${pad2(Math.max(0,Math.min(59,+raw.slice(2,4))))}`;
+    }
     return null;
   }
 
   function getOccurrenceMsLocal(it){
-    if (it.occurrenceDateISO) {
+    if (it.occurrenceDateISO){
       const time = it.occurrenceTimeNorm || '00:00';
-      const dt = new Date(`${it.occurrenceDateISO}T${time}:00`);
+      const dt   = new Date(`${it.occurrenceDateISO}T${time}:00`);
       if (!Number.isNaN(dt.getTime())) return dt.getTime();
       const dOnly = new Date(it.occurrenceDateISO);
       if (!Number.isNaN(dOnly.getTime())) return dOnly.getTime();
     }
     if (it.occurrenceDateValue != null) return it.occurrenceDateValue;
-    if (it.createdAtValue != null) return it.createdAtValue;
+    if (it.createdAtValue     != null) return it.createdAtValue;
     return null;
   }
 
-  /* 認証・ロード */
+  /* Firestore → 内部フォーマット変換 */
+  function convertAnomalyDoc(doc){
+    const raw = { _id: doc.id, ...doc.data() };
+
+    const deptNorm = normalizeDeptName(raw.department);
+    const lineNorm = normalizeLineName(raw.lineName);
+
+    const rootCauseAction =
+      raw.rootCauseAction ??
+      raw.techAction ??
+      raw.techResponse ??
+      raw.techRootCause ??
+      raw.countermeasure ??
+      raw.qualityRootCauseAction ??
+      null;
+
+    const occSource =
+      raw.occurrenceDate ??
+      raw.occurrence_at ??
+      raw.date ??
+      raw.createdAt ??
+      raw.updatedAt;
+
+    const occ     = parseDateFlexible(occSource);
+    const created = parseDateFlexible(raw.createdAt);
+    const occTime = normalizeTime(raw.occurrenceTime);
+
+    return {
+      ...raw,
+      departmentNormalized: deptNorm,
+      lineNameNormalized:   lineNorm,
+      rootCauseAction,
+      occurrenceDateISO:    occ.iso,
+      occurrenceDateValue:  occ.value,
+      createdAtISO:         created.iso,
+      createdAtValue:       created.value,
+      occurrenceTimeNorm:   occTime
+    };
+  }
+
+  /* 認証 */
   async function checkAuth(){
     return new Promise(resolve=>{
-      onAuthStateChanged(auth,(user)=>{
-        if(user) resolve(true);
-        else{
-          const email=prompt('メールアドレスを入力してください');
-          const password=prompt('パスワードを入力してください');
-          if(email && password){
-            setPersistence(auth,browserLocalPersistence)
-              .then(()=>signInWithEmailAndPassword(auth,email,password))
+      onAuthStateChanged(auth, (user)=>{
+        if (user) {
+          resolve(true);
+        } else {
+          const email    = prompt('メールアドレスを入力してください');
+          const password = prompt('パスワードを入力してください');
+          if (email && password){
+            setPersistence(auth, browserLocalPersistence)
+              .then(()=>signInWithEmailAndPassword(auth, email, password))
               .then(()=>resolve(true))
-              .catch(e=>{alert('ログインに失敗しました: '+e.message); resolve(false);});
-          }else resolve(false);
+              .catch(e=>{
+                alert('ログインに失敗しました: ' + e.message);
+                resolve(false);
+              });
+          } else {
+            resolve(false);
+          }
         }
       });
     });
   }
 
-  async function loadData(){
-    const q=query(collection(db,'anomalies'), orderBy('createdAt','desc'));
-    const snap=await getDocs(q);
-    
-    // 全データを読み込み（フィルタリングは後で行う）
-    allData=snap.docs.map(doc=>{
-      const raw={_id:doc.id, ...doc.data()};
-      
-      const deptNorm=normalizeDeptName(raw.department);
-      const lineNorm=normalizeLineName(raw.lineName);
-      
-      // 技術対応内容の取得（複数のフィールド名に対応）
-      const rootCauseAction = 
-        raw.rootCauseAction ??
-        raw.techAction ??
-        raw.techResponse ??
-        raw.techRootCause ??
-        raw.countermeasure ??
-        raw.qualityRootCauseAction ??
-        null;
-      
-      const occSource = raw.occurrenceDate ?? raw.occurrence_at ?? raw.date ?? raw.createdAt ?? raw.updatedAt;
-      const occ = parseDateFlexible(occSource);
-      const created = parseDateFlexible(raw.createdAt);
-      const occTime = normalizeTime(raw.occurrenceTime);
+  /* onSnapshot でリアルタイム監視 */
+  function startAnomaliesListener(){
+    const q = query(collection(db, 'anomalies'), orderBy('createdAt', 'desc'));
 
-      return {
-        ...raw,
-        departmentNormalized: deptNorm,
-        lineNameNormalized: lineNorm,
-        rootCauseAction: rootCauseAction,
-        occurrenceDateISO: occ.iso,
-        occurrenceDateValue: occ.value,
-        createdAtISO: created.iso,
-        createdAtValue: created.value,
-        occurrenceTimeNorm: occTime
-      };
-    });
+    if (unsubscribeAnomalies){
+      unsubscribeAnomalies();
+      unsubscribeAnomalies = null;
+    }
 
-    renderDeptBar();
-    renderSerialBar();
-    applyFilters();
+    unsubscribeAnomalies = onSnapshot(
+      q,
+      (snap)=>{
+        allData = snap.docs.map(convertAnomalyDoc);
+
+        // データ更新のたびに UI 再描画
+        renderDeptBar();
+        renderSerialBar();
+        renderChart();
+        applyFilters();
+      },
+      (err)=>{
+        console.error('onSnapshot error:', err);
+        alert('データの取得中にエラーが発生しました: ' + err.message);
+      }
+    );
   }
 
-  /* 保全単位フィルタを適用したデータを取得 */
+  window.addEventListener('beforeunload', ()=>{
+    if (unsubscribeAnomalies){
+      unsubscribeAnomalies();
+    }
+  });
+
+  /* 保全単位フィルタ */
   function getFilteredByMaintenanceUnit(){
-    if(maintenanceUnitMode === 'withMU'){
-      // 保全単位が空白でないもののみ
-      return allData.filter(it => {
+    if (maintenanceUnitMode === 'withMU'){
+      return allData.filter(it=>{
         const mu = normalizeWide(it.maintenanceUnit || '');
         return mu.length > 0;
       });
     } else {
-      // 全データ
       return allData;
     }
   }
 
   /* 部署バー */
   function renderDeptBar(){
-    const bar = document.getElementById('deptBar');
+    const bar      = document.getElementById('deptBar');
     const baseData = getFilteredByMaintenanceUnit();
     const periodData = filterByDate(baseData);
 
     const counts = new Map();
-    for(const it of periodData){
+    for (const it of periodData){
       const d = it.departmentNormalized || '未設定';
-      counts.set(d, (counts.get(d)||0)+1);
+      counts.set(d, (counts.get(d) || 0) + 1);
     }
     const depts = [...counts.keys()].sort();
 
     bar.innerHTML = depts.map(dept=>{
-      const total = counts.get(dept);
+      const total       = counts.get(dept);
       const activeClass = selectedDepts.has(dept) ? 'active' : '';
       return `
         <div class="btn-pill ${activeClass}" data-role="dept" data-dept="${dept}" title="${dept}">
@@ -822,35 +895,34 @@
 
     bar.querySelectorAll('[data-role="dept"]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
-        const dept = btn.getAttribute('data-dept');
+        const dept     = btn.getAttribute('data-dept');
         const isActive = btn.classList.toggle('active');
 
-        if(isActive){
+        if (isActive){
           selectedDepts.add(dept);
           focusedDept = dept;
           renderDeptExpandPanel(dept);
-        }else{
+        } else {
           selectedDepts.delete(dept);
-          if(focusedDept === dept) focusedDept = null;
-          
-          // このライン・整理Noをクリア
-          const toRemoveLines = new Set();
+          if (focusedDept === dept) focusedDept = null;
+
+          // この部署にぶら下がるライン・整理Noをクリア
+          const toRemoveLines   = new Set();
           const toRemoveSerials = new Set();
-          
-          selectedLines.forEach(key => {
-            if(key.startsWith(`${dept}||`)) toRemoveLines.add(key);
+
+          selectedLines.forEach(key=>{
+            if (key.startsWith(`${dept}||`)) toRemoveLines.add(key);
           });
-          selectedSerialsByLine.forEach(key => {
-            if(key.startsWith(`${dept}||`)) toRemoveSerials.add(key);
+          selectedSerialsByLine.forEach(key=>{
+            if (key.startsWith(`${dept}||`)) toRemoveSerials.add(key);
           });
-          
-          toRemoveLines.forEach(key => selectedLines.delete(key));
-          toRemoveSerials.forEach(key => selectedSerialsByLine.delete(key));
-          
-          if(selectedDepts.size === 0){
+          toRemoveLines.forEach(key=>selectedLines.delete(key));
+          toRemoveSerials.forEach(key=>selectedSerialsByLine.delete(key));
+
+          if (selectedDepts.size === 0){
             document.getElementById('deptExpandPanel').classList.remove('open');
-            document.getElementById('linesGrid').innerHTML = '';
-            document.getElementById('serialsByLineGrid').innerHTML = '';
+            document.getElementById('linesGrid').innerHTML          = '';
+            document.getElementById('serialsByLineGrid').innerHTML  = '';
             document.getElementById('serialsByLineHolder').style.display = 'none';
           } else {
             const lastDept = [...selectedDepts].pop();
@@ -866,18 +938,18 @@
     });
   }
 
-  /* 部署展開パネル（ライン表示） */
+  /* 部署展開パネル（ライン） */
   function renderDeptExpandPanel(dept){
-    const panel = document.getElementById('deptExpandPanel');
-    const title = document.getElementById('deptPanelTitle');
-    const linesGrid = document.getElementById('linesGrid');
-    const serialsHolder = document.getElementById('serialsByLineHolder');
-    const serialsGrid = document.getElementById('serialsByLineGrid');
+    const panel        = document.getElementById('deptExpandPanel');
+    const title        = document.getElementById('deptPanelTitle');
+    const linesGrid    = document.getElementById('linesGrid');
+    const serialsHolder= document.getElementById('serialsByLineHolder');
+    const serialsGrid  = document.getElementById('serialsByLineGrid');
 
-    if(!dept){
+    if (!dept){
       panel.classList.remove('open');
-      linesGrid.innerHTML = '';
-      serialsGrid.innerHTML = '';
+      linesGrid.innerHTML  = '';
+      serialsGrid.innerHTML= '';
       serialsHolder.style.display = 'none';
       return;
     }
@@ -887,21 +959,21 @@
     serialsHolder.style.display = 'none';
     serialsGrid.innerHTML = '';
 
-    const baseData = getFilteredByMaintenanceUnit().filter(it => (it.departmentNormalized||'未設定')===dept);
+    const baseData   = getFilteredByMaintenanceUnit().filter(it => (it.departmentNormalized || '未設定') === dept);
     const periodData = filterByDate(baseData);
 
     const lineCount = new Map();
-    for(const it of periodData){
+    for (const it of periodData){
       const l = it.lineNameNormalized || '未設定';
-      lineCount.set(l, (lineCount.get(l)||0)+1);
+      lineCount.set(l, (lineCount.get(l) || 0) + 1);
     }
     const lines = [...lineCount.keys()].sort();
 
     linesGrid.innerHTML = lines.map(line=>{
       const totalCnt = lineCount.get(line) || 0;
-      const key = `${dept}||${line}`;
-      const active = selectedLines.has(key) ? 'active' : '';
-      
+      const key      = `${dept}||${line}`;
+      const active   = selectedLines.has(key) ? 'active' : '';
+
       return `
         <div class="btn-pill ${active}" data-role="line" data-dept="${dept}" data-line="${line}" title="${line}">
           <span class="ribbon">✓ 選択中</span>
@@ -912,25 +984,24 @@
 
     linesGrid.querySelectorAll('[data-role="line"]').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
-        const d = btn.getAttribute('data-dept');
-        const l = btn.getAttribute('data-line');
+        const d   = btn.getAttribute('data-dept');
+        const l   = btn.getAttribute('data-line');
         const key = `${d}||${l}`;
         const isActive = btn.classList.toggle('active');
-        
-        if(isActive){
+
+        if (isActive){
           selectedLines.add(key);
           renderSerialsByLine(d, l);
         } else {
           selectedLines.delete(key);
-          
-          // このラインの整理Noをクリア
+
           const toRemove = new Set();
-          selectedSerialsByLine.forEach(skey => {
-            if(skey.startsWith(`${d}||${l}||`)) toRemove.add(skey);
+          selectedSerialsByLine.forEach(skey=>{
+            if (skey.startsWith(`${d}||${l}||`)) toRemove.add(skey);
           });
-          toRemove.forEach(skey => selectedSerialsByLine.delete(skey));
-          
-          if(selectedLines.size === 0){
+          toRemove.forEach(skey=>selectedSerialsByLine.delete(skey));
+
+          if (selectedLines.size === 0){
             serialsHolder.style.display = 'none';
             serialsGrid.innerHTML = '';
           } else {
@@ -939,44 +1010,46 @@
             renderSerialsByLine(ld, ll);
           }
         }
-        
+
         applyFilters();
         e.stopPropagation();
       });
     });
   }
 
-  /* ライン内の整理No表示 */
+  /* ライン内の整理No */
   function renderSerialsByLine(dept, line){
     const serialsHolder = document.getElementById('serialsByLineHolder');
-    const serialsGrid = document.getElementById('serialsByLineGrid');
+    const serialsGrid   = document.getElementById('serialsByLineGrid');
 
-    if(!dept || !line){
+    if (!dept || !line){
       serialsHolder.style.display = 'none';
       serialsGrid.innerHTML = '';
       return;
     }
 
-    const baseData = getFilteredByMaintenanceUnit().filter(
-      it => (it.departmentNormalized||'未設定')===dept && (it.lineNameNormalized||'未設定')===line
+    const baseData   = getFilteredByMaintenanceUnit().filter(
+      it => (it.departmentNormalized || '未設定') === dept &&
+            (it.lineNameNormalized   || '未設定') === line
     );
     const periodData = filterByDate(baseData);
 
     const serialCount = new Map();
-    for(const it of periodData){
+    for (const it of periodData){
       const sn = normalizeWide(it.serialNo || '未設定');
-      serialCount.set(sn, (serialCount.get(sn)||0)+1);
+      serialCount.set(sn, (serialCount.get(sn) || 0) + 1);
     }
 
     const serials = [...serialCount.keys()].sort();
 
     serialsGrid.innerHTML = serials.map(sn=>{
       const totalCnt = serialCount.get(sn) || 0;
-      const key = `${dept}||${line}||${sn}`;
-      const active = selectedSerialsByLine.has(key) ? 'active' : '';
+      const key      = `${dept}||${line}||${sn}`;
+      const active   = selectedSerialsByLine.has(key) ? 'active' : '';
 
       return `
-        <div class="btn-pill ${active}" data-role="serialByLine" data-dept="${dept}" data-line="${line}" data-serial="${sn}" title="${sn}">
+        <div class="btn-pill ${active}" data-role="serialByLine"
+             data-dept="${dept}" data-line="${line}" data-serial="${sn}" title="${sn}">
           <span class="ribbon">✓ 選択中</span>
           <div class="title">${sn}</div>
           <div class="sub">${totalCnt}件</div>
@@ -985,13 +1058,13 @@
 
     serialsGrid.querySelectorAll('[data-role="serialByLine"]').forEach(btn=>{
       btn.addEventListener('click', (e)=>{
-        const d = btn.getAttribute('data-dept');
-        const l = btn.getAttribute('data-line');
-        const s = btn.getAttribute('data-serial');
+        const d   = btn.getAttribute('data-dept');
+        const l   = btn.getAttribute('data-line');
+        const s   = btn.getAttribute('data-serial');
         const key = `${d}||${l}||${s}`;
         const isActive = btn.classList.toggle('active');
-        
-        if(isActive){
+
+        if (isActive){
           selectedSerialsByLine.add(key);
         } else {
           selectedSerialsByLine.delete(key);
@@ -1008,65 +1081,59 @@
   /* グラフ描画 */
   function renderChart(){
     const ctx = document.getElementById('serialChart');
-    if(!ctx) return;
+    if (!ctx) return;
 
     let baseData = getFilteredByMaintenanceUnit();
-    
-    // 部署フィルタを適用
-    if(selectedDepts.size > 0){
-      baseData = baseData.filter(it => {
+
+    if (selectedDepts.size > 0){
+      baseData = baseData.filter(it=>{
         const dept = it.departmentNormalized || '未設定';
         return selectedDepts.has(dept);
       });
     }
-    
+
     const periodData = filterByDate(baseData);
 
     const counts = new Map();
-    for(const it of periodData){
+    for (const it of periodData){
       const sn = normalizeWide(it.serialNo || '未設定');
-      counts.set(sn, (counts.get(sn)||0)+1);
+      counts.set(sn, (counts.get(sn) || 0) + 1);
     }
 
-    // 件数順にソートして上位8件のみ
-    const sorted = [...counts.entries()].sort((a,b) => b[1]-a[1]).slice(0, 8);
-    
+    const sorted = [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
     const labels = sorted.map(([sn]) => sn);
-    const data = sorted.map(([, count]) => count);
+    const data   = sorted.map(([,c]) => c);
 
-    // 色設定（上位3つは特別色）
-    const backgroundColors = sorted.map((_, idx) => {
-      if(idx === 0) return 'rgba(239,68,68,0.8)';
-      if(idx === 1) return 'rgba(249,115,22,0.8)';
-      if(idx === 2) return 'rgba(234,179,8,0.8)';
+    const backgroundColors = sorted.map((_, idx)=>{
+      if (idx === 0) return 'rgba(239,68,68,0.8)';
+      if (idx === 1) return 'rgba(249,115,22,0.8)';
+      if (idx === 2) return 'rgba(234,179,8,0.8)';
       return 'rgba(102,126,234,0.8)';
     });
-
-    const borderColors = sorted.map((_, idx) => {
-      if(idx === 0) return 'rgba(239,68,68,1)';
-      if(idx === 1) return 'rgba(249,115,22,1)';
-      if(idx === 2) return 'rgba(234,179,8,1)';
+    const borderColors = sorted.map((_, idx)=>{
+      if (idx === 0) return 'rgba(239,68,68,1)';
+      if (idx === 1) return 'rgba(249,115,22,1)';
+      if (idx === 2) return 'rgba(234,179,8,1)';
       return 'rgba(102,126,234,1)';
     });
 
-    // 既存のチャートがあれば破棄
-    if(serialChart){
+    if (serialChart){
       serialChart.destroy();
     }
 
-    const isDark = document.body.classList.contains('theme-dark');
+    const isDark    = document.body.classList.contains('theme-dark');
     const textColor = isDark ? '#e5e7eb' : '#1d1d1f';
     const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
 
     serialChart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: labels,
+        labels,
         datasets: [{
           label: '件数',
-          data: data,
+          data,
           backgroundColor: backgroundColors,
-          borderColor: borderColors,
+         borderColor: borderColors,
           borderWidth: 2
         }]
       },
@@ -1074,78 +1141,52 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            display: false
-          },
-          title: {
-            display: false
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return '件数: ' + context.parsed.y + '件';
-              }
+          legend:{ display:false },
+          title:{ display:false },
+          tooltip:{
+            callbacks:{
+              label: ctx => '件数: ' + ctx.parsed.y + '件'
             }
           }
         },
         scales: {
           y: {
-            beginAtZero: true,
-            ticks: {
-              stepSize: 1,
-              color: textColor
-            },
-            grid: {
-              color: gridColor
-            },
-            title: {
-              display: true,
-              text: '件数',
-              color: textColor,
-              font: {
-                size: 14,
-                weight: 'bold'
-              }
+            beginAtZero:true,
+            ticks:{ stepSize:1, color:textColor },
+            grid:{ color:gridColor },
+            title:{
+              display:true,
+              text:'件数',
+              color:textColor,
+              font:{ size:14, weight:'bold' }
             }
           },
           x: {
-            ticks: {
-              color: textColor,
-              maxRotation: 45,
-              minRotation: 45
-            },
-            grid: {
-              display: false
-            },
-            title: {
-              display: true,
-              text: '整理No',
-              color: textColor,
-              font: {
-                size: 14,
-                weight: 'bold'
-              }
+            ticks:{ color:textColor, maxRotation:45, minRotation:45 },
+            grid:{ display:false },
+            title:{
+              display:true,
+              text:'整理No',
+              color:textColor,
+              font:{ size:14, weight:'bold' }
             }
           }
         },
-        onClick: (event, elements) => {
-          if(elements.length > 0){
-            const index = elements[0].index;
-            const serialNo = labels[index];
-            
-            // 整理Noを選択状態にする
-            selectedSerials.clear();
-            selectedSerials.add(serialNo);
-            focusedSerial = serialNo;
-            
-            // カードの表示を更新
-            document.querySelectorAll('[data-role="serial"]').forEach(btn => {
-              const sn = btn.getAttribute('data-serial');
-              btn.classList.toggle('active', sn === serialNo);
-            });
-            
-            applyFilters();
-          }
+        onClick:(event, elements)=>{
+          if (!elements.length) return;
+          const index    = elements[0].index;
+          const serialNo = labels[index];
+
+          selectedSerials.clear();
+          selectedSerials.add(serialNo);
+          focusedSerial = serialNo;
+
+          document.querySelectorAll('[data-role="serial"]').forEach(btn=>{
+            const sn = btn.getAttribute('data-serial');
+            btn.classList.toggle('active', sn === serialNo);
+          });
+
+          applyFilters();
         }
       }
     });
@@ -1153,40 +1194,35 @@
 
   /* 整理Noバー（ワースト8） */
   function renderSerialBar(){
-    const bar = document.getElementById('serialBar');
+    const bar      = document.getElementById('serialBar');
     const dropdown = document.getElementById('serialDropdown');
+
     let baseData = getFilteredByMaintenanceUnit();
-    
-    // 部署フィルタを適用
-    if(selectedDepts.size > 0){
-      baseData = baseData.filter(it => {
+    if (selectedDepts.size > 0){
+      baseData = baseData.filter(it=>{
         const dept = it.departmentNormalized || '未設定';
         return selectedDepts.has(dept);
       });
     }
-    
+
     const periodData = filterByDate(baseData);
 
     const counts = new Map();
-    for(const it of periodData){
+    for (const it of periodData){
       const sn = normalizeWide(it.serialNo || '未設定');
-      counts.set(sn, (counts.get(sn)||0)+1);
+      counts.set(sn, (counts.get(sn) || 0) + 1);
     }
 
-    // 件数順にソート
-    const sorted = [...counts.entries()].sort((a,b) => b[1]-a[1]);
-    
-    // ワースト8を取得
-    const top8 = sorted.slice(0,8);
+    const sorted = [...counts.entries()].sort((a,b)=>b[1]-a[1]);
+    const top8   = sorted.slice(0,8);
     const top8Serials = new Set(top8.map(([sn]) => sn));
 
-    // ワースト8をカード表示
     bar.innerHTML = top8.map(([sn, count], idx)=>{
       const activeClass = selectedSerials.has(sn) ? 'active' : '';
       let rankClass = '';
-      if(idx === 0) rankClass = 'rank-1';
-      else if(idx === 1) rankClass = 'rank-2';
-      else if(idx === 2) rankClass = 'rank-3';
+      if (idx === 0)      rankClass = 'rank-1';
+      else if (idx === 1) rankClass = 'rank-2';
+      else if (idx === 2) rankClass = 'rank-3';
 
       return `
         <div class="btn-pill ${activeClass} ${rankClass}" data-role="serial" data-serial="${sn}" title="${sn}">
@@ -1198,370 +1234,412 @@
 
     bar.querySelectorAll('[data-role="serial"]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
-        const sn = btn.getAttribute('data-serial');
+        const sn       = btn.getAttribute('data-serial');
         const isActive = btn.classList.toggle('active');
 
-        if(isActive){
+        if (isActive){
           selectedSerials.add(sn);
           focusedSerial = sn;
-          // ドロップダウンもリセット
           dropdown.value = '';
-        }else{
+        } else {
           selectedSerials.delete(sn);
-          if(focusedSerial === sn) focusedSerial = null;
+          if (focusedSerial === sn) focusedSerial = null;
         }
 
         applyFilters();
       });
     });
 
-    // ドロップダウンリストを更新（ワースト8以外の整理No）
     const others = sorted.filter(([sn]) => !top8Serials.has(sn));
-    dropdown.innerHTML = '<option value="">-- その他の整理Noを選択 --</option>' + 
-      others.map(([sn, count]) => {
+    dropdown.innerHTML =
+      '<option value="">-- その他の整理Noを選択 --</option>' +
+      others.map(([sn,count])=>{
         const selected = selectedSerials.has(sn) ? 'selected' : '';
         return `<option value="${sn}" ${selected}>${sn} (${count}件)</option>`;
       }).join('');
   }
 
   function filterByDate(dataArr){
-    let fromMs=null, toMs=null;
-    if(dateFromStr && /^\d{4}-\d{2}-\d{2}$/.test(dateFromStr)){
+    let fromMs = null, toMs = null;
+    if (dateFromStr && /^\d{4}-\d{2}-\d{2}$/.test(dateFromStr)){
       fromMs = new Date(`${dateFromStr}T00:00:00`).getTime();
     }
-    if(dateToStr && /^\d{4}-\d{2}-\d{2}$/.test(dateToStr)){
+    if (dateToStr && /^\d{4}-\d{2}-\d{2}$/.test(dateToStr)){
       toMs = new Date(`${dateToStr}T23:59:59.999`).getTime();
     }
-    if(fromMs===null && toMs===null) return dataArr;
+    if (fromMs === null && toMs === null) return dataArr;
 
     return dataArr.filter(it=>{
       const occMs = getOccurrenceMsLocal(it);
-      if(occMs==null) return false;
-      if(fromMs!==null && occMs<fromMs) return false;
-      if(toMs!==null && occMs>toMs) return false;
+      if (occMs == null) return false;
+      if (fromMs !== null && occMs < fromMs) return false;
+      if (toMs   !== null && occMs > toMs)   return false;
       return true;
     });
   }
 
   /* フィルタ → テーブル */
   function applyFilters(){
-    let fromMs=null, toMs=null;
-    if(dateFromStr && /^\d{4}-\d{2}-\d{2}$/.test(dateFromStr)){ fromMs=new Date(`${dateFromStr}T00:00:00`).getTime(); }
-    if(dateToStr && /^\d{4}-\d{2}-\d{2}$/.test(dateToStr)){ toMs=new Date(`${dateToStr}T23:59:59.999`).getTime(); }
+    let fromMs = null, toMs = null;
+    if (dateFromStr && /^\d{4}-\d{2}-\d{2}$/.test(dateFromStr)){
+      fromMs = new Date(`${dateFromStr}T00:00:00`).getTime();
+    }
+    if (dateToStr && /^\d{4}-\d{2}-\d{2}$/.test(dateToStr)){
+      toMs = new Date(`${dateToStr}T23:59:59.999`).getTime();
+    }
 
     const baseData = getFilteredByMaintenanceUnit();
 
     filteredData = baseData.filter(it=>{
       const occMs = getOccurrenceMsLocal(it);
-      if(fromMs!==null || toMs!==null){
-        if(occMs==null) return false;
-        if(fromMs!==null && occMs<fromMs) return false;
-        if(toMs!==null && occMs>toMs) return false;
+      if (fromMs !== null || toMs !== null){
+        if (occMs == null) return false;
+        if (fromMs !== null && occMs < fromMs) return false;
+        if (toMs   !== null && occMs > toMs)   return false;
       }
 
       const dept = it.departmentNormalized || '未設定';
-      const line = it.lineNameNormalized || '未設定';
-      const sn = normalizeWide(it.serialNo || '未設定');
-      
-      // 部署選択
-      if(selectedDepts.size > 0 && !selectedDepts.has(dept)){
-        return false;
-      }
-      
-      // ライン選択
-      if(selectedLines.size > 0){
+      const line = it.lineNameNormalized   || '未設定';
+      const sn   = normalizeWide(it.serialNo || '未設定');
+
+      if (selectedDepts.size > 0 && !selectedDepts.has(dept)) return false;
+
+      if (selectedLines.size > 0){
         const lineKey = `${dept}||${line}`;
-        if(!selectedLines.has(lineKey)){
-          return false;
-        }
+        if (!selectedLines.has(lineKey)) return false;
       }
 
-      // 整理No選択（ライン別）
-      if(selectedSerialsByLine.size > 0){
+      if (selectedSerialsByLine.size > 0){
         const serialKey = `${dept}||${line}||${sn}`;
-        if(!selectedSerialsByLine.has(serialKey)){
-          return false;
-        }
+        if (!selectedSerialsByLine.has(serialKey)) return false;
       }
-      
-      // 整理No選択（トップレベル）
-      if(selectedSerials.size > 0 && !selectedSerials.has(sn)){
-        return false;
-      }
+
+      if (selectedSerials.size > 0 && !selectedSerials.has(sn)) return false;
 
       return true;
     });
 
-    if(currentSort.column) applySorting();
+    if (currentSort.column) applySorting();
     else renderTable();
   }
 
   function renderTable(){
-    const thead = document.getElementById('tableHead');
-    const tbody = document.getElementById('tableBody');
-    const columns = visibleColumns.map(id => allColumns.find(c => c.id === id)).filter(Boolean);
+    const thead  = document.getElementById('tableHead');
+    const tbody  = document.getElementById('tableBody');
+    const columns= visibleColumns.map(id => allColumns.find(c => c.id === id)).filter(Boolean);
 
     thead.innerHTML = `<tr>${
       columns.map(col=>`
         <th class="${col.sortable?'sortable':''} ${currentSort.column===col.id?('sort-'+currentSort.direction):''}" data-column="${col.id}">
           ${col.label}
-        </th>`).join('')}</tr>`;
+        </th>`).join('')
+    }</tr>`;
 
     thead.querySelectorAll('th.sortable').forEach(th=>{
       th.addEventListener('click', ()=>{
-        const col=th.getAttribute('data-column');
-        if(currentSort.column===col) currentSort.direction = currentSort.direction==='asc'?'desc':'asc';
-        else { currentSort.column=col; currentSort.direction='asc'; }
+        const col = th.getAttribute('data-column');
+        if (currentSort.column === col){
+          currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentSort.column    = col;
+          currentSort.direction = 'asc';
+        }
         applySorting();
       });
     });
 
-    const display = (displayLimit && displayLimit>0) ? filteredData.slice(0, displayLimit) : filteredData;
+    const display = (displayLimit && displayLimit > 0)
+      ? filteredData.slice(0, displayLimit)
+      : filteredData;
 
-    if(display.length===0){
+    if (!display.length){
       tbody.innerHTML = `<tr><td colspan="${columns.length}">
-        <div class="empty-state"><div class="empty-icon">📭</div><p>データがありません</p></div></td></tr>`;
-    }else{
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <p>データがありません</p>
+        </div>
+      </td></tr>`;
+    } else {
       tbody.innerHTML = display.map(item=>`
         <tr data-id="${item._id}">
           ${columns.map(col=>{
             let v = item[col.id] ?? '-';
 
-            if(col.id==='occurrenceDate'){
+            if (col.id === 'occurrenceDate'){
               v = item.occurrenceDateISO || item.createdAtISO || '-';
-            }else if(col.id==='occurrenceTime'){
+            } else if (col.id === 'occurrenceTime'){
               v = item.occurrenceTimeNorm || '-';
-            }else if(col.id==='status'){
-              const statusText = (item.status==='complete') ? '完了' : '技術入力待ち';
-              const statusCls = (item.status==='complete') ? 'status-complete' : 'status-pending';
+            } else if (col.id === 'status'){
+              const statusText = (item.status === 'complete') ? '完了' : '技術入力待ち';
+              const statusCls  = (item.status === 'complete') ? 'status-complete' : 'status-pending';
               v = `<span class="status-badge ${statusCls}">${statusText}</span>`;
-            }else if(col.id==='photos'){
-              const mCnt = (item.mfgPhotoUrls||[]).length;
-              const techCnt = (item.techPhotoUrls||[]).length;
-              const total = mCnt + techCnt;
-              v = total>0
+            } else if (col.id === 'photos'){
+              const mCnt  = (item.mfgPhotoUrls  || []).length;
+              const tCnt  = (item.techPhotoUrls || []).length;
+              const total = mCnt + tCnt;
+              v = total > 0
                 ? `<button class="photo-btn" onclick="event.stopPropagation(); showDetail('${item._id}')">📷 ${total}枚</button>`
                 : '-';
-}else if(col.id==='rootCauseAction'){
-  const s = v || '';
-  const textPart = (s.length > 30 ? s.slice(0, 30) + '…' : s) || '-';
+            } else if (col.id === 'rootCauseAction'){
+              const s        = v || '';
+              const textPart = (s.length > 30 ? s.slice(0,30) + '…' : s) || '-';
 
-  if(s && s.trim().length > 0){
-    v = `
-      <div style="display:flex; flex-direction:column; gap:4px;">
-        <div>${textPart}</div>
-        <button class="tech-btn-mini" data-id="${item._id}">
-          技術詳細
-        </button>
-      </div>
-    `;
-  } else {
-    v = '-';
-  }
-}
-
-else if(col.id==='anomalyContent' || col.id==='actionTaken'){
+              if (s && s.trim().length > 0){
+                v = `
+                  <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div>${textPart}</div>
+                    <button class="tech-btn-mini" data-id="${item._id}">
+                      技術詳細
+                    </button>
+                  </div>
+                `;
+              } else {
+                v = '-';
+              }
+            } else if (col.id === 'anomalyContent' || col.id === 'actionTaken'){
               const s = v || '';
-              v = (s.length>30 ? s.slice(0,30)+'...' : s);
+              v = (s.length > 30 ? s.slice(0,30) + '...' : s);
             }
 
             return `<td>${v}</td>`;
           }).join('')}
         </tr>`).join('');
-      
+
       tbody.querySelectorAll('tr').forEach(tr=>{
         tr.addEventListener('click', ()=>showDetail(tr.getAttribute('data-id')));
+      });
+
+      // 技術モーダル表示ボタン
+      tbody.querySelectorAll('.tech-btn-mini').forEach(btn=>{
+        btn.addEventListener('click', e=>{
+          e.stopPropagation();
+          const id = btn.dataset.id;
+          showTechDetail(id);
+        });
       });
     }
 
     document.getElementById('resultCount').textContent = display.length;
-    document.getElementById('totalCount').textContent = filteredData.length;
-// 技術モーダル表示ボタン
-tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
-  btn.addEventListener('click', e => {
-    e.stopPropagation();
-    const id = btn.dataset.id;
-    showTechDetail(id);   // ←既存の技術モーダルを呼び出す
-  });
-});
-
+    document.getElementById('totalCount').textContent  = filteredData.length;
   }
 
   function applySorting(){
-    const col=currentSort.column, dir=currentSort.direction;
+    const col = currentSort.column;
+    const dir = currentSort.direction;
+
     filteredData.sort((a,b)=>{
-      let A,B;
-      if(col==='occurrenceDate'){
-        A=a.occurrenceDateValue??a.createdAtValue??-Infinity; 
-        B=b.occurrenceDateValue??b.createdAtValue??-Infinity;
-      }else if(col==='occurrenceTime'){
-        A=a.occurrenceTimeNorm??''; 
-        B=b.occurrenceTimeNorm??'';
-      }else{
-        A=a[col]??''; 
-        B=b[col]??'';
+      let A, B;
+      if (col === 'occurrenceDate'){
+        A = a.occurrenceDateValue ?? a.createdAtValue ?? -Infinity;
+        B = b.occurrenceDateValue ?? b.createdAtValue ?? -Infinity;
+      } else if (col === 'occurrenceTime'){
+        A = a.occurrenceTimeNorm ?? '';
+        B = b.occurrenceTimeNorm ?? '';
+      } else {
+        A = a[col] ?? '';
+        B = b[col] ?? '';
       }
-      if(A<B) return dir==='asc'?-1:1;
-      if(A>B) return dir==='asc'?1:-1;
+      if (A < B) return dir === 'asc' ? -1 : 1;
+      if (A > B) return dir === 'asc' ?  1 : -1;
       return 0;
     });
+
     renderTable();
   }
 
-  /* CSV */
+  /* CSV 出力 */
   function exportCSV(){
-    const cols = allColumns.filter(c=>visibleColumns.includes(c.id));
-    const headers = cols.map(c=>c.label);
-    let csv = '\uFEFF'+headers.join(',')+'\n';
+    const cols    = allColumns.filter(c => visibleColumns.includes(c.id));
+    const headers = cols.map(c => c.label);
+    let csv = '\uFEFF' + headers.join(',') + '\n';
+
     filteredData.forEach(it=>{
       const row = cols.map(col=>{
-        let v = it[col.id]??'';
-        if(col.id==='occurrenceDate') v=it.occurrenceDateISO || it.createdAtISO || '';
-        else if(col.id==='occurrenceTime') v=it.occurrenceTimeNorm||'';
-        else if(col.id==='status') v=(it.status==='complete'?'完了':'技術入力待ち');
-        else if(col.id==='photos'){
-          const mCnt = (it.mfgPhotoUrls||[]).length;
-          const techCnt = (it.techPhotoUrls||[]).length;
-          v = mCnt + techCnt;
+        let v = it[col.id] ?? '';
+        if (col.id === 'occurrenceDate') v = it.occurrenceDateISO || it.createdAtISO || '';
+        else if (col.id === 'occurrenceTime') v = it.occurrenceTimeNorm || '';
+        else if (col.id === 'status') v = (it.status === 'complete' ? '完了' : '技術入力待ち');
+        else if (col.id === 'photos'){
+          const mCnt = (it.mfgPhotoUrls  || []).length;
+          const tCnt = (it.techPhotoUrls || []).length;
+          v = mCnt + tCnt;
         }
         return `"${String(v).replace(/"/g,'""')}"`;
       });
-      csv += row.join(',')+'\n';
+      csv += row.join(',') + '\n';
     });
-    const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href  = URL.createObjectURL(blob);
     link.download = `保全単位解析_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
   }
 
-  /* 詳細 */
+  /* 詳細モーダル */
   function showDetail(id){
-    const item = allData.find(x=>x._id===id); 
-    if(!item) return;
+    const item = allData.find(x => x._id === id);
+    if (!item) return;
 
     const modal = document.getElementById('detailModal');
     const title = document.getElementById('detailTitle');
-    const body = document.getElementById('detailBody');
+    const body  = document.getElementById('detailBody');
 
     const snText = item.serialNo || '-';
     title.innerHTML = `整理No: ${snText}`;
 
-    const mfg = item.mfgPhotoUrls || [];
+    const mfg  = item.mfgPhotoUrls  || [];
     const tech = item.techPhotoUrls || [];
 
     body.innerHTML = `
       <div class="detail-section">
         <div class="section-title">📋 基本情報</div>
         <div class="detail-grid">
-          <div class="detail-item"><div class="detail-label">整理No</div><div class="detail-value">${item.serialNo||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">保全単位</div><div class="detail-value">${item.maintenanceUnit||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">部署</div><div class="detail-value">${item.department||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">ライン</div><div class="detail-value">${item.lineName||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">発生日</div><div class="detail-value">${item.occurrenceDateISO || item.createdAtISO || '-'}</div></div>
-          <div class="detail-item"><div class="detail-label">発生時刻</div><div class="detail-value">${item.occurrenceTimeNorm||'-'}</div></div>
-          <div class="detail-item"><div class="detail-label">状態</div><div class="detail-value">
-            <span class="status-badge ${item.status==='complete'?'status-complete':'status-pending'}">${item.status==='complete'?'完了':'技術入力待ち'}</span>
-          </div></div>
+          <div class="detail-item">
+            <div class="detail-label">整理No</div>
+            <div class="detail-value">${item.serialNo || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">保全単位</div>
+            <div class="detail-value">${item.maintenanceUnit || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">部署</div>
+            <div class="detail-value">${item.department || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">ライン</div>
+            <div class="detail-value">${item.lineName || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">発生日</div>
+            <div class="detail-value">${item.occurrenceDateISO || item.createdAtISO || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">発生時刻</div>
+            <div class="detail-value">${item.occurrenceTimeNorm || '-'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">状態</div>
+            <div class="detail-value">
+              <span class="status-badge ${item.status === 'complete' ? 'status-complete' : 'status-pending'}">
+                ${item.status === 'complete' ? '完了' : '技術入力待ち'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
       <div class="detail-section">
         <div class="section-title">🚨 異常内容</div>
-        <div class="detail-text-area">${item.anomalyContent||'-'}</div>
+        <div class="detail-text-area">${item.anomalyContent || '-'}</div>
       </div>
       <div class="detail-section">
         <div class="section-title">🔧 対応内容</div>
-        <div class="detail-text-area">${item.actionTaken||'-'}</div>
+        <div class="detail-text-area">${item.actionTaken || '-'}</div>
       </div>
       <div class="detail-section">
         <div class="section-title">🛠️ 技術対応内容</div>
-        <div class="detail-text-area">${item.rootCauseAction||'-'}</div>
+        <div class="detail-text-area">${item.rootCauseAction || '-'}</div>
       </div>
-      ${mfg.length?`<div class="detail-section"><div class="section-title">📷 発信部署の写真（${mfg.length}枚）</div><div class="photo-grid">${mfg.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
-      ${tech.length?`<div class="detail-section"><div class="section-title">🔧 技術部門の写真（${tech.length}枚）</div><div class="photo-grid">${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
+      ${
+        mfg.length
+          ? `<div class="detail-section">
+               <div class="section-title">📷 発信部署の写真（${mfg.length}枚）</div>
+               <div class="photo-grid">
+                 ${mfg.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}
+               </div>
+             </div>`
+          : ''
+      }
+      ${
+        tech.length
+          ? `<div class="detail-section">
+               <div class="section-title">🔧 技術部門の写真（${tech.length}枚）</div>
+               <div class="photo-grid">
+                 ${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}
+               </div>
+             </div>`
+          : ''
+      }
     `;
+
     modal.classList.add('active');
   }
 
-  /* 技術情報表示 */
+  /* 技術情報モーダル */
   function showTechDetail(id){
-    const item = allData.find(x=>x._id===id); 
-    if(!item) return;
+    const item = allData.find(x => x._id === id);
+    if (!item) return;
 
     const modal = document.getElementById('techModal');
     const title = document.getElementById('techTitle');
-    const body = document.getElementById('techBody');
+    const body  = document.getElementById('techBody');
 
     const snText = item.serialNo || '-';
     title.innerHTML = `整理No: ${snText} - 技術情報`;
 
-    // 技術処置者の取得（複数のフィールド名に対応）
-    const techHandler = 
+    const techHandler =
       item.techHandler ??
       item.technicalHandler ??
       item.techOperator ??
       item.qualityHandler ??
       '-';
 
-    // 命数到達の取得
-    const lifespan = 
-
+    const lifespan =
       item.lifespanReached ??
       item.serviceLife ??
       item.meisuuToutatsu ??
       '-';
 
-    // 新規・再発の取得
-    const recurrenceRaw = 
-      item.recurrenceType ?? 
-      item.recurrence ?? 
-      item.isRepeat ?? 
+    const recurrenceRaw =
+      item.recurrenceType ??
+      item.recurrence ??
+      item.isRepeat ??
       item.repeatStatus ??
       null;
-    
-    let recurrenceText = '-';
+
+    let recurrenceText  = '-';
     let recurrenceBadge = 'badge-info';
-    if(recurrenceRaw){
-      if(typeof recurrenceRaw === 'string'){
-        if(/再発|repeat/i.test(recurrenceRaw)){
-          recurrenceText = '再発';
+    if (recurrenceRaw){
+      if (typeof recurrenceRaw === 'string'){
+        if (/再発|repeat/i.test(recurrenceRaw)){
+          recurrenceText  = '再発';
           recurrenceBadge = 'badge-danger';
-        } else if(/新規|new/i.test(recurrenceRaw)){
-          recurrenceText = '新規';
+        } else if (/新規|new/i.test(recurrenceRaw)){
+          recurrenceText  = '新規';
           recurrenceBadge = 'badge-info';
         } else {
           recurrenceText = recurrenceRaw;
         }
-      } else if(recurrenceRaw === true){
-        recurrenceText = '再発';
+      } else if (recurrenceRaw === true){
+        recurrenceText  = '再発';
         recurrenceBadge = 'badge-danger';
-      } else if(recurrenceRaw === false){
-        recurrenceText = '新規';
+      } else if (recurrenceRaw === false){
+        recurrenceText  = '新規';
         recurrenceBadge = 'badge-info';
       }
     }
 
-    // 暫定の取得
-    const temporaryRaw = 
+    const temporaryRaw =
       item.temporary ??
       item.isTemporary ??
       item.temporaryMeasure ??
       item.zanteisochi ??
       null;
-    
-    let temporaryText = '-';
+
+    let temporaryText  = '-';
     let temporaryBadge = 'badge-info';
-    if(temporaryRaw){
-      if(typeof temporaryRaw === 'string'){
+    if (temporaryRaw){
+      if (typeof temporaryRaw === 'string'){
         temporaryText = temporaryRaw;
-        if(/暫定|temporary|temp/i.test(temporaryRaw)){
+        if (/暫定|temporary|temp/i.test(temporaryRaw)){
           temporaryBadge = 'badge-warn';
         }
-      } else if(temporaryRaw === true){
-        temporaryText = '暫定対応';
+      } else if (temporaryRaw === true){
+        temporaryText  = '暫定対応';
         temporaryBadge = 'badge-warn';
-      } else if(temporaryRaw === false){
-        temporaryText = '恒久対応';
+      } else if (temporaryRaw === false){
+        temporaryText  = '恒久対応';
         temporaryBadge = 'badge-good';
       }
     }
@@ -1574,7 +1652,7 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
         <div class="detail-grid">
           <div class="detail-item">
             <div class="detail-label">整理No</div>
-            <div class="detail-value">${item.serialNo||'-'}</div>
+            <div class="detail-value">${item.serialNo || '-'}</div>
           </div>
           <div class="detail-item">
             <div class="detail-label">技術処置者</div>
@@ -1600,29 +1678,42 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
       </div>
       <div class="detail-section">
         <div class="section-title">🛠️ 技術対応内容</div>
-        <div class="detail-text-area">${item.rootCauseAction||'-'}</div>
+        <div class="detail-text-area">${item.rootCauseAction || '-'}</div>
       </div>
-      ${tech.length?`<div class="detail-section"><div class="section-title">📷 技術部門の写真（${tech.length}枚）</div><div class="photo-grid">${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
+      ${
+        tech.length
+          ? `<div class="detail-section">
+               <div class="section-title">📷 技術部門の写真（${tech.length}枚）</div>
+               <div class="photo-grid">
+                 ${tech.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}
+               </div>
+             </div>`
+          : ''
+      }
     `;
+
     modal.classList.add('active');
   }
 
-  /* イベント */
-  document.getElementById('btnCloseDetail').addEventListener('click', ()=>document.getElementById('detailModal').classList.remove('active'));
-  document.getElementById('btnCloseTech').addEventListener('click', ()=>document.getElementById('techModal').classList.remove('active'));
+  /* イベント登録 */
+  document.getElementById('btnCloseDetail')
+    .addEventListener('click', ()=>document.getElementById('detailModal').classList.remove('active'));
+  document.getElementById('btnCloseTech')
+    .addEventListener('click', ()=>document.getElementById('techModal').classList.remove('active'));
   document.getElementById('btnExport').addEventListener('click', exportCSV);
+
   document.getElementById('displayCount').addEventListener('change', e=>{
-    displayLimit = parseInt(e.target.value,10); 
+    displayLimit = parseInt(e.target.value, 10);
     renderTable();
   });
 
   document.getElementById('btnYesterday').addEventListener('click', ()=>{
-    const y = getPreviousBusinessDay(); 
-    dateFromStr = y; 
-    dateToStr = y;
-    document.getElementById('dateFrom').value = y; 
-    document.getElementById('dateTo').value = y;
-    document.getElementById('btnYesterday').classList.add('active'); 
+    const y = getPreviousBusinessDay();
+    dateFromStr = y;
+    dateToStr   = y;
+    document.getElementById('dateFrom').value = y;
+    document.getElementById('dateTo').value   = y;
+    document.getElementById('btnYesterday').classList.add('active');
     document.getElementById('btnToday').classList.remove('active');
     renderDeptBar();
     renderSerialBar();
@@ -1631,12 +1722,12 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
   });
 
   document.getElementById('btnToday').addEventListener('click', ()=>{
-    const t = getToday(); 
-    dateFromStr = t; 
-    dateToStr = t;
-    document.getElementById('dateFrom').value = t; 
-    document.getElementById('dateTo').value = t;
-    document.getElementById('btnToday').classList.add('active'); 
+    const t = getToday();
+    dateFromStr = t;
+    dateToStr   = t;
+    document.getElementById('dateFrom').value = t;
+    document.getElementById('dateTo').value   = t;
+    document.getElementById('btnToday').classList.add('active');
     document.getElementById('btnYesterday').classList.remove('active');
     renderDeptBar();
     renderSerialBar();
@@ -1645,10 +1736,10 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
   });
 
   function onDateChange(){
-    const f = document.getElementById('dateFrom').value||null;
-    const t = document.getElementById('dateTo').value||null;
-    dateFromStr = f; 
-    dateToStr = t;
+    const f = document.getElementById('dateFrom').value || null;
+    const t = document.getElementById('dateTo').value   || null;
+    dateFromStr = f;
+    dateToStr   = t;
     document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
     renderDeptBar();
@@ -1656,16 +1747,15 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
     renderChart();
     applyFilters();
   }
-
   document.getElementById('dateFrom').addEventListener('change', onDateChange);
   document.getElementById('dateTo').addEventListener('change', onDateChange);
 
   document.getElementById('btnClearDate').addEventListener('click', ()=>{
-    dateFromStr = null; 
-    dateToStr = null;
-    document.getElementById('dateFrom').value = ''; 
-    document.getElementById('dateTo').value = '';
-    document.getElementById('btnYesterday').classList.remove('active'); 
+    dateFromStr = null;
+    dateToStr   = null;
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value   = '';
+    document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
     renderDeptBar();
     renderSerialBar();
@@ -1674,38 +1764,33 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
   });
 
   document.getElementById('btnClearAll').addEventListener('click', ()=>{
-    selectedSerials.clear(); 
+    selectedSerials.clear();
     selectedDepts.clear();
     selectedLines.clear();
     selectedSerialsByLine.clear();
     document.querySelectorAll('.btn-pill.active').forEach(b=>b.classList.remove('active'));
     document.getElementById('deptExpandPanel').classList.remove('open');
-    document.getElementById('linesGrid').innerHTML = '';
-    document.getElementById('serialsByLineGrid').innerHTML = '';
+    document.getElementById('linesGrid').innerHTML          = '';
+    document.getElementById('serialsByLineGrid').innerHTML  = '';
     document.getElementById('serialsByLineHolder').style.display = 'none';
     document.getElementById('serialDropdown').value = '';
     applyFilters();
   });
 
-  /* 整理Noドロップダウン選択 */
   document.getElementById('serialDropdown').addEventListener('change', (e)=>{
     const selectedSn = e.target.value;
-    if(!selectedSn) return;
+    if (!selectedSn) return;
 
-    // 既に選択されているか確認
-    if(selectedSerials.has(selectedSn)){
-      // 選択解除
+    if (selectedSerials.has(selectedSn)){
       selectedSerials.delete(selectedSn);
       e.target.value = '';
     } else {
-      // 新規選択
       selectedSerials.add(selectedSn);
       focusedSerial = selectedSn;
-      
-      // ワースト8のカードも非選択に
-      document.querySelectorAll('[data-role="serial"]').forEach(btn => {
+
+      document.querySelectorAll('[data-role="serial"]').forEach(btn=>{
         const sn = btn.getAttribute('data-serial');
-        if(sn !== selectedSn){
+        if (sn !== selectedSn){
           btn.classList.remove('active');
         }
       });
@@ -1723,8 +1808,8 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
     document.querySelectorAll('[data-role="line"].active').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('[data-role="serialByLine"].active').forEach(b=>b.classList.remove('active'));
     document.getElementById('deptExpandPanel').classList.remove('open');
-    document.getElementById('linesGrid').innerHTML = '';
-    document.getElementById('serialsByLineGrid').innerHTML = '';
+    document.getElementById('linesGrid').innerHTML          = '';
+    document.getElementById('serialsByLineGrid').innerHTML  = '';
     document.getElementById('serialsByLineHolder').style.display = 'none';
     renderSerialBar();
     renderChart();
@@ -1736,19 +1821,18 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
     maintenanceUnitMode = 'withMU';
     document.getElementById('modeWithMU').classList.add('active');
     document.getElementById('modeAllData').classList.remove('active');
-    
-    // 選択状態をクリア
+
     selectedDepts.clear();
     selectedSerials.clear();
     selectedLines.clear();
     selectedSerialsByLine.clear();
     document.querySelectorAll('.btn-pill.active').forEach(b=>b.classList.remove('active'));
     document.getElementById('deptExpandPanel').classList.remove('open');
-    document.getElementById('linesGrid').innerHTML = '';
-    document.getElementById('serialsByLineGrid').innerHTML = '';
+    document.getElementById('linesGrid').innerHTML          = '';
+    document.getElementById('serialsByLineGrid').innerHTML  = '';
     document.getElementById('serialsByLineHolder').style.display = 'none';
     document.getElementById('serialDropdown').value = '';
-    
+
     renderDeptBar();
     renderSerialBar();
     renderChart();
@@ -1759,19 +1843,18 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
     maintenanceUnitMode = 'all';
     document.getElementById('modeAllData').classList.add('active');
     document.getElementById('modeWithMU').classList.remove('active');
-    
-    // 選択状態をクリア
+
     selectedDepts.clear();
     selectedSerials.clear();
     selectedLines.clear();
     selectedSerialsByLine.clear();
     document.querySelectorAll('.btn-pill.active').forEach(b=>b.classList.remove('active'));
     document.getElementById('deptExpandPanel').classList.remove('open');
-    document.getElementById('linesGrid').innerHTML = '';
-    document.getElementById('serialsByLineGrid').innerHTML = '';
+    document.getElementById('linesGrid').innerHTML          = '';
+    document.getElementById('serialsByLineGrid').innerHTML  = '';
     document.getElementById('serialsByLineHolder').style.display = 'none';
     document.getElementById('serialDropdown').value = '';
-    
+
     renderDeptBar();
     renderSerialBar();
     renderChart();
@@ -1782,49 +1865,50 @@ tbody.querySelectorAll('.tech-btn-mini').forEach(btn => {
     selectedDepts.clear();
     selectedLines.clear();
     selectedSerialsByLine.clear();
-    selectedSerials.clear(); 
+    selectedSerials.clear();
     document.querySelectorAll('.btn-pill.active').forEach(b=>b.classList.remove('active'));
     document.getElementById('deptExpandPanel').classList.remove('open');
-    document.getElementById('linesGrid').innerHTML = '';
-    document.getElementById('serialsByLineGrid').innerHTML = '';
+    document.getElementById('linesGrid').innerHTML          = '';
+    document.getElementById('serialsByLineGrid').innerHTML  = '';
     document.getElementById('serialsByLineHolder').style.display = 'none';
     document.getElementById('serialDropdown').value = '';
-    dateFromStr = null; 
-    dateToStr = null;
-    document.getElementById('dateFrom').value = ''; 
-    document.getElementById('dateTo').value = '';
-    document.getElementById('btnYesterday').classList.remove('active'); 
+    dateFromStr = null;
+    dateToStr   = null;
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value   = '';
+    document.getElementById('btnYesterday').classList.remove('active');
     document.getElementById('btnToday').classList.remove('active');
     renderDeptBar();
     renderSerialBar();
     renderChart();
     applyFilters();
   });
-window.showTechDetail = showTechDetail;
-window.showDetail = showDetail;
+
+  window.showTechDetail = showTechDetail;
+  window.showDetail     = showDetail;
 
   window.addEventListener('keydown', (e)=>{
-    if(e.key === 'Escape'){
+    if (e.key === 'Escape'){
       const detailModal = document.getElementById('detailModal');
-      const techModal = document.getElementById('techModal');
-      if(detailModal && detailModal.classList.contains('active')){
+      const techModal   = document.getElementById('techModal');
+      if (detailModal && detailModal.classList.contains('active')){
         detailModal.classList.remove('active');
       }
-      if(techModal && techModal.classList.contains('active')){
+      if (techModal && techModal.classList.contains('active')){
         techModal.classList.remove('active');
       }
     }
   });
 
   document.getElementById('techModal').addEventListener('click', (e)=>{
-    if (e.target === e.currentTarget) {
+    if (e.target === e.currentTarget){
       e.currentTarget.classList.remove('active');
     }
   });
 
   const btnFullscreen = document.getElementById('btnFullscreen');
-  const sheet = document.querySelector('.datasheet-container');
-  let isFullscreen = false;
+  const sheet         = document.querySelector('.datasheet-container');
+  let isFullscreen    = false;
 
   btnFullscreen.addEventListener('click', ()=>{
     isFullscreen = !isFullscreen;
@@ -1833,28 +1917,26 @@ window.showDetail = showDetail;
     btnFullscreen.textContent = isFullscreen ? '🔙 戻る' : '🖥️ 全画面';
   });
 
+  /* 初期化 */
   (async()=>{
-    const ok = await checkAuth(); 
-    if(!ok){ 
-      alert('認証が必要です'); 
-      return; 
+    const ok = await checkAuth();
+    if (!ok){
+      alert('認証が必要です');
+      return;
     }
-    await loadData();
-    
+
     // 初期状態で「今日」を選択
     const t = getToday();
     dateFromStr = t;
-    dateToStr = t;
+    dateToStr   = t;
     document.getElementById('dateFrom').value = t;
-    document.getElementById('dateTo').value = t;
+    document.getElementById('dateTo').value   = t;
     document.getElementById('btnToday').classList.add('active');
-    
-    // データを再レンダリング
-    renderDeptBar();
-    renderSerialBar();
-    renderChart();
-    applyFilters();
+
+    // リアルタイム監視開始
+    startAnomaliesListener();
   })();
 </script>
+
 </body>
 </html>
