@@ -427,6 +427,32 @@
 body.fullscreen-active {
   overflow: hidden; /* 背景スクロール防止 */
 }
+/* 全画面時だけ表示する部署フィルター */
+.fullscreen-dept-filter {
+  display: none;                 /* 通常時は非表示 */
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.fullscreen-dept-filter label {
+  font-weight: 600;
+}
+
+.fullscreen-dept-filter select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+/* 全画面モードのときだけ表示 */
+.datasheet-container.fullscreen .fullscreen-dept-filter {
+  display: flex;
+}
 
 </style>
 </head>
@@ -505,9 +531,18 @@ body.fullscreen-active {
       <div class="datasheet-toolbar">
         <div class="result-count">表示中: <strong id="resultCount">0</strong> 件 / 全 <strong id="totalCount">0</strong> 件</div>
         <div class="display-count-selector">
+
+                <div class="fullscreen-dept-filter">
+        <label for="fsDeptSelect">部署:</label>
+        <select id="fsDeptSelect">
+          <option value="">すべて</option>
+        </select>
+      </div>
+
           <label for="displayCount">表示件数:</label>
           <select id="displayCount">
-            <option value="25">25件</option>
+            <option value="25">25件</option>let allData = [];
+            
             <option value="50">50件</option>
             <option value="75">75件</option>
             <option value="100">100件</option>
@@ -671,6 +706,7 @@ if (typeof window.ensureCanvasResolution !== 'function') {
   /* ===== 状態 ===== */
   let allData = [];
   let filteredData = [];
+  const fsDeptSelect = document.getElementById('fsDeptSelect');
   let dateFromStr = null, dateToStr = null;
 
   let sparkMode = '24h';
@@ -985,6 +1021,16 @@ function startAnomaliesListener(){
       counts.set(d,(counts.get(d)||0)+1);
     }
     const depts=[...counts.keys()].sort();
+    // ★ 全画面用 部署セレクトを更新
+    if (fsDeptSelect) {
+      const prev = fsDeptSelect.value;
+      fsDeptSelect.innerHTML =
+        '<option value="">すべて</option>' +
+        depts.map(d => `<option value="${d}">${d}</option>`).join('');
+      if (prev && depts.includes(prev)) {
+        fsDeptSelect.value = prev;
+      }
+    }
 
     bar.innerHTML = depts.map(dept=>{
       const total=counts.get(dept);
@@ -2192,6 +2238,30 @@ btnFullscreen.addEventListener('click', () => {
   document.body.classList.toggle('fullscreen-active', isFullscreen);
   btnFullscreen.textContent = isFullscreen ? '🔙 戻る' : '🖥️ 全画面';
 });
+// 全画面用：部署セレクト変更
+if (fsDeptSelect) {
+  fsDeptSelect.addEventListener('change', (e) => {
+    const v = e.target.value;
+
+    // いったん全部リセット
+    selectedDepts.clear();
+    selectedLines.clear();
+    selectedSerials.clear();
+
+    if (v) {
+      selectedDepts.add(v);
+    }
+
+    // 部署選択数のラベルもあれば更新
+    const selCounter = document.getElementById('selCounter');
+    if (selCounter) {
+      selCounter.textContent = `選択中：部署 ${selectedDepts.size}／ライン ${selectedLines.size}／整理No ${selectedSerials.size}`;
+    }
+
+    applyFilters();
+    drawAllSparklines();
+  });
+}
 
   (async()=>{
     const ok = await checkAuth();
