@@ -35,6 +35,8 @@
     --thead:#667eea;
     --thead-hover:#5568d3;
     --row-hover:#f8f9ff;
+        --row-strip-1:#f9fafb;
+    --row-strip-2:#ffffff;
     --chip-on:#3b82f6;
     --chip-bg:rgba(59,130,246,.12);
     --chip-bd:rgba(59,130,246,.35);
@@ -56,6 +58,8 @@
     --thead:#334155;
     --thead-hover:#1f2937;
     --row-hover:#0b1b34;
+        --row-strip-1:#020617;
+    --row-strip-2:#020617;
     --chip-on:#60a5fa;
     --chip-bg:rgba(96,165,250,.16);
     --chip-bd:rgba(96,165,250,.35);
@@ -256,6 +260,15 @@
   th.dragging{opacity:0.4;background:var(--brand);color:#fff}
   td{padding:12px 16px;border-bottom:1px solid var(--border)}
   tr{cursor:pointer;transition:background .15s}
+    tbody tr:nth-child(odd){
+    background:var(--row-strip-1);
+  }
+  tbody tr:nth-child(even){
+    background:var(--row-strip-2);
+  }
+  tbody tr:hover{
+    background:var(--row-hover);
+  }
   tbody tr:hover{background:var(--row-hover)}
   .status-badge{display:inline-block;padding:4px 12px;border-radius:12px;font-size:.85rem;font-weight:600}
   .status-pending{background:#fff3cd;color:#856404}
@@ -266,6 +279,7 @@
   .photo-btn:hover{background:#1976d2}
   .photo-btn:disabled{background:#ccc;cursor:not-allowed}
 
+  
   /* 詳細モーダル */
   .modal{display:none;position:fixed;inset:0;background:var(--backdrop);z-index:5000;align-items:center;justify-content:center}
   .modal.active{display:flex}
@@ -304,7 +318,12 @@
   .badge-good .dot{background:#10b981}
   .badge-warn .dot{background:#f59e0b}
   .badge-danger .dot{background:#ef4444}
-  .badge-compact{padding:4px 8px;font-size:.78rem}
+    /* 停止時間など、表内のコンパクトバッジを少し大きめに */
+  .badge-compact{
+    padding:6px 12px;
+    font-size:0.95rem;
+  }
+
 
   /* サイズ設定モーダル */
   .modal-sm .modal-content{max-width:720px}
@@ -629,17 +648,21 @@ if (typeof window.ensureCanvasResolution !== 'function') {
     { id:'handler', label:'処置者', sortable:true },
     { id:'anomalyContent', label:'異常内容', sortable:false },
     { id:'actionTaken', label:'対応内容', sortable:false },
-    { id:'rootCauseAction', label:'技術対応内容', sortable:false },
+    { id:'rootCauseAction', label:'処置内容', sortable:false },
     { id:'photos', label:'写真', sortable:false },
-    { id:'status', label:'状態', sortable:true }
+    { id:'status', label:'状態', sortable:true },
+    { id:'recurrenceType', label:'新規/再発', sortable:true },
+
   ];
 
-  const DEFAULT_COLUMNS = ['department',
-     'occurrenceDate','occurrenceTime','lineName',
-    'serialNo','anomalyContent','actionTaken',
-   'rootCauseAction',
-    'stopMinutes'
-  ];
+const DEFAULT_COLUMNS = [
+  'department',
+  'occurrenceDate','occurrenceTime','lineName',
+  'serialNo','recurrenceType',
+  'anomalyContent','actionTaken','rootCauseAction',
+  'stopMinutes'
+];
+
   
   let visibleColumns = [...DEFAULT_COLUMNS];
 
@@ -1619,6 +1642,19 @@ const columns = visibleColumns
             } else if (col.id==='occurrenceTime') {
               v = item.occurrenceTimeNorm || '-';
 
+} else if (col.id === 'recurrenceType') {
+  // 「新規 / 再発」バッジ表示
+  const recRaw = (item.recurrenceType ?? item.recurrence ?? (item.isRepeat ? '再発' : '新規')) || null;
+  const isRepeat = typeof recRaw === 'string'
+    ? /再発|repeat/i.test(recRaw)
+    : !!recRaw;
+
+  const cls  = isRepeat ? 'badge-danger' : 'badge-info';
+  const text = isRepeat ? '再発' : '新規';
+
+  v = `<span class="badge badge-compact ${cls}"><span class="dot"></span>${text}</span>`;
+
+              
             } else if (col.id==='restartTime') {
               v = item.restartTimeNorm || '-';
 
@@ -1807,7 +1843,7 @@ function reorderColumns(fromId, toId){
       <div class="detail-section"><div class="section-title">🚨 異常内容</div><div class="detail-text-area">${item.anomalyContent||'-'}</div></div>
       <div class="detail-section"><div class="section-title">🔧 対応内容</div><div class="detail-text-area">${item.actionTaken||'-'}</div></div>
            <div class="detail-section">
-       <div class="section-title">🛠️ 技術対応内容</div>
+       <div class="section-title">🛠️ 処置内容</div>
        <div class="detail-text-area">${item.rootCauseAction || '-'}</div>
      </div>
       ${mfg.length?`<div class="detail-section"><div class="section-title">📷 発信部署の写真（${mfg.length}枚）</div><div class="photo-grid">${mfg.map(u=>`<div class="photo-thumbnail" onclick="window.open('${u}','_blank')"><img src="${u}" alt=""></div>`).join('')}</div></div>`:''}
