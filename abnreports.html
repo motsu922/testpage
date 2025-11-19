@@ -790,6 +790,77 @@
   </div>
 
 <script type="module">
+
+/* =====================================================
+    転送プレビュー表示 ＆ 写真URL含むメッセージ生成
+===================================================== */
+
+let shareTargetData = null; // プレビューで使用するデータ保持
+
+window.openSharePreview = function(id){
+  const item = anomalyCache.find(x => x._id === id);
+  if (!item) return;
+
+  // 写真URL（製造 + 技術）を統合
+  const photos = [
+    ...(item.mfgPhotoUrls || []),
+    ...(item.techPhotoUrls || [])
+  ];
+
+  // メッセージ本文生成（写真URL含む）
+  const text =
+`【異常履歴】
+整理No: ${item.serialNo || ''}
+部署: ${item.department || ''}
+ライン: ${item.lineName || ''}
+発生日: ${item.occurrenceDate || ''} ${item.occurrenceTime || ''}
+
+【内容】
+異常: ${item.anomalyContent || ''}
+対応: ${item.actionTaken || ''}
+遡り: ${item.traceback || ''}
+
+【LotNo】
+${item.lotNo || ''}
+
+【技術対応】
+${item.rootCauseAction || '（未入力）'}
+
+【写真URL】
+${photos.length ? photos.join('\n') : '（なし）'}
+`;
+
+  shareTargetData = { item, text, photos };
+
+  // プレビューモーダルに反映
+  document.getElementById('sharePreviewContent').textContent = text;
+  document.getElementById('sharePreviewModal').classList.add('active');
+};
+
+/* モーダルを閉じる */
+document.getElementById('sharePreviewClose').addEventListener('click', ()=>{
+  document.getElementById('sharePreviewModal').classList.remove('active');
+});
+
+/* LINE送信 */
+document.getElementById('shareSendLine').addEventListener('click', ()=>{
+  if (!shareTargetData) return;
+  const url = "https://line.me/R/msg/text/?" + encodeURIComponent(shareTargetData.text);
+  window.open(url, "_blank");
+});
+
+/* メール送信 */
+document.getElementById('shareSendMail').addEventListener('click', ()=>{
+  if (!shareTargetData) return;
+
+  const subject = `【異常報告】整理No:${shareTargetData.item.serialNo}`;
+  const mailto = 
+    `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(shareTargetData.text)}`;
+
+  window.location.href = mailto;
+});
+
+ 
   import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
   import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, setPersistence, browserLocalPersistence, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
   import {
@@ -952,7 +1023,65 @@ let editTechPhotos = [];
   );
   return z2h.trim().toUpperCase();
 }
-  
+  window.shareToLine = function(id){
+  const item = anomalyCache.find(x => x._id === id);
+  if (!item) return;
+
+  const text =
+`【異常履歴】
+整理No: ${item.serialNo}
+部署: ${item.department}
+ライン: ${item.lineName}
+発生日: ${item.occurrenceDate} ${item.occurrenceTime || ''}
+
+【内容】
+異常: ${item.anomalyContent}
+対応: ${item.actionTaken}
+遡り: ${item.traceback || ''}
+
+【技術対応】
+${item.rootCauseAction || '（未入力）'}
+
+【LotNo】
+${item.lotNo || ''}
+
+【URL】
+（必要なら管理画面URLなど入れる）
+`;
+
+  const url = "https://line.me/R/msg/text/?" + encodeURIComponent(text);
+  window.open(url, "_blank");
+};
+window.shareToLine = function(id){
+  const item = anomalyCache.find(x => x._id === id);
+  if (!item) return;
+
+  const text =
+`【異常履歴】
+整理No: ${item.serialNo}
+部署: ${item.department}
+ライン: ${item.lineName}
+発生日: ${item.occurrenceDate} ${item.occurrenceTime || ''}
+
+【内容】
+異常: ${item.anomalyContent}
+対応: ${item.actionTaken}
+遡り: ${item.traceback || ''}
+
+【技術対応】
+${item.rootCauseAction || '（未入力）'}
+
+【LotNo】
+${item.lotNo || ''}
+
+【URL】
+（必要なら管理画面URLなど入れる）
+`;
+
+  const url = "https://line.me/R/msg/text/?" + encodeURIComponent(text);
+  window.open(url, "_blank");
+};
+
 // ==== リフレッシュ系ユーティリティ ====
 // 履歴のページング状態を初期化
 function resetPaging(){
@@ -2530,6 +2659,8 @@ function renderHistory(){
             </div>
           ` : ''}
           <div class="action-btns">
+<button class="btn-small" onclick="openSharePreview('${item._id}')">📤 転送</button>
+
             <button class="btn-small btn-edit" data-edit="${item._id}">✏️ 編集</button>
             <button class="btn-small btn-delete" data-del="${item._id}">🗑️ 削除</button>
           </div>
@@ -3537,5 +3668,20 @@ document.addEventListener('click', async (e)=>{
   });
 
 </script>
+ <!-- 転送プレビューモーダル -->
+<div id="sharePreviewModal" class="modal" aria-hidden="true">
+  <div class="modal-content" style="max-width:700px;">
+    <h3 class="modal-title">📤 送信内容の確認</h3>
+    <div id="sharePreviewContent"
+         style="white-space:pre-wrap; background:#f8f9ff; padding:12px; border-radius:6px; margin-bottom:20px; font-size:.9rem;"></div>
+
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-primary" id="shareSendLine" style="flex:1;">LINEで送信</button>
+      <button class="btn btn-secondary" id="shareSendMail" style="flex:1;">メールで送信</button>
+    </div>
+    <button class="btn btn-cancel" id="sharePreviewClose" style="margin-top:12px;">閉じる</button>
+  </div>
+</div>
+
 </body>
 </html>
