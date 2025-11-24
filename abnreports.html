@@ -868,7 +868,7 @@ document.getElementById('shareSendMail').addEventListener('click', ()=>{
   import {
     getFirestore,
     collection, addDoc, getDocs, onSnapshot, query, orderBy, updateDoc,
-    doc, deleteDoc, serverTimestamp, where, limit, startAfter
+    doc, deleteDoc, serverTimestamp, where, limit, startAfter,getDoc
   } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
   import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
 
@@ -3118,9 +3118,27 @@ const editModalHtml = `
 let editMastersCache = null;
 
 let editPhotosToDelete = [];
-function openEdit(id){
-  const rec = anomalyCache.find(x=>x._id===id);
-  if(!rec){ alert('対象が見つかりません'); return; }
+async function openEdit(id){
+  // まずキャッシュを検索
+  let rec = anomalyCache.find(x=>x._id===id);
+  
+  // キャッシュに無ければFirestoreから取得
+  if(!rec){
+    try{
+      const docSnap = await getDoc(doc(db, 'anomalies', id));
+      if(docSnap.exists()){
+        rec = {_id: docSnap.id, ...docSnap.data()};
+        // キャッシュにも追加しておく
+        anomalyCache.push(rec);
+      }else{
+        alert('対象が見つかりません（削除済みの可能性があります）');
+        return;
+      }
+    }catch(e){
+      alert('データの取得に失敗しました: ' + e.message);
+      return;
+    }
+  }
   
   editCurrentId = id;
   editMfgPhotos = [];
@@ -3422,12 +3440,31 @@ async function deleteRecord(id){
     alert(`削除に失敗しました。\n\nエラー: ${err.message}`);
   }
 }
-  function showPhotos(id){
-    const item = anomalyCache.find(a => a._id === id);
-    if (!item) return;
+async function showPhotos(id){
+    let item = anomalyCache.find(a => a._id === id);
+    
+    // キャッシュに無ければFirestoreから取得
+    if (!item) {
+      try {
+        const docSnap = await getDoc(doc(db, 'anomalies', id));
+        if (docSnap.exists()) {
+          item = {_id: docSnap.id, ...docSnap.data()};
+          // キャッシュにも追加
+          anomalyCache.push(item);
+        } else {
+          alert('対象データが見つかりません');
+          return;
+        }
+      } catch (e) {
+        alert('データの取得に失敗しました: ' + e.message);
+        return;
+      }
+    }
+    
     const modal = document.getElementById('photoModal');
     const content = document.getElementById('photoModalContent');
     let html = '';
+    
     if (item.mfgPhotoUrls && item.mfgPhotoUrls.length > 0){
       html += '<div style="grid-column:1/-1;"><h4 style="color:#667eea;margin-bottom:10px;">発信部署部門の写真</h4></div>';
       item.mfgPhotoUrls.forEach(url => {
