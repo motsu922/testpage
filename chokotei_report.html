@@ -435,6 +435,15 @@
                     <!-- データテーブル -->
                     <div class="chart-container">
                         <h4>📋 記録一覧</h4>
+
+                        <!-- CSV関連ボタン -->
+                        <button class="btn" onclick="exportCSV()" style="width: 100%; margin-bottom: 8px;">
+                            CSVダウンロード
+                        </button>
+                        <button class="btn" onclick="emailCSV()" style="width: 100%; margin-bottom: 10px;">
+                            CSVをメールで送信
+                        </button>
+
                         <div id="records-table-container" style="overflow-x: auto;">
                             <table id="records-table" style="width: 100%; border-collapse: collapse;">
                                 <thead>
@@ -442,9 +451,9 @@
                                         <th style="padding: 10px; border-bottom: 2px solid #ddd;">日時</th>
                                         <th style="padding: 10px; border-bottom: 2px solid #ddd;">異常名</th>
                                         <th style="padding: 10px; border-bottom: 2px solid #ddd;">整理No</th>
-                                        <!-- ここでオプション列を追加 -->
                                         <th style="padding: 10px; border-bottom: 2px solid #ddd;">オプション項目</th>
                                         <th style="padding: 10px; border-bottom: 2px solid #ddd;">処置者</th>
+                                        <th style="padding: 10px; border-bottom: 2px solid #ddd;">備考</th>
                                     </tr>
                                 </thead>
                                 <tbody id="records-tbody"></tbody>
@@ -1090,12 +1099,11 @@
                 tbody.innerHTML = '';
                 
                 if (records.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="padding: 20px; text-align: center; color: #999;">該当するデータがありません</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="padding: 20px; text-align: center; color: #999;">該当するデータがありません</td></tr>';
                     return;
                 }
                 
                 records.forEach(record => {
-                    // optionalData を表示用文字列に変換
                     let optionalText = '-';
                     if (record.optionalData && Object.keys(record.optionalData).length > 0) {
                         optionalText = Object.entries(record.optionalData)
@@ -1111,9 +1119,150 @@
                         <td style="padding: 10px;">${record.organizationNo || '-'}</td>
                         <td style="padding: 10px;">${optionalText}</td>
                         <td style="padding: 10px;">${record.operator}</td>
+                        <td style="padding: 10px;">${record.remarks || ''}</td>
                     `;
                     tbody.appendChild(row);
                 });
+            });
+        }
+
+        // ===== CSV 共通ビルダー =====
+        function buildCSV(records) {
+            // ヘッダー
+            const headers = ['日時', '異常名', '整理No', 'オプション項目', '処置者', '備考'];
+
+            const escapeCSV = (value) => {
+                if (value === null || value === undefined) return '""';
+                const s = String(value).replace(/"/g, '""');
+                return `"${s}"`;
+            };
+
+            const lines = [];
+            lines.push(headers.map(escapeCSV).join(','));
+
+            records.forEach(record => {
+                let optionalText = '';
+                if (record.optionalData && Object.keys(record.optionalData).length > 0) {
+                    optionalText = Object.entries(record.optionalData)
+                        .map(([key, value]) => `${value}`)
+                        .join(' / ');
+                }
+
+                const datetime = `${record.date} ${record.time}`;
+                const row = [
+                    datetime,
+                    record.anomalyName || '',
+                    record.organizationNo || '',
+                    optionalText || '',
+                    record.operator || '',
+                    record.remarks || ''
+                ].map(escapeCSV).join(',');
+
+                lines.push(row);
+            });
+
+            return lines.join('\r\n');
+        }
+
+        // ★ CSVダウンロード
+        function exportCSV() {
+            if (!currentViewEquipment) {
+                alert('設備を選択してください');
+                return;
+            }
+
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            if (!startDate || !endDate) {
+                alert('開始日と終了日を指定してください');
+                return;
+            }
+
+            database.ref('records').orderByChild('equipmentId').equalTo(currentViewEquipment).once('value', snapshot => {
+                const records = [];
+                snapshot.forEach(child => {
+                    const record = child.val();
+                    if (record.date >= startDate && record.date <= endDate) {
+                        const matchAnomaly = !currentFilterAnomaly || record.anomalyName === currentFilterAnomaly;
+                        const matchOrgNo = !currentFilterOrganizationNo || record.organizationNo === currentFilterOrganizationNo;
+                        if (matchAnomaly && matchOrgNo) {
+                            records.push(record);
+                        }
+                    }
+                });
+
+                if (records.length === 0) {
+                    alert('出力対象データがありません');
+                    return;
+                }
+
+                // 日時降順
+                records.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+                // CSV本文作成（BOM付き）
+                const csvContent = '\uFEFF' + buildCSV(records);
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                const todayStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+                a.download = `chokotei_records_${todayStr}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        // ★ CSVをメールで送信（既定メールアプリを開く）
+        function emailCSV() {
+            if (!currentViewEquipment) {
+                alert('設備を選択してください');
+                return;
+            }
+
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            if (!startDate || !endDate) {
+                alert('開始日と終了日を指定してください');
+                return;
+            }
+
+            database.ref('records').orderByChild('equipmentId').equalTo(currentViewEquipment).once('value', snapshot => {
+                const records = [];
+                snapshot.forEach(child => {
+                    const record = child.val();
+                    if (record.date >= startDate && record.date <= endDate) {
+                        const matchAnomaly = !currentFilterAnomaly || record.anomalyName === currentFilterAnomaly;
+                        const matchOrgNo = !currentFilterOrganizationNo || record.organizationNo === currentFilterOrganizationNo;
+                        if (matchAnomaly && matchOrgNo) {
+                            records.push(record);
+                        }
+                    }
+                });
+
+                if (records.length === 0) {
+                    alert('送信対象データがありません');
+                    return;
+                }
+
+                // 日時降順
+                records.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+                // CSV本文（BOMなし / 本文用）
+                const csvBody = buildCSV(records);
+
+                const subject = encodeURIComponent(`チョコ停記録CSV (${startDate} ～ ${endDate})`);
+                const body = encodeURIComponent(
+                    '※このメールはチョコ停記録アプリから作成しました。\n\n' +
+                    csvBody
+                );
+
+                // 受信者は空のまま（必要なら mailto:someone@example.com に変更）
+                const mailtoLink = `mailto:?subject=${subject}&body=${body}`;
+                window.location.href = mailtoLink;
             });
         }
 
@@ -1549,7 +1698,7 @@
                     if (selectedEquipment === equipmentId &&
                         selectedAnomaly &&
                         selectedAnomaly.id === anomalyKey) {
-                        loadOptionalFields(equipmentId, anomalyKey);
+                            loadOptionalFields(equipmentId, anomalyKey);
                     }
                 })
                 .catch(error => {
