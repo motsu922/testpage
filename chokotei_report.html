@@ -570,7 +570,6 @@
         function loadInputScreen() {
             loadOperators();
             loadEquipments();
-            loadTodayAnomalyCounts();
         }
 
         // 処置者読み込み
@@ -607,28 +606,6 @@
             });
         }
 
-        // 今日の異常件数を読み込み
-        function loadTodayAnomalyCounts() {
-            if (!selectedEquipment) return;
-            
-            const today = new Date().toISOString().split('T')[0];
-            database.ref('records').orderByChild('date').equalTo(today).once('value', snapshot => {
-                todayAnomalyCounts = {};
-                snapshot.forEach(child => {
-                    const record = child.val();
-                    if (record.equipmentId === selectedEquipment) {
-                        const anomalyName = record.anomalyName;
-                        todayAnomalyCounts[anomalyName] = (todayAnomalyCounts[anomalyName] || 0) + 1;
-                    }
-                });
-                
-                // 異常名ボタンを再表示
-                if (selectedEquipment) {
-                    loadAnomalyButtons(selectedEquipment);
-                }
-            });
-        }
-
         // 処置者選択
         function selectOperator(name, btn) {
             document.querySelectorAll('#operator-buttons .btn').forEach(b => b.classList.remove('selected'));
@@ -641,8 +618,22 @@
             document.querySelectorAll('#equipment-buttons .btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             selectedEquipment = id;
-            loadAnomalyButtons(id);
-            loadTodayAnomalyCounts();
+            
+            // 今日の件数を先に読み込んでから異常名ボタンを表示
+            const today = new Date().toISOString().split('T')[0];
+            database.ref('records').orderByChild('date').equalTo(today).once('value', snapshot => {
+                todayAnomalyCounts = {};
+                snapshot.forEach(child => {
+                    const record = child.val();
+                    if (record.equipmentId === id) {
+                        const anomalyName = record.anomalyName;
+                        todayAnomalyCounts[anomalyName] = (todayAnomalyCounts[anomalyName] || 0) + 1;
+                    }
+                });
+                
+                // 件数取得後に異常名ボタンを表示
+                loadAnomalyButtons(id);
+            });
         }
 
         // 異常名ボタン読み込み
@@ -807,8 +798,24 @@
 
             database.ref('records').push(record).then(() => {
                 showSuccess('記録を保存しました');
+                
+                // 設備が選択されていたら異常名ボタンを再読み込み
+                if (selectedEquipment) {
+                    const today = new Date().toISOString().split('T')[0];
+                    database.ref('records').orderByChild('date').equalTo(today).once('value', snapshot => {
+                        todayAnomalyCounts = {};
+                        snapshot.forEach(child => {
+                            const record = child.val();
+                            if (record.equipmentId === selectedEquipment) {
+                                const anomalyName = record.anomalyName;
+                                todayAnomalyCounts[anomalyName] = (todayAnomalyCounts[anomalyName] || 0) + 1;
+                            }
+                        });
+                        loadAnomalyButtons(selectedEquipment);
+                    });
+                }
+                
                 resetInputForm();
-                loadTodayAnomalyCounts();
             }).catch(error => {
                 alert('保存に失敗しました: ' + error.message);
             });
