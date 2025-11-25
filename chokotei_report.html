@@ -335,9 +335,9 @@
         </div>
 
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="switchTab('input')">入力</button>
-            <button class="nav-tab" onclick="switchTab('view')">データ表示</button>
-            <button class="nav-tab" onclick="switchTab('master')">マスター管理</button>
+            <button class="nav-tab active" onclick="switchTab('input', this)">入力</button>
+            <button class="nav-tab" onclick="switchTab('view', this)">データ表示</button>
+            <button class="nav-tab" onclick="switchTab('master', this)">マスター管理</button>
         </div>
 
         <div class="content">
@@ -421,9 +421,9 @@
                     <div class="chart-container">
                         <h4>📈 異常件数推移</h4>
                         <div class="period-selector">
-                            <button class="period-btn active" onclick="changePeriod('day')">日別</button>
-                            <button class="period-btn" onclick="changePeriod('week')">週別</button>
-                            <button class="period-btn" onclick="changePeriod('month')">月別</button>
+                            <button class="period-btn active" onclick="changePeriod('day', this)">日別</button>
+                            <button class="period-btn" onclick="changePeriod('week', this)">週別</button>
+                            <button class="period-btn" onclick="changePeriod('month', this)">月別</button>
                         </div>
                         <div class="date-range">
                             <input type="date" id="start-date" class="input-field" onchange="updateChart()">
@@ -503,7 +503,9 @@
                         
                         <div class="optional-field-group">
                             <h4>オプション項目設定</h4>
-                            <div id="optional-field-settings"></div>
+                            <div id="optional-field-settings" style="font-size: 13px; color: #555;">
+                                異常名を選択すると、ここにオプション項目が表示されます。
+                            </div>
                             <button class="btn" onclick="addOptionalField()" style="width: 100%; margin-top: 10px;">+ オプション項目を追加</button>
                         </div>
                         
@@ -522,7 +524,7 @@
     <script src="https://unpkg.com/chart.js@3.9.1/dist/chart.min.js"></script>
 
     <script>
-        // Firebase設定（ユーザー自身のFirebase設定に置き換えてください）
+        // Firebase設定
         const firebaseConfig = {
             apiKey: "AIzaSyBP_PxZ6Gio7BJW2F-UCIfrKy5t7y3WGhM",
             authDomain: "chokoteiapp.firebaseapp.com",
@@ -533,29 +535,32 @@
             appId: "1:668171085030:web:f34cbbb7fa56d59191c727"
         };
 
-        // Firebase初期化
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
 
         // グローバル変数
         let selectedOperator = null;
         let selectedEquipment = null;
-        let selectedAnomaly = null;
+        let selectedAnomaly = null; // { ...anomaly, id }
         let selectedOrganizationNo = null;
         let currentViewEquipment = null;
         let currentPeriod = 'day';
         let chart = null;
         let todayAnomalyCounts = {};
-        let allRecords = []; // フィルター用の全レコード
+        let allRecords = [];
         let currentFilterAnomaly = '';
         let currentFilterOrganizationNo = '';
 
+        // マスター画面用：どの異常のオプションを編集しているか
+        let masterSelectedEquipmentForOptions = null;
+        let masterSelectedAnomalyForOptions = null;
+
         // タブ切替
-        function switchTab(tabName) {
+        function switchTab(tabName, clickedButton) {
             document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.section').forEach(section => section.classList.remove('active'));
             
-            event.target.classList.add('active');
+            clickedButton.classList.add('active');
             document.getElementById(`${tabName}-section`).classList.add('active');
             
             if (tabName === 'input') {
@@ -567,7 +572,7 @@
             }
         }
 
-        // 入力画面の読み込み
+        // 入力画面読み込み
         function loadInputScreen() {
             loadOperators();
             loadEquipments();
@@ -619,25 +624,41 @@
             document.querySelectorAll('#equipment-buttons .btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             selectedEquipment = id;
-            
-            // 今日の件数を先に読み込んでから異常名ボタンを表示
+
+            // 一旦オプション系をリセット
+            selectedAnomaly = null;
+            selectedOrganizationNo = null;
+            document.getElementById('organization-no-section').classList.add('hidden');
+            document.getElementById('optional-fields-section').classList.add('hidden');
+
+            // まず件数なしで異常ボタン表示
+            todayAnomalyCounts = {};
+            loadAnomalyButtons(id);
+
+            // 今日の件数を取得してからバッジ描画
             const today = new Date().toISOString().split('T')[0];
-            database.ref('records').orderByChild('date').equalTo(today).once('value', snapshot => {
-                todayAnomalyCounts = {};
-                snapshot.forEach(child => {
-                    const record = child.val();
-                    if (record.equipmentId === id) {
-                        const anomalyName = record.anomalyName;
-                        todayAnomalyCounts[anomalyName] = (todayAnomalyCounts[anomalyName] || 0) + 1;
-                    }
+            database
+                .ref('records')
+                .orderByChild('date')
+                .equalTo(today)
+                .once('value')
+                .then(snapshot => {
+                    todayAnomalyCounts = {};
+                    snapshot.forEach(child => {
+                        const record = child.val();
+                        if (record.equipmentId === id) {
+                            const anomalyName = record.anomalyName;
+                            todayAnomalyCounts[anomalyName] = (todayAnomalyCounts[anomalyName] || 0) + 1;
+                        }
+                    });
+                    loadAnomalyButtons(id);
+                })
+                .catch(error => {
+                    console.error('今日の件数の取得に失敗:', error);
                 });
-                
-                // 件数取得後に異常名ボタンを表示
-                loadAnomalyButtons(id);
-            });
         }
 
-        // 異常名ボタン読み込み
+        // 異常ボタン読み込み
         function loadAnomalyButtons(equipmentId) {
             database.ref(`masters/equipments/${equipmentId}/anomalies`).once('value', snapshot => {
                 const anomalies = snapshot.val() || {};
@@ -654,7 +675,6 @@
                         btn.className = 'btn anomaly-btn';
                         btn.textContent = anomaly.name;
                         
-                        // 今日の件数表示
                         const count = todayAnomalyCounts[anomaly.name] || 0;
                         if (count > 0) {
                             const badge = document.createElement('div');
@@ -672,20 +692,20 @@
             });
         }
 
-        // 異常名選択
+        // 異常選択
         function selectAnomaly(anomaly, id, btn) {
             document.querySelectorAll('#anomaly-buttons .btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             selectedAnomaly = { ...anomaly, id };
-            
-            // 整理Noボタンを表示
+
+            // 整理No
             loadOrganizationNoButtons(selectedEquipment);
-            
-            // オプション項目を表示
-            loadOptionalFields(selectedEquipment);
+
+            // 異常ごとのオプション項目
+            loadOptionalFields(selectedEquipment, id);
         }
 
-        // 整理Noボタン読み込み
+        // 整理Noボタン
         function loadOrganizationNoButtons(equipmentId) {
             database.ref(`masters/equipments/${equipmentId}/organizationNos`).once('value', snapshot => {
                 const organizationNos = snapshot.val() || {};
@@ -710,57 +730,71 @@
             });
         }
 
-        // 整理No選択
         function selectOrganizationNo(no, btn) {
             document.querySelectorAll('#organization-no-buttons .btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
             selectedOrganizationNo = no;
         }
 
-        // オプション項目を読み込み
-        function loadOptionalFields(equipmentId) {
-            database.ref(`masters/equipments/${equipmentId}/optionalFields`).once('value', snapshot => {
-                const fields = snapshot.val() || {};
-                const container = document.getElementById('optional-fields-container');
-                const section = document.getElementById('optional-fields-section');
+        // 異常ごとのオプション項目を読み込み
+        function loadOptionalFields(equipmentId, anomalyId) {
+            const container = document.getElementById('optional-fields-container');
+            const section = document.getElementById('optional-fields-section');
+
+            if (!equipmentId || !anomalyId) {
+                section.classList.add('hidden');
                 container.innerHTML = '';
-                
-                if (Object.keys(fields).length > 0) {
+                return;
+            }
+
+            database
+                .ref(`masters/equipments/${equipmentId}/anomalies/${anomalyId}/optionalFields`)
+                .once('value')
+                .then(snapshot => {
+                    const fields = snapshot.val() || {};
+                    container.innerHTML = '';
+
+                    const keys = Object.keys(fields);
+                    if (keys.length === 0) {
+                        section.classList.add('hidden');
+                        return;
+                    }
+
                     section.classList.remove('hidden');
-                    
-                    Object.keys(fields).forEach(key => {
+
+                    keys.forEach(key => {
                         const field = fields[key];
                         const fieldDiv = document.createElement('div');
                         fieldDiv.className = 'form-group';
-                        
+
                         const label = document.createElement('label');
                         label.className = 'form-label';
                         label.textContent = field.name;
-                        
+
                         const select = document.createElement('select');
                         select.className = 'input-field';
                         select.id = `optional-${key}`;
-                        
+
                         const defaultOption = document.createElement('option');
                         defaultOption.value = '';
                         defaultOption.textContent = '選択してください';
                         select.appendChild(defaultOption);
-                        
+
                         (field.options || []).forEach(option => {
                             const opt = document.createElement('option');
                             opt.value = option;
                             opt.textContent = option;
                             select.appendChild(opt);
                         });
-                        
+
                         fieldDiv.appendChild(label);
                         fieldDiv.appendChild(select);
                         container.appendChild(fieldDiv);
                     });
-                } else {
-                    section.classList.add('hidden');
-                }
-            });
+                })
+                .catch(error => {
+                    console.error('オプション項目読込エラー:', error);
+                });
         }
 
         // 記録保存
@@ -774,8 +808,7 @@
             const timestamp = now.toISOString();
             const date = timestamp.split('T')[0];
             const time = now.toTimeString().split(' ')[0];
-            
-            // オプション項目の値を取得
+
             const optionalData = {};
             document.querySelectorAll('[id^="optional-"]').forEach(select => {
                 if (select.value) {
@@ -790,17 +823,17 @@
                 anomalyId: selectedAnomaly.id,
                 anomalyName: selectedAnomaly.name,
                 organizationNo: selectedOrganizationNo || '',
-                timestamp: timestamp,
-                date: date,
-                time: time,
+                timestamp,
+                date,
+                time,
                 remarks: document.getElementById('remarks').value,
-                optionalData: optionalData
+                optionalData
             };
 
             database.ref('records').push(record).then(() => {
                 showSuccess('記録を保存しました');
-                
-                // 設備が選択されていたら異常名ボタンを再読み込み
+
+                // バッジ更新
                 if (selectedEquipment) {
                     const today = new Date().toISOString().split('T')[0];
                     database.ref('records').orderByChild('date').equalTo(today).once('value', snapshot => {
@@ -815,14 +848,13 @@
                         loadAnomalyButtons(selectedEquipment);
                     });
                 }
-                
+
                 resetInputForm();
             }).catch(error => {
                 alert('保存に失敗しました: ' + error.message);
             });
         }
 
-        // 入力フォームリセット
         function resetInputForm() {
             selectedOperator = null;
             selectedEquipment = null;
@@ -835,7 +867,6 @@
             document.getElementById('optional-fields-section').classList.add('hidden');
         }
 
-        // 成功メッセージ表示
         function showSuccess(message) {
             const msg = document.getElementById('success-msg');
             msg.textContent = message;
@@ -845,7 +876,8 @@
             }, 3000);
         }
 
-        // データ表示画面読み込み
+        // ===== データ表示タブ関連 =====
+
         function loadViewScreen() {
             database.ref('masters/equipments').once('value', snapshot => {
                 const equipments = snapshot.val() || {};
@@ -862,7 +894,6 @@
             });
         }
 
-        // 表示する設備を選択
         function selectViewEquipment(equipmentId, btn) {
             document.querySelectorAll('#view-equipment-buttons .btn').forEach(b => b.classList.remove('selected'));
             btn.classList.add('selected');
@@ -870,7 +901,6 @@
             
             document.getElementById('stats-container').classList.remove('hidden');
             
-            // 日付範囲のデフォルト設定
             const endDate = new Date();
             const startDate = new Date();
             startDate.setDate(startDate.getDate() - 30);
@@ -878,21 +908,16 @@
             document.getElementById('end-date').valueAsDate = endDate;
             document.getElementById('start-date').valueAsDate = startDate;
             
-            // フィルターをクリア
             currentFilterAnomaly = '';
             currentFilterOrganizationNo = '';
             
-            // フィルターオプションを読み込み
             loadFilterOptions(equipmentId);
-            
             loadStats();
             updateChart();
             loadRecordsTable();
         }
 
-        // フィルターオプション読み込み
         function loadFilterOptions(equipmentId) {
-            // 異常名のオプションを読み込み
             database.ref(`masters/equipments/${equipmentId}/anomalies`).once('value', snapshot => {
                 const anomalies = snapshot.val() || {};
                 const select = document.getElementById('filter-anomaly');
@@ -906,7 +931,6 @@
                 });
             });
             
-            // 整理Noのオプションを読み込み
             database.ref(`masters/equipments/${equipmentId}/organizationNos`).once('value', snapshot => {
                 const organizationNos = snapshot.val() || {};
                 const select = document.getElementById('filter-organization-no');
@@ -921,7 +945,6 @@
             });
         }
 
-        // フィルター適用
         function applyFilters() {
             currentFilterAnomaly = document.getElementById('filter-anomaly').value;
             currentFilterOrganizationNo = document.getElementById('filter-organization-no').value;
@@ -931,7 +954,6 @@
             updateFilteredStats();
         }
 
-        // フィルタークリア
         function clearFilters() {
             document.getElementById('filter-anomaly').value = '';
             document.getElementById('filter-organization-no').value = '';
@@ -940,17 +962,15 @@
             
             updateChart();
             loadRecordsTable();
-            loadStats(); // 統計を再読み込み
+            loadStats();
         }
 
-        // フィルター適用後の統計更新
         function updateFilteredStats() {
             if (!currentViewEquipment) return;
             
             const today = new Date().toISOString().split('T')[0];
             const yesterday = getLastWorkday();
             
-            // フィルター適用後の今日の件数
             let todayCount = 0;
             let yesterdayCount = 0;
             
@@ -970,21 +990,18 @@
             document.getElementById('yesterday-count').textContent = yesterdayCount;
         }
 
-        // 統計情報読み込み
         function loadStats() {
             if (!currentViewEquipment) return;
             
             const today = new Date().toISOString().split('T')[0];
             const yesterday = getLastWorkday();
             
-            // 全レコードを読み込み
             database.ref('records').once('value', snapshot => {
                 allRecords = [];
                 snapshot.forEach(child => {
                     allRecords.push(child.val());
                 });
                 
-                // 今日の件数
                 let todayCount = 0;
                 let yesterdayCount = 0;
                 
@@ -1000,7 +1017,6 @@
             });
         }
 
-        // 最終営業日を取得（土日を除く）
         function getLastWorkday() {
             const date = new Date();
             date.setDate(date.getDate() - 1);
@@ -1012,15 +1028,13 @@
             return date.toISOString().split('T')[0];
         }
 
-        // 期間変更
-        function changePeriod(period) {
+        function changePeriod(period, clickedButton) {
             currentPeriod = period;
             document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
+            clickedButton.classList.add('active');
             updateChart();
         }
 
-        // グラフ更新
         function updateChart() {
             if (!currentViewEquipment) return;
             
@@ -1034,10 +1048,8 @@
                 snapshot.forEach(child => {
                     const record = child.val();
                     if (record.date >= startDate && record.date <= endDate) {
-                        // フィルター適用
                         const matchAnomaly = !currentFilterAnomaly || record.anomalyName === currentFilterAnomaly;
                         const matchOrgNo = !currentFilterOrganizationNo || record.organizationNo === currentFilterOrganizationNo;
-                        
                         if (matchAnomaly && matchOrgNo) {
                             records.push(record);
                         }
@@ -1049,7 +1061,6 @@
             });
         }
 
-        // 記録一覧テーブル読み込み
         function loadRecordsTable() {
             if (!currentViewEquipment) return;
             
@@ -1063,17 +1074,14 @@
                 snapshot.forEach(child => {
                     const record = child.val();
                     if (record.date >= startDate && record.date <= endDate) {
-                        // フィルター適用
                         const matchAnomaly = !currentFilterAnomaly || record.anomalyName === currentFilterAnomaly;
                         const matchOrgNo = !currentFilterOrganizationNo || record.organizationNo === currentFilterOrganizationNo;
-                        
                         if (matchAnomaly && matchOrgNo) {
                             records.push(record);
                         }
                     }
                 });
                 
-                // 日時の降順でソート
                 records.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
                 
                 const tbody = document.getElementById('records-tbody');
@@ -1098,7 +1106,6 @@
             });
         }
 
-        // データ集計
         function aggregateData(records, startDate, endDate, period) {
             const counts = {};
             
@@ -1119,7 +1126,6 @@
                 counts[key] = (counts[key] || 0) + 1;
             });
             
-            // 期間内の全日付/週/月を生成
             const labels = [];
             const values = [];
             const start = new Date(startDate);
@@ -1148,7 +1154,6 @@
             return { labels, values };
         }
 
-        // グラフ描画
         function renderChart(data) {
             const ctx = document.getElementById('trend-chart').getContext('2d');
             
@@ -1190,7 +1195,8 @@
             });
         }
 
-        // マスター管理画面読み込み
+        // ===== マスター画面関連 =====
+
         function loadMasterScreen() {
             loadOperatorList();
             loadEquipmentList();
@@ -1198,7 +1204,6 @@
             loadEquipmentSelectForNo();
         }
 
-        // 処置者リスト読み込み
         function loadOperatorList() {
             database.ref('masters/operators').once('value', snapshot => {
                 const operators = snapshot.val() || {};
@@ -1217,7 +1222,6 @@
             });
         }
 
-        // 処置者追加
         function addOperator() {
             const name = document.getElementById('new-operator').value.trim();
             if (!name) {
@@ -1232,7 +1236,6 @@
             });
         }
 
-        // 処置者削除
         function deleteOperator(key) {
             if (confirm('この処置者を削除しますか?')) {
                 database.ref(`masters/operators/${key}`).remove().then(() => {
@@ -1242,7 +1245,6 @@
             }
         }
 
-        // 設備リスト読み込み
         function loadEquipmentList() {
             database.ref('masters/equipments').once('value', snapshot => {
                 const equipments = snapshot.val() || {};
@@ -1261,7 +1263,6 @@
             });
         }
 
-        // 設備追加
         function addEquipment() {
             const name = document.getElementById('new-equipment').value.trim();
             if (!name) {
@@ -1271,28 +1272,27 @@
             
             database.ref('masters/equipments').push({ 
                 name,
-                anomalies: {},
-                optionalFields: {}
+                anomalies: {}
             }).then(() => {
                 document.getElementById('new-equipment').value = '';
                 loadEquipmentList();
                 loadEquipments();
                 loadEquipmentSelect();
+                loadEquipmentSelectForNo();
             });
         }
 
-        // 設備削除
         function deleteEquipment(key) {
             if (confirm('この設備を削除しますか?')) {
                 database.ref(`masters/equipments/${key}`).remove().then(() => {
                     loadEquipmentList();
                     loadEquipments();
                     loadEquipmentSelect();
+                    loadEquipmentSelectForNo();
                 });
             }
         }
 
-        // 設備選択リスト読み込み（整理No用）
         function loadEquipmentSelectForNo() {
             database.ref('masters/equipments').once('value', snapshot => {
                 const equipments = snapshot.val() || {};
@@ -1308,7 +1308,6 @@
             });
         }
 
-        // 整理No管理読み込み
         function loadOrganizationNos() {
             const equipmentId = document.getElementById('equipment-select-no').value;
             if (!equipmentId) {
@@ -1335,7 +1334,6 @@
             });
         }
 
-        // 整理No追加
         function addOrganizationNo() {
             const equipmentId = document.getElementById('equipment-select-no').value;
             const no = document.getElementById('new-organization-no').value.trim();
@@ -1353,7 +1351,6 @@
             });
         }
 
-        // 整理No削除
         function deleteOrganizationNo(equipmentId, key) {
             if (confirm('この整理Noを削除しますか?')) {
                 database.ref(`masters/equipments/${equipmentId}/organizationNos/${key}`).remove().then(() => {
@@ -1362,7 +1359,6 @@
             }
         }
 
-        // 設備選択リスト読み込み
         function loadEquipmentSelect() {
             database.ref('masters/equipments').once('value', snapshot => {
                 const equipments = snapshot.val() || {};
@@ -1378,20 +1374,24 @@
             });
         }
 
-        // 異常名管理読み込み
         function loadAnomalies() {
             const equipmentId = document.getElementById('equipment-select').value;
+            const anomalyMgmt = document.getElementById('anomaly-management');
+            const optionalSettings = document.getElementById('optional-field-settings');
+
             if (!equipmentId) {
-                document.getElementById('anomaly-management').classList.add('hidden');
+                anomalyMgmt.classList.add('hidden');
+                masterSelectedEquipmentForOptions = null;
+                masterSelectedAnomalyForOptions = null;
+                optionalSettings.innerHTML = '異常名を選択すると、ここにオプション項目が表示されます。';
                 return;
             }
             
-            document.getElementById('anomaly-management').classList.remove('hidden');
+            anomalyMgmt.classList.remove('hidden');
+            masterSelectedEquipmentForOptions = equipmentId;
+            masterSelectedAnomalyForOptions = null;
+            optionalSettings.innerHTML = '異常名を選択すると、ここにオプション項目が表示されます。';
             
-            // オプション項目設定読み込み
-            loadOptionalFieldSettings(equipmentId);
-            
-            // 異常名リスト読み込み
             database.ref(`masters/equipments/${equipmentId}/anomalies`).once('value', snapshot => {
                 const anomalies = snapshot.val() || {};
                 const container = document.getElementById('anomaly-list');
@@ -1403,18 +1403,31 @@
                     div.className = 'master-item';
                     div.innerHTML = `
                         <span>${anomaly.name}</span>
-                        <button class="btn btn-danger" onclick="deleteAnomaly('${equipmentId}', '${key}')">削除</button>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn" style="padding:6px 10px; font-size:12px;" onclick="selectAnomalyForOptions('${equipmentId}','${key}')">オプション設定</button>
+                            <button class="btn btn-danger" onclick="deleteAnomaly('${equipmentId}', '${key}')">削除</button>
+                        </div>
                     `;
                     container.appendChild(div);
                 });
             });
         }
 
-        // 異常名追加
+        // マスター画面で、どの異常のオプションを編集するか選択
+        function selectAnomalyForOptions(equipmentId, anomalyKey) {
+            masterSelectedEquipmentForOptions = equipmentId;
+            masterSelectedAnomalyForOptions = anomalyKey;
+            loadOptionalFieldSettings(equipmentId, anomalyKey);
+        }
+
         function addAnomaly() {
             const equipmentId = document.getElementById('equipment-select').value;
             const name = document.getElementById('new-anomaly-name').value.trim();
             
+            if (!equipmentId) {
+                alert('設備を選択してください');
+                return;
+            }
             if (!name) {
                 alert('異常名を入力してください');
                 return;
@@ -1428,69 +1441,132 @@
             });
         }
 
-        // 異常名削除
         function deleteAnomaly(equipmentId, anomalyKey) {
             if (confirm('この異常名を削除しますか?')) {
                 database.ref(`masters/equipments/${equipmentId}/anomalies/${anomalyKey}`).remove().then(() => {
+                    if (masterSelectedEquipmentForOptions === equipmentId &&
+                        masterSelectedAnomalyForOptions === anomalyKey) {
+                        masterSelectedAnomalyForOptions = null;
+                        document.getElementById('optional-field-settings').innerHTML =
+                            '異常名を選択すると、ここにオプション項目が表示されます。';
+                    }
                     loadAnomalies();
                 });
             }
         }
 
-        // オプション項目設定読み込み
-        function loadOptionalFieldSettings(equipmentId) {
-            database.ref(`masters/equipments/${equipmentId}/optionalFields`).once('value', snapshot => {
-                const fields = snapshot.val() || {};
-                const container = document.getElementById('optional-field-settings');
-                container.innerHTML = '';
-                
-                Object.keys(fields).forEach(key => {
-                    const field = fields[key];
-                    const div = document.createElement('div');
-                    div.className = 'master-item';
-                    div.style.flexDirection = 'column';
-                    div.style.alignItems = 'flex-start';
-                    
-                    div.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; width: 100%; margin-bottom: 10px;">
-                            <strong>${field.name}</strong>
-                            <button class="btn btn-danger" onclick="deleteOptionalField('${equipmentId}', '${key}')">削除</button>
-                        </div>
-                        <div style="font-size: 12px; color: #666;">
-                            選択肢: ${(field.options || []).join(', ')}
-                        </div>
-                    `;
-                    container.appendChild(div);
+        // 異常ごとのオプション項目一覧（マスター画面）
+        function loadOptionalFieldSettings(equipmentId, anomalyKey) {
+            const container = document.getElementById('optional-field-settings');
+            if (!equipmentId || !anomalyKey) {
+                container.innerHTML = '異常名を選択すると、ここにオプション項目が表示されます。';
+                return;
+            }
+
+            database
+                .ref(`masters/equipments/${equipmentId}/anomalies/${anomalyKey}/optionalFields`)
+                .once('value')
+                .then(snapshot => {
+                    const fields = snapshot.val() || {};
+                    const keys = Object.keys(fields);
+
+                    if (keys.length === 0) {
+                        container.innerHTML = 'この異常には、まだオプション項目が設定されていません。';
+                        return;
+                    }
+
+                    container.innerHTML = '';
+                    keys.forEach(key => {
+                        const field = fields[key];
+                        const div = document.createElement('div');
+                        div.className = 'master-item';
+                        div.style.flexDirection = 'column';
+                        div.style.alignItems = 'flex-start';
+
+                        div.innerHTML = `
+                            <div style="display:flex; justify-content:space-between; width:100%; margin-bottom:6px;">
+                                <strong>${field.name}</strong>
+                                <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;"
+                                    onclick="deleteOptionalField('${equipmentId}','${anomalyKey}','${key}')">
+                                    削除
+                                </button>
+                            </div>
+                            <div style="font-size:12px; color:#666;">
+                                選択肢: ${(field.options || []).join(', ')}
+                            </div>
+                        `;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(error => {
+                    console.error('オプション項目設定の読込エラー:', error);
+                    container.innerHTML = 'オプション項目の読み込みに失敗しました。';
                 });
-            });
         }
 
-        // オプション項目追加
+        // オプション項目追加（異常単位）
         function addOptionalField() {
-            const equipmentId = document.getElementById('equipment-select').value;
+            const equipmentId = masterSelectedEquipmentForOptions;
+            const anomalyKey = masterSelectedAnomalyForOptions;
+
+            if (!equipmentId || !anomalyKey) {
+                alert('オプション項目を設定する異常名を選択してください。');
+                return;
+            }
+
             const fieldName = prompt('オプション項目名を入力してください:');
             if (!fieldName) return;
             
             const optionsStr = prompt('選択肢をカンマ区切りで入力してください:\n例: 選択肢1,選択肢2,選択肢3');
             if (!optionsStr) return;
             
-            const options = optionsStr.split(',').map(s => s.trim()).filter(s => s);
-            
-            database.ref(`masters/equipments/${equipmentId}/optionalFields`).push({
-                name: fieldName,
-                options: options
-            }).then(() => {
-                loadAnomalies();
-            });
+            const options = optionsStr
+                .split(',')
+                .map(s => s.trim())
+                .filter(s => s);
+
+            database
+                .ref(`masters/equipments/${equipmentId}/anomalies/${anomalyKey}/optionalFields`)
+                .push({
+                    name: fieldName,
+                    options: options
+                })
+                .then(() => {
+                    loadOptionalFieldSettings(equipmentId, anomalyKey);
+
+                    // 入力画面で同じ設備・異常が選択中なら即反映
+                    if (selectedEquipment === equipmentId &&
+                        selectedAnomaly &&
+                        selectedAnomaly.id === anomalyKey) {
+                        loadOptionalFields(equipmentId, anomalyKey);
+                    }
+                })
+                .catch(error => {
+                    console.error('オプション項目追加エラー:', error);
+                    alert('オプション項目の追加に失敗しました: ' + error.message);
+                });
         }
 
         // オプション項目削除
-        function deleteOptionalField(equipmentId, fieldKey) {
-            if (confirm('このオプション項目を削除しますか?')) {
-                database.ref(`masters/equipments/${equipmentId}/optionalFields/${fieldKey}`).remove().then(() => {
-                    loadAnomalies();
+        function deleteOptionalField(equipmentId, anomalyKey, fieldKey) {
+            if (!confirm('このオプション項目を削除しますか？')) return;
+
+            database
+                .ref(`masters/equipments/${equipmentId}/anomalies/${anomalyKey}/optionalFields/${fieldKey}`)
+                .remove()
+                .then(() => {
+                    loadOptionalFieldSettings(equipmentId, anomalyKey);
+
+                    if (selectedEquipment === equipmentId &&
+                        selectedAnomaly &&
+                        selectedAnomaly.id === anomalyKey) {
+                        loadOptionalFields(equipmentId, anomalyKey);
+                    }
+                })
+                .catch(error => {
+                    console.error('オプション項目削除エラー:', error);
+                    alert('オプション項目の削除に失敗しました: ' + error.message);
                 });
-            }
         }
 
         // 初期化
