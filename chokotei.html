@@ -2116,7 +2116,7 @@ renderChipSets(allMessages);
 /* ====== モーダル ====== */
 function line(){} // (空定義の混入防止対策ではなく、上の関数で定義済なので不要です)
 
-// ===== PDF出力機能（4ページ固定版・横向き） =====
+// ===== PDF出力機能（3ページ目のみ・アスペクト比固定） =====
 async function exportToPDF() {
   const btn = $('btnExportPDF');
   if (!btn || !currentFileName) return;
@@ -2130,44 +2130,10 @@ async function exportToPDF() {
     const pageWidth = 297;  // A4横向きの幅
     const pageHeight = 210; // A4横向きの高さ
     const margin = 10;
-    const contentHeight = pageHeight - margin * 2;
     
-    // ページ1: トピックス（急増・連続増加）
-    const topics = $('panelTopics');
-    if (topics && topics.style.display !== 'none') {
-      const canvas1 = await html2canvas(topics, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
-      });
-      const img1 = canvas1.toDataURL('image/png');
-      const imgWidth = pageWidth - margin * 2;
-      const imgHeight = Math.min(contentHeight, (canvas1.height * imgWidth) / canvas1.width);
-      pdf.addImage(img1, 'PNG', margin, margin, imgWidth, imgHeight);
-    }
-    
-    // ページ2: 直近48時間の状況
-    const grid48 = document.querySelector('.grid.grid-2');
-    if (grid48) {
-      pdf.addPage();
-      const canvas2 = await html2canvas(grid48, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
-      });
-      const img2 = canvas2.toDataURL('image/png');
-      const imgWidth = pageWidth - margin * 2;
-      const imgHeight = Math.min(contentHeight, (canvas2.height * imgWidth) / canvas2.width);
-      pdf.addImage(img2, 'PNG', margin, margin, imgWidth, imgHeight);
-    }
-    
-    // ページ3: マークした異常のモニタ（タイトル部分のみ）
+    // マークした異常のモニタ（タイトル付き）
     const markedGrid = $('markedGrid');
     if (markedGrid) {
-      pdf.addPage();
-      
       // タイトル要素を探す
       const markedSection = markedGrid.previousElementSibling;
       let titleElement = null;
@@ -2191,7 +2157,7 @@ async function exportToPDF() {
       // 一時的にDOMに追加
       document.body.appendChild(tempContainer);
       
-      const canvas3 = await html2canvas(tempContainer, {
+      const canvas = await html2canvas(tempContainer, {
         scale: 2,
         useCORS: true,
         logging: false,
@@ -2201,30 +2167,36 @@ async function exportToPDF() {
       // 一時コンテナを削除
       document.body.removeChild(tempContainer);
       
-      const img3 = canvas3.toDataURL('image/png');
-      const imgWidth = pageWidth - margin * 2;
-      const imgHeight = Math.min(contentHeight, (canvas3.height * imgWidth) / canvas3.width);
-      pdf.addImage(img3, 'PNG', margin, margin, imgWidth, imgHeight);
-    }
-    
-    // ページ4: 日/週/月トレンド TOP3（3つをまとめて）
-    const trendsContainer = document.querySelector('#panelDay')?.parentElement;
-    if (trendsContainer) {
-      pdf.addPage();
-      const canvas4 = await html2canvas(trendsContainer, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
-      });
-      const img4 = canvas4.toDataURL('image/png');
-      const imgWidth = pageWidth - margin * 2;
-      const imgHeight = Math.min(contentHeight, (canvas4.height * imgWidth) / canvas4.width);
-      pdf.addImage(img4, 'PNG', margin, margin, imgWidth, imgHeight);
+      const img = canvas.toDataURL('image/png');
+      
+      // アスペクト比を維持しながら、ページに収まるサイズを計算
+      const canvasRatio = canvas.width / canvas.height;
+      const maxWidth = pageWidth - margin * 2;
+      const maxHeight = pageHeight - margin * 2;
+      
+      let imgWidth, imgHeight;
+      
+      if (canvasRatio > maxWidth / maxHeight) {
+        // 横長：幅を基準に
+        imgWidth = maxWidth;
+        imgHeight = maxWidth / canvasRatio;
+      } else {
+        // 縦長：高さを基準に
+        imgHeight = maxHeight;
+        imgWidth = maxHeight * canvasRatio;
+      }
+      
+      // 中央配置
+      const x = (pageWidth - imgWidth) / 2;
+      const y = (pageHeight - imgHeight) / 2;
+      
+      pdf.addImage(img, 'PNG', x, y, imgWidth, imgHeight);
+    } else {
+      throw new Error('マークした異常のモニタが見つかりません');
     }
     
     // PDFを保存
-    const filename = `設備異常レポート_${currentFileName.replace(/\.[^/.]+$/, '')}_${new Date().toISOString().slice(0,10)}.pdf`;
+    const filename = `マーク異常モニタ_${currentFileName.replace(/\.[^/.]+$/, '')}_${new Date().toISOString().slice(0,10)}.pdf`;
     pdf.save(filename);
     
     btn.textContent = '✅ PDF出力完了';
