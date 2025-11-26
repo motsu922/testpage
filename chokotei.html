@@ -2116,7 +2116,6 @@ renderChipSets(allMessages);
 /* ====== モーダル ====== */
 function line(){} // (空定義の混入防止対策ではなく、上の関数で定義済なので不要です)
 
-// ===== PDF出力機能（3ページ目のみ・アスペクト比固定） =====
 async function exportToPDF() {
   const btn = $('btnExportPDF');
   if (!btn || !currentFileName) return;
@@ -2131,7 +2130,61 @@ async function exportToPDF() {
     const pageHeight = 210; // A4横向きの高さ
     const margin = 10;
     
-    // マークした異常のモニタ（タイトル付き）
+    // アスペクト比を維持して画像を配置する関数
+    const addImageWithAspectRatio = (canvas, isFirstPage = false) => {
+      if (!isFirstPage) {
+        pdf.addPage();
+      }
+      
+      const img = canvas.toDataURL('image/png');
+      const canvasRatio = canvas.width / canvas.height;
+      const maxWidth = pageWidth - margin * 2;
+      const maxHeight = pageHeight - margin * 2;
+      
+      let imgWidth, imgHeight;
+      
+      if (canvasRatio > maxWidth / maxHeight) {
+        // 横長：幅を基準に
+        imgWidth = maxWidth;
+        imgHeight = maxWidth / canvasRatio;
+      } else {
+        // 縦長：高さを基準に
+        imgHeight = maxHeight;
+        imgWidth = maxHeight * canvasRatio;
+      }
+      
+      // 中央配置
+      const x = (pageWidth - imgWidth) / 2;
+      const y = (pageHeight - imgHeight) / 2;
+      
+      pdf.addImage(img, 'PNG', x, y, imgWidth, imgHeight);
+    };
+    
+    // ページ1: トピックス（急増・連続増加）
+    const topics = $('panelTopics');
+    if (topics && topics.style.display !== 'none') {
+      const canvas1 = await html2canvas(topics, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
+      });
+      addImageWithAspectRatio(canvas1, true);
+    }
+    
+    // ページ2: 直近48時間の状況
+    const grid48 = document.querySelector('.grid.grid-2');
+    if (grid48) {
+      const canvas2 = await html2canvas(grid48, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
+      });
+      addImageWithAspectRatio(canvas2);
+    }
+    
+    // ページ3: マークした異常のモニタ（タイトル付き）
     const markedGrid = $('markedGrid');
     if (markedGrid) {
       // タイトル要素を探す
@@ -2157,7 +2210,7 @@ async function exportToPDF() {
       // 一時的にDOMに追加
       document.body.appendChild(tempContainer);
       
-      const canvas = await html2canvas(tempContainer, {
+      const canvas3 = await html2canvas(tempContainer, {
         scale: 2,
         useCORS: true,
         logging: false,
@@ -2167,36 +2220,23 @@ async function exportToPDF() {
       // 一時コンテナを削除
       document.body.removeChild(tempContainer);
       
-      const img = canvas.toDataURL('image/png');
-      
-      // アスペクト比を維持しながら、ページに収まるサイズを計算
-      const canvasRatio = canvas.width / canvas.height;
-      const maxWidth = pageWidth - margin * 2;
-      const maxHeight = pageHeight - margin * 2;
-      
-      let imgWidth, imgHeight;
-      
-      if (canvasRatio > maxWidth / maxHeight) {
-        // 横長：幅を基準に
-        imgWidth = maxWidth;
-        imgHeight = maxWidth / canvasRatio;
-      } else {
-        // 縦長：高さを基準に
-        imgHeight = maxHeight;
-        imgWidth = maxHeight * canvasRatio;
-      }
-      
-      // 中央配置
-      const x = (pageWidth - imgWidth) / 2;
-      const y = (pageHeight - imgHeight) / 2;
-      
-      pdf.addImage(img, 'PNG', x, y, imgWidth, imgHeight);
-    } else {
-      throw new Error('マークした異常のモニタが見つかりません');
+      addImageWithAspectRatio(canvas3);
+    }
+    
+    // ページ4: 日/週/月トレンド TOP3（3つをまとめて）
+    const trendsContainer = document.querySelector('#panelDay')?.parentElement;
+    if (trendsContainer) {
+      const canvas4 = await html2canvas(trendsContainer, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
+      });
+      addImageWithAspectRatio(canvas4);
     }
     
     // PDFを保存
-    const filename = `マーク異常モニタ_${currentFileName.replace(/\.[^/.]+$/, '')}_${new Date().toISOString().slice(0,10)}.pdf`;
+    const filename = `設備異常レポート_${currentFileName.replace(/\.[^/.]+$/, '')}_${new Date().toISOString().slice(0,10)}.pdf`;
     pdf.save(filename);
     
     btn.textContent = '✅ PDF出力完了';
@@ -2215,6 +2255,7 @@ async function exportToPDF() {
 
 // ボタンイベント
 $('btnExportPDF')?.addEventListener('click', exportToPDF);
+
 </script>
 </body>
 </html>
