@@ -9,7 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 /* テーマ変数 */
@@ -854,9 +854,8 @@ async function handlePickedFile(e){
   }
   await parseAndRender(text);
   $('loading').classList.remove('active'); $('content').style.display='block';
-    const pdfBtn = $('btnExportPDF');
+  const pdfBtn = $('btnExportPDF');
   if (pdfBtn && currentFileName) pdfBtn.disabled = false;
-
 }
 
 // 起動時の初期化
@@ -2117,7 +2116,7 @@ renderChipSets(allMessages);
 /* ====== モーダル ====== */
 function line(){} // (空定義の混入防止対策ではなく、上の関数で定義済なので不要です)
 
-  // ===== PDF出力機能 =====
+// ===== PDF出力機能（4ページ固定版） =====
 async function exportToPDF() {
   const btn = $('btnExportPDF');
   if (!btn || !currentFileName) return;
@@ -2131,100 +2130,69 @@ async function exportToPDF() {
     const pageWidth = 210;
     const pageHeight = 297;
     const margin = 10;
-    let currentY = margin;
+    const contentHeight = pageHeight - margin * 2;
     
-    // タイトルページ
-    pdf.setFontSize(20);
-    pdf.text('設備異常履歴レポート', pageWidth / 2, currentY + 10, { align: 'center' });
-    pdf.setFontSize(12);
-    pdf.text(`ファイル: ${currentFileName}`, pageWidth / 2, currentY + 20, { align: 'center' });
-    pdf.text(`出力日時: ${new Date().toLocaleString('ja-JP')}`, pageWidth / 2, currentY + 28, { align: 'center' });
-    
-    pdf.addPage();
-    currentY = margin;
-    
-    // セクションを順番にキャプチャ
-    const sections = [
-      { id: 'panelTopics', title: 'トピックス（急増・連続増加）' },
-      { selector: '.grid.grid-2', title: '直近48時間の状況' },
-      { id: 'markedGrid', title: 'マークした異常のモニタ', parent: true },
-      { id: 'panelDay', title: '日トレンド TOP3' },
-      { id: 'panelWeek', title: '週トレンド TOP3' },
-      { id: 'panelMonth', title: '月トレンド TOP3' }
-    ];
-    
-    for (const section of sections) {
-      let element;
-      if (section.id) {
-        element = $(section.id);
-        if (section.parent) {
-          element = element?.parentElement;
-        }
-      } else if (section.selector) {
-        element = document.querySelector(section.selector);
-      }
-      
-      if (!element || element.style.display === 'none') continue;
-      
-      // セクションタイトル
-      if (currentY > margin + 10) {
-        pdf.addPage();
-        currentY = margin;
-      }
-      
-      pdf.setFontSize(14);
-      pdf.setTextColor(102, 126, 234);
-      pdf.text(section.title, margin, currentY + 5);
-      currentY += 10;
-      
-      // 要素をキャプチャ
-      const canvas = await html2canvas(element, {
+    // ページ1: トピックス（急増・連続増加）
+    const topics = $('panelTopics');
+    if (topics && topics.style.display !== 'none') {
+      const canvas1 = await html2canvas(topics, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
       });
-      
-      const imgData = canvas.toDataURL('image/png');
-      const imgWidth = pageWidth - (margin * 2);
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      // ページに収まらない場合は複数ページに分割
-      let remainingHeight = imgHeight;
-      let sourceY = 0;
-      
-      while (remainingHeight > 0) {
-        const availableHeight = pageHeight - currentY - margin;
-        const heightToDraw = Math.min(remainingHeight, availableHeight);
-        
-        // 画像の一部を切り出してPDFに追加
-        const tempCanvas = document.createElement('canvas');
-        const scale = canvas.width / imgWidth;
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = heightToDraw * scale;
-        
-        const ctx = tempCanvas.getContext('2d');
-        ctx.drawImage(
-          canvas,
-          0, sourceY * scale,
-          canvas.width, tempCanvas.height,
-          0, 0,
-          canvas.width, tempCanvas.height
-        );
-        
-        const partialImg = tempCanvas.toDataURL('image/png');
-        pdf.addImage(partialImg, 'PNG', margin, currentY, imgWidth, heightToDraw);
-        
-        remainingHeight -= heightToDraw;
-        sourceY += heightToDraw;
-        
-        if (remainingHeight > 0) {
-          pdf.addPage();
-          currentY = margin;
-        } else {
-          currentY += heightToDraw + 5;
-        }
-      }
+      const img1 = canvas1.toDataURL('image/png');
+      const imgWidth = pageWidth - margin * 2;
+      const imgHeight = Math.min(contentHeight, (canvas1.height * imgWidth) / canvas1.width);
+      pdf.addImage(img1, 'PNG', margin, margin, imgWidth, imgHeight);
+    }
+    
+    // ページ2: 直近48時間の状況
+    const grid48 = document.querySelector('.grid.grid-2');
+    if (grid48) {
+      pdf.addPage();
+      const canvas2 = await html2canvas(grid48, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
+      });
+      const img2 = canvas2.toDataURL('image/png');
+      const imgWidth = pageWidth - margin * 2;
+      const imgHeight = Math.min(contentHeight, (canvas2.height * imgWidth) / canvas2.width);
+      pdf.addImage(img2, 'PNG', margin, margin, imgWidth, imgHeight);
+    }
+    
+    // ページ3: マークした異常のモニタ
+    const marked = $('markedGrid')?.parentElement;
+    if (marked) {
+      pdf.addPage();
+      const canvas3 = await html2canvas(marked, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
+      });
+      const img3 = canvas3.toDataURL('image/png');
+      const imgWidth = pageWidth - margin * 2;
+      const imgHeight = Math.min(contentHeight, (canvas3.height * imgWidth) / canvas3.width);
+      pdf.addImage(img3, 'PNG', margin, margin, imgWidth, imgHeight);
+    }
+    
+    // ページ4: 日/週/月トレンド TOP3（3つをまとめて）
+    const trendsContainer = document.querySelector('#panelDay')?.parentElement;
+    if (trendsContainer) {
+      pdf.addPage();
+      const canvas4 = await html2canvas(trendsContainer, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
+      });
+      const img4 = canvas4.toDataURL('image/png');
+      const imgWidth = pageWidth - margin * 2;
+      const imgHeight = Math.min(contentHeight, (canvas4.height * imgWidth) / canvas4.width);
+      pdf.addImage(img4, 'PNG', margin, margin, imgWidth, imgHeight);
     }
     
     // PDFを保存
@@ -2244,6 +2212,9 @@ async function exportToPDF() {
     btn.disabled = false;
   }
 }
+
+// ボタンイベント
+$('btnExportPDF')?.addEventListener('click', exportToPDF);
 
 // ボタンイベント
 $('btnExportPDF')?.addEventListener('click', exportToPDF);
