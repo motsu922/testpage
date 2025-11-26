@@ -2116,7 +2116,7 @@ renderChipSets(allMessages);
 /* ====== モーダル ====== */
 function line(){} // (空定義の混入防止対策ではなく、上の関数で定義済なので不要です)
 
-// ===== PDF出力機能（4ページ固定版） =====
+// ===== PDF出力機能（4ページ固定版・横向き） =====
 async function exportToPDF() {
   const btn = $('btnExportPDF');
   if (!btn || !currentFileName) return;
@@ -2126,9 +2126,9 @@ async function exportToPDF() {
   
   try {
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pageWidth = 210;
-    const pageHeight = 297;
+    const pdf = new jsPDF('l', 'mm', 'a4'); // 'l' = landscape（横向き）
+    const pageWidth = 297;  // A4横向きの幅
+    const pageHeight = 210; // A4横向きの高さ
     const margin = 10;
     const contentHeight = pageHeight - margin * 2;
     
@@ -2163,16 +2163,44 @@ async function exportToPDF() {
       pdf.addImage(img2, 'PNG', margin, margin, imgWidth, imgHeight);
     }
     
-    // ページ3: マークした異常のモニタ
-    const marked = $('markedGrid')?.parentElement;
-    if (marked) {
+    // ページ3: マークした異常のモニタ（タイトル部分のみ）
+    const markedGrid = $('markedGrid');
+    if (markedGrid) {
       pdf.addPage();
-      const canvas3 = await html2canvas(marked, {
+      
+      // タイトル要素を探す
+      const markedSection = markedGrid.previousElementSibling;
+      let titleElement = null;
+      if (markedSection && markedSection.classList.contains('section-title')) {
+        titleElement = markedSection;
+      }
+      
+      // タイトルとグリッドを含む一時的なコンテナを作成
+      const tempContainer = document.createElement('div');
+      tempContainer.style.padding = '20px';
+      tempContainer.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff';
+      
+      if (titleElement) {
+        const titleClone = titleElement.cloneNode(true);
+        tempContainer.appendChild(titleClone);
+      }
+      
+      const gridClone = markedGrid.cloneNode(true);
+      tempContainer.appendChild(gridClone);
+      
+      // 一時的にDOMに追加
+      document.body.appendChild(tempContainer);
+      
+      const canvas3 = await html2canvas(tempContainer, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
       });
+      
+      // 一時コンテナを削除
+      document.body.removeChild(tempContainer);
+      
       const img3 = canvas3.toDataURL('image/png');
       const imgWidth = pageWidth - margin * 2;
       const imgHeight = Math.min(contentHeight, (canvas3.height * imgWidth) / canvas3.width);
@@ -2216,8 +2244,6 @@ async function exportToPDF() {
 // ボタンイベント
 $('btnExportPDF')?.addEventListener('click', exportToPDF);
 
-// ボタンイベント
-$('btnExportPDF')?.addEventListener('click', exportToPDF);
 </script>
 </body>
 </html>
