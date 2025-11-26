@@ -9,6 +9,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 /* テーマ変数 */
 :root {
@@ -236,19 +238,20 @@
         <h1>設備異常履歴ダッシュボード</h1>
         <div class="sub">直近48時間の状況を強調＋トレンドで対策効果を可視化</div>
       </div>
-      <div class="row">
-        <div class="file-input-wrapper">
-          <button class="btn primary" id="btnPick">📁 CSVを選択</button>
-          <input type="file" id="fileInput" accept=".csv,.txt">
-        </div>
-        <select id="granularity">
-          <option value="day">日</option>
-          <option value="week">週</option>
-          <option value="month" selected>月</option>
-        </select>
-        <button class="btn" id="btnSettings">⚙️ 設定</button>
-        <button class="btn btn-theme" id="btnTheme" title="テーマ切り替え">🌓</button>
-      </div>
+     <div class="row">
+  <div class="file-input-wrapper">
+    <button class="btn primary" id="btnPick">📁 CSVを選択</button>
+    <input type="file" id="fileInput" accept=".csv,.txt">
+  </div>
+  <select id="granularity">
+    <option value="day">日</option>
+    <option value="week">週</option>
+    <option value="month" selected>月</option>
+  </select>
+  <button class="btn" id="btnSettings">⚙️ 設定</button>
+  <button class="btn" id="btnExportPDF" disabled>📄 PDF出力</button>
+  <button class="btn btn-theme" id="btnTheme" title="テーマ切り替え">🌓</button>
+</div>
     </div>
   </div>
 
@@ -851,6 +854,9 @@ async function handlePickedFile(e){
   }
   await parseAndRender(text);
   $('loading').classList.remove('active'); $('content').style.display='block';
+    const pdfBtn = $('btnExportPDF');
+  if (pdfBtn && currentFileName) pdfBtn.disabled = false;
+
 }
 
 // 起動時の初期化
@@ -2110,6 +2116,137 @@ renderChipSets(allMessages);
 
 /* ====== モーダル ====== */
 function line(){} // (空定義の混入防止対策ではなく、上の関数で定義済なので不要です)
+
+  // ===== PDF出力機能 =====
+async function exportToPDF() {
+  const btn = $('btnExportPDF');
+  if (!btn || !currentFileName) return;
+  
+  btn.disabled = true;
+  btn.textContent = '📄 PDF作成中...';
+  
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margin = 10;
+    let currentY = margin;
+    
+    // タイトルページ
+    pdf.setFontSize(20);
+    pdf.text('設備異常履歴レポート', pageWidth / 2, currentY + 10, { align: 'center' });
+    pdf.setFontSize(12);
+    pdf.text(`ファイル: ${currentFileName}`, pageWidth / 2, currentY + 20, { align: 'center' });
+    pdf.text(`出力日時: ${new Date().toLocaleString('ja-JP')}`, pageWidth / 2, currentY + 28, { align: 'center' });
+    
+    pdf.addPage();
+    currentY = margin;
+    
+    // セクションを順番にキャプチャ
+    const sections = [
+      { id: 'panelTopics', title: 'トピックス（急増・連続増加）' },
+      { selector: '.grid.grid-2', title: '直近48時間の状況' },
+      { id: 'markedGrid', title: 'マークした異常のモニタ', parent: true },
+      { id: 'panelDay', title: '日トレンド TOP3' },
+      { id: 'panelWeek', title: '週トレンド TOP3' },
+      { id: 'panelMonth', title: '月トレンド TOP3' }
+    ];
+    
+    for (const section of sections) {
+      let element;
+      if (section.id) {
+        element = $(section.id);
+        if (section.parent) {
+          element = element?.parentElement;
+        }
+      } else if (section.selector) {
+        element = document.querySelector(section.selector);
+      }
+      
+      if (!element || element.style.display === 'none') continue;
+      
+      // セクションタイトル
+      if (currentY > margin + 10) {
+        pdf.addPage();
+        currentY = margin;
+      }
+      
+      pdf.setFontSize(14);
+      pdf.setTextColor(102, 126, 234);
+      pdf.text(section.title, margin, currentY + 5);
+      currentY += 10;
+      
+      // 要素をキャプチャ
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const imgWidth = pageWidth - (margin * 2);
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      // ページに収まらない場合は複数ページに分割
+      let remainingHeight = imgHeight;
+      let sourceY = 0;
+      
+      while (remainingHeight > 0) {
+        const availableHeight = pageHeight - currentY - margin;
+        const heightToDraw = Math.min(remainingHeight, availableHeight);
+        
+        // 画像の一部を切り出してPDFに追加
+        const tempCanvas = document.createElement('canvas');
+        const scale = canvas.width / imgWidth;
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = heightToDraw * scale;
+        
+        const ctx = tempCanvas.getContext('2d');
+        ctx.drawImage(
+          canvas,
+          0, sourceY * scale,
+          canvas.width, tempCanvas.height,
+          0, 0,
+          canvas.width, tempCanvas.height
+        );
+        
+        const partialImg = tempCanvas.toDataURL('image/png');
+        pdf.addImage(partialImg, 'PNG', margin, currentY, imgWidth, heightToDraw);
+        
+        remainingHeight -= heightToDraw;
+        sourceY += heightToDraw;
+        
+        if (remainingHeight > 0) {
+          pdf.addPage();
+          currentY = margin;
+        } else {
+          currentY += heightToDraw + 5;
+        }
+      }
+    }
+    
+    // PDFを保存
+    const filename = `設備異常レポート_${currentFileName.replace(/\.[^/.]+$/, '')}_${new Date().toISOString().slice(0,10)}.pdf`;
+    pdf.save(filename);
+    
+    btn.textContent = '✅ PDF出力完了';
+    setTimeout(() => {
+      btn.textContent = '📄 PDF出力';
+      btn.disabled = false;
+    }, 2000);
+    
+  } catch (error) {
+    console.error('PDF出力エラー:', error);
+    alert('PDF出力に失敗しました: ' + error.message);
+    btn.textContent = '📄 PDF出力';
+    btn.disabled = false;
+  }
+}
+
+// ボタンイベント
+$('btnExportPDF')?.addEventListener('click', exportToPDF);
 </script>
 </body>
 </html>
