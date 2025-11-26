@@ -175,42 +175,7 @@
     font-size:12px;
     color:var(--text-secondary);
   }
-  /* ==== 🔥 トピックス（急増・連続増加）専用レイアウト ==== */
-#panelTopics {
-  border: 2px solid #fb7185;                 /* パネル枠を強調 */
-  background: rgba(248, 250, 252, 0.95);
-}
 
-[data-theme="dark"] #panelTopics {
-  background: #020617;
-}
-
-#panelTopics h3 {
-  font-size: 15px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-#panelTopics h3::before {
-  content: "🔥";
-  font-size: 18px;
-}
-
-/* カードを中央寄せ＆大きめ表示 */
-#panelTopics .cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  justify-content: center;   /* 1件でも真ん中に */
-  align-items: stretch;
-}
-
-#panelTopics .section-title {
-  flex-basis: 100%;
-  margin: 4px 4px 0;
-}
 
 /* トピックカード自体を少し大きく＆目立たせる */
 #panelTopics .card {
@@ -302,25 +267,7 @@
     <span class="hint" id="marksHint">（クリックでも即保存＆反映します）</span>
   </div>
 </div>
-<!-- トピックス検出の閾値 -->
-<div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border-color);">
-  <div class="section-title">🔥 トピックス検出の閾値</div>
-  <div class="row" style="gap:8px;flex-wrap:wrap">
-    <label class="hint">基準日数</label>
-    <input type="number" id="topicBaselineDays" value="7" min="3" max="30" style="width:84px">
-    <label class="hint">急増倍率 ≥</label>
-    <input type="number" id="topicLiftMin" value="1.5" step="0.1" style="width:84px">
-    <label class="hint">急増絶対値 ≥</label>
-    <input type="number" id="topicAbsMin" value="8" step="1" style="width:84px">
-    <label class="hint">連続増加日数</label>
-    <input type="number" id="topicConsecDays" value="3" min="3" max="7" style="width:84px">
-    <label class="hint">最小日件数</label>
-    <input type="number" id="topicMinDaily" value="2" step="1" style="width:84px">
-    <label class="hint">最大表示件数</label>
-    <input type="number" id="topicMaxCards" value="5" min="1" max="12" style="width:84px">
-    <button class="btn" id="btnTopicsApply">🔎 再判定</button>
-  </div>
-</div>
+
 
 
   <div class="loading" id="loading">
@@ -329,13 +276,6 @@
   </div>
 
   <div class="content" id="content" style="display:none">
-    <!-- 🔥 トピックス（急増・連続増加） -->
-<div class="panel" id="panelTopics" style="margin-bottom:12px;display:none">
-  <h3>🔥 トピックス（急増・連続増加）
-    <span class="hint" id="topicsHint" style="margin-left:6px"></span>
-  </h3>
-  <div class="cards" id="topicsCards"></div>
-</div>
 
 <!-- TOP: 直近48h（そのまま） -->
 <div class="grid grid-2">
@@ -603,20 +543,7 @@ const COLORS = ['#ef4444','#22c55e','#3b82f6','#f59e0b','#a855f7','#06b6d4','#ea
 const $ = (id)=>document.getElementById(id);
 const fmt = (n)=>n.toLocaleString();
 const debounce = (fn,ms=150)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
-const DEFAULT_TOPICS = {
-  baselineDays: 7,
-  liftMin:      1.5,
-  absMin:       8,
-  consecDays:   3,
-  minDaily:     2,
-  maxCards:     5,
-  minTotal:     20,   // 対象期間の合計件数がこれ未満なら除外
-  liftCap:      3.0,  // 倍率の上限（極端なスパイクを抑制）
-  weight48:     0.5,  // 48h 件数のスコア寄与
-  bonusConsec:  10    // 連続増加ボーナス
-};
 
-let topicsConfig = { ...DEFAULT_TOPICS };
 
 /* ====== テーマ管理 ====== */
 function initTheme() {
@@ -736,7 +663,7 @@ function loadFileConfig(filename) {
     marked = new Set((config.marked || []).filter(x => typeof x === 'string'));
     ignored = new Set((config.ignored || []).filter(x => typeof x === 'string'));
     memos  = (config.memos && typeof config.memos === 'object') ? config.memos : {};
-   topicsConfig = { ...DEFAULT_TOPICS, ...(config.topicsConfig || {}) };
+
     console.log(`設定読み込み: ${filename} => マーク:${marked.size}, 無視:${ignored.size}, メモ項目数:${Object.keys(memos).length}`);
   } catch {
     marked = new Set(); ignored = new Set(); memos = {};
@@ -752,7 +679,6 @@ function saveFileConfig(filename) {
       marked: [...marked],
       ignored: [...ignored],
       memos,
-     topicsConfig,
       lastUpdated: new Date().toISOString()
     };
     localStorage.setItem(LS_FILE_CONFIGS, JSON.stringify(configs));
@@ -886,40 +812,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     });
   }
 });
-// トピックス閾値UI 初期化＆バインド
-const ids = ['topicBaselineDays','topicLiftMin','topicAbsMin','topicConsecDays','topicMinDaily','topicMaxCards'];
-const applyTopicsForm = () => {
-  const num = id => Number(document.getElementById(id)?.value ?? topicsConfig[id] ?? 0);
-
-  topicsConfig = {
-    baselineDays: num('topicBaselineDays'),
-    liftMin:      num('topicLiftMin'),
-    absMin:       num('topicAbsMin'),
-    consecDays:   num('topicConsecDays'),
-    minDaily:     num('topicMinDaily'),
-    maxCards:     num('topicMaxCards'),
-  };
-  if (currentFileName) saveFileConfig(currentFileName);
-  renderTopics();
-};
-ids.forEach(id=>{
-  const el = document.getElementById(id);
-  if (el) {
-    // 保存済み値を反映
-    const map = {
-      topicBaselineDays: topicsConfig.baselineDays,
-      topicLiftMin:      topicsConfig.liftMin,
-      topicAbsMin:       topicsConfig.absMin,
-      topicConsecDays:   topicsConfig.consecDays,
-      topicMinDaily:     topicsConfig.minDaily,
-      topicMaxCards:     topicsConfig.maxCards,
-    };
-    el.value = map[id];
-    el.addEventListener('change', applyTopicsForm);
-    el.addEventListener('input',  debounce(applyTopicsForm, 200));
-  }
-});
-document.getElementById('btnTopicsApply')?.addEventListener('click', applyTopicsForm);
 
 /* ====== 解析＆レンダリング ====== */
 async function parseAndRender(text){
@@ -979,172 +871,9 @@ function normalizeHeaders(rows){
     const o={}; for(const k in r){ o[hmap[k]]=r[k]; } return o;
   });
 }
-function computeTopics() {
-  const rows = filteredRows();
-  if (!rows.length) return { items: [], lastKey: null, lastLabel: null };
-
-  // ★ 48h の MESSAGE 別件数をここで一括計算
-  const latest = rows[rows.length - 1].ts;
-  const start48 = new Date(latest.getTime() - 48 * 3600 * 1000);
-  const count48 = {};
-  rows.forEach(r => {
-    if (r.ts < start48 || r.ts > latest) return;
-    const m = r.message;
-    count48[m] = (count48[m] || 0) + 1;
-  });
-
-  const { periods, byMsg } = groupByPeriod('day');
-  if (!periods.length) return { items: [], lastKey: null, lastLabel: null };
-
-  const keys   = periods.map(p => p.key);
-  const labels = periods.map(p => p.label);
-  const lastIdx = keys.length - 1;
-  if (lastIdx < 0) return { items: [], lastKey: null, lastLabel: null };
-
-  const baselineDays = Math.max(1, topicsConfig.baselineDays | 0);
-  const consecNeed   = Math.max(3, topicsConfig.consecDays   | 0);
-  const minDaily     = Math.max(0, topicsConfig.minDaily     | 0);
-  const maxCards     = Math.max(1, topicsConfig.maxCards     | 0);
-  const minTotal     = Math.max(0, topicsConfig.minTotal     | 0);   // 合計件数しきい値
-
-  const items = [];
-
-  for (const [msg, obj] of byMsg.entries()) {
-    const yAll = keys.map(k => obj[k] || 0);
-    if (yAll.length < Math.max(baselineDays + 1, consecNeed)) continue;
-
-    const total = yAll.reduce((a, b) => a + b, 0);
-    if (total < minTotal) continue;  // ★ 合計件数が少なすぎる項目は除外
-
-    const last = yAll[lastIdx];
-    const recent48 = count48[msg] || 0;
-
-    // ★ 昨日も48hも「最小日件数」未満ならトピックから除外
-    if (last < minDaily && recent48 < minDaily) continue;
-
-    const baseStart = Math.max(0, lastIdx - baselineDays);
-    const baseSlice = yAll.slice(baseStart, lastIdx);
-    const baseMean  = baseSlice.length
-      ? baseSlice.reduce((a, b) => a + b, 0) / baseSlice.length
-      : 0;
-
-    const liftRaw = baseMean > 0 ? last / baseMean : 0;
-    const liftCap = topicsConfig.liftCap ?? 0;        // 0 なら無制限
-    const lift = liftCap > 0 ? Math.min(liftRaw, liftCap) : liftRaw;
-
-    // 急増（倍率 or 絶対値）
-    const surgeByLift = baseMean > 0 &&
-      last >= minDaily &&
-      liftRaw >= topicsConfig.liftMin;
-
-    const surgeByAbs  = last >= topicsConfig.absMin;
-    const isSurge     = surgeByLift || surgeByAbs;
-
-    // 連続増加
-    let isConsec = false;
-    if (yAll.length >= consecNeed) {
-      const tail = yAll.slice(-consecNeed);
-      isConsec = tail.every((v, i) => (i === 0 || v > tail[i - 1])) &&
-                 tail.every(v => v >= minDaily);
-    }
-
-    if (!(isSurge || isConsec)) continue;
-
-    // スコア計算（48h＋連続増加ボーナス）
-    const w48    = topicsConfig.weight48    ?? 0.5;
-    const bonusC = topicsConfig.bonusConsec ?? 10;
-
-    let score = 0;
-    if (isSurge)  score += last * lift;
-    if (isConsec) score += bonusC;
-    score += w48 * recent48;
-
-    const labelsView = labels.slice(-14);
-    const yView      = yAll.slice(-14);
-
-    items.push({
-      msg,
-      yAll, labelsAll: labels,
-      y: yView, labels: labelsView,
-      last, baseMean, lift,
-      surgeByLift, surgeByAbs, isConsec,
-      recent48, total,
-      score
-    });
-  }
-
-  items.sort((a, b) => b.score - a.score);
-  return {
-    items: items.slice(0, maxCards),
-    lastKey: keys[lastIdx],
-    lastLabel: labels[lastIdx]
-  };
-}
 
 
-function renderTopics() {
-  const panel = document.getElementById('panelTopics');
-  const cards = document.getElementById('topicsCards');
-  const hint  = document.getElementById('topicsHint');
-  if (!panel || !cards) return;
 
-  const { items, lastLabel } = computeTopics();
-  cards.innerHTML = '';
-
-  if (!items.length) {
-    panel.style.display = 'none';
-    return;
-  }
-  panel.style.display = 'block';
-  hint.textContent = lastLabel ? `対象日：${lastLabel}` : '';
-
-  // ★ グループ分け
-  const both      = items.filter(it => (it.surgeByLift || it.surgeByAbs) && it.isConsec);
-  const surgeOnly = items.filter(it => (it.surgeByLift || it.surgeByAbs) && !it.isConsec);
-  const consecOnly= items.filter(it => it.isConsec && !(it.surgeByLift || it.surgeByAbs));
-
-  const makeCard = (it) => {
-    const badges = [];
-    if (it.surgeByLift) badges.push(`📈 急増×倍率(${it.lift.toFixed(2)}x)`);
-    if (it.surgeByAbs)  badges.push(`🔢 急増×絶対(${it.last})`);
-    if (it.isConsec)    badges.push(`⤴️ ${topicsConfig.consecDays}日連続増加`);
-
-    const card = document.createElement('div');
-    card.className = 'card trend-up';
-    card.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div style="font-size:${fs(14)}px;color:var(--text-primary)">${it.msg}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${badges.map(b=>`<span class="tag">${b}</span>`).join('')}
-        </div>
-      </div>
-      <div class="hint" style="margin-top:4px">
-        昨日: ${it.last}件 ／ ベース平均(${topicsConfig.baselineDays}日): ${it.baseMean.toFixed(2)}件
-        ／ 48h: ${it.recent48}件 ／ 合計: ${it.total}件
-      </div>
-      <svg class="svg-s"></svg>
-    `;
-    card.addEventListener('click', () => openDetail(it.msg, 'day'));
-    const svg = card.querySelector('svg');
-    drawMiniLineWithAxes(svg, it.labels, it.y, { showValues:true });
-    return card;
-  };
-
-  const renderGroup = (title, arr) => {
-    if (!arr.length) return;
-    const h = document.createElement('div');
-    h.className = 'section-title';
-    h.style.margin = '6px 2px 4px';
-    h.textContent = title;
-    cards.appendChild(h);
-    arr.forEach(it => cards.appendChild(makeCard(it)));
-  };
-
-  // ★ 表示順：両方満たす → 急増 → 連続増加
-  renderGroup('📊 急増＋連続増加', both);
-  renderGroup('📈 急増トピック', surgeOnly);
-  renderGroup('⤴️ 連続増加トピック', consecOnly);
-}
 
 /* ====== 設定（マーク／無視） ====== */
 function loadSettings(){
@@ -2107,7 +1836,7 @@ function drawMiniLineWithAxes(svgEl, labels, y, opts={}){
 }
 
 /* ====== 全レンダー/イベント ====== */
-function renderAll(){ renderTopics(); render48h(); renderTrends(); renderMarked(); }
+function renderAll(){ render48h(); renderTrends(); renderMarked(); }
 $('granularity').addEventListener('change', ()=> renderTrends());
 
 /* 初期（設定UIだけ用意） */
@@ -2116,6 +1845,7 @@ renderChipSets(allMessages);
 /* ====== モーダル ====== */
 function line(){} // (空定義の混入防止対策ではなく、上の関数で定義済なので不要です)
 
+// ===== PDF出力機能（3ページ固定版・横向き） =====
 async function exportToPDF() {
   const btn = $('btnExportPDF');
   if (!btn || !currentFileName) return;
@@ -2160,10 +1890,10 @@ async function exportToPDF() {
       pdf.addImage(img, 'PNG', x, y, imgWidth, imgHeight);
     };
     
-    // ページ1: トピックス（急増・連続増加）
-    const topics = $('panelTopics');
-    if (topics && topics.style.display !== 'none') {
-      const canvas1 = await html2canvas(topics, {
+    // ページ1: 直近48時間の状況
+    const grid48 = document.querySelector('.grid.grid-2');
+    if (grid48) {
+      const canvas1 = await html2canvas(grid48, {
         scale: 2,
         useCORS: true,
         logging: false,
@@ -2172,19 +1902,7 @@ async function exportToPDF() {
       addImageWithAspectRatio(canvas1, true);
     }
     
-    // ページ2: 直近48時間の状況
-    const grid48 = document.querySelector('.grid.grid-2');
-    if (grid48) {
-      const canvas2 = await html2canvas(grid48, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
-      });
-      addImageWithAspectRatio(canvas2);
-    }
-    
-    // ページ3: マークした異常のモニタ（タイトル付き）
+    // ページ2: マークした異常のモニタ（タイトル付き）
     const markedGrid = $('markedGrid');
     if (markedGrid) {
       // タイトル要素を探す
@@ -2210,7 +1928,7 @@ async function exportToPDF() {
       // 一時的にDOMに追加
       document.body.appendChild(tempContainer);
       
-      const canvas3 = await html2canvas(tempContainer, {
+      const canvas2 = await html2canvas(tempContainer, {
         scale: 2,
         useCORS: true,
         logging: false,
@@ -2220,19 +1938,19 @@ async function exportToPDF() {
       // 一時コンテナを削除
       document.body.removeChild(tempContainer);
       
-      addImageWithAspectRatio(canvas3);
+      addImageWithAspectRatio(canvas2);
     }
     
-    // ページ4: 日/週/月トレンド TOP3（3つをまとめて）
+    // ページ3: 日/週/月トレンド TOP3（3つをまとめて）
     const trendsContainer = document.querySelector('#panelDay')?.parentElement;
     if (trendsContainer) {
-      const canvas4 = await html2canvas(trendsContainer, {
+      const canvas3 = await html2canvas(trendsContainer, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary') || '#ffffff'
       });
-      addImageWithAspectRatio(canvas4);
+      addImageWithAspectRatio(canvas3);
     }
     
     // PDFを保存
@@ -2255,7 +1973,6 @@ async function exportToPDF() {
 
 // ボタンイベント
 $('btnExportPDF')?.addEventListener('click', exportToPDF);
-
 </script>
 </body>
 </html>
