@@ -204,6 +204,29 @@ body.pdf-export .container {
   border-radius: 0;
   box-shadow: none;         /* 影をなくしてスッキリ */
 }
+/* ===== PDF出力時の粒度別トレンド専用レイアウト ===== */
+
+/* トレンドの3パネルを 1列レイアウトにして、変な折り返しを防ぐ */
+body.pdf-export #trendGrid {
+  grid-template-columns: 1fr !important;  /* 横並び → 縦1列 */
+  gap: 10px;
+}
+
+/* 各パネルがページの途中で分割されないようにする（ブラウザ→PDFでも効く） */
+body.pdf-export #trendGrid .panel {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+/* トレンドカードのタイトル部分は自然な折り返しだけにする */
+body.pdf-export #trendGrid .card {
+  /* 文字がギュッと潰れないように、少し余裕を持たせる */
+  padding: 10px 12px;
+}
+
+body.pdf-export #trendGrid .card div {
+  word-break: break-word;
+}
 
 /* PDF用は少しだけ文字を大きく（微調整） */
 body.pdf-export .header h1 {
@@ -320,7 +343,7 @@ body.pdf-export .kpi .v {
 
 <!-- 📈 粒度別トレンドTOP3 -->
 <div class="section-title" style="margin-top:14px">📈 粒度別トレンド解析 TOP3（上昇/改善）</div>
-<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(360px,1fr))">
+<div class="grid" id="trendGrid" style="grid-template-columns:repeat(auto-fit,minmax(360px,1fr))">
   <div class="panel" id="panelDay">
     <h3>日トレンド TOP3</h3>
     <div class="cards" id="cardsDay"></div>
@@ -1115,7 +1138,6 @@ function renderTrends(){
     const look = Math.min(cfg[gran].look, periods.length);
     const usePeriods = periods.slice(-look);
 
-    // ===== recs をここで作る（必ず定義）=====
     const recs = [];
     const r2Min = 0.20;
     const sumMin = 10;
@@ -1155,15 +1177,15 @@ function renderTrends(){
       const mean = sum / n || 0;
       const slopePct = slope / Math.max(1, mean);
 
-      // ===== ここから「過去／最近」の比率ロジック（日7:3 / 週3:1 / 月2:1） =====
+      // ── 過去／最近の平均（粒度別に比率）
       let base = [];
       let recent = [];
 
       if (gran === 'day') {
         // 直近10日 → 過去7日 / 最近3日
-        const total = Math.min(10, n);          // 実データが10日未満の時もケア
-        const start = n - total;                // 直近 total 日の先頭
-        const baseEnd = start + Math.min(7, total - 1); // 最低1日は最近側に残す
+        const total = Math.min(10, n);
+        const start = n - total;
+        const baseEnd = start + Math.min(7, total - 1);
         base   = y.slice(start, baseEnd);
         recent = y.slice(baseEnd, start + total);
       } else if (gran === 'week') {
@@ -1182,15 +1204,14 @@ function renderTrends(){
         recent = y.slice(baseEnd, start + total);
       }
 
-      // データが足りない場合はスキップ
       if (!base.length || !recent.length) continue;
 
-      const baseMean = base.reduce((a,b)=>a+b,0) / base.length;
+      const baseMean   = base.reduce((a,b)=>a+b,0) / base.length;
       const recentMean = recent.reduce((a,b)=>a+b,0) / recent.length;
-      const recentSum = recent.reduce((a,b)=>a+b,0);
+      const recentSum  = recent.reduce((a,b)=>a+b,0);
 
-      const lift = recentMean / Math.max(1, baseMean);
-      const liftDown = baseMean / Math.max(1, recentMean);
+      const lift      = recentMean / Math.max(1, baseMean);
+      const liftDown  = baseMean   / Math.max(1, recentMean);
       const stability = Math.min(1, sum / 30);
 
       let scoreUp = 0, scoreDn = 0;
@@ -1206,38 +1227,88 @@ function renderTrends(){
       if (scoreDn  < 0.01) scoreDn  = 0;
 
       recs.push({
-        msg, y,
+        msg,
+        y,
         labels: usePeriods.map(p=>p.label),
-        slope, r2, sum, mean, scoreUp, scoreDn,
-        baseMean, recentMean, lift, liftDown
+        slope,
+        r2,
+        sum,
+        mean,
+        scoreUp,
+        scoreDn,
+        baseMean,
+        recentMean,
+        lift,
+        liftDown
       });
     }
-    // ===== ここまで recs =====
 
     const up = recs.filter(r => r.scoreUp > 0).sort((a,b) => b.scoreUp - a.scoreUp).slice(0,3);
     const dn = recs.filter(r => r.scoreDn > 0).sort((a,b) => b.scoreDn - a.scoreDn).slice(0,3);
 
     const makeCard = (r, dir) => {
-      const msg = r.msg; // ← ここで必ずローカル化
-      const card = document.createElement('div');
-      card.className = dir === 'up' ? 'card trend-up' : 'card trend-down';
+      const msg = r.msg;
+
+      // ★ グラフは直近10期間だけに絞る
+      const maxPoints = 10;
+      const labels = r.labels.slice(-maxPoints);
+      const y      = r.y.slice(-maxPoints);
+
+      const lastValue = y[y.length - 1] ?? 0;
+      const diff      = r.recentMean - r.baseMean;
+      const diffSign  = diff >= 0 ? '+' : '';
+      const diffStr   = `${diffSign}${diff.toFixed(1)}件`;
+
+      const liftPct = r.baseMean > 0
+        ? (r.recentMean / r.baseMean - 1) * 100
+        : 0;
+      const liftLabel = r.baseMean > 0
+        ? `${liftPct >= 0 ? '+' : ''}${liftPct.toFixed(0)}%`
+        : '―';
+
+      const trendLabel = dir === 'up' ? '増加傾向' : '改善傾向';
+      const trendIcon  = dir === 'up' ? '📈' : '✅';
+      const trendColor = dir === 'up' ? '#b91c1c' : '#065f46';
 
       const lastMemoAt = (memos[msg] && memos[msg].length)
         ? memos[msg].map(x=>x.atISO).sort().slice(-1)[0].replace('T',' ')
         : null;
 
+      const card = document.createElement('div');
+      card.className = dir === 'up' ? 'card trend-up' : 'card trend-down';
+
       card.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:${fs(14)}px;color:var(--text-primary)">${msg}</div>
-          <div style="display:flex;gap:6px;align-items:center">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+          <div style="font-size:${fs(14)}px;font-weight:600;color:var(--text-primary);line-height:1.4;flex:1;">
+            ${msg}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:${fs(11)}px;">
+            <span class="tag" style="border-color:${trendColor};color:${trendColor};">
+              ${trendIcon} ${trendLabel}
+            </span>
             <span class="tag">48h: ${fmt(count48All[msg] || 0)}</span>
             ${ lastMemoAt ? `<span class="tag" title="最後の対応日時">🕒 ${lastMemoAt}</span>` : '' }
           </div>
         </div>
-        <svg class="svg-s"></svg>
+
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:${fs(11)}px;color:var(--text-tertiary);">
+          <div>最近平均: <strong style="color:var(--text-primary);">${r.recentMean.toFixed(1)}件</strong></div>
+          <div>過去平均: <strong style="color:var(--text-primary);">${r.baseMean.toFixed(1)}件</strong></div>
+          <div>${dir==='up'?'増加率':'削減率'}:
+            <strong style="color:${trendColor};">${liftLabel}</strong>
+          </div>
+          <div>直近値: <strong style="color:var(--text-primary);">${lastValue}件</strong></div>
+          <div>R²: <strong style="color:var(--text-primary);">${r.r2.toFixed(2)}</strong></div>
+        </div>
+
+        <svg class="svg-s" style="margin-top:6px;"></svg>
       `;
+
       card.addEventListener('click', () => openDetail(msg, $('granularity').value));
-      drawMiniLineWithAxes(card.querySelector('svg'), r.labels, r.y, { showValues:true });
+
+      const svg = card.querySelector('svg');
+      drawMiniLineWithAxes(svg, labels, y, { showValues:true });
+
       return card;
     };
 
@@ -1728,7 +1799,7 @@ function drawHBar(svgEl, pairs, opts = {}) {
 
 
 function drawMiniLineWithAxes(svgEl, labels, y, opts={}){
-  const w = svgEl.clientWidth || (opts.large?900:360), h = opts.large?300:150;
+  const w = svgEl.clientWidth || (opts.large?900:360), h = opts.large?300:180;
   const pad = opts.large 
     ? {l:54,r:48,t:20,b:88}
     : {l:44,r:36,t:16,b:52};
