@@ -1659,7 +1659,16 @@
         hideModal('addInspectionModal');
         document.getElementById('addInspectionForm').reset();
         document.getElementById('inspectionPhotoPreview').innerHTML = '';
-        displayLocationContent();
+        
+        // 案件詳細ページが表示されていれば更新
+        if (document.getElementById('caseDetailPage').classList.contains('active')) {
+          displayLocationContent();
+        }
+        
+        // ダッシュボードが表示されていれば更新
+        if (document.getElementById('dashboardPage').classList.contains('active')) {
+          loadDashboard();
+        }
       } catch (error) {
         alert('エラー: ' + error.message);
       }
@@ -1798,7 +1807,8 @@
             incompleteStepsList.push({
               caseId: caseId,
               caseName: caseName,
-              steps: incompleteSteps
+              steps: incompleteSteps,
+              allSteps: steps
             });
           }
           
@@ -1834,19 +1844,38 @@
           });
         });
         
-        // 未完了ステップ表示
+        // 未完了ステップ表示（チェックボックス付き）
         const stepsContainer = document.getElementById('incompleteSteps');
         if (incompleteStepsList.length === 0) {
           stepsContainer.innerHTML = '<div style="color: #27ae60; font-size: 0.9rem; padding: 1rem; text-align: center;">✓ すべてのステップが完了しています</div>';
         } else {
-          stepsContainer.innerHTML = incompleteStepsList.map(item => `
-            <div style="padding: 0.75rem; border-left: 3px solid #e74c3c; background: #fff5f5; margin-bottom: 0.5rem; border-radius: 4px; cursor: pointer;" onclick="openCase('${item.caseId}')">
-              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.3rem;">${item.caseName}</div>
-              <div style="font-size: 0.85rem; color: #666;">
-                未完了: ${item.steps.map(s => s.title).join(', ')}
+          stepsContainer.innerHTML = incompleteStepsList.map(item => {
+            const stepsHtml = item.steps.map((step, stepIndex) => {
+              // 全ステップの中での実際のインデックスを取得
+              const actualIndex = item.allSteps.findIndex(s => s.title === step.title && s.description === step.description);
+              return `
+                <div style="margin-bottom: 0.5rem; padding: 0.5rem; background: white; border-radius: 4px; display: flex; align-items: start; gap: 0.5rem;">
+                  <input type="checkbox" 
+                         onchange="toggleStepFromDashboard('${item.caseId}', ${actualIndex})"
+                         style="margin-top: 0.3rem; cursor: pointer; width: 18px; height: 18px; flex-shrink: 0;">
+                  <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 0.85rem;">${step.title}</div>
+                    ${step.description ? `<div style="font-size: 0.75rem; color: #666; margin-top: 0.2rem;">${step.description}</div>` : ''}
+                  </div>
+                </div>
+              `;
+            }).join('');
+            
+            return `
+              <div style="padding: 0.75rem; border-left: 3px solid #e74c3c; background: #fff5f5; margin-bottom: 0.75rem; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                  <div style="font-weight: 600; font-size: 0.9rem;">${item.caseName}</div>
+                  <button onclick="openCase('${item.caseId}')" class="btn btn-secondary btn-small" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">詳細 →</button>
+                </div>
+                ${stepsHtml}
               </div>
-            </div>
-          `).join('');
+            `;
+          }).join('');
         }
         
         // 未完了選別表示
@@ -1854,11 +1883,29 @@
         if (incompleteInspectionsList.length === 0) {
           inspectionsContainer.innerHTML = '<div style="color: #27ae60; font-size: 0.9rem; padding: 1rem; text-align: center;">✓ すべての選別が完了しています</div>';
         } else {
-          inspectionsContainer.innerHTML = incompleteInspectionsList.map(item => `
-            <div style="padding: 0.75rem; border-left: 3px solid #f39c12; background: #fffaf0; margin-bottom: 0.5rem; border-radius: 4px; cursor: pointer;" onclick="openCase('${item.caseId}')">
-              <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.3rem;">案件: ${item.caseName}</div>
-              <div style="font-size: 0.85rem; color: #666;">
-                場所: ${item.location}${item.contact ? ` (担当者: ${item.contact})` : ''}
+          inspectionsContainer.innerHTML = incompleteInspectionsList.map((item, idx) => `
+            <div style="padding: 0.75rem; border-left: 3px solid #f39c12; background: #fffaf0; margin-bottom: 0.5rem; border-radius: 4px;">
+              <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                <div style="flex: 1;">
+                  <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 0.3rem;">案件: ${item.caseName}</div>
+                  <div style="font-size: 0.85rem; color: #666;">
+                    場所: ${item.location}${item.contact ? ` (担当者: ${item.contact})` : ''}
+                  </div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                <label style="flex: 0 0 auto; display: flex; align-items: center; gap: 0.3rem; padding: 0.3rem 0.6rem; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">
+                  <input type="checkbox" 
+                         onchange="toggleLocationFromDashboard('${item.caseId}', '${item.location}')"
+                         style="width: 16px; height: 16px; margin: 0; cursor: pointer;">
+                  <span>完了</span>
+                </label>
+                <button onclick="openInspectionFromDashboard('${item.caseId}', '${item.location}')" 
+                        class="btn btn-primary btn-small" 
+                        style="flex: 1; min-width: 80px; font-size: 0.75rem; padding: 0.3rem 0.6rem;">+ 実績入力</button>
+                <button onclick="openCase('${item.caseId}')" 
+                        class="btn btn-secondary btn-small" 
+                        style="flex: 0 0 auto; font-size: 0.75rem; padding: 0.3rem 0.6rem;">詳細</button>
               </div>
             </div>
           `).join('');
@@ -1887,6 +1934,108 @@
         }
       } catch (error) {
         console.error('エラー:', error);
+      }
+    }
+
+    // ダッシュボードから在庫場所を完了
+    async function toggleLocationFromDashboard(caseId, locationName) {
+      try {
+        const doc = await db.collection('cases').doc(caseId).get();
+        if (!doc.exists) {
+          alert('案件が見つかりません');
+          return;
+        }
+        
+        const caseData = doc.data();
+        const locations = [...(caseData.inventoryLocations || [])];
+        const locationIndex = locations.findIndex(loc => loc.location === locationName);
+        
+        if (locationIndex === -1) {
+          alert('在庫場所が見つかりません');
+          return;
+        }
+        
+        // 在庫場所を完了にする
+        locations[locationIndex].completed = true;
+        
+        await db.collection('cases').doc(caseId).update({
+          inventoryLocations: locations,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        showAlert('選別を完了にしました');
+        
+        // ダッシュボードを再読み込み
+        loadDashboard();
+      } catch (error) {
+        alert('エラー: ' + error.message);
+      }
+    }
+
+    // ダッシュボードから実績入力を開く
+    async function openInspectionFromDashboard(caseId, locationName) {
+      try {
+        // 案件データを読み込み
+        const doc = await db.collection('cases').doc(caseId).get();
+        if (!doc.exists) {
+          alert('案件が見つかりません');
+          return;
+        }
+        
+        const caseData = doc.data();
+        currentCaseId = caseId;
+        currentCaseData = { id: caseId, ...caseData };
+        
+        // 在庫場所のインデックスを取得
+        const locations = caseData.inventoryLocations || [];
+        const locationIndex = locations.findIndex(loc => loc.location === locationName);
+        
+        if (locationIndex === -1) {
+          alert('在庫場所が見つかりません');
+          return;
+        }
+        
+        selectedLocationIndex = locationIndex;
+        
+        // 実績追加モーダルを開く
+        openAddInspection();
+        
+      } catch (error) {
+        alert('エラー: ' + error.message);
+      }
+    }
+
+    // ダッシュボードからステップを完了
+    async function toggleStepFromDashboard(caseId, stepIndex) {
+      try {
+        const doc = await db.collection('cases').doc(caseId).get();
+        if (!doc.exists) {
+          alert('案件が見つかりません');
+          return;
+        }
+        
+        const caseData = doc.data();
+        const steps = [...(caseData.steps || [])];
+        
+        if (!steps[stepIndex]) {
+          alert('ステップが見つかりません');
+          return;
+        }
+        
+        // ステップを完了にする
+        steps[stepIndex].completed = true;
+        
+        await db.collection('cases').doc(caseId).update({
+          steps: steps,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        showAlert('ステップを完了にしました');
+        
+        // ダッシュボードを再読み込み
+        loadDashboard();
+      } catch (error) {
+        alert('エラー: ' + error.message);
       }
     }
 
