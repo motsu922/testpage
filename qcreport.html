@@ -960,11 +960,6 @@
             <div id="serialNumbersList" style="display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.5rem;"></div>
           </div>
           <div class="form-group">
-            <label>写真（複数選択可）</label>
-            <input type="file" id="casePhotos" accept="image/*" multiple>
-            <div id="casePhotoPreview" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;"></div>
-          </div>
-          <div class="form-group">
             <label>
               <input type="checkbox" id="useStepTemplate" style="width: auto; margin-right: 0.5rem;">
               基本ステップテンプレートを使用
@@ -1217,6 +1212,23 @@
     </div>
   </div>
 
+  <!-- サムネイル選択モーダル -->
+  <div id="thumbnailSelectorModal" class="modal">
+    <div class="modal-content" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>📷 サムネイル選択</h3>
+        <button onclick="hideModal('thumbnailSelectorModal')" class="btn btn-secondary btn-small">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom: 1rem; color: #666; font-size: 0.9rem;">案件一覧に表示する写真を選択してください</p>
+        <div id="thumbnailSelectorGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" onclick="hideModal('thumbnailSelectorModal')" class="btn btn-primary">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 選別実績追加モーダル -->
   <div id="addInspectionModal" class="modal">
     <div class="modal-content">
@@ -1318,30 +1330,6 @@
       if (photoInput) {
         photoInput.addEventListener('change', (e) => {
           const preview = document.getElementById('inspectionPhotoPreview');
-          preview.innerHTML = '';
-          
-          Array.from(e.target.files).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const img = document.createElement('img');
-              img.src = e.target.result;
-              img.style.width = '80px';
-              img.style.height = '80px';
-              img.style.objectFit = 'cover';
-              img.style.borderRadius = '4px';
-              img.style.border = '2px solid #ddd';
-              preview.appendChild(img);
-            };
-            reader.readAsDataURL(file);
-          });
-        });
-      }
-
-      // 案件写真プレビュー
-      const casePhotoInput = document.getElementById('casePhotos');
-      if (casePhotoInput) {
-        casePhotoInput.addEventListener('change', (e) => {
-          const preview = document.getElementById('casePhotoPreview');
           preview.innerHTML = '';
           
           Array.from(e.target.files).forEach(file => {
@@ -1509,15 +1497,6 @@
       e.preventDefault();
       
       try {
-        // 写真アップロード
-        const photoFiles = document.getElementById('casePhotos').files;
-        let photoUrls = [];
-        
-        if (photoFiles.length > 0) {
-          showAlert('写真をアップロード中...');
-          photoUrls = await uploadPhotos(Array.from(photoFiles), `cases/${Date.now()}`);
-        }
-
         // ステップテンプレート適用
         let steps = [];
         if (document.getElementById('useStepTemplate').checked) {
@@ -1534,10 +1513,10 @@
           occurredDate: firebase.firestore.Timestamp.fromDate(new Date(document.getElementById('occurredDate').value)),
           description: document.getElementById('description').value,
           targetSerialNumbers: serialNumbers,
-          photos: photoUrls,
           steps: steps,
           status: 'inProgress',
           inventoryLocations: [],
+          whiteboardPhotos: [], // 連絡事項の写真用
           createdBy: currentUser.uid,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -1546,7 +1525,6 @@
         showAlert('案件を登録しました');
         hideModal('newCaseModal');
         document.getElementById('newCaseForm').reset();
-        document.getElementById('casePhotoPreview').innerHTML = '';
         serialNumbers = [];
         displaySerialNumbers();
         loadCases();
@@ -2271,15 +2249,42 @@
         } else {
           list.innerHTML = cases.map(c => {
             const ngRate = c.totalCount > 0 ? ((c.totalNG / c.totalCount) * 100).toFixed(2) : '0.00';
+            
+            // サムネイル表示用の写真を決定（連絡事項の写真を使用）
+            let thumbnailUrl = '';
+            const whiteboardPhotos = c.whiteboardPhotos || [];
+            if (whiteboardPhotos.length > 0) {
+              // thumbnailIndexが設定されていればそれを使用、なければ最初の写真
+              const thumbIndex = c.thumbnailIndex !== undefined ? c.thumbnailIndex : 0;
+              thumbnailUrl = whiteboardPhotos[thumbIndex] || whiteboardPhotos[0];
+            }
+            
             return `
-              <div style="padding: 0.5rem; border-bottom: 1px solid #eee; cursor: pointer;" onclick="openCase('${c.id}')">
-                <div class="flex-between">
-                  <strong style="font-size: 0.9rem;">${c.caseName}</strong>
-                  <span style="font-size: 0.85rem;">
+              <div style="padding: 0.75rem; border-bottom: 1px solid #eee; cursor: pointer; display: flex; gap: 0.75rem; align-items: center;" onclick="openCase('${c.id}')">
+                ${thumbnailUrl ? `
+                  <div style="flex: 0 0 80px; position: relative;">
+                    <img src="${thumbnailUrl}" 
+                         style="width: 80px; height: 80px; object-fit: cover; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;"
+                         alt="案件サムネイル"
+                         data-case-id="${c.id}"
+                         data-photo-index="${whiteboardPhotos.findIndex(p => p === thumbnailUrl)}"
+                         onclick="event.stopPropagation(); showThumbnailSelectorForCase('${c.id}')">
+                    ${whiteboardPhotos.length > 1 ? `
+                      <div style="position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.7); color: white; font-size: 0.7rem; padding: 2px 6px; border-radius: 10px;">
+                        ${(c.thumbnailIndex !== undefined ? c.thumbnailIndex : 0) + 1}/${whiteboardPhotos.length}
+                      </div>
+                    ` : ''}
+                  </div>
+                ` : ''}
+                <div style="flex: 1; min-width: 0;">
+                  <div class="flex-between" style="margin-bottom: 0.3rem;">
+                    <strong style="font-size: 0.95rem;">${c.caseName}</strong>
+                  </div>
+                  <div style="font-size: 0.8rem; color: #666;">
                     選別: ${c.totalCount.toLocaleString()} | 
                     NG: ${c.totalNG.toLocaleString()} | 
                     率: <strong style="color: ${parseFloat(ngRate) > 1 ? '#e74c3c' : '#27ae60'};">${ngRate}%</strong>
-                  </span>
+                  </div>
                 </div>
               </div>
             `;
@@ -2287,6 +2292,30 @@
         }
       } catch (error) {
         console.error('エラー:', error);
+      }
+    }
+
+    // 案件IDから写真データを取得してサムネイル選択モーダルを表示
+    async function showThumbnailSelectorForCase(caseId) {
+      try {
+        const doc = await db.collection('cases').doc(caseId).get();
+        if (!doc.exists) {
+          alert('案件が見つかりません');
+          return;
+        }
+        
+        const caseData = doc.data();
+        // 連絡事項の写真を使用
+        const photos = caseData.whiteboardPhotos || [];
+        
+        if (photos.length === 0) {
+          alert('連絡事項に写真が登録されていません');
+          return;
+        }
+        
+        showThumbnailSelector(caseId, photos);
+      } catch (error) {
+        alert('エラー: ' + error.message);
       }
     }
 
@@ -2317,6 +2346,59 @@
         });
         
         showAlert('選別を完了にしました');
+        
+        // ダッシュボードを再読み込み
+        loadDashboard();
+      } catch (error) {
+        alert('エラー: ' + error.message);
+      }
+    }
+
+    // サムネイル選択モーダルを表示
+    let currentThumbnailCaseId = null;
+    let currentThumbnailPhotos = [];
+
+    function showThumbnailSelector(caseId, photos) {
+      console.log('showThumbnailSelector called:', { caseId, photoCount: photos.length });
+      
+      currentThumbnailCaseId = caseId;
+      currentThumbnailPhotos = photos;
+      
+      const grid = document.getElementById('thumbnailSelectorGrid');
+      
+      // デバッグ: 各URLを確認
+      photos.forEach((photo, index) => {
+        console.log(`Photo ${index + 1}:`, photo);
+      });
+      
+      grid.innerHTML = photos.map((photo, index) => `
+        <div style="position: relative; cursor: pointer; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s;"
+             onmouseover="this.style.transform='scale(1.05)'"
+             onmouseout="this.style.transform='scale(1)'"
+             onclick="selectThumbnail(${index})">
+          <img src="${photo}" 
+               style="width: 100%; height: 150px; object-fit: cover; display: block;"
+               alt="写真 ${index + 1}"
+               onerror="console.error('画像読み込みエラー:', this.src);">
+          <div style="position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(transparent, rgba(0,0,0,0.7)); color: white; padding: 0.5rem; text-align: center; font-size: 0.85rem;">
+            写真 ${index + 1}
+          </div>
+        </div>
+      `).join('');
+      
+      showModal('thumbnailSelectorModal');
+    }
+
+    // サムネイルを選択
+    async function selectThumbnail(index) {
+      try {
+        await db.collection('cases').doc(currentThumbnailCaseId).update({
+          thumbnailIndex: index,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        showAlert(`写真 ${index + 1} をサムネイルに設定しました`);
+        hideModal('thumbnailSelectorModal');
         
         // ダッシュボードを再読み込み
         loadDashboard();
