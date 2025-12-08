@@ -774,6 +774,7 @@
         <nav>
           <button onclick="showPage('dashboardPage')" class="active">ダッシュボード</button>
           <button onclick="showPage('casesPage')">過去の案件</button>
+          <button onclick="showModal('personMasterModal')">👤 担当者</button>
           <button onclick="logout()">ログアウト</button>
         </nav>
       </div>
@@ -844,9 +845,10 @@
               <div class="flex-between mb-1">
                 <h3 style="font-size: 1.1rem;">案件情報</h3>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                  <button onclick="openEmailModal()" class="btn btn-primary btn-small" style="background: #e67e22;">📧 メール</button>
                   <button onclick="showModal('addLocationModal')" class="btn btn-primary btn-small">+ 在庫場所</button>
                   <button onclick="toggleCaseStatus()" id="caseStatusBtn" class="btn btn-small">完了にする</button>
-                  <button onclick="showModal('editCaseModal')" class="btn btn-secondary btn-small">編集</button>
+                  <button onclick="openEditCaseModal()" class="btn btn-secondary btn-small">編集</button>
                 </div>
               </div>
               <div id="caseInfo"></div>
@@ -879,10 +881,21 @@
             </div>
           </div>
 
-          <!-- 右: ステップ進捗 -->
-          <div class="card">
-            <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">対応状況</h3>
-            <div id="stepsProgress"></div>
+          <!-- 右: ステップ進捗と対応状況 -->
+          <div>
+            <div class="card mb-1">
+              <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">進捗状況</h3>
+              <div id="stepsProgress"></div>
+            </div>
+            
+            <!-- 対応状況カード -->
+            <div class="card">
+              <div class="flex-between mb-1">
+                <h3 style="font-size: 1.1rem;">誰が何を対応中？</h3>
+                <button onclick="showModal('addAssignmentModal')" class="btn btn-primary btn-small">+ 対応追加</button>
+              </div>
+              <div id="assignmentsList"></div>
+            </div>
           </div>
         </div>
 
@@ -997,6 +1010,44 @@
     </div>
   </div>
 
+  <!-- 案件編集モーダル -->
+  <div id="editCaseModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>案件情報編集</h3>
+        <button onclick="hideModal('editCaseModal')" class="btn btn-secondary btn-small">✕</button>
+      </div>
+      <form id="editCaseForm">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>案件名 *</label>
+            <input type="text" id="editCaseName" required>
+          </div>
+          <div class="form-group">
+            <label>得意先名 *</label>
+            <input type="text" id="editCustomerName" required>
+          </div>
+          <div class="form-group">
+            <label>発生日</label>
+            <input type="date" id="editOccurredDate">
+          </div>
+          <div class="form-group">
+            <label>不具合内容</label>
+            <textarea id="editDescription" rows="3"></textarea>
+          </div>
+          <div class="form-group">
+            <label>対象整理No（カンマ区切り）</label>
+            <input type="text" id="editTargetSerialNumbers" placeholder="例: A-001, A-002, A-003">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" onclick="hideModal('editCaseModal')" class="btn btn-secondary">キャンセル</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- 在庫場所追加モーダル -->
   <div id="addLocationModal" class="modal">
     <div class="modal-content">
@@ -1063,6 +1114,106 @@
           <button type="submit" class="btn btn-primary">保存</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- メール送信モーダル -->
+  <div id="emailModal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h3>📧 不具合発生メール送信</h3>
+        <button onclick="hideModal('emailModal')" class="btn btn-secondary btn-small">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>件名</label>
+          <input type="text" id="emailSubject" readonly style="background: #f5f5f5;">
+        </div>
+        <div class="form-group">
+          <label>本文プレビュー</label>
+          <textarea id="emailBody" rows="20" readonly style="background: #f5f5f5; font-family: monospace; font-size: 0.85rem;"></textarea>
+        </div>
+        <div style="padding: 0.75rem; background: #fff3cd; border-radius: 4px; margin-top: 1rem;">
+          <strong>📌 使い方:</strong><br>
+          1. 下の「メールアプリで開く」をクリック<br>
+          2. メールアプリが起動します<br>
+          3. 宛先を追加して送信してください
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" onclick="hideModal('emailModal')" class="btn btn-secondary">閉じる</button>
+        <button type="button" onclick="sendEmail()" class="btn btn-primary" style="background: #e67e22;">📧 メールアプリで開く</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 対応追加モーダル -->
+  <div id="addAssignmentModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>対応追加</h3>
+        <button onclick="hideModal('addAssignmentModal')" class="btn btn-secondary btn-small">✕</button>
+      </div>
+      <form id="addAssignmentForm">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>担当者 *</label>
+            <select id="assignmentPerson" required>
+              <option value="">選択してください</option>
+            </select>
+            <button type="button" onclick="showModal('personMasterModal')" class="btn btn-secondary btn-small" style="margin-top: 0.5rem;">👤 担当者マスター管理</button>
+          </div>
+          <div class="form-group">
+            <label>対応内容 *</label>
+            <select id="assignmentTask" required>
+              <option value="">選択してください</option>
+              <option value="客先対応">客先対応</option>
+              <option value="社内選別">社内選別</option>
+              <option value="社外選別">社外選別</option>
+              <option value="選別業者手配">選別業者手配</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>備考</label>
+            <textarea id="assignmentNote" rows="2" placeholder="例: 〇〇まで完了予定"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" onclick="hideModal('addAssignmentModal')" class="btn btn-secondary">キャンセル</button>
+          <button type="submit" class="btn btn-primary">追加</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 担当者マスター管理モーダル -->
+  <div id="personMasterModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>👤 担当者マスター管理</h3>
+        <button onclick="hideModal('personMasterModal')" class="btn btn-secondary btn-small">✕</button>
+      </div>
+      <div class="modal-body">
+        <!-- 担当者追加 -->
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f5f5f5; border-radius: 6px;">
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">新規担当者追加</h4>
+          <form id="addPersonForm" style="display: flex; gap: 0.5rem; align-items: end;">
+            <div style="flex: 1;">
+              <input type="text" id="newPersonName" placeholder="担当者名" required style="width: 100%;">
+            </div>
+            <button type="submit" class="btn btn-primary btn-small">追加</button>
+          </form>
+        </div>
+        
+        <!-- 担当者一覧 -->
+        <div>
+          <h4 style="font-size: 0.95rem; margin-bottom: 0.75rem;">登録済み担当者</h4>
+          <div id="personMasterList"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" onclick="hideModal('personMasterModal')" class="btn btn-primary">閉じる</button>
+      </div>
     </div>
   </div>
 
@@ -1157,6 +1308,8 @@
     let serialNumbers = [];
     let selectedLocationIndex = 0;
     let stepTemplate = [];
+    let personMaster = []; // 担当者マスター
+
 
     // 写真プレビュー
     document.addEventListener('DOMContentLoaded', () => {
@@ -1232,6 +1385,7 @@
         currentUser = user;
         document.getElementById('loginPage').classList.remove('active');
         document.getElementById('mainApp').classList.add('active');
+        loadPersonMaster(); // 担当者マスターを読み込み
         loadDashboard(); // ダッシュボードを最初に読み込み
       } else {
         currentUser = null;
@@ -1293,11 +1447,19 @@
 
     // モーダル表示/非表示
     function showModal(modalId) {
-      document.getElementById(modalId).classList.add('active');
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.add('active');
+      } else {
+        console.error('Modal not found:', modalId);
+      }
     }
 
     function hideModal(modalId) {
-      document.getElementById(modalId).classList.remove('active');
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.remove('active');
+      }
     }
 
     // アラート表示
@@ -1552,6 +1714,9 @@
       
       // ステップをロード
       loadSteps();
+      
+      // 対応状況を表示
+      displayAssignments();
     }
 
     // 在庫場所タブ表示
@@ -1812,6 +1977,77 @@
         alert('エラー: ' + error.message);
       }
     }
+
+    // 案件編集モーダルを開く
+    function openEditCaseModal() {
+      if (!currentCaseData) {
+        alert('案件データが読み込まれていません');
+        return;
+      }
+
+      document.getElementById('editCaseName').value = currentCaseData.caseName || '';
+      document.getElementById('editCustomerName').value = currentCaseData.customerName || '';
+      
+      // 発生日
+      if (currentCaseData.occurredDate && currentCaseData.occurredDate.seconds) {
+        const date = new Date(currentCaseData.occurredDate.seconds * 1000);
+        document.getElementById('editOccurredDate').value = date.toISOString().split('T')[0];
+      } else {
+        document.getElementById('editOccurredDate').value = '';
+      }
+      
+      document.getElementById('editDescription').value = currentCaseData.description || '';
+      document.getElementById('editTargetSerialNumbers').value = (currentCaseData.targetSerialNumbers || []).join(', ');
+      
+      showModal('editCaseModal');
+    }
+
+    // 案件編集フォーム送信
+    document.getElementById('editCaseForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      if (!currentCaseId) {
+        alert('案件IDが見つかりません');
+        return;
+      }
+
+      const caseName = document.getElementById('editCaseName').value;
+      const customerName = document.getElementById('editCustomerName').value;
+      const occurredDateStr = document.getElementById('editOccurredDate').value;
+      const description = document.getElementById('editDescription').value;
+      const serialNumbers = document.getElementById('editTargetSerialNumbers').value
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s);
+
+      try {
+        const updateData = {
+          caseName: caseName,
+          customerName: customerName,
+          description: description,
+          targetSerialNumbers: serialNumbers,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (occurredDateStr) {
+          updateData.occurredDate = firebase.firestore.Timestamp.fromDate(new Date(occurredDateStr));
+        }
+
+        await db.collection('cases').doc(currentCaseId).update(updateData);
+
+        // currentCaseDataを更新
+        currentCaseData = {
+          ...currentCaseData,
+          ...updateData
+        };
+
+        showAlert('案件情報を更新しました');
+        hideModal('editCaseModal');
+        displayCaseDetail();
+      } catch (error) {
+        alert('エラー: ' + error.message);
+      }
+    });
 
     // 案件の完了/未完了切り替え
     async function toggleCaseStatus() {
@@ -2084,6 +2320,321 @@
         
         // ダッシュボードを再読み込み
         loadDashboard();
+      } catch (error) {
+        alert('エラー: ' + error.message);
+      }
+    }
+
+    // メール送信モーダルを開く
+    function openEmailModal() {
+      if (!currentCaseData) {
+        alert('案件データが読み込まれていません');
+        return;
+      }
+      
+      // 選別実績を集計
+      const locations = currentCaseData.inventoryLocations || [];
+      let totalCount = 0;
+      let totalNG = 0;
+      let locationSummary = [];
+      
+      locations.forEach(loc => {
+        let locCount = 0;
+        let locNG = 0;
+        (loc.inspectionResults || []).forEach(r => {
+          locCount += r.count || 0;
+          locNG += r.ngCount || 0;
+        });
+        if (locCount > 0) {
+          totalCount += locCount;
+          totalNG += locNG;
+          const ngRate = locCount > 0 ? ((locNG / locCount) * 100).toFixed(2) : '0.00';
+          locationSummary.push(`  ${loc.location}: 選別${locCount}個、NG${locNG}個（NG率${ngRate}%）`);
+        }
+      });
+      
+      const totalNgRate = totalCount > 0 ? ((totalNG / totalCount) * 100).toFixed(2) : '0.00';
+      
+      // 件名
+      const subject = `【客先不具合発生】${currentCaseData.caseName} - ${currentCaseData.customerName}`;
+      
+      // 本文
+      const body = `関係者各位
+
+お疲れ様です。
+客先不具合が発生しましたので、ご連絡いたします。
+
+■ 不具合概要
+案件名: ${currentCaseData.caseName}
+得意先: ${currentCaseData.customerName}
+発生日: ${currentCaseData.occurredDate ? new Date(currentCaseData.occurredDate.seconds * 1000).toLocaleDateString('ja-JP') : ''}
+${currentCaseData.description ? `内容: ${currentCaseData.description}` : ''}
+
+■ 対象整理No
+${(currentCaseData.targetSerialNumbers || []).join(', ') || 'なし'}
+
+■ 現時点での選別実績（${new Date().toLocaleDateString('ja-JP')} ${new Date().toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'})}時点）
+総選別数: ${totalCount.toLocaleString()}個
+総NG数: ${totalNG.toLocaleString()}個
+NG率: ${totalNgRate}%
+
+${locationSummary.length > 0 ? '【在庫場所別】\n' + locationSummary.join('\n') : '※まだ選別実績がありません'}
+
+■ 対応依頼
+つきましては、下記について対応をお願いいたします。
+
+1. 原因調査
+2. 暫定対策の検討・実施
+
+進捗がありましたら、共有をお願いいたします。
+
+よろしくお願いいたします。
+
+---
+このメールは客先不具合管理システムより送信されています。`;
+      
+      const subjectField = document.getElementById('emailSubject');
+      const bodyField = document.getElementById('emailBody');
+      
+      if (subjectField && bodyField) {
+        subjectField.value = subject;
+        bodyField.value = body;
+        showModal('emailModal');
+      } else {
+        console.error('Email fields not found');
+        alert('メールフォームの初期化に失敗しました');
+      }
+    }
+
+    // メール送信
+    function sendEmail() {
+      const subject = document.getElementById('emailSubject').value;
+      const body = document.getElementById('emailBody').value;
+      
+      // mailto: リンクを生成
+      const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      
+      // メールアプリを開く
+      window.location.href = mailtoLink;
+      
+      showAlert('メールアプリを起動しました');
+    }
+
+    // ========================================
+    // 担当者マスターと対応状況管理
+    // ========================================
+
+    // 担当者マスターを読み込み（Firestore版 - ルール設定後に使用）
+    async function loadPersonMaster() {
+      try {
+        const doc = await db.collection('settings').doc('personMaster').get();
+        if (doc.exists) {
+          personMaster = doc.data().persons || [];
+        } else {
+          personMaster = [];
+        }
+        updatePersonSelects();
+        displayPersonMasterList();
+      } catch (error) {
+        console.error('担当者マスター読み込みエラー:', error);
+        // エラー時はローカルストレージから読み込み
+        const stored = localStorage.getItem('personMaster');
+        if (stored) {
+          personMaster = JSON.parse(stored);
+          updatePersonSelects();
+          displayPersonMasterList();
+        }
+      }
+    }
+
+    // 担当者選択肢を更新
+    function updatePersonSelects() {
+      const select = document.getElementById('assignmentPerson');
+      if (!select) return;
+      
+      const currentValue = select.value;
+      select.innerHTML = '<option value="">選択してください</option>';
+      
+      personMaster.forEach(person => {
+        const option = document.createElement('option');
+        option.value = person;
+        option.textContent = person;
+        select.appendChild(option);
+      });
+      
+      if (currentValue) {
+        select.value = currentValue;
+      }
+    }
+
+    // 担当者マスター一覧を表示
+    function displayPersonMasterList() {
+      const list = document.getElementById('personMasterList');
+      if (!list) return;
+      
+      if (personMaster.length === 0) {
+        list.innerHTML = '<div style="color: #999; padding: 1rem; text-align: center;">担当者が登録されていません</div>';
+        return;
+      }
+      
+      list.innerHTML = personMaster.map((person, index) => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; border-bottom: 1px solid #eee;">
+          <span style="font-size: 0.9rem;">${person}</span>
+          <button onclick="deletePerson(${index})" class="btn btn-secondary btn-small" style="background: #e74c3c;">削除</button>
+        </div>
+      `).join('');
+    }
+
+    // 担当者追加フォーム
+    document.getElementById('addPersonForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const personName = document.getElementById('newPersonName').value.trim();
+      if (!personName) return;
+      
+      if (personMaster.includes(personName)) {
+        alert('既に登録されている担当者です');
+        return;
+      }
+      
+      personMaster.push(personName);
+      
+      try {
+        await db.collection('settings').doc('personMaster').set({
+          persons: personMaster,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // ローカルストレージにもバックアップ
+        localStorage.setItem('personMaster', JSON.stringify(personMaster));
+        
+        document.getElementById('newPersonName').value = '';
+        displayPersonMasterList();
+        updatePersonSelects();
+        showAlert('担当者を追加しました');
+      } catch (error) {
+        alert('エラー: ' + error.message + '\nFirestoreのルール設定を確認してください');
+      }
+    });
+
+    // 担当者削除
+    async function deletePerson(index) {
+      if (!confirm('この担当者を削除しますか？')) return;
+      
+      personMaster.splice(index, 1);
+      
+      try {
+        await db.collection('settings').doc('personMaster').set({
+          persons: personMaster,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // ローカルストレージにもバックアップ
+        localStorage.setItem('personMaster', JSON.stringify(personMaster));
+        
+        displayPersonMasterList();
+        updatePersonSelects();
+        showAlert('担当者を削除しました');
+      } catch (error) {
+        alert('エラー: ' + error.message + '\nFirestoreのルール設定を確認してください');
+      }
+    }
+
+    // 対応状況を表示
+    function displayAssignments() {
+      const container = document.getElementById('assignmentsList');
+      if (!container) return;
+      
+      const assignments = currentCaseData.assignments || [];
+      
+      if (assignments.length === 0) {
+        container.innerHTML = '<div style="color: #999; padding: 1rem; text-align: center; font-size: 0.85rem;">対応中のタスクはありません</div>';
+        return;
+      }
+      
+      // タスク種別ごとの色設定
+      const taskColors = {
+        '客先対応': '#e74c3c',
+        '社内選別': '#3498db',
+        '社外選別': '#9b59b6',
+        '選別業者手配': '#f39c12'
+      };
+      
+      container.innerHTML = assignments.map((assignment, index) => {
+        const color = taskColors[assignment.task] || '#95a5a6';
+        return `
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; margin-bottom: 0.5rem; background: ${color}15; border-left: 3px solid ${color}; border-radius: 4px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.3rem; flex-wrap: wrap;">
+                <span style="font-weight: 700; font-size: 1.1rem; color: #2c3e50;">👤 ${assignment.person}</span>
+                <span style="font-weight: 600; font-size: 0.85rem; color: ${color}; background: ${color}25; padding: 0.2rem 0.6rem; border-radius: 12px;">● ${assignment.task}</span>
+              </div>
+              ${assignment.note ? `<div style="font-size: 0.8rem; color: #666; margin-left: 1.5rem;">${assignment.note}</div>` : ''}
+            </div>
+            <button onclick="deleteAssignment(${index})" class="btn btn-secondary btn-small" style="background: #e74c3c; font-size: 0.75rem; padding: 0.3rem 0.5rem;">削除</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 対応追加フォーム
+    document.getElementById('addAssignmentForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const person = document.getElementById('assignmentPerson').value;
+      const task = document.getElementById('assignmentTask').value;
+      const note = document.getElementById('assignmentNote').value.trim();
+      
+      if (!person || !task) {
+        alert('担当者と対応内容を選択してください');
+        return;
+      }
+      
+      const newAssignment = {
+        person: person,
+        task: task,
+        note: note,
+        createdAt: firebase.firestore.Timestamp.now(),
+        createdBy: currentUser.email
+      };
+      
+      const assignments = [...(currentCaseData.assignments || [])];
+      assignments.push(newAssignment);
+      
+      try {
+        await db.collection('cases').doc(currentCaseId).update({
+          assignments: assignments,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        currentCaseData.assignments = assignments;
+        
+        showAlert('対応を追加しました');
+        hideModal('addAssignmentModal');
+        document.getElementById('addAssignmentForm').reset();
+        displayAssignments();
+      } catch (error) {
+        alert('エラー: ' + error.message);
+      }
+    });
+
+    // 対応削除
+    async function deleteAssignment(index) {
+      if (!confirm('この対応を削除しますか？')) return;
+      
+      const assignments = [...(currentCaseData.assignments || [])];
+      assignments.splice(index, 1);
+      
+      try {
+        await db.collection('cases').doc(currentCaseId).update({
+          assignments: assignments,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        currentCaseData.assignments = assignments;
+        
+        showAlert('対応を削除しました');
+        displayAssignments();
       } catch (error) {
         alert('エラー: ' + error.message);
       }
