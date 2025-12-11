@@ -1041,6 +1041,55 @@ let editTechPhotos = [];
     renderTechTargetSelect();
     updateSerialNoList();
   }
+ // ★★★ 全データ取得関数（フィルター検索用）★★★
+let allDataCache = null;
+let isFilterMode = false;
+
+async function fetchAllData(){
+  // キャッシュがあればそれを返す
+  if (allDataCache !== null) {
+    return allDataCache;
+  }
+  
+  console.log('Fetching all data from Firestore...');
+  const results = [];
+  let lastDoc = null;
+  const BATCH_SIZE = 500;
+  
+  while(true){
+    let q;
+    if (lastDoc) {
+      q = query(
+        collection(db, 'anomalies'),
+        orderBy('createdAt', 'desc'),
+        startAfter(lastDoc),
+        limit(BATCH_SIZE)
+      );
+    } else {
+      q = query(
+        collection(db, 'anomalies'),
+        orderBy('createdAt', 'desc'),
+        limit(BATCH_SIZE)
+      );
+    }
+    
+    const snap = await getDocs(q);
+    if (snap.empty) break;
+    
+    snap.docs.forEach(d => results.push({_id: d.id, ...d.data()}));
+    
+    if (snap.docs.length < BATCH_SIZE) break;
+    lastDoc = snap.docs[snap.docs.length - 1];
+  }
+  
+  console.log(`Fetched ${results.length} total records`);
+  allDataCache = results;
+  return results;
+}
+
+function clearAllDataCache(){
+  allDataCache = null;
+}
   function normalizeSerial(s){
   if (!s) return '';
   // 全角英数→半角
@@ -1310,66 +1359,56 @@ document.addEventListener('click', (e)=>{
     return `${y}-${m}-${day}`;
   }
 
- async function applyFilter() {
+// ★★★ 修正版：全データから検索するフィルター関数 ★★★
+async function applyFilter() {
   const filterDept = document.getElementById('filterDepartment').value;
   const filterSerial = document.getElementById('filterSerialNo').value.trim().toLowerCase();
   const filterLine = document.getElementById('filterLine').value;
   const filterDateFrom = document.getElementById('filterDateFrom').value;
   const filterDateTo = document.getElementById('filterDateTo').value;
-
-  // フィルター条件をFirestoreクエリで構築
-  let q = collection(db, 'anomalies');
-  const conditions = [];
   
-  if (filterDept) {
-    q = query(q, where('department', '==', filterDept));
+  // フィルター条件がない場合は通常表示に戻す
+  if (!filterDept && !filterSerial && !filterLine && !filterDateFrom && !filterDateTo) {
+    isFilterMode = false;
+    filteredCache = [...anomalyCache];
+    document.getElementById('filterResultCount').style.display = 'none';
+    renderHistory();
+    return;
   }
-  if (filterLine) {
-    q = query(q, where('lineName', '==', filterLine));
-  }
-  
-  // 日付範囲フィルター
-  if (filterDateFrom) {
-    q = query(q, where('occurrenceDate', '>=', filterDateFrom));
-  }
-  if (filterDateTo) {
-    q = query(q, where('occurrenceDate', '<=', filterDateTo));
-  }
-  
-  // orderByを追加（日付順）
-  q = query(q, orderBy('occurrenceDate', 'desc'), limit(PAGE_SIZE));
   
   try {
-    const snapshot = await getDocs(q);
-    let results = snapshot.docs.map(d => ({_id: d.id, ...d.data()}));
+    // ★ここがポイント：全データを取得★
+    const allData = await fetchAllData();
     
-    // 整理No検索はクライアント側で（部分一致のため）
-    if (filterSerial) {
-      results = results.filter(item => 
-        (item.serialNo || '').toLowerCase().includes(filterSerial)
-      );
-    }
+    // クライアント側でフィルタリング
+    let results = allData.filter(item => {
+      if (filterDept && item.department !== filterDept) return false;
+      if (filterSerial && !(item.serialNo || '').toLowerCase().includes(filterSerial)) return false;
+      if (filterLine && item.lineName !== filterLine) return false;
+      
+      const itemDate = item.occurrenceDate || '';
+      if (filterDateFrom && itemDate < filterDateFrom) return false;
+      if (filterDateTo && itemDate > filterDateTo) return false;
+      
+      return true;
+    });
+    
+    // 日付順にソート
+    results.sort((a, b) => (b.occurrenceDate || '').localeCompare(a.occurrenceDate || ''));
     
     filteredCache = results;
-    lastVisibleDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
-    hasMoreData = snapshot.docs.length === PAGE_SIZE;
+    isFilterMode = true;
     filterShownCount = FILTER_PAGE_SIZE;
+    
     const resultCount = document.getElementById('filterResultCount');
-    resultCount.innerHTML = '<strong>' + filteredCache.length + '</strong> 件の履歴が見つかりました' + 
-      (hasMoreData ? '（さらに読み込み可能）' : '');
+    resultCount.innerHTML = `<strong>${filteredCache.length}</strong> 件の履歴が見つかりました（全${allData.length}件中）`;
     resultCount.style.display = 'block';
     
     renderHistory();
+    
   } catch (error) {
     console.error('フィルター検索エラー:', error);
-    
-    // Firestoreインデックスエラーの場合はクライアント側で全データ検索
-    if (error.code === 'failed-precondition' || error.code === 9) {
-
-      await applyFilterClientSide();
-    } else {
-      alert('検索エラー: ' + error.message);
-    }
+    alert('検索エラー: ' + error.message);
   }
 }
 
@@ -1418,9 +1457,10 @@ async function clearFilter() {
   document.getElementById('btnFilterYesterday').classList.remove('active');
   document.getElementById('btnFilterToday').classList.remove('active');
   
-  // フィルターをクリアして通常の25件表示に戻す
-  resetPaging();
-  await loadInitialData();
+  // ★フィルターモードを解除★
+  isFilterMode = false;
+  filteredCache = [...anomalyCache];
+  renderHistory();
 }
 document.getElementById('btnApplyFilter').addEventListener('click', async () => {
   await applyFilter();
