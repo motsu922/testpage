@@ -1,0 +1,3967 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>納入不具合 対策進捗管理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #f8fafc; --bg-secondary: #f1f5f9; --bg-card: #ffffff; --bg-card-hover: #f8fafc;
+            --border-color: #e2e8f0; --text-primary: #1e293b; --text-secondary: #374151; --text-muted: #4b5563;
+            --status-orange: #ea580c; --status-yellow: #ca8a04; --status-green: #16a34a; --status-blue: #2563eb; --status-cyan: #0891b2;
+            --status-orange-bg: #fff7ed; --status-yellow-bg: #fefce8; --status-green-bg: #f0fdf4; --status-blue-bg: #eff6ff; --status-cyan-bg: #ecfeff;
+            --danger: #dc2626; --danger-bg: #fef2f2; --warning: #d97706; --warning-bg: #fffbeb; --success: #059669; --success-bg: #ecfdf5;
+            --accent: #6366f1; --accent-bg: #eef2ff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+       body { font-family: 'Noto Sans JP', sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; line-height: 1.6; font-size: 18px; }
+        .login-screen { display: none; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .login-card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2); width: 100%; max-width: 400px; margin: 20px; }
+        .login-title { text-align: center; margin-bottom: 8px; font-size: 24px; font-weight: 700; }
+        .login-subtitle { text-align: center; color: var(--text-secondary); margin-bottom: 32px; font-size: 14px; }
+        .login-input { width: 100%; padding: 14px 16px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 15px; margin-bottom: 16px; font-family: inherit; }
+        .login-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
+        .login-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; }
+        .login-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); }
+        .login-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .login-error { background: var(--danger-bg); color: var(--danger); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; display: none; }
+        .login-divider { text-align: center; margin: 24px 0; color: var(--text-muted); font-size: 13px; }
+        .login-toggle { text-align: center; font-size: 14px; color: var(--text-secondary); }
+        .login-toggle a { color: var(--accent); cursor: pointer; text-decoration: none; }
+        .firebase-status { position: fixed; top: 12px; right: 12px; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; display: flex; align-items: center; gap: 6px; z-index: 1000; }
+        .firebase-status.connected { background: var(--success-bg); color: var(--success); }
+        .firebase-status.disconnected { background: var(--danger-bg); color: var(--danger); }
+        .firebase-status .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .firebase-status.connected .status-dot { background: var(--success); }
+        .firebase-status.disconnected .status-dot { background: var(--danger); }
+        .header { background: #ffffff; border-bottom: 1px solid var(--border-color); padding: 16px 24px; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+        .header-content { max-width: 1800px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .logo { display: flex; align-items: center; gap: 12px; }
+        .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+        .logo-text { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+        .user-info { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--bg-secondary); border-radius: 8px; font-size: 13px; color: var(--text-secondary); }
+        .user-info .user-icon { width: 24px; height: 24px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+        .btn { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s; display: inline-flex; align-items: center; gap: 8px; font-family: inherit; }
+        .btn-primary { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); }
+        .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: var(--bg-card-hover); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-sm { padding: 6px 12px; font-size: 13px; }
+        .btn-icon { padding: 8px; min-width: 36px; justify-content: center; }
+        .nav-tabs { display: flex; gap: 4px; background: var(--bg-secondary); padding: 4px; border-radius: 10px; border: 1px solid var(--border-color); }
+        .nav-tab { padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; background: transparent; color: var(--text-secondary); transition: all 0.2s; font-family: inherit; }
+        .nav-tab.active { background: var(--accent); color: white; }
+        .nav-tab:hover:not(.active) { background: var(--bg-card); color: var(--text-primary); }
+        .main { max-width: 1800px; margin: 0 auto; padding: 24px; }
+        .app-container { display: none; }
+        .app-container.active { display: block; }
+        .view { display: none; }
+        .view.active { display: block; }
+        .stats-grid { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: nowrap; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s; flex: 1; min-width: 0; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .stat-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+        .stat-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+        .stat-value { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+        .stat-card.danger .stat-value { color: var(--danger); }
+        .stat-card.warning .stat-value { color: var(--warning); }
+        .stat-card.success .stat-value { color: var(--success); }
+        .stat-card.info .stat-value { color: var(--accent); }
+        .filters { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+        .filter-select { padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; background: var(--bg-card); min-width: 150px; font-family: inherit; }
+        .filter-label { font-size: 13px; color: var(--text-secondary); }
+        
+        /* トグルスイッチ */
+        .toggle-switch{
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          cursor: pointer;
+          user-select: none;
+        }
+        .toggle-switch input{
+          display: none;
+        }
+        .toggle-slider{
+          width: 40px;
+          height: 22px;
+          background: #cbd5e1;
+          border-radius: 11px;
+          position: relative;
+          transition: background 0.2s;
+        }
+        .toggle-slider::after{
+          content: '';
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 18px;
+          height: 18px;
+          background: white;
+          border-radius: 50%;
+          transition: transform 0.2s;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .toggle-switch input:checked + .toggle-slider{
+          background: var(--accent);
+        }
+        .toggle-switch input:checked + .toggle-slider::after{
+          transform: translateX(18px);
+        }
+        .toggle-label{
+          font-size: 13px;
+          color: var(--text-secondary);
+          font-weight: 500;
+        }
+        
+        /* 新しいカードデザイン */
+        .case-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 12px; overflow: hidden; transition: all 0.2s; }
+        .case-card:hover { border-color: #cbd5e1; }
+        .case-header { display: grid; grid-template-columns: 200px 1fr 240px auto auto; align-items: center; gap: 16px; padding: 20px 16px; cursor: pointer; }
+        .case-info { min-width: 0; }
+        .case-id { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent); font-weight: 600; }
+        .case-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .case-meta { font-size: 11px; color: var(--text-secondary); display: flex; gap: 8px; }
+        
+        /* 一覧ヘッダー行（カード内埋め込み） */
+        .case-field-header{
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--text-muted);
+          margin-bottom: 4px;
+          text-align: center;
+        }
+        .case-field-header.left{
+          text-align: left;
+        }
+        
+        /* ネクストアクション・ステータス固定幅 */
+        .next-action-wrapper,
+        .status-wrapper{
+          display: flex;
+          flex-direction: column;
+        }
+        .next-action-box{
+          width: 240px;
+          flex-shrink: 0;
+        }
+        .case-statuses{
+          width: auto;
+          min-width: 200px;
+          flex-shrink: 0;
+          justify-content: center;
+          flex-wrap: nowrap;
+        }
+        
+        /* 完了案件をグレー表示 */
+.case-card.is-closed{
+  opacity: 0.65;
+  filter: grayscale(0.2);
+  background: var(--bg-secondary);
+}
+.case-card.is-closed .case-name,
+.case-card.is-closed .case-meta,
+.case-card.is-closed .next-action-box{
+  color: var(--text-muted);
+}
+
+        /* 進捗ステップ（横一列・改善版） */
+        .progress-steps-inline { display: flex; align-items: flex-start; gap: 4px; flex-wrap: nowrap; }
+        .step-item { 
+          width: 72px; 
+          display: flex; 
+          flex-direction: column; 
+          align-items: center; 
+          gap: 2px;
+          position: relative;
+        }
+        .step-dot { 
+          width: 32px; 
+          height: 32px; 
+          border-radius: 50%; 
+          display: flex; 
+          align-items: center; 
+          justify-content: center; 
+          font-size: 11px; 
+          font-weight: 700; 
+          border: 2px solid var(--border-color); 
+          background: var(--bg-card); 
+          color: #1e293b; 
+          cursor: pointer; 
+          transition: all 0.2s;
+          position: relative;
+        }
+        .step-dot:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.step-dot.completed{
+  color: #fff;
+  border: none;
+}
+.step-dot.step-1.completed{ background:#dc2626; } /* 現場確認：赤 */
+.step-dot.step-2.completed{ background:#7c3aed; } /* 横にらみ：紫 */
+.step-dot.step-3.completed{ background:#ea580c; } /* 原因調査：オレンジ */
+.step-dot.step-4.completed{ background:#eab308; color:#1f2937; } /* 対策実施：黄色 */
+.step-dot.step-5.completed{ background:#16a34a; } /* 効果確認：緑 */
+.step-dot.step-6.completed{ background:#2563eb; } /* 標準化：青 */
+.step-dot.step-7.completed{ background:#0891b2; } /* 再発防止：シアン */
+        .step-label { font-size: 10px; color: #1e293b; text-align: center; max-width: 72px; line-height: 1.2; font-weight: 500; }
+        
+        .step-date{
+          font-size: 10px;
+          color: #374151;
+          margin-top: 1px;
+          cursor: pointer;
+          min-height: 13px;
+          line-height: 13px;
+          font-family: 'JetBrains Mono', monospace;
+          font-weight: 500;
+        }
+
+/* 日付が無い時は「見えない」だけにする（高さは維持） */
+.step-date:empty{
+  visibility: hidden;
+}
+
+/* リードタイム表示 */
+.step-leadtime{
+  font-size: 9px;
+  font-weight: 700;
+  color: #1e293b;
+  background: #e2e8f0;
+  padding: 1px 4px;
+  border-radius: 8px;
+  margin-top: 1px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.step-leadtime.long{ background: #fecaca; color: #991b1b; }
+.step-leadtime.medium{ background: #fef08a; color: #854d0e; }
+
+/* タスク数バッジ（一覧用） */
+.step-task-badge{
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #2563eb;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  cursor: pointer;
+}
+.step-task-badge.all-done{
+  background: #9ca3af;
+}
+.step-task-badge.has-overdue{
+  background: #dc2626;
+}
+
+/* バッジホバーでタスク名表示（線付き） */
+.step-task-tooltip{
+  position: absolute;
+  top: calc(100% + 20px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(226, 232, 240, 0.5);
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  z-index: 50;
+  min-width: 180px;
+  max-width: 320px;
+  display: none;
+  pointer-events: auto;
+}
+.step-task-tooltip::before{
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 20px;
+  background: linear-gradient(to bottom, #2563eb, #94a3b8);
+}
+.step-task-tooltip::after{
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 18px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2563eb;
+}
+.step-task-badge:hover .step-task-tooltip{
+  display: block;
+}
+/* 常時表示モード */
+.show-task-names .step-task-tooltip{
+  display: block !important;
+}
+.step-task-tooltip-item{
+  font-size: 11px;
+  color: #1e293b;
+  padding: 4px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border-bottom: 1px dashed rgba(241, 245, 249, 0.8);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 6px;
+  margin: 2px -6px;
+}
+.step-task-tooltip-item:hover{
+  background: rgba(226, 232, 240, 0.5);
+}
+.step-task-tooltip-item:last-child{
+  border-bottom: none;
+}
+
+/* タスク完了モーダル */
+.task-complete-info{
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 12px;
+}
+.tc-row{
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.tc-row:last-child{
+  border-bottom: none;
+}
+.tc-label{
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tc-value{
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.tc-checkbox-label{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 8px 12px;
+  background: var(--success-bg);
+  border-radius: 8px;
+  border: 1px solid var(--success);
+}
+.tc-checkbox-label input[type="checkbox"]{
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+.step-task-tooltip-item.completed{
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+.step-task-tooltip-item.overdue{
+  color: #dc2626;
+}
+.step-task-tooltip-icon{
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  background: rgba(226, 232, 240, 0.8);
+  color: #64748b;
+  margin-top: 1px;
+}
+.step-task-tooltip-item.completed .step-task-tooltip-icon{
+  background: rgba(209, 250, 229, 0.8);
+  color: #059669;
+}
+.step-task-tooltip-item.overdue .step-task-tooltip-icon{
+  background: rgba(254, 226, 226, 0.8);
+  color: #dc2626;
+}
+.step-task-tooltip-text{
+  flex: 1;
+  word-break: break-word;
+  line-height: 1.4;
+}
+.step-task-tooltip-assignee{
+  font-size: 9px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ステップ間矢印 */
+.step-arrow{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 32px;
+  padding-top: 10px;
+}
+.step-arrow-line{
+  width: 24px;
+  height: 2px;
+  background: #cbd5e1;
+  position: relative;
+}
+.step-arrow-line::after{
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid #cbd5e1;
+}
+.step-arrow.done .step-arrow-line{
+  background: #6366f1;
+}
+.step-arrow.done .step-arrow-line::after{
+  border-left-color: #6366f1;
+}
+.step-arrow-days{
+  font-size: 9px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-top: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+.step-arrow-days.long{ color: #991b1b; }
+.step-arrow-days.medium{ color: #92400e; }
+
+/* 不具合写真サムネイル */
+.case-thumbnails{
+  display: flex;
+  margin-top: 8px;
+}
+.case-thumbnail{
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 2px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.case-thumbnail:hover{
+  transform: scale(1.05);
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.add-photo-btn{
+  width: 120px;
+  height: 120px;
+  border-radius: 8px;
+  border: 2px dashed var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  transition: all 0.2s;
+}
+.add-photo-btn:hover{
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/* 写真プレビューモーダル */
+.photo-preview-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 2500;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.photo-preview-overlay.active{
+  display: flex;
+}
+.photo-preview-container{
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+.photo-preview-img{
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.photo-preview-close{
+  position: absolute;
+  top: -40px;
+  right: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 20px;
+  color: #333;
+}
+.photo-preview-close:hover{
+  background: #f1f5f9;
+}
+.photo-preview-actions{
+  position: absolute;
+  bottom: -50px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+}
+.photo-preview-actions button{
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+.photo-delete-btn{
+  background: #dc2626;
+  color: white;
+}
+.photo-delete-btn:hover{
+  background: #b91c1c;
+}
+        
+        /* ネクストアクション欄 */
+        .next-action-box { width: 240px; flex-shrink: 0; background: var(--accent-bg); border: 1px dashed var(--accent); border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary); min-height: 50px; display: flex; align-items: center; }
+        .next-action-box.clickable { cursor: pointer; transition: all 0.2s; }
+        .next-action-box.clickable:hover { background: var(--accent); border-style: solid; }
+        .next-action-box.clickable:hover span { color: white; }
+        .next-action-box.has-task { background: var(--bg-secondary); border: 1px solid var(--border-color); }
+        .next-action-box.overdue { background: var(--danger-bg); border-color: var(--danger); }
+        .next-action-content { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+        .next-action-title { font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .next-action-meta { font-size: 11px; display: flex; gap: 8px; }
+        .next-action-deadline { font-family: 'JetBrains Mono', monospace; }
+        .next-action-deadline.overdue { color: var(--danger); font-weight: 600; }
+        
+        /* ステータスバッジ */
+        .case-statuses { display: flex; gap: 6px; flex-shrink: 0; justify-content: center; flex-wrap: nowrap; }
+        .status-dropdown-container { position: relative; display: flex; flex-direction: column; align-items: center; }
+        .status-label-top { font-size: 9px; color: var(--text-muted); margin-bottom: 2px; }
+        .status-badge-btn { display: flex; flex-direction: column; align-items: center; padding: 6px 12px; border-radius: 6px; font-size: 11px; border: none; cursor: pointer; min-width: 75px; font-family: inherit; transition: all 0.2s; white-space: nowrap; }
+        .status-badge-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .badge-label { font-size: 9px; opacity: 0.8; margin-bottom: 1px; }
+        .badge-value { font-weight: 600; font-size: 10px; }
+        .status-date { font-size: 9px; color: var(--text-muted); text-align: center; margin-top: 2px; cursor: pointer; font-family: 'JetBrains Mono', monospace; }
+        .status-date:hover { color: var(--accent); text-decoration: underline; }
+        .status-date.deadline { color: var(--warning); cursor: default; }
+        .status-date.deadline:hover { text-decoration: none; }
+        .status-date.deadline.overdue { color: var(--danger); font-weight: 600; }
+        .status-dropdown { position: fixed; background: white; border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); min-width: 130px; z-index: 1000; display: none; }
+        .status-dropdown.active { display: block; }
+        .status-dropdown-item { padding: 8px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .status-dropdown-item:hover { background: var(--bg-secondary); }
+        .status-dropdown-item.selected { background: var(--accent-bg); font-weight: 600; }
+        .item-dot { width: 8px; height: 8px; border-radius: 50%; }
+        
+        .tentative-1 { background: var(--warning-bg); color: var(--warning); }
+        .tentative-2 { background: var(--danger-bg); color: var(--danger); }
+        .tentative-3 { background: var(--success-bg); color: var(--success); }
+        .measure-1 { background: #fef2f2; color: #dc2626; } /* 現場確認：赤 */
+        .measure-2 { background: #f5f3ff; color: #7c3aed; } /* 横にらみ：紫 */
+        .measure-3 { background: #fff7ed; color: #ea580c; } /* 原因調査：オレンジ */
+        .measure-4 { background: #fefce8; color: #ca8a04; } /* 対策実施：黄色 */
+        .measure-5 { background: #f0fdf4; color: #16a34a; } /* 効果確認：緑 */
+        .measure-6 { background: #eff6ff; color: #2563eb; } /* 標準化：青 */
+        .measure-7 { background: #ecfeff; color: #0891b2; } /* 再発防止：水色 */
+        .report-1 { background: var(--danger-bg); color: var(--danger); }
+        .report-2 { background: var(--warning-bg); color: var(--warning); }
+        .report-3 { background: var(--success-bg); color: var(--success); }
+        /* 社内提出バッジ */
+        .internal-report-1 { background: var(--danger-bg); color: var(--danger); }
+        .internal-report-2 { background: var(--success-bg); color: var(--success); }
+        /* 客先提出バッジ */
+        .customer-report-1 { background: var(--danger-bg); color: var(--danger); }
+        .customer-report-2 { background: #dbeafe; color: #1d4ed8; }
+        
+        .expand-icon { color: var(--text-muted); font-size: 12px; transition: transform 0.2s; padding: 8px; }
+        .case-card.expanded .expand-icon { transform: rotate(180deg); }
+        
+        /* 展開時のボディ */
+        .case-body { display: none; padding: 16px 20px; border-top: 1px solid var(--border-color); background: var(--bg-secondary); }
+        .case-card.expanded .case-body { display: block; }
+        .section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px; }
+        .task-section { margin-top: 16px; }
+        .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .task-list { display: flex; flex-direction: column; gap: 8px; }
+        .task-item { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border-color); }
+        .task-checkbox { width: 20px; height: 20px; border: 2px solid var(--border-color); border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; color: transparent; flex-shrink: 0; transition: all 0.2s; }
+        .task-checkbox:hover { border-color: var(--accent); }
+        .task-item.completed .task-checkbox { background: var(--success); border-color: var(--success); color: white; }
+        .task-item.overdue:not(.completed) .task-checkbox { border-color: var(--danger); }
+        .task-content { flex: 1; min-width: 0; }
+        .task-title { font-size: 14px; margin-bottom: 2px; }
+        .task-item.completed .task-title { text-decoration: line-through; color: var(--text-muted); }
+        .task-meta { font-size: 12px; color: var(--text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
+        .task-deadline { font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 4px 8px; background: var(--bg-secondary); border-radius: 4px; }
+        .task-item.overdue:not(.completed) .task-deadline { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
+        .task-actions { display: flex; gap: 4px; }
+        .task-action-btn { padding: 6px; background: transparent; border: none; cursor: pointer; color: var(--text-muted); border-radius: 4px; }
+        .task-action-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+        .case-actions { display: flex; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color); }
+        
+        /* メモセクション */
+        .memo-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color); }
+        .memo-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .memo-list { display: flex; flex-direction: column; gap: 8px; }
+        .memo-item { padding: 12px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border-color); border-left: 3px solid var(--accent); }
+        .memo-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .memo-date { font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .memo-actions { display: flex; gap: 4px; }
+        .memo-content { font-size: 14px; color: var(--text-primary); line-height: 1.6; white-space: pre-wrap; }
+        .memo-empty { text-align: center; padding: 20px; color: var(--text-muted); font-size: 13px; }
+        
+        /* モーダル */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; overflow-y: auto; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: var(--bg-card); border-radius: 16px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+        .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .modal-title { font-size: 18px; font-weight: 600; }
+        .modal-close { width: 32px; height: 32px; border: none; background: var(--bg-secondary); border-radius: 8px; cursor: pointer; font-size: 18px; color: var(--text-secondary); }
+        .modal-body { padding: 24px; }
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
+        .form-input, .form-select, .form-textarea { width: 100%; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; font-family: inherit; }
+        .form-textarea { resize: vertical; min-height: 80px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 12px; background: var(--bg-secondary); }
+        .empty-state { text-align: center; padding: 60px 20px; }
+        .empty-icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+        .empty-description { color: var(--text-secondary); font-size: 14px; }
+        .loading-overlay { position: fixed; inset: 0; background: rgba(255, 255, 255, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; }
+        .loading-spinner { width: 48px; height: 48px; border: 4px solid var(--border-color); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-top: 16px; color: var(--text-secondary); font-size: 14px; }
+        
+        /* カレンダー */
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border-color); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+        .calendar-header-cell { padding: 12px; background: var(--bg-secondary); font-size: 13px; font-weight: 600; text-align: center; color: var(--text-secondary); }
+        .calendar-day { min-height: 100px; padding: 8px; background: var(--bg-card); vertical-align: top; }
+        .calendar-day.other-month { background: var(--bg-secondary); opacity: 0.5; }
+        .calendar-day.today { background: var(--accent-bg); }
+        .calendar-date { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+        .calendar-event { font-size: 10px; padding: 3px 5px; border-radius: 4px; margin-bottom: 3px; cursor: pointer; line-height: 1.3; display: flex; align-items: flex-start; gap: 4px; }
+        .calendar-event:hover { opacity: 0.85; transform: scale(1.02); }
+        .calendar-event.internal { background: #fef3c7; color: #92400e; border-left: 3px solid #f59e0b; }
+        .calendar-event.customer { background: #fee2e2; color: #991b1b; border-left: 3px solid #dc2626; }
+        .calendar-event.task { background: #dbeafe; color: #1e40af; border-left: 3px solid #2563eb; }
+        .calendar-event.task-done { background: #dcfce7; color: #166534; border-left: 3px solid #16a34a; opacity: 0.7; }
+        .calendar-event.task-overdue { background: #fee2e2; color: #991b1b; border-left: 3px solid #dc2626; font-weight: 600; }
+        .calendar-event .event-thumb { width: 24px; height: 24px; border-radius: 3px; object-fit: cover; flex-shrink: 0; }
+        .calendar-event .event-content { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+        .calendar-event .event-defect { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .calendar-event .event-task { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .calendar-event .event-type-label { font-size: 9px; opacity: 0.8; }
+        .calendar-event .event-assignee { font-size: 9px; opacity: 0.8; }
+        .calendar-event.task-done .event-defect,
+        .calendar-event.task-done .event-task { text-decoration: line-through; }
+
+        /* カレンダーイベント詳細モーダル */
+        .calendar-detail-overlay{
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.5);
+          z-index: 2000;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+        .calendar-detail-overlay.active{ display: flex; }
+        .calendar-detail-modal{
+          background: white;
+          border-radius: 12px;
+          max-width: 500px;
+          width: 100%;
+          max-height: 80vh;
+          overflow: hidden;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .calendar-detail-header{
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .calendar-detail-title{
+          font-size: 16px;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .calendar-detail-type{
+          font-size: 11px;
+          padding: 3px 8px;
+          border-radius: 12px;
+          font-weight: 600;
+        }
+        .calendar-detail-type.internal{ background: #fef3c7; color: #92400e; }
+        .calendar-detail-type.customer{ background: #fee2e2; color: #991b1b; }
+        .calendar-detail-type.task{ background: #dbeafe; color: #1e40af; }
+        .calendar-detail-type.task-done{ background: #dcfce7; color: #166534; }
+        .calendar-detail-type.task-overdue{ background: #fee2e2; color: #991b1b; }
+        .calendar-detail-close{
+          width: 32px;
+          height: 32px;
+          border: none;
+          background: var(--bg-secondary);
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 18px;
+          color: var(--text-secondary);
+        }
+        .calendar-detail-close:hover{ background: var(--border-color); }
+        .calendar-detail-body{
+          padding: 20px;
+          overflow-y: auto;
+          max-height: 60vh;
+        }
+        .calendar-detail-row{
+          display: flex;
+          margin-bottom: 12px;
+          font-size: 14px;
+        }
+        .calendar-detail-row:last-child{ margin-bottom: 0; }
+        .calendar-detail-label{
+          width: 100px;
+          flex-shrink: 0;
+          color: var(--text-muted);
+          font-size: 12px;
+        }
+        .calendar-detail-value{
+          flex: 1;
+          color: #1e293b;
+          font-weight: 500;
+        }
+        .calendar-detail-value.overdue{ color: #dc2626; }
+        .calendar-detail-value.done{ color: #16a34a; text-decoration: line-through; }
+        .calendar-detail-footer{
+          padding: 12px 20px;
+          border-top: 1px solid var(--border-color);
+          background: var(--bg-secondary);
+          display: flex;
+          gap: 8px;
+          justify-content: flex-end;
+        }
+        
+        /* テーブル共通 */
+        .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .table th, .table td { padding: 8px 10px; border: 1px solid var(--border-color); text-align: left; }
+        .table th { background: var(--bg-secondary); font-weight: 600; color: var(--text-secondary); font-size: 12px; }
+        .table tbody tr:hover { background: var(--bg-card-hover); }
+        
+        /* リードタイム表 */
+        .leadtime-table-section { margin-bottom: 24px; }
+        .leadtime-table { font-size: 12px; }
+        .leadtime-table th { text-align: center; white-space: nowrap; padding: 6px 8px; }
+        .leadtime-table .lt-header { font-size: 10px; }
+        .leadtime-table .lt-header.step-1 { background: #fef2f2; }
+        .leadtime-table .lt-header.step-2 { background: #f5f3ff; }
+        .leadtime-table .lt-header.step-3 { background: #fff7ed; }
+        .leadtime-table .lt-header.step-4 { background: #fefce8; }
+        .leadtime-table .lt-header.step-5 { background: #f0fdf4; }
+        .leadtime-table .lt-header.step-6 { background: #eff6ff; }
+        .leadtime-table .lt-header.step-7 { background: #ecfeff; }
+        .leadtime-table .lt-header.report-1 { background: #fef2f2; }
+        .leadtime-table .lt-header.report-2 { background: #fef3c7; }
+        .leadtime-table .lt-header.report-3 { background: #dcfce7; }
+        .leadtime-table .lt-defect { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .leadtime-table .lt-cell { text-align: center; font-family: 'JetBrains Mono', monospace; }
+        .leadtime-table .lt-cell.long { background: #fecaca; color: #991b1b; font-weight: 600; }
+        .leadtime-table .lt-cell.medium { background: #fef08a; color: #854d0e; }
+        .leadtime-table .lt-total { text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+        .leadtime-table .lt-total.measure-total { background: #d1fae5; }
+        .leadtime-table .lt-total.report-total { background: #bfdbfe; }
+        
+        /* 担当者別ビュー */
+        .assignee-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
+        .assignee-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+        .assignee-header { padding: 16px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+        .assignee-name { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+        .assignee-avatar { width: 36px; height: 36px; background: var(--accent); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; }
+        .assignee-stats { display: flex; gap: 12px; font-size: 12px; }
+        .assignee-stat { padding: 4px 8px; border-radius: 12px; }
+        .assignee-stat.overdue { background: var(--danger-bg); color: var(--danger); }
+        .assignee-stat.active { background: var(--accent-bg); color: var(--accent); }
+        .assignee-tasks { padding: 12px; max-height: 400px; overflow-y: auto; }
+        .assignee-task { padding: 12px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+        .assignee-task:hover { background: var(--border-color); }
+        .assignee-task:last-child { margin-bottom: 0; }
+        .assignee-task-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+        .assignee-task.completed .assignee-task-title { text-decoration: line-through; color: var(--text-muted); }
+        .assignee-task-case { font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+        .assignee-task-deadline { font-size: 12px; font-family: 'JetBrains Mono', monospace; color: var(--text-secondary); }
+        .assignee-task.overdue:not(.completed) .assignee-task-deadline { color: var(--danger); font-weight: 600; }
+        
+        @media (max-width: 1200px) {
+            .case-header { grid-template-columns: 180px 1fr auto auto; }
+            .progress-steps-inline { display: none; }
+        }
+        @media (max-width: 768px) {
+            .header-content { flex-direction: column; align-items: stretch; }
+            .case-header { grid-template-columns: 1fr; gap: 12px; }
+            .case-statuses { justify-content: flex-start; }
+            .next-action-box { min-width: auto; }
+            .form-row { grid-template-columns: 1fr; }
+            .nav-tabs { overflow-x: auto; flex-wrap: nowrap; }
+        }
+    
+/* ===== History Timeline (QC flow style) - Enhanced ===== */
+#history-timeline-wrap{ margin-top: 10px; }
+.history-timeline-card{
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.history-timeline-head{
+  display:flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+.history-timeline-title{
+  font-weight: 700;
+  font-size: 15px;
+}
+.history-timeline-sub{
+  color: var(--text-secondary);
+  font-size: 12px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.history-timeline-meta{
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.history-timeline-meta span{
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.history-timeline-meta .label{
+  color: var(--text-muted);
+}
+.history-timeline-meta .value{
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+.history-timeline-meta .value.highlight{
+  color: var(--accent);
+}
+
+/* セクション見出し */
+.timeline-section{
+  margin-top: 16px;
+}
+.timeline-section:first-of-type{
+  margin-top: 0;
+}
+.timeline-section-title{
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.timeline-section-title::before{
+  content: '';
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+}
+.timeline-section.measure .timeline-section-title::before{
+  background: linear-gradient(180deg, #ea580c, #16a34a);
+}
+.timeline-section.report .timeline-section-title::before{
+  background: linear-gradient(180deg, #dc2626, #16a34a);
+}
+
+.timeline-board{
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 16px 12px 20px;
+  overflow-x: auto;
+  background: var(--bg-secondary);
+}
+.timeline-row{
+  display:flex;
+  align-items: flex-start;
+  gap: 0;
+  min-width: 1100px;
+  padding: 8px 4px;
+}
+.tl-node{
+  width: 100px;
+  display:flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.tl-label{
+  font-size: 11px;
+  font-weight: 700;
+  text-align:center;
+  white-space: nowrap;
+  color: #1e293b;
+}
+.tl-circle{
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight: 900;
+  font-size: 14px;
+  border: 2px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  position: relative;
+}
+.tl-circle.done{
+  border: none;
+  color: #fff;
+}
+/* 対策ステップ色分け */
+.tl-circle.done.step-origin{ background: #6366f1; } /* 発生日：インディゴ */
+.tl-circle.done.step-1{ background: #dc2626; } /* 現場確認：赤 */
+.tl-circle.done.step-2{ background: #7c3aed; } /* 横にらみ：紫 */
+.tl-circle.done.step-3{ background: #ea580c; } /* 原因調査：オレンジ */
+.tl-circle.done.step-4{ background: #eab308; color: #1f2937; } /* 対策実施：黄色 */
+.tl-circle.done.step-5{ background: #16a34a; } /* 効果確認：緑 */
+.tl-circle.done.step-6{ background: #2563eb; } /* 標準化：青 */
+.tl-circle.done.step-7{ background: #0891b2; } /* 横展：シアン */
+/* 対策書ステップ色分け */
+.tl-circle.done.report-origin{ background: #6366f1; }
+.tl-circle.done.report-1{ background: #dc2626; } /* 未提出：赤 */
+.tl-circle.done.report-2{ background: #d97706; } /* 社内提出：オレンジ */
+.tl-circle.done.report-3{ background: #16a34a; } /* 客先提出：緑 */
+
+.tl-circle.pending{
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border: 2px dashed var(--border-color);
+}
+.tl-meta{
+  font-size: 10px;
+  color: #374151;
+  text-align:center;
+  line-height: 1.3;
+  min-height: 36px;
+}
+.tl-meta .date{
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  color: #1e293b;
+  display: block;
+}
+.tl-meta .actor{
+  color: #6b7280;
+  font-size: 9px;
+}
+/* 累積日数バッジ */
+.tl-cumulative{
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-top: 2px;
+}
+
+.tl-seg{
+  flex: 0 0 auto;
+  width: 60px;
+  position: relative;
+  height: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.tl-line{
+  position:absolute;
+  left: 0;
+  right: 0;
+  top: 32px;
+  height: 3px;
+  background: linear-gradient(90deg, #94a3b8, #64748b);
+  border-radius: 999px;
+}
+.tl-seg.done .tl-line{
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+}
+.tl-arrow{
+  position:absolute;
+  right: -2px;
+  top: 27px;
+  width: 0; height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid #64748b;
+}
+.tl-seg.done .tl-arrow{
+  border-left-color: #4f46e5;
+}
+.tl-days{
+  position:absolute;
+  left: 0;
+  right: 0;
+  top: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tl-days .unit{
+  font-size: 10px;
+  font-weight: 600;
+  color: #374151;
+}
+.tl-days.long{
+  color: #991b1b;
+}
+.tl-days.medium{
+  color: #92400e;
+}
+
+/* リードタイムサマリー */
+.leadtime-summary{
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+.leadtime-item{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.leadtime-label{
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.leadtime-value{
+  font-size: 16px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+.leadtime-value.good{ color: var(--success); }
+.leadtime-value.warning{ color: var(--warning); }
+.leadtime-value.danger{ color: var(--danger); }
+
+@media (max-width: 520px){
+  .timeline-row{ min-width: 900px; }
+  .tl-node{ width: 90px; }
+  .tl-seg{ width: 50px; }
+}
+
+/* クリック可能なステータスバッジ */
+.tl-circle.clickable{
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.tl-circle.clickable:hover{
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.tl-node.has-tasks .tl-label{
+  color: var(--accent);
+  font-weight: 700;
+}
+.tl-task-count{
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+/* タスク表示ポップアップ */
+.step-tasks-popup{
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  z-index: 2000;
+  display: none;
+}
+.step-tasks-popup.active{
+  display: block;
+}
+.step-tasks-popup-header{
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-secondary);
+}
+.step-tasks-popup-title{
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-tasks-popup-close{
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--bg-card);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--text-secondary);
+}
+.step-tasks-popup-close:hover{
+  background: var(--border-color);
+}
+.step-tasks-popup-body{
+  padding: 16px 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.step-task-item{
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border-left: 4px solid var(--accent);
+}
+.step-task-item:last-child{
+  margin-bottom: 0;
+}
+.step-task-item.completed{
+  opacity: 0.6;
+  border-left-color: var(--success);
+}
+.step-task-item.completed .step-task-title{
+  text-decoration: line-through;
+}
+.step-task-title{
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.step-task-meta{
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.step-task-meta span{
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.step-tasks-empty{
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+}
+.step-tasks-popup-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1999;
+  display: none;
+}
+.step-tasks-popup-overlay.active{
+  display: block;
+}
+
+</style>
+</head>
+<body>
+    <div class="loading-overlay" id="loading-overlay"><div class="loading-spinner"></div><div class="loading-text">読み込み中...</div></div>
+    <div class="firebase-status disconnected" id="firebase-status"><span class="status-dot"></span><span id="status-text">接続中...</span></div>
+    
+    <div class="login-screen" id="login-screen">
+        <div class="login-card">
+            <div class="login-title">🔧 納入不具合 対策進捗管理</div>
+            <div class="login-subtitle">アカウントにログインしてください</div>
+            <div class="login-error" id="login-error"></div>
+            <form id="login-form">
+                <input type="email" class="login-input" id="login-email" placeholder="メールアドレス" required>
+                <input type="password" class="login-input" id="login-password" placeholder="パスワード" required>
+                <button type="submit" class="login-btn" id="login-btn">ログイン</button>
+            </form>
+            <div class="login-divider">または</div>
+            <div class="login-toggle">アカウントをお持ちでない方は <a onclick="toggleAuthMode()">新規登録</a></div>
+        </div>
+    </div>
+
+    <div class="app-container" id="app-container">
+        <header class="header">
+            <div class="header-content">
+                <div class="logo"><div class="logo-icon">🔧</div><span class="logo-text">納入不具合 対策進捗管理</span></div>
+                <nav class="nav-tabs">
+                    <button class="nav-tab active" data-view="list">一覧</button>
+                    <button class="nav-tab" data-view="assignee">担当者別</button>
+                    <button class="nav-tab" data-view="calendar">カレンダー</button>
+                    <button class="nav-tab" data-view="history">ヒストリー</button>
+                </nav>
+                <div class="header-actions">
+                    <div class="user-info"><span class="user-icon" id="user-icon">U</span><span id="user-email">user@example.com</span></div>
+                    <button class="btn btn-secondary btn-sm" onclick="logout()">ログアウト</button>
+                    <button class="btn btn-primary" onclick="openNewCaseModal()">＋ 新規案件</button>
+                </div>
+            </div>
+        </header>
+        <main class="main">
+            <!-- 一覧ビュー -->
+            <div class="view active" id="list-view">
+                <div class="stats-grid">
+                    <div class="stat-card danger" data-filter="overdue" onclick="toggleStatFilter('overdue')">
+                        <div class="stat-label">⚠️ 遅延タスク</div><div class="stat-value" id="stat-overdue">0</div>
+                    </div>
+                    <div class="stat-card warning" data-filter="active" onclick="toggleStatFilter('active')">
+                        <div class="stat-label">🔄 対応中</div><div class="stat-value" id="stat-active">0</div>
+                    </div>
+                    <div class="stat-card success" data-filter="completed" onclick="toggleStatFilter('completed')">
+                        <div class="stat-label">✓ 今月完了</div><div class="stat-value" id="stat-completed">0</div>
+                    </div>
+                    <div class="stat-card info" data-filter="unreported" onclick="toggleStatFilter('unreported')">
+                        <div class="stat-label">📄 対策書未提出</div><div class="stat-value" id="stat-unreported">0</div>
+                    </div>
+                </div>
+                <div class="filters">
+                    <span class="filter-label">フィルター:</span>
+                    <select class="filter-select" id="filter-status">
+                        <option value="all">すべて表示</option>
+                        <option value="active">対応中のみ</option>
+                        <option value="overdue">遅延ありのみ</option>
+                        <option value="completed">今月完了</option>
+                        <option value="unreported">対策書未提出</option>
+                    </select>
+                    <select class="filter-select" id="filter-measure">
+                        <option value="all">全ステータス</option><option value="1">現場確認</option><option value="2">横にらみ</option><option value="3">原因調査</option><option value="4">対策実施</option><option value="5">効果確認</option><option value="6">標準化</option><option value="7">横展</option></select>
+                    <label class="toggle-switch" title="タスク名を常時表示">
+                        <input type="checkbox" id="show-task-names-toggle" onchange="toggleTaskNamesDisplay()">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-label">タスク名表示</span>
+                    </label>
+                </div>
+                <div id="case-list"></div>
+            </div>
+            
+            <!-- 担当者別ビュー -->
+            <div class="view" id="assignee-view">
+                <div class="filters">
+                    <span class="filter-label">担当者:</span>
+                    <select class="filter-select" id="assignee-filter"><option value="all">全員</option></select>
+                    <select class="filter-select" id="assignee-status-filter">
+                        <option value="active">未完了のみ</option>
+                        <option value="all">すべて表示</option>
+                    </select>
+                </div>
+                <div class="assignee-grid" id="assignee-grid"></div>
+            </div>
+            
+            <!-- カレンダービュー -->
+            <div class="view" id="calendar-view">
+                <div class="filters" style="justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <button class="btn btn-secondary btn-icon" onclick="changeMonth(-1)">◀</button>
+                        <div style="font-size: 20px; font-weight: 600; min-width: 160px; text-align: center;" id="calendar-title">2024年12月</div>
+                        <button class="btn btn-secondary btn-icon" onclick="changeMonth(1)">▶</button>
+                        <button class="btn btn-secondary btn-sm" onclick="goToToday()">今日</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="filter-label">案件:</span>
+                        <select class="filter-select" id="calendar-case-filter"><option value="all">すべての案件</option></select>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px; margin-bottom: 16px; font-size: 12px; flex-wrap: wrap;">
+                    <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--warning-bg); border: 1px solid var(--warning); border-radius: 2px; margin-right: 4px;"></span>社内期限</span>
+                    <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--danger-bg); border: 1px solid var(--danger); border-radius: 2px; margin-right: 4px;"></span>客先期限</span>
+                    <span><span style="display: inline-block; width: 12px; height: 12px; background: var(--accent-bg); border: 1px solid var(--accent); border-radius: 2px; margin-right: 4px;"></span>タスク</span>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+            </div>
+        
+
+            <!-- ヒストリービュー -->
+                        <div class="view" id="history-view">
+                            <div class="filters" style="justify-content: space-between;">
+                                <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                                    <span class="filter-label">表示:</span>
+                                    <select class="filter-select" id="history-scope">
+                                        <option value="all">全件</option>
+                                        <option value="active">対応中のみ</option>
+                                        <option value="completed">完了/クローズのみ</option>
+                                    </select>
+                                    <select class="filter-select" id="history-csv-scope">
+                                        <option value="visible">表示中をCSV</option>
+                                        <option value="all">全件をCSV</option>
+                                    </select>
+                                </div>
+                                <div style="display:flex; gap:10px; align-items:center;">
+                                    <button class="btn btn-secondary" onclick="downloadHistoryCSV()">CSV出力</button>
+                                </div>
+                            </div>
+                            <div id="history-timeline-wrap"></div>
+                            <div id="history-table-wrap"></div>
+                        </div>
+
+        </main>
+    </div>
+
+    <!-- 案件モーダル -->
+    <div class="modal-overlay" id="case-modal">
+        <div class="modal">
+            <div class="modal-header"><div class="modal-title" id="modal-title">新規案件登録</div><button class="modal-close" onclick="closeModal('case-modal')">×</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="case-id">
+                <div class="form-group"><label class="form-label">管理番号 *</label><input type="text" class="form-input" id="case-ref-no" placeholder="1-25-001" required></div>
+                <div class="form-group"><label class="form-label">不具合内容 *</label><input type="text" class="form-input" id="case-defect" placeholder="6769 外形バリ" required></div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">発生日</label><input type="date" class="form-input" id="case-date"></div>
+                    <div class="form-group"><label class="form-label">客先名</label><input type="text" class="form-input" id="case-customer" placeholder="東海理化" list="customer-list"><datalist id="customer-list"></datalist></div>
+                </div>
+                <div class="form-row" id="status-row">
+                    <div class="form-group"><label class="form-label">暫定状況</label><select class="form-select" id="case-tentative"><option value="1">選別中</option><option value="2" selected>選別未実施</option><option value="3">流出対策済</option></select></div>
+                    <div class="form-group"><label class="form-label">対策状況</label><select class="form-select" id="case-measure"><option value="1">現場確認</option><option value="2">横にらみ</option><option value="3">原因調査</option><option value="4">対策実施</option><option value="5">効果確認</option><option value="6">標準化</option><option value="7">再発防止</option></select></div>
+                </div>
+                <div class="form-row" id="report-row">
+                    <div class="form-group"><label class="form-label">対策書状況</label><select class="form-select" id="case-report"><option value="1">未提出</option><option value="2">社内提出済</option><option value="3">客先提出済</option></select></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">社内期限</label><input type="date" class="form-input" id="case-internal-deadline"></div>
+                    <div class="form-group"><label class="form-label">客先期限</label><input type="date" class="form-input" id="case-customer-deadline"></div>
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('case-modal')">キャンセル</button><button class="btn btn-primary" onclick="saveCase()">保存</button></div>
+        </div>
+    </div>
+
+    <!-- タスクモーダル -->
+    <div class="modal-overlay" id="task-modal">
+        <div class="modal">
+            <div class="modal-header"><div class="modal-title">タスク追加</div><button class="modal-close" onclick="closeModal('task-modal')">×</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="task-case-id"><input type="hidden" id="task-id">
+                <div class="form-group"><label class="form-label">担当者 *</label><input type="text" class="form-input" id="task-assignee" placeholder="田中" list="assignee-list" required><datalist id="assignee-list"></datalist></div>
+                <div class="form-group"><label class="form-label">タスク内容 *</label><input type="text" class="form-input" id="task-content" placeholder="不具合品の詳細分析" required></div>
+                <div class="form-row">
+                    <div class="form-group"><label class="form-label">期限</label><input type="date" class="form-input" id="task-deadline"></div>
+                    <div class="form-group"><label class="form-label">対応項目</label><select class="form-select" id="task-category"><option value="1">現場確認</option><option value="2">横にらみ</option><option value="3">原因調査</option><option value="4">対策実施</option><option value="5">効果確認</option><option value="6">標準化</option><option value="7">再発防止</option></select></div>
+                </div>
+                <div class="form-group"><label class="form-label">備考</label><textarea class="form-textarea" id="task-note" placeholder="備考・注意事項"></textarea></div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal('task-modal')">キャンセル</button><button class="btn btn-primary" onclick="saveTask()">保存</button></div>
+        </div>
+    </div>
+
+    <!-- メモ追加・編集モーダル -->
+    <div class="modal-overlay" id="memo-modal">
+        <div class="modal">
+            <div class="modal-header"><div class="modal-title" id="memo-modal-title">メモ追加</div><button class="modal-close" onclick="closeModal('memo-modal')">×</button></div>
+            <div class="modal-body">
+                <input type="hidden" id="memo-case-id">
+                <input type="hidden" id="memo-id">
+                <div class="form-group">
+                    <label class="form-label">記入日 *</label>
+                    <input type="date" class="form-input" id="memo-date" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">メモ内容 *</label>
+                    <textarea class="form-textarea" id="memo-content" placeholder="打合せ内容、決定事項、次回アクションなど..." rows="6" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('memo-modal')">キャンセル</button>
+                <button class="btn btn-primary" onclick="saveMemo()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- タスク完了モーダル -->
+    <div class="modal-overlay" id="task-complete-modal">
+        <div class="modal" style="max-width: 450px;">
+            <div class="modal-header">
+                <div class="modal-title">タスク完了</div>
+                <button class="modal-close" onclick="closeModal('task-complete-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="tc-case-id">
+                <input type="hidden" id="tc-task-id">
+                <div class="task-complete-info">
+                    <div class="tc-row">
+                        <span class="tc-label">タスク内容</span>
+                        <span class="tc-value" id="tc-content">-</span>
+                    </div>
+                    <div class="tc-row">
+                        <span class="tc-label">担当者</span>
+                        <span class="tc-value" id="tc-assignee">-</span>
+                    </div>
+                    <div class="tc-row">
+                        <span class="tc-label">期限</span>
+                        <span class="tc-value" id="tc-deadline">-</span>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 16px;">
+                    <label class="form-label">備考</label>
+                    <textarea class="form-textarea" id="tc-note" placeholder="完了時のメモ、結果など..." rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="tc-checkbox-label">
+                        <input type="checkbox" id="tc-completed">
+                        <span>このタスクを完了にする</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('task-complete-modal')">キャンセル</button>
+                <button class="btn btn-primary" onclick="saveTaskComplete()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ステップタスク表示ポップアップ -->
+    <div class="step-tasks-popup-overlay" id="step-tasks-overlay" onclick="closeStepTasksPopup()"></div>
+    <div class="step-tasks-popup" id="step-tasks-popup">
+        <div class="step-tasks-popup-header">
+            <div class="step-tasks-popup-title"><span id="step-tasks-title">タスク一覧</span></div>
+            <button class="step-tasks-popup-close" onclick="closeStepTasksPopup()">×</button>
+        </div>
+        <div class="step-tasks-popup-body" id="step-tasks-body"></div>
+    </div>
+
+    <!-- カレンダーイベント詳細モーダル -->
+    <div class="calendar-detail-overlay" id="calendar-detail-overlay" onclick="closeCalendarDetail()">
+        <div class="calendar-detail-modal" onclick="event.stopPropagation()">
+            <div class="calendar-detail-header">
+                <div class="calendar-detail-title">
+                    <span id="calendar-detail-icon">📋</span>
+                    <span id="calendar-detail-title-text">詳細</span>
+                </div>
+                <button class="calendar-detail-close" onclick="closeCalendarDetail()">×</button>
+            </div>
+            <div class="calendar-detail-body" id="calendar-detail-body"></div>
+            <div class="calendar-detail-footer">
+                <button class="btn btn-secondary btn-sm" onclick="closeCalendarDetail()">閉じる</button>
+                <button class="btn btn-primary btn-sm" id="calendar-detail-goto" onclick="">案件を開く</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 写真プレビューモーダル -->
+    <div class="photo-preview-overlay" id="photo-preview-overlay" onclick="closePhotoPreview()">
+        <div class="photo-preview-container" onclick="event.stopPropagation()">
+            <button class="photo-preview-close" onclick="closePhotoPreview()">×</button>
+            <img class="photo-preview-img" id="photo-preview-img" src="" alt="不具合写真">
+            <div class="photo-preview-actions">
+                <button class="photo-delete-btn" onclick="deleteCurrentPhoto()">🗑 削除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 写真アップロード用の隠しinput -->
+    <input type="file" id="photo-upload-input" accept="image/*" style="display:none" onchange="handlePhotoUpload(event)">
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    
+    <script>
+        let db, auth, cases = [], currentUser = null, currentCalendarDate = new Date(), expandedCases = new Set(), isRegisterMode = false, unsubscribe = null, currentStatFilter = null;
+        const tentativeLabels = {'1': '選別中', '2': '選別未実施', '3': '流出対策済'};
+        const measureLabels = {'1': '現場確認', '2': '横にらみ', '3': '原因調査', '4': '対策実施', '5': '効果確認', '6': '標準化', '7': '横展'};
+        const measureLabelsShort = {'1': '現場', '2': '横', '3': '原因', '4': '対策', '5': '効果', '6': '標準', '7': '横展'};
+        const reportLabels = {'1': '未提出', '2': '社内提出済', '3': '客先提出済'};
+        const reportLabelsShort = {'1': '未提出', '2': '社内提出', '3': '客先提出'};
+        const categoryLabels = {'1': '現場確認', '2': '横にらみ', '3': '原因調査', '4': '対策実施', '5': '効果確認', '6': '標準化', '7': '再発防止'};
+
+        function initFirebase() {
+            try {
+                firebase.initializeApp({
+                    apiKey: "AIzaSyCr2A0kYdlJsCKnJhGXwEDViu2Ae08yKJc",
+                    authDomain: "qckyouyu.firebaseapp.com",
+                    projectId: "qckyouyu",
+                    storageBucket: "qckyouyu.firebasestorage.app",
+                    messagingSenderId: "884065987840",
+                    appId: "1:884065987840:web:2b12cc1204e484b999d7e5"
+                });
+                db = firebase.firestore();
+                auth = firebase.auth();
+                setupAuthListener();
+            } catch (e) {
+                console.error('Firebase error:', e);
+                document.getElementById('loading-overlay').innerHTML = '<div style="color:red;padding:20px;">エラー: ' + e.message + '</div>';
+            }
+        }
+
+        function setupAuthListener() {
+            auth.onAuthStateChanged((user) => {
+                document.getElementById('loading-overlay').style.display = 'none';
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('app-container').classList.add('active');
+                    document.getElementById('user-email').textContent = user.email;
+                    document.getElementById('user-icon').textContent = user.email.charAt(0).toUpperCase();
+                    updateFirebaseStatus(true);
+                    loadData();
+                } else {
+                    currentUser = null;
+                    document.getElementById('login-screen').style.display = 'flex';
+                    document.getElementById('app-container').classList.remove('active');
+                    updateFirebaseStatus(false);
+                    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+                }
+            });
+        }
+
+        function updateFirebaseStatus(c) {
+            document.getElementById('firebase-status').className = 'firebase-status ' + (c ? 'connected' : 'disconnected');
+            document.getElementById('status-text').textContent = c ? '同期中' : '未接続';
+        }
+
+        function toggleAuthMode() {
+            isRegisterMode = !isRegisterMode;
+            document.getElementById('login-btn').textContent = isRegisterMode ? '新規登録' : 'ログイン';
+            document.querySelector('.login-toggle').innerHTML = isRegisterMode 
+                ? 'アカウントをお持ちの方は <a onclick="toggleAuthMode()">ログイン</a>' 
+                : 'アカウントをお持ちでない方は <a onclick="toggleAuthMode()">新規登録</a>';
+        }
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true; errorDiv.style.display = 'none';
+            try {
+                if (isRegisterMode) await auth.createUserWithEmailAndPassword(email, password);
+                else await auth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                let msg = error.message;
+                if (error.code === 'auth/invalid-email') msg = 'メールアドレスの形式が正しくありません';
+                else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') msg = 'メールアドレスまたはパスワードが正しくありません';
+                else if (error.code === 'auth/email-already-in-use') msg = 'このメールアドレスは既に使用されています';
+                else if (error.code === 'auth/weak-password') msg = 'パスワードは6文字以上必要です';
+                errorDiv.textContent = msg; errorDiv.style.display = 'block';
+            }
+            btn.disabled = false;
+        });
+
+        function logout() { if (confirm('ログアウトしますか？')) auth.signOut(); }
+
+        function loadData() {
+            unsubscribe = db.collection('cases').orderBy('date', 'desc').onSnapshot((snapshot) => {
+                cases = []; snapshot.forEach((doc) => cases.push({ id: doc.id, ...doc.data() }));
+                renderAll();
+            }, (e) => { console.error('Load error:', e); updateFirebaseStatus(false); });
+        }
+
+        function generateId() { return 'id-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9); }
+        // ================================
+// 日付ユーティリティ（★ここに貼る）
+// ================================
+function parseLocalDate(str){
+  if(!str) return null;
+  const [y,m,d] = str.split('-').map(Number);
+  return new Date(y, m-1, d); // 日本時間の 00:00
+}
+
+function formatDate(d){
+  if (typeof d === 'string') return d;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function isOverdue(dl){
+  if (!dl) return false;
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const deadline = parseLocalDate(dl);
+  return deadline < today;
+}
+
+        function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+
+
+        function renderAll() { renderStats(); renderCaseList(); renderAssigneeView(); renderCalendar(); updateCalendarFilter(); }
+
+        function toggleStatFilter(filter) {
+            const cards = document.querySelectorAll('.stat-card');
+            const select = document.getElementById('filter-status');
+            if (currentStatFilter === filter) {
+                currentStatFilter = null;
+                cards.forEach(c => c.classList.remove('active'));
+                select.value = 'all';
+            } else {
+                currentStatFilter = filter;
+                cards.forEach(c => c.classList.remove('active'));
+                document.querySelector(`.stat-card[data-filter="${filter}"]`).classList.add('active');
+                select.value = filter;
+            }
+            renderCaseList();
+        }
+
+        function renderStats() {
+            let overdue = 0, active = 0, completed = 0, unreported = 0;
+            const thisMonth = new Date(); thisMonth.setDate(1);
+            cases.forEach(c => {
+                if (c.tasks) c.tasks.forEach(t => { if (!t.completed && isOverdue(t.deadline)) overdue++; });
+                if (parseInt(c.measureStatus) < 5) active++;
+                if (c.measureStatus === '7') {
+                    const lastH = c.statusHistory?.[c.statusHistory.length - 1];
+                    if (lastH && new Date(lastH.timestamp) >= thisMonth) completed++;
+                }
+                if (c.internalReportStatus !== '2' || c.customerReportStatus !== '2') unreported++;
+            });
+            document.getElementById('stat-overdue').textContent = overdue;
+            document.getElementById('stat-active').textContent = active;
+            document.getElementById('stat-completed').textContent = completed;
+            document.getElementById('stat-unreported').textContent = unreported;
+        }
+
+        function renderCaseList() {
+            const container = document.getElementById('case-list');
+            const statusFilter = document.getElementById('filter-status').value;
+            const measureFilter = document.getElementById('filter-measure').value;
+            const thisMonth = new Date(); thisMonth.setDate(1);
+            
+            let filtered = cases.filter(c => {
+                if (statusFilter === 'active' && (c.closed || c.measureStatus === '7')) return false;
+                if (statusFilter === 'overdue' && !c.tasks?.some(t => !t.completed && isOverdue(t.deadline))) return false;
+                if (statusFilter === 'completed') {
+                    if (!(c.closed || c.measureStatus === '7')) return false;
+                    const lastH = c.statusHistory?.[c.statusHistory.length - 1];
+                    if (!lastH || new Date(lastH.timestamp) < thisMonth) return false;
+                }
+                if (statusFilter === 'unreported' && c.internalReportStatus === '2' && c.customerReportStatus === '2') return false;
+                if (measureFilter !== 'all' && c.measureStatus !== measureFilter) return false;
+                return true;
+            });
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-title">案件がありません</div><div class="empty-description">「＋ 新規案件」ボタンから案件を追加してください</div></div>`;
+                return;
+            }
+filtered.sort((a,b)=>{
+  const aDone = (a.closed || a.measureStatus === '7') ? 1 : 0;
+  const bDone = (b.closed || b.measureStatus === '7') ? 1 : 0;
+  if (aDone !== bDone) return aDone - bDone; // 未完了(0)→完了(1)
+
+  // 同じグループ内は日付で新しい順（無ければ0扱い）
+  const ad = new Date(a.date || '1970-01-01').getTime();
+  const bd = new Date(b.date || '1970-01-01').getTime();
+  return bd - ad;
+});
+
+container.innerHTML = filtered.map(c => renderCaseCard(c)).join('');
+
+            expandedCases.forEach(id => { const card = document.getElementById(`case-${id}`); if (card) card.classList.add('expanded'); });
+        }
+
+        function getNextTask(c) {
+            if (!c.tasks || c.tasks.length === 0) return null;
+            const activeTasks = c.tasks.filter(t => !t.completed);
+            if (activeTasks.length === 0) return null;
+            // 期限が近い順にソート
+            activeTasks.sort((a, b) => {
+                if (!a.deadline) return 1;
+                if (!b.deadline) return -1;
+                return new Date(a.deadline) - new Date(b.deadline);
+            });
+            return activeTasks[0];
+        }
+
+        function renderProgressSteps(c) {
+            const md = c.measureDates || {};
+            const tasks = c.tasks || [];
+            const originDate = c.date || c.createdAt || '';
+            let html = '';
+            
+            for(let i = 1; i <= 7; i++){
+                const isCompleted = parseInt(c.measureStatus) >= i;
+                const stepDate = md[String(i)] || '';
+                const categoryTasks = tasks.filter(t => t.category === String(i));
+                const taskCount = categoryTasks.length;
+                const hasUncompletedTasks = categoryTasks.some(t => !t.completed);
+                
+                // 矢印とリードタイム（最初以外）
+                if(i > 1){
+                    const prevDate = md[String(i-1)] || '';
+                    const arrowDone = prevDate && stepDate;
+                    
+                    // リードタイム計算（前ステップからの日数）
+                    let leadtime = '';
+                    let leadtimeClass = '';
+                    if(prevDate && stepDate){
+                        const diff = Math.round((new Date(stepDate) - new Date(prevDate)) / 86400000);
+                        if(diff >= 0){
+                            leadtime = diff + '日';
+                            if(diff >= 14) leadtimeClass = 'long';
+                            else if(diff >= 7) leadtimeClass = 'medium';
+                        }
+                    }
+                    
+                    html += `<div class="step-arrow ${arrowDone ? 'done' : ''}">`;
+                    html += `<div class="step-arrow-line"></div>`;
+                    if(leadtime){
+                        html += `<div class="step-arrow-days ${leadtimeClass}">${leadtime}</div>`;
+                    }
+                    html += `</div>`;
+                }
+                
+                   
+                html += `<div class="step-item">`;
+                html += `<div class="step-label">${measureLabels[String(i)]}</div>`;
+                html += `<div class="step-dot step-${i} ${isCompleted ? 'completed' : ''}" `;
+                html += `onclick="toggleMeasureStatus('${c.id}', ${i})" `;
+                html += `title="${measureLabels[String(i)]}">`;
+                html += (isCompleted ? '✓' : i);
+                if(taskCount > 0){
+                    // バッジの色分け: 全完了→グレー, 遅延あり→赤, 進行中→青
+                    const hasOverdueTasks = categoryTasks.some(t => !t.completed && isOverdue(t.deadline));
+                    let badgeClass = '';
+                    if(!hasUncompletedTasks){
+                        badgeClass = 'all-done'; // グレー
+                    } else if(hasOverdueTasks){
+                        badgeClass = 'has-overdue'; // 赤
+                    }
+                    // それ以外は青（デフォルト）
+                    html += `<span class="step-task-badge ${badgeClass}" `;
+                    html += `onclick="event.stopPropagation();showStepTasks('${c.id}', '${i}', '${measureLabels[String(i)]}')">`;
+                    html += taskCount;
+                    // ホバー時のツールチップ（タスク名を表示）
+                    html += `<div class="step-task-tooltip">`;
+                    categoryTasks.forEach(t => {
+                        const completed = t.completed ? 'completed' : '';
+                        const overdue = !t.completed && isOverdue(t.deadline) ? 'overdue' : '';
+                        const icon = t.completed ? '✓' : (overdue ? '!' : '○');
+                        html += `<div class="step-task-tooltip-item ${completed} ${overdue}" onclick="event.stopPropagation();openTaskCompleteModal('${c.id}', '${t.id}')">`;
+                        html += `<span class="step-task-tooltip-icon">${icon}</span>`;
+                        html += `<span class="step-task-tooltip-text">${escapeHtml(t.content || '')}</span>`;
+                        html += `<span class="step-task-tooltip-assignee">${escapeHtml(t.assignee || '')}</span>`;
+                        html += `</div>`;
+                    });
+                    html += `</div>`;
+                    html += '</span>';
+                }
+                html += '</div>';
+
+                html += `<div class="step-date" onclick="event.stopPropagation();editMeasureDate('${c.id}', ${i})" title="クリックで完了日を編集">${stepDate}</div>`;
+                html += '</div>';
+            }
+            return html;
+        
+
+
+        }
+
+        function renderCaseCard(c) {
+            const nextTask = getNextTask(c);
+            const nextTaskOverdue = nextTask && isOverdue(nextTask.deadline);
+            const photos = c.photos || [];
+            
+return `<div class="case-card ${(c.closed || c.measureStatus === '7') ? 'is-closed' : ''}" id="case-${c.id}">
+
+ <div class="case-header" onclick="toggleCase(event, '${c.id}')">
+
+                    <!-- 案件情報 -->
+                    <div class="case-info">
+                        <div class="case-id">${c.refNo || '---'}</div>
+                        <div class="case-name">${c.defect || '未設定'}</div>
+                        <div class="case-meta">
+                            <span>📅 ${c.date || '---'}</span>
+                            <span>🏭 ${c.customer || '---'}</span>
+                        </div>
+                        <div class="case-thumbnails" onclick="event.stopPropagation()">
+                            ${photos.length > 0 
+                                ? `<img class="case-thumbnail" src="${photos[0].url}" alt="不具合写真" onclick="triggerPhotoUpload('${c.id}')" title="クリックで写真を差し替え">`
+                                : `<button class="add-photo-btn" onclick="triggerPhotoUpload('${c.id}')" title="写真を追加">📷</button>`
+                            }
+                        </div>
+                    </div>
+                    
+                    <!-- 進捗ステップ（横一列・リードタイム付き） -->
+                    <div class="progress-steps-inline" onclick="event.stopPropagation()">
+                        ${renderProgressSteps(c)}
+                    </div>
+                    
+                    <!-- ネクストアクション -->
+                    <div class="next-action-wrapper" onclick="event.stopPropagation()">
+                        <div class="case-field-header">ネクストアクション</div>
+                        <div class="next-action-box ${nextTask ? 'has-task' : 'clickable'} ${nextTaskOverdue ? 'overdue' : ''}" ${!nextTask ? `onclick="openTaskModal('${c.id}')"` : ''}>
+                            ${nextTask ? `
+                                <div class="next-action-content">
+                                    <div class="next-action-title">${nextTask.content}</div>
+                                    <div class="next-action-meta">
+                                        <span>👤 ${nextTask.assignee}</span>
+                                        <span class="next-action-deadline ${nextTaskOverdue ? 'overdue' : ''}">📅 ${nextTask.deadline || '---'}</span>
+                                    </div>
+                                </div>
+                            ` : '<span style="color: var(--accent); font-size: 11px;">＋ タスクを追加</span>'}
+                        </div>
+                    </div>
+                    
+                    <!-- ステータスバッジ -->
+                    <div class="status-wrapper" onclick="event.stopPropagation()">
+                        <div class="case-field-header">ステータス</div>
+                        <div class="case-statuses">
+                        <div class="status-dropdown-container">
+                            <div class="status-label-top">暫定</div>
+                            <button class="status-badge-btn tentative-${c.tentativeStatus}" onclick="toggleDropdown(event, '${c.id}', 'tentative')">
+                                <span class="badge-value">${tentativeLabels[c.tentativeStatus] || '---'}</span>
+                            </button>
+                            <div class="status-dropdown" id="dd-${c.id}-tentative">
+                                ${Object.entries(tentativeLabels).map(([k,v]) => `<div class="status-dropdown-item ${c.tentativeStatus===k?'selected':''}" onclick="changeStatus('${c.id}','tentative','${k}')"><span class="item-dot" style="background:${k==='1'?'var(--warning)':k==='2'?'var(--danger)':'var(--success)'}"></span>${v}</div>`).join('')}
+                            </div>
+                        </div>
+                        <div class="status-dropdown-container">
+                            <div class="status-label-top">対策</div>
+                            <button class="status-badge-btn measure-${c.measureStatus}" onclick="toggleDropdown(event, '${c.id}', 'measure')">
+                                <span class="badge-value">${measureLabels[c.measureStatus] || '---'}</span>
+                            </button>
+                            <div class="status-dropdown" id="dd-${c.id}-measure">
+                                ${Object.entries(measureLabels).map(([k,v]) => `<div class="status-dropdown-item ${c.measureStatus===k?'selected':''}" onclick="changeStatus('${c.id}','measure','${k}')"><span class="item-dot" style="background:${['var(--status-orange)','var(--status-yellow)','var(--status-green)','var(--status-blue)','var(--status-cyan)','var(--accent)','var(--danger)'][k-1]}"></span>${v}</div>`).join('')}
+                            </div>
+                        </div>
+                        <div class="status-dropdown-container">
+                            <div class="status-label-top">社内提出</div>
+                            <button class="status-badge-btn internal-report-${c.internalReportStatus || '1'}" onclick="toggleDropdown(event, '${c.id}', 'internalReport')">
+                                <span class="badge-value">${c.internalReportStatus === '2' ? '済' : '未'}</span>
+                            </button>
+                            <div class="status-dropdown" id="dd-${c.id}-internalReport">
+                                <div class="status-dropdown-item ${(c.internalReportStatus || '1')==='1'?'selected':''}" onclick="changeStatus('${c.id}','internalReport','1')"><span class="item-dot" style="background:var(--danger)"></span>未提出</div>
+                                <div class="status-dropdown-item ${c.internalReportStatus==='2'?'selected':''}" onclick="changeStatus('${c.id}','internalReport','2')"><span class="item-dot" style="background:var(--success)"></span>提出済</div>
+                            </div>
+                            ${c.internalReportStatus === '2' && c.internalReportDate ? `
+                                <div class="status-date" onclick="event.stopPropagation();editInternalReportDate('${c.id}')" title="クリックで提出日を編集">
+                                    ${c.internalReportDate}
+                                </div>
+                            ` : (c.internalDeadline ? `
+                                <div class="status-date deadline ${isOverdue(c.internalDeadline) ? 'overdue' : ''}" title="社内期限">
+                                    期限: ${c.internalDeadline}
+                                </div>
+                            ` : '')}
+                        </div>
+                        <div class="status-dropdown-container">
+                            <div class="status-label-top">客先提出</div>
+                            <button class="status-badge-btn customer-report-${c.customerReportStatus || '1'}" onclick="toggleDropdown(event, '${c.id}', 'customerReport')">
+                                <span class="badge-value">${c.customerReportStatus === '2' ? '済' : '未'}</span>
+                            </button>
+                            <div class="status-dropdown" id="dd-${c.id}-customerReport">
+                                <div class="status-dropdown-item ${(c.customerReportStatus || '1')==='1'?'selected':''}" onclick="changeStatus('${c.id}','customerReport','1')"><span class="item-dot" style="background:var(--danger)"></span>未提出</div>
+                                <div class="status-dropdown-item ${c.customerReportStatus==='2'?'selected':''}" onclick="changeStatus('${c.id}','customerReport','2')"><span class="item-dot" style="background:var(--success)"></span>提出済</div>
+                            </div>
+                            ${c.customerReportStatus === '2' && c.customerReportDate ? `
+                                <div class="status-date" onclick="event.stopPropagation();editCustomerReportDate('${c.id}')" title="クリックで提出日を編集">
+                                    ${c.customerReportDate}
+                                </div>
+                            ` : (c.customerDeadline ? `
+                                <div class="status-date deadline ${isOverdue(c.customerDeadline) ? 'overdue' : ''}" title="客先期限">
+                                    期限: ${c.customerDeadline}
+                                </div>
+                            ` : '')}
+                        </div>
+                    </div>
+                    </div>
+                    
+                    <span class="expand-icon">▼</span>
+                </div>
+                <div class="case-body">
+                    <div class="task-section">
+                        <div class="task-header"><div class="section-title">タスクリスト</div><button class="btn btn-sm btn-primary" onclick="openTaskModal('${c.id}')">＋ タスク追加</button></div>
+                        <div class="task-list">
+                            ${(c.tasks || []).map(t => renderTaskItem(c.id, t)).join('')}
+                            ${(!c.tasks || c.tasks.length === 0) ? '<div style="color: var(--text-muted); padding: 16px; text-align: center;">タスクがありません</div>' : ''}
+                        </div>
+                    </div>
+                    
+                    <!-- メモセクション -->
+                    <div class="memo-section">
+                        <div class="memo-header">
+                            <div class="section-title">📝 打合せメモ</div>
+                            <button class="btn btn-sm btn-primary" onclick="openMemoModal('${c.id}')">＋ メモ追加</button>
+                        </div>
+                        <div class="memo-list">
+                            ${renderMemoList(c)}
+                        </div>
+                    </div>
+                    
+<div class="case-actions">
+  <button class="btn btn-secondary btn-sm" onclick="editCase('${c.id}')">✏️ 編集</button>
+  <button class="btn btn-danger btn-sm" onclick="deleteCase('${c.id}')">🗑️ 削除</button>
+
+  ${!(c.closed || c.measureStatus === '7') ? `
+    <button class="btn btn-primary btn-sm" onclick="completeCase('${c.id}')">
+      ✅ 案件完了
+    </button>
+  ` : `
+    <button class="btn btn-secondary btn-sm" onclick="reopenCase('${c.id}')">
+      ↩ 再オープン
+    </button>
+    <span style="font-size:12px;color:var(--success);font-weight:600;">
+      ✔ 完了済み
+    </span>
+  `}
+</div>
+
+
+                </div>
+            </div>`;
+        }
+
+        // メモリストのレンダリング
+        function renderMemoList(c){
+            const memos = c.memos || [];
+            if(memos.length === 0){
+                return '<div class="memo-empty">メモがありません</div>';
+            }
+            // 日付の新しい順にソート
+            const sorted = [...memos].sort((a,b) => new Date(b.date || 0) - new Date(a.date || 0));
+            return sorted.map(m => `
+                <div class="memo-item">
+                    <div class="memo-item-header">
+                        <span class="memo-date">📅 ${escapeHtml(m.date || '---')}</span>
+                        <div class="memo-actions">
+                            <button class="task-action-btn" onclick="editMemo('${c.id}', '${m.id}')">✏️</button>
+                            <button class="task-action-btn" onclick="deleteMemo('${c.id}', '${m.id}')">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="memo-content">${escapeHtml(m.content || '')}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderTaskItem(caseId, t) {
+            const overdue = !t.completed && isOverdue(t.deadline);
+            return `<div class="task-item ${t.completed ? 'completed' : ''} ${overdue ? 'overdue' : ''}">
+                <div class="task-checkbox" onclick="toggleTaskComplete('${caseId}', '${t.id}')">${t.completed ? '✓' : ''}</div>
+                <div class="task-content">
+            <div class="task-title"
+     onclick="event.preventDefault(); event.stopPropagation(); openTaskCompleteModal('${caseId}', '${t.id}')"
+">
+  ${escapeHtml(t.content || '')}
+</div>
+                    <div class="task-meta"><span>👤 ${t.assignee}</span><span>📁 ${categoryLabels[t.category] || ''}</span></div>
+                </div>
+                <div class="task-deadline">${t.deadline || '---'}</div>
+                <div class="task-actions">
+                    <button class="task-action-btn" onclick="editTask('${caseId}', '${t.id}')">✏️</button>
+                    <button class="task-action-btn" onclick="deleteTask('${caseId}', '${t.id}')">🗑️</button>
+                </div>
+            </div>`;
+        }
+
+        // 担当者別ビュー
+        function renderAssigneeView() {
+            const container = document.getElementById('assignee-grid');
+            const filterSelect = document.getElementById('assignee-filter');
+            const statusFilter = document.getElementById('assignee-status-filter').value;
+            const selectedAssignee = filterSelect.value;
+            const assigneeMap = new Map();
+            cases.forEach(c => {
+                (c.tasks || []).forEach(t => {
+                    if (!assigneeMap.has(t.assignee)) assigneeMap.set(t.assignee, []);
+                    assigneeMap.get(t.assignee).push({ ...t, caseId: c.id, caseRef: c.refNo, caseDefect: c.defect });
+                });
+            });
+            const currentVal = filterSelect.value;
+            filterSelect.innerHTML = '<option value="all">全員</option>';
+            [...assigneeMap.keys()].sort().forEach(name => { filterSelect.innerHTML += `<option value="${name}">${name}</option>`; });
+            filterSelect.value = currentVal;
+            let assignees = selectedAssignee === 'all' ? [...assigneeMap.entries()] : [[selectedAssignee, assigneeMap.get(selectedAssignee) || []]];
+            if (assignees.length === 0 || assignees.every(([, tasks]) => !tasks || tasks.length === 0)) {
+                container.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">タスクがありません</div></div>`;
+                return;
+            }
+            container.innerHTML = assignees.filter(([, tasks]) => tasks && tasks.length > 0).map(([name, tasks]) => {
+                let filteredTasks = statusFilter === 'active' ? tasks.filter(t => !t.completed) : tasks;
+                if (filteredTasks.length === 0) return '';
+                const overdueCount = filteredTasks.filter(t => !t.completed && isOverdue(t.deadline)).length;
+                const activeCount = filteredTasks.filter(t => !t.completed).length;
+                return `<div class="assignee-card">
+                    <div class="assignee-header">
+                        <div class="assignee-name"><span class="assignee-avatar">${name.charAt(0)}</span>${name}</div>
+                        <div class="assignee-stats">
+                            ${overdueCount > 0 ? `<span class="assignee-stat overdue">遅延 ${overdueCount}</span>` : ''}
+                            <span class="assignee-stat active">未完了 ${activeCount}</span>
+                        </div>
+                    </div>
+                    <div class="assignee-tasks">
+                        ${filteredTasks.map(t => `<div class="assignee-task ${t.completed ? 'completed' : ''} ${!t.completed && isOverdue(t.deadline) ? 'overdue' : ''}" onclick="goToCase('${t.caseId}')">
+                            <div class="assignee-task-case">${t.caseRef} ${t.caseDefect}</div>
+                            <div class="assignee-task-title">${t.content}</div>
+                            <div class="assignee-task-deadline">期限: ${t.deadline || '---'}</div>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function goToCase(caseId) {
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelector('.nav-tab[data-view="list"]').classList.add('active');
+            document.getElementById('list-view').classList.add('active');
+            expandedCases.add(caseId);
+            renderCaseList();
+            setTimeout(() => { const card = document.getElementById(`case-${caseId}`); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 100);
+        }
+
+        // カレンダー
+        function updateCalendarFilter() {
+            const select = document.getElementById('calendar-case-filter');
+            const currentVal = select.value;
+            select.innerHTML = '<option value="all">すべての案件</option>';
+            cases.forEach(c => { select.innerHTML += `<option value="${c.id}">${c.refNo} ${c.defect}</option>`; });
+            select.value = currentVal;
+        }
+
+        function renderCalendar() {
+            const year = currentCalendarDate.getFullYear(), month = currentCalendarDate.getMonth();
+            document.getElementById('calendar-title').textContent = `${year}年${month + 1}月`;
+            const caseFilter = document.getElementById('calendar-case-filter').value;
+            const firstDay = new Date(year, month, 1), startDate = new Date(firstDay);
+            startDate.setDate(startDate.getDate() - firstDay.getDay());
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const events = {};
+            const addEvent = (date, event) => { if (!events[date]) events[date] = []; events[date].push(event); };
+            const filteredCases = caseFilter === 'all' ? cases : cases.filter(c => c.id === caseFilter);
+            filteredCases.forEach(c => {
+                // 社内回答期日
+                if (c.internalDeadline) addEvent(c.internalDeadline, { 
+                    type: 'internal', 
+                    caseId: c.id,
+                    caseName: c.refNo || '---',
+                    defect: c.defect || '',
+                    eventType: 'deadline',
+                    deadlineType: '社内回答期日',
+                    date: c.internalDeadline
+                });
+                // 客先回答期日
+                if (c.customerDeadline) addEvent(c.customerDeadline, { 
+                    type: 'customer', 
+                    caseId: c.id,
+                    caseName: c.refNo || '---',
+                    defect: c.defect || '',
+                    eventType: 'deadline',
+                    deadlineType: '客先回答期日',
+                    date: c.customerDeadline
+                });
+                // タスク
+                (c.tasks || []).forEach((t, idx) => {
+                    if (t.deadline) {
+                        const type = t.completed ? 'task-done' : (isOverdue(t.deadline) ? 'task-overdue' : 'task');
+                        addEvent(t.deadline, { 
+                            type, 
+                            caseId: c.id,
+                            caseName: c.refNo || '---',
+                            defect: c.defect || '',
+                            eventType: 'task',
+                            taskId: t.id,
+                            taskIndex: idx,
+                            taskContent: t.content || '',
+                            taskAssignee: t.assignee || '',
+                            taskDeadline: t.deadline,
+                            taskCompleted: t.completed,
+                            taskCategory: t.category,
+                            taskNote: t.note || ''
+                        });
+                    }
+                });
+            });
+            
+            let html = ['日','月','火','水','木','金','土'].map(d => `<div class="calendar-header-cell">${d}</div>`).join('');
+            const current = new Date(startDate);
+            for (let i = 0; i < 42; i++) {
+                const dateStr = formatDate(current);
+                const isOther = current.getMonth() !== month;
+                const isToday = current.getTime() === today.getTime();
+                const dayEvents = events[dateStr] || [];
+                html += `<div class="calendar-day ${isOther ? 'other-month' : ''} ${isToday ? 'today' : ''}">
+                    <div class="calendar-date">${current.getDate()}</div>
+                    ${dayEvents.slice(0, 4).map((e, idx) => {
+                        const eventData = encodeURIComponent(JSON.stringify(e));
+                        const c = cases.find(x => x.id === e.caseId);
+                        const thumbUrl = (c && c.photos && c.photos[0]) ? c.photos[0].url : '';
+                        const thumbHtml = thumbUrl ? `<img src="${thumbUrl}" class="event-thumb">` : '';
+                        
+                        if(e.eventType === 'deadline'){
+                            return `<div class="calendar-event ${e.type}" onclick="openCalendarDetail('${eventData}')" title="${e.deadlineType}: ${e.defect}">
+                                ${thumbHtml}
+                                <div class="event-content">
+                                    <span class="event-defect">${escapeHtml(e.defect || e.caseName)}</span>
+                                    <span class="event-type-label">${e.deadlineType}</span>
+                                </div>
+                            </div>`;
+                        } else {
+                            return `<div class="calendar-event ${e.type}" onclick="openCalendarDetail('${eventData}')" title="${e.defect}: ${e.taskContent}">
+                                ${thumbHtml}
+                                <div class="event-content">
+                                    <span class="event-defect">${escapeHtml(e.defect || e.caseName)}</span>
+                                    <span class="event-task">${escapeHtml(e.taskContent)}</span>
+                                    <span class="event-assignee">👤${escapeHtml(e.taskAssignee)}</span>
+                                </div>
+                            </div>`;
+                        }
+                    }).join('')}
+                    ${dayEvents.length > 4 ? `<div style="font-size:10px;color:var(--text-muted);">+${dayEvents.length - 4}件</div>` : ''}
+                </div>`;
+                current.setDate(current.getDate() + 1);
+            }
+            document.getElementById('calendar-grid').innerHTML = html;
+        }
+
+        function openCalendarDetail(eventDataEncoded){
+            const e = JSON.parse(decodeURIComponent(eventDataEncoded));
+            const overlay = document.getElementById('calendar-detail-overlay');
+            const body = document.getElementById('calendar-detail-body');
+            const titleText = document.getElementById('calendar-detail-title-text');
+            const icon = document.getElementById('calendar-detail-icon');
+            const gotoBtn = document.getElementById('calendar-detail-goto');
+            
+            gotoBtn.onclick = () => { closeCalendarDetail(); goToCase(e.caseId); };
+            
+            if(e.eventType === 'deadline'){
+                // 期日の詳細
+                icon.textContent = e.type === 'internal' ? '📅' : '🚨';
+                titleText.textContent = e.deadlineType;
+                body.innerHTML = `
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">種別</span>
+                        <span class="calendar-detail-value"><span class="calendar-detail-type ${e.type}">${e.deadlineType}</span></span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">案件番号</span>
+                        <span class="calendar-detail-value">${escapeHtml(e.caseName)}</span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">不具合内容</span>
+                        <span class="calendar-detail-value">${escapeHtml(e.defect)}</span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">期日</span>
+                        <span class="calendar-detail-value ${isOverdue(e.date) ? 'overdue' : ''}">${escapeHtml(e.date)} ${isOverdue(e.date) ? '⚠️ 期限超過' : ''}</span>
+                    </div>
+                `;
+            } else {
+                // タスクの詳細
+                icon.textContent = e.taskCompleted ? '✅' : (e.type === 'task-overdue' ? '⚠️' : '📋');
+                titleText.textContent = 'タスク詳細';
+                const statusText = e.taskCompleted ? '完了' : (e.type === 'task-overdue' ? '遅延' : '進行中');
+                const statusClass = e.taskCompleted ? 'task-done' : e.type;
+                body.innerHTML = `
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">ステータス</span>
+                        <span class="calendar-detail-value"><span class="calendar-detail-type ${statusClass}">${statusText}</span></span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">案件番号</span>
+                        <span class="calendar-detail-value">${escapeHtml(e.caseName)}</span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">不具合内容</span>
+                        <span class="calendar-detail-value">${escapeHtml(e.defect)}</span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">タスク内容</span>
+                        <span class="calendar-detail-value ${e.taskCompleted ? 'done' : ''}">${escapeHtml(e.taskContent)}</span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">担当者</span>
+                        <span class="calendar-detail-value">👤 ${escapeHtml(e.taskAssignee)}</span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">期限</span>
+                        <span class="calendar-detail-value ${!e.taskCompleted && isOverdue(e.taskDeadline) ? 'overdue' : ''}">${escapeHtml(e.taskDeadline)} ${!e.taskCompleted && isOverdue(e.taskDeadline) ? '⚠️ 期限超過' : ''}</span>
+                    </div>
+                    <div class="calendar-detail-row">
+                        <span class="calendar-detail-label">対応項目</span>
+                        <span class="calendar-detail-value">${escapeHtml(categoryLabels[e.taskCategory] || '')}</span>
+                    </div>
+${e.taskNote ? `<div class="calendar-detail-row">
+                        <span class="calendar-detail-label">備考</span>
+                        <span class="calendar-detail-value">${escapeHtml(e.taskNote)}</span>
+                    </div>` : ''}
+                    ${!e.taskCompleted ? `<div style="margin-top:16px; text-align:center;">
+                        <button class="btn btn-primary" onclick="closeCalendarDetail();openTaskCompleteModal('${e.caseId}', '${e.taskId}')">✓ タスクを完了</button>
+                    </div>` : ''}
+                `;
+            }
+            
+            overlay.classList.add('active');
+        }
+
+        function closeCalendarDetail(){
+            document.getElementById('calendar-detail-overlay').classList.remove('active');
+        }
+
+        function changeMonth(d) { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + d); renderCalendar(); }
+        function goToToday() { currentCalendarDate = new Date(); renderCalendar(); }
+
+        // ドロップダウン
+        function toggleDropdown(e, caseId, type) {
+            e.stopPropagation();
+            closeAllDropdowns();
+            const dd = document.getElementById(`dd-${caseId}-${type}`);
+            const rect = e.currentTarget.getBoundingClientRect();
+            dd.style.top = (rect.bottom + 4) + 'px';
+            dd.style.right = (window.innerWidth - rect.right) + 'px';
+            dd.classList.add('active');
+        }
+        function closeAllDropdowns() { document.querySelectorAll('.status-dropdown.active').forEach(d => d.classList.remove('active')); }
+        document.addEventListener('click', closeAllDropdowns);
+
+async function changeStatus(caseId, type, value) {
+  closeAllDropdowns();
+  const c = cases.find(x => x.id === caseId);
+  if (!c) return;
+
+  const update = {};
+  if (type === 'tentative') {
+    update.tentativeStatus = value;
+  } else if (type === 'measure') {
+    update.measureStatus = value;
+
+    // 未設定なら当日を自動セット
+    const md = { ...(c.measureDates || {}) };
+    const v = String(value);
+    if (!md[v]) md[v] = todayStr();
+    update.measureDates = md;
+
+  } else if (type === 'report') {
+    update.reportStatus = value;
+
+    const rd = { ...(c.reportDates || {}) };
+    const v = String(value);
+    if (!rd[v]) rd[v] = todayStr();
+    update.reportDates = rd;
+  } else if (type === 'internalReport') {
+    update.internalReportStatus = value;
+    // 提出済みにした場合、日付を自動セット
+    if (value === '2' && !c.internalReportDate) {
+      update.internalReportDate = todayStr();
+    }
+  } else if (type === 'customerReport') {
+    update.customerReportStatus = value;
+    // 提出済みにした場合、日付を自動セット
+    if (value === '2' && !c.customerReportDate) {
+      update.customerReportDate = todayStr();
+    }
+  }
+
+  try {
+    const fromVal = String(
+      type === 'tentative' ? (c.tentativeStatus || '') :
+      type === 'measure'    ? (c.measureStatus || '') :
+      type === 'internalReport' ? (c.internalReportStatus || '') :
+      type === 'customerReport' ? (c.customerReportStatus || '') :
+                              (c.reportStatus || '')
+    );
+
+    await db.collection('cases').doc(caseId).update(update);
+    await appendStatusHistory(caseId, type, value, { action: 'status', from: fromVal, to: String(value) });
+
+  } catch (e) {
+    alert('更新に失敗しました: ' + e.message);
+  }
+}
+
+
+        async function toggleMeasureStatus(caseId, step) {
+            const c = cases.find(x => x.id === caseId);
+            if (!c) return;
+
+            const current = parseInt(c.measureStatus || '1', 10);
+            const newStatus = step <= current ? Math.max(1, step - 1) : step;
+
+            // 更新データ
+            const update = { measureStatus: String(newStatus) };
+
+            // ✔を付けた（前進した）場合は、そのステップの完了日を自動入力（未設定なら）
+            if (step > current) {
+                const md = { ...(c.measureDates || {}) };
+                const key = String(step);
+                if (!md[key]) md[key] = todayStr();
+                update.measureDates = md;
+            }
+
+            try {
+                await db.collection('cases').doc(caseId).update(update);
+                            await appendStatusHistory(caseId, 'measure', String(newStatus), { action: 'status', from: String(current), to: String(newStatus), step: String(step) });
+} catch (e) {
+                console.error(e);
+                alert('更新に失敗しました: ' + e.message);
+            }
+        }
+        // CRUD
+        async function saveCase() {
+            const id = document.getElementById('case-id').value;
+            const data = {
+                refNo: document.getElementById('case-ref-no').value,
+                defect: document.getElementById('case-defect').value,
+                date: document.getElementById('case-date').value,
+                customer: document.getElementById('case-customer').value,
+                tentativeStatus: document.getElementById('case-tentative').value,
+                measureStatus: document.getElementById('case-measure').value,
+                reportStatus: document.getElementById('case-report').value,
+                internalDeadline: document.getElementById('case-internal-deadline').value,
+                customerDeadline: document.getElementById('case-customer-deadline').value,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            try {
+                if (id) {
+                    const existing = cases.find(c => c.id === id);
+                    if (existing) { data.tasks = existing.tasks || []; data.statusHistory = existing.statusHistory || []; }
+                    await db.collection('cases').doc(id).update(data);
+                } else {
+                    data.tasks = [];
+                     data.measureDates = {};
+                     data.reportDates = {};
+                     data.closed = false;
+                     data.closedAt = '';
+                     data.statusHistory = [{ status: 'measure', value: data.measureStatus, timestamp: new Date().toISOString() }];
+                    data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    await db.collection('cases').add(data);
+                }
+                closeModal('case-modal');
+            } catch (e) { alert('保存に失敗しました: ' + e.message); }
+        }
+
+        async function deleteCase(caseId) {
+            if (!confirm('この案件を削除しますか？')) return;
+            try { await db.collection('cases').doc(caseId).delete(); }
+            catch (e) { alert('削除に失敗しました: ' + e.message); }
+        }
+async function completeCase(caseId) {
+  if (!confirm('この案件を完了（クローズ）しますか？')) return;
+
+  const c = cases.find(x => x.id === caseId);
+  if (!c) return;
+
+  const now = todayStr();
+
+  await db.collection('cases').doc(caseId).update({
+    closed: true,
+  prevMeasureStatus: c.measureStatus || '1',
+    measureStatus: '7',               // 横展まで完了扱い
+    closedAt: now,
+    statusHistory: firebase.firestore.FieldValue.arrayUnion({
+      type: 'close',
+      label: '案件完了',
+      timestamp: now,
+      user: currentUser.email
+    })
+  });
+}
+async function reopenCase(caseId) {
+  if (!confirm('この案件を再オープン（完了を解除）しますか？')) return;
+
+  const c = cases.find(x => x.id === caseId);
+  if (!c) return;
+
+  const now = todayStr();
+
+  // 完了時に退避しておいたステータスがあれば戻す（なければ6に戻す）
+  const backTo = c.prevMeasureStatus || '6';
+
+  await db.collection('cases').doc(caseId).update({
+    closed: false,
+    measureStatus: backTo,
+    prevMeasureStatus: firebase.firestore.FieldValue.delete(),
+    closedAt: firebase.firestore.FieldValue.delete(),
+    statusHistory: firebase.firestore.FieldValue.arrayUnion({
+      type: 'close',
+      action: 'close',
+      value: 'open',            // histSummary が「再オープン」扱いにする :contentReference[oaicite:2]{index=2}
+      timestamp: now,
+      user: currentUser.email
+    })
+  });
+}
+
+        async function saveTask() {
+            const caseId = document.getElementById('task-case-id').value;
+            const taskId = document.getElementById('task-id').value;
+            const data = {
+                assignee: document.getElementById('task-assignee').value,
+                content: document.getElementById('task-content').value,
+                deadline: document.getElementById('task-deadline').value,
+                category: document.getElementById('task-category').value,
+                note: document.getElementById('task-note').value
+            };
+            const c = cases.find(x => x.id === caseId);
+            if (!c) return;
+            let tasks = c.tasks || [];
+            if (taskId) {
+                const idx = tasks.findIndex(t => t.id === taskId);
+                if (idx !== -1) tasks[idx] = { ...tasks[idx], ...data };
+            } else {
+                tasks.push({ id: generateId(), ...data, completed: false });
+            }
+            try {
+                await db.collection('cases').doc(caseId).update({ tasks });
+                closeModal('task-modal');
+            } catch (e) { alert('保存に失敗しました: ' + e.message); }
+        }
+
+        async function deleteTask(caseId, taskId) {
+            if (!confirm('このタスクを削除しますか？')) return;
+            const c = cases.find(x => x.id === caseId);
+            if (!c) return;
+            try { await db.collection('cases').doc(caseId).update({ tasks: (c.tasks || []).filter(t => t.id !== taskId) }); }
+            catch (e) { alert('削除に失敗しました: ' + e.message); }
+        }
+
+        async function toggleTaskComplete(caseId, taskId) {
+            const c = cases.find(x => x.id === caseId);
+            if (!c) return;
+            const tasks = c.tasks || [];
+            const idx = tasks.findIndex(t => t.id === taskId);
+            if (idx === -1) return;
+            tasks[idx].completed = !tasks[idx].completed;
+            // 完了時に完了日を記録、未完了に戻す時は削除
+            if(tasks[idx].completed){
+                tasks[idx].completedAt = new Date().toISOString();
+            } else {
+                delete tasks[idx].completedAt;
+            }
+            try { await db.collection('cases').doc(caseId).update({ tasks }); }
+            catch (e) { console.error(e); }
+        }
+
+        // タスク完了モーダル
+        function openTaskCompleteModal(caseId, taskId){
+            const c = cases.find(x => x.id === caseId);
+            const t = c?.tasks?.find(t => t.id === taskId);
+            if(!t) return;
+            
+            document.getElementById('tc-case-id').value = caseId;
+            document.getElementById('tc-task-id').value = taskId;
+            document.getElementById('tc-content').textContent = t.content || '-';
+            document.getElementById('tc-assignee').textContent = t.assignee || '-';
+            document.getElementById('tc-deadline').textContent = t.deadline || '-';
+            document.getElementById('tc-note').value = t.note || '';
+            document.getElementById('tc-completed').checked = !!t.completed;
+            document.getElementById('task-complete-modal').classList.add('active');
+        }
+        
+        async function saveTaskComplete(){
+            const caseId = document.getElementById('tc-case-id').value;
+            const taskId = document.getElementById('tc-task-id').value;
+            const note = document.getElementById('tc-note').value;
+            const completed = document.getElementById('tc-completed').checked;
+            
+            const c = cases.find(x => x.id === caseId);
+            if(!c) return;
+            
+            const tasks = c.tasks || [];
+            const idx = tasks.findIndex(t => t.id === taskId);
+            if(idx === -1) return;
+            
+            tasks[idx].note = note;
+            const wasCompleted = tasks[idx].completed;
+            tasks[idx].completed = completed;
+            
+            // 完了状態が変わった場合
+            if(completed && !wasCompleted){
+                tasks[idx].completedAt = new Date().toISOString();
+            } else if(!completed && wasCompleted){
+                delete tasks[idx].completedAt;
+            }
+            
+            try {
+                await db.collection('cases').doc(caseId).update({ tasks });
+                closeModal('task-complete-modal');
+            } catch(e) {
+                alert('保存に失敗しました: ' + e.message);
+            }
+        }
+
+        // メモ関連
+        function openMemoModal(caseId){
+            document.getElementById('memo-modal-title').textContent = 'メモ追加';
+            document.getElementById('memo-case-id').value = caseId;
+            document.getElementById('memo-id').value = '';
+            document.getElementById('memo-date').value = todayStr();
+            document.getElementById('memo-content').value = '';
+            document.getElementById('memo-modal').classList.add('active');
+        }
+
+        function editMemo(caseId, memoId){
+            const c = cases.find(x => x.id === caseId);
+            const m = c?.memos?.find(m => m.id === memoId);
+            if(!m) return;
+            
+            document.getElementById('memo-modal-title').textContent = 'メモ編集';
+            document.getElementById('memo-case-id').value = caseId;
+            document.getElementById('memo-id').value = memoId;
+            document.getElementById('memo-date').value = m.date || '';
+            document.getElementById('memo-content').value = m.content || '';
+            document.getElementById('memo-modal').classList.add('active');
+        }
+
+        async function saveMemo(){
+            const caseId = document.getElementById('memo-case-id').value;
+            const memoId = document.getElementById('memo-id').value;
+            const date = document.getElementById('memo-date').value;
+            const content = document.getElementById('memo-content').value.trim();
+            
+            if(!date || !content){
+                alert('記入日とメモ内容を入力してください');
+                return;
+            }
+            
+            const c = cases.find(x => x.id === caseId);
+            if(!c) return;
+            
+            let memos = c.memos || [];
+            
+            if(memoId){
+                // 編集
+                const idx = memos.findIndex(m => m.id === memoId);
+                if(idx !== -1){
+                    memos[idx] = { ...memos[idx], date, content };
+                }
+            } else {
+                // 新規追加
+                memos.push({
+                    id: generateId(),
+                    date,
+                    content,
+                    createdAt: new Date().toISOString()
+                });
+            }
+            
+            try {
+                await db.collection('cases').doc(caseId).update({ memos });
+                closeModal('memo-modal');
+            } catch(e){
+                alert('保存に失敗しました: ' + e.message);
+            }
+        }
+
+        async function deleteMemo(caseId, memoId){
+            if(!confirm('このメモを削除しますか？')) return;
+            
+            const c = cases.find(x => x.id === caseId);
+            if(!c) return;
+            
+            const memos = (c.memos || []).filter(m => m.id !== memoId);
+            
+            try {
+                await db.collection('cases').doc(caseId).update({ memos });
+            } catch(e){
+                alert('削除に失敗しました: ' + e.message);
+            }
+        }
+
+        // モーダル
+        function updateCustomerList() {
+            const customers = [...new Set(cases.map(c => c.customer).filter(c => c && c.trim()))];
+            const datalist = document.getElementById('customer-list');
+            datalist.innerHTML = customers.map(c => `<option value="${escapeHtml(c)}">`).join('');
+        }
+
+        // 担当者リストを更新（過去のタスクから収集）
+        function updateAssigneeList() {
+            const assignees = new Set();
+            cases.forEach(c => {
+                (c.tasks || []).forEach(t => {
+                    if(t.assignee && t.assignee.trim()) {
+                        assignees.add(t.assignee.trim());
+                    }
+                });
+            });
+            const datalist = document.getElementById('assignee-list');
+            if(datalist) {
+                datalist.innerHTML = [...assignees].sort().map(a => `<option value="${escapeHtml(a)}">`).join('');
+            }
+        }
+
+        function openNewCaseModal() {
+            document.getElementById('modal-title').textContent = '新規案件登録';
+            document.getElementById('case-id').value = '';
+            document.getElementById('case-ref-no').value = '';
+            document.getElementById('case-defect').value = '';
+            document.getElementById('case-date').value = formatDate(new Date());
+            document.getElementById('case-customer').value = '';
+            document.getElementById('case-tentative').value = '2';
+            document.getElementById('case-measure').value = '1';
+            document.getElementById('case-report').value = '1';
+            document.getElementById('case-internal-deadline').value = '';
+            document.getElementById('case-customer-deadline').value = '';
+            // 新規登録時はステータス行を非表示
+            document.getElementById('status-row').style.display = 'none';
+            document.getElementById('report-row').style.display = 'none';
+            updateCustomerList();
+            document.getElementById('case-modal').classList.add('active');
+        }
+
+        function editCase(caseId) {
+            const c = cases.find(x => x.id === caseId);
+            if (!c) return;
+            document.getElementById('modal-title').textContent = '案件編集';
+            document.getElementById('case-id').value = c.id;
+            document.getElementById('case-ref-no').value = c.refNo || '';
+            document.getElementById('case-defect').value = c.defect || '';
+            document.getElementById('case-date').value = c.date || '';
+            document.getElementById('case-customer').value = c.customer || '';
+            document.getElementById('case-tentative').value = c.tentativeStatus || '2';
+            document.getElementById('case-measure').value = c.measureStatus || '1';
+            document.getElementById('case-report').value = c.reportStatus || '1';
+            document.getElementById('case-internal-deadline').value = c.internalDeadline || '';
+            document.getElementById('case-customer-deadline').value = c.customerDeadline || '';
+            // 編集時はステータス行を表示
+            document.getElementById('status-row').style.display = 'flex';
+            document.getElementById('report-row').style.display = 'flex';
+            updateCustomerList();
+            document.getElementById('case-modal').classList.add('active');
+        }
+
+        function openTaskModal(caseId) {
+            document.getElementById('task-case-id').value = caseId;
+            document.getElementById('task-id').value = '';
+            document.getElementById('task-assignee').value = '';
+            document.getElementById('task-content').value = '';
+            document.getElementById('task-deadline').value = formatDate(addDays(new Date(), 7));
+            document.getElementById('task-category').value = '1';
+            document.getElementById('task-note').value = '';
+            updateAssigneeList();
+            document.getElementById('task-modal').classList.add('active');
+        }
+
+        function editTask(caseId, taskId) {
+            const c = cases.find(x => x.id === caseId);
+            const t = c?.tasks?.find(t => t.id === taskId);
+            if (!t) return;
+            document.getElementById('task-case-id').value = caseId;
+            document.getElementById('task-id').value = taskId;
+            document.getElementById('task-assignee').value = t.assignee || '';
+            document.getElementById('task-content').value = t.content || '';
+            document.getElementById('task-deadline').value = t.deadline || '';
+            document.getElementById('task-category').value = t.category || '1';
+            document.getElementById('task-note').value = t.note || '';
+            updateAssigneeList();
+            document.getElementById('task-modal').classList.add('active');
+        }
+
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function toggleCase(ev, id) {
+  // タスク系クリックなら案件を開閉しない（ここが効く）
+  if (ev && ev.target && ev.target.closest) {
+    if (ev.target.closest(
+      '.task-item, .task-title, .task-checkbox, .task-actions, .task-action-btn,' +
+      '.step-task-badge, .step-task-tooltip, .step-task-tooltip-item,' +
+      '.step-tasks-popup, .step-tasks-popup-overlay'
+    )) {
+      return;
+    }
+  }
+
+  const card = document.getElementById(`case-${id}`);
+  if (!card) return;
+
+  card.classList.toggle('expanded');
+  if (card.classList.contains('expanded')) expandedCases.add(id);
+  else expandedCases.delete(id);
+}
+
+
+        // タスク名表示切替
+        function toggleTaskNamesDisplay(){
+            const toggle = document.getElementById('show-task-names-toggle');
+            const caseList = document.getElementById('case-list');
+            if(toggle.checked){
+                caseList.classList.add('show-task-names');
+            } else {
+                caseList.classList.remove('show-task-names');
+            }
+            localStorage.setItem('showTaskNames', toggle.checked ? '1' : '0');
+        }
+        
+        // 起動時に設定を復元
+        function restoreTaskNamesDisplay(){
+            const saved = localStorage.getItem('showTaskNames');
+            if(saved === '1'){
+                const toggle = document.getElementById('show-task-names-toggle');
+                if(toggle){
+                    toggle.checked = true;
+                    document.getElementById('case-list').classList.add('show-task-names');
+                }
+            }
+        }
+
+        // イベント
+        document.getElementById('filter-status').addEventListener('change', (e) => {
+            currentStatFilter = e.target.value === 'all' ? null : e.target.value;
+            document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+            if (currentStatFilter) document.querySelector(`.stat-card[data-filter="${currentStatFilter}"]`)?.classList.add('active');
+            renderCaseList();
+        });
+        document.getElementById('filter-measure').addEventListener('change', renderCaseList);
+        document.getElementById('assignee-filter').addEventListener('change', renderAssigneeView);
+        document.getElementById('assignee-status-filter').addEventListener('change', renderAssigneeView);
+        document.getElementById('calendar-case-filter').addEventListener('change', renderCalendar);
+        const _hs=document.getElementById('history-scope'); if(_hs){ _hs.addEventListener('change', renderHistoryView); }
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`${tab.dataset.view}-view`).classList.add('active');
+                if (tab.dataset.view === 'assignee') renderAssigneeView();
+                if (tab.dataset.view === 'calendar') renderCalendar();
+                if (tab.dataset.view === 'history') renderHistoryView();
+            });
+        });
+        document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', (e) => { if (e.target === o) o.classList.remove('active'); }));
+
+        initFirebase();
+        restoreTaskNamesDisplay();
+    
+        // =========================
+        // 追加ヘルパー（v5.2 修正）
+        // =========================
+        function todayStr() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth()+1).padStart(2,'0');
+            const da = String(d.getDate()).padStart(2,'0');
+            return `${y}-${m}-${da}`;
+        }
+
+        // 日付編集（クリックで修正可能）
+        async function editStatusDate(caseId, type, step) {
+            const c = cases.find(x => x.id === caseId);
+            if (!c) return;
+
+            const key = String(step);
+            const datesField = type + 'Dates'; // measureDates / reportDates / tentativeDates etc.
+            const currentDates = c[datesField] || {};
+            const currentVal = currentDates[key] || '';
+
+            const def = currentVal || todayStr();
+            const input = prompt('完了日を入力してください（YYYY-MM-DD）\n※空欄でクリアできます', def);
+            if (input === null) return;
+
+            const val = input.trim();
+            const nextDates = { ...(currentDates || {}) };
+
+            if (val === '') {
+                delete nextDates[key];
+            } else {
+                // 簡易バリデーション
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                    alert('形式が正しくありません。例）2025-12-16');
+                    return;
+                }
+                nextDates[key] = val;
+            }
+
+            const update = {};
+            update[datesField] = nextDates;
+
+            try {
+                await db.collection('cases').doc(caseId).update(update);
+                // 表示更新（onSnapshotでも来るが、体感を良くするため即時反映）
+                const local = cases.find(x => x.id === caseId);
+                if (local) local[datesField] = nextDates;
+
+                renderCaseList();
+                if (currentCaseId === caseId) renderCaseDetail(caseId);
+                renderCalendar(currentCalendarYear, currentCalendarMonth);
+                renderHistoryView();
+            } catch (e) {
+               
+            }
+        }
+
+        function editMeasureDate(caseId, step) { editStatusDate(caseId, 'measure', step); }
+        function editReportDate(caseId, step) { editStatusDate(caseId, 'report', step); }
+        
+        // 社内提出日の編集
+      async function editInternalReportDate(caseId){
+  const c = cases.find(x => x.id === caseId);
+  if(!c) return;
+
+  const currentVal = c.internalReportDate || '';
+  const def = currentVal || todayStr();
+  const input = prompt('社内提出日を入力してください（YYYY-MM-DD）\n※空欄でクリアできます', def);
+  if(input === null) return;
+
+  const val = input.trim();
+  if(val !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(val)){
+    alert('形式が正しくありません。例）2025-12-16');
+    return;
+  }
+
+  const rd = { ...(c.reportDates || {}) };
+  if(val === ''){
+    delete rd['2'];
+  }else{
+    rd['2'] = val;
+  }
+
+  const update = {
+    internalReportDate: val || null,
+    reportDates: rd,
+    reportStatus: (val ? '2' : (rd['3'] ? '3' : '1')) // 社内日を消したら状況に応じて戻す
+  };
+
+  try{
+    await db.collection('cases').doc(caseId).update(update);
+  }catch(e){
+    alert('更新に失敗しました: ' + e.message);
+  }
+}
+
+        
+        // 客先提出日の編集
+       async function editCustomerReportDate(caseId){
+  const c = cases.find(x => x.id === caseId);
+  if(!c) return;
+
+  const currentVal = c.customerReportDate || '';
+  const def = currentVal || todayStr();
+  const input = prompt('客先提出日を入力してください（YYYY-MM-DD）\n※空欄でクリアできます', def);
+  if(input === null) return;
+
+  const val = input.trim();
+  if(val !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(val)){
+    alert('形式が正しくありません。例）2025-12-16');
+    return;
+  }
+
+  const rd = { ...(c.reportDates || {}) };
+  if(val === ''){
+    delete rd['3'];
+  }else{
+    rd['3'] = val;
+  }
+
+  const update = {
+    customerReportDate: val || null,
+    reportDates: rd,
+    reportStatus: (val ? '3' : (rd['2'] ? '2' : '1')) // 客先日を消したら状況に応じて戻す
+  };
+
+  try{
+    await db.collection('cases').doc(caseId).update(update);
+  }catch(e){
+    alert('更新に失敗しました: ' + e.message);
+  }
+}
+
+        
+        function toDateObj(v){
+            if(!v) return null;
+            if (typeof v === 'string') { const d=new Date(v); return isNaN(d)? null:d; }
+            if (v instanceof Date) return v;
+            if (typeof v.toDate === 'function') return v.toDate(); // Firestore Timestamp
+            return null;
+        }
+        
+        function escapeHtml(v){
+            if(v===null || v===undefined) return '';
+            return String(v)
+              .replaceAll('&','&amp;')
+              .replaceAll('<','&lt;')
+              .replaceAll('>','&gt;')
+              .replaceAll('"','&quot;')
+              .replaceAll("'","&#39;");
+        }
+
+function ymd(v){
+            const d = toDateObj(v);
+            if(!d) return '';
+            const y=d.getFullYear();
+            const m=String(d.getMonth()+1).padStart(2,'0');
+            const da=String(d.getDate()).padStart(2,'0');
+            return `${y}-${m}-${da}`;
+        }
+        function diffDays(from, to){
+            const a = toDateObj(from);
+            const b = toDateObj(to);
+            if(!a || !b) return '';
+            const ms = b.setHours(0,0,0,0) - a.setHours(0,0,0,0);
+            return Math.round(ms / 86400000);
+        }
+
+        async function appendStatusHistory(caseId, type, value, meta) {
+            // ヒストリー用に簡易ログを残す（失敗しても本処理は止めない）
+            try{
+                const by = (currentUser && currentUser.email) ? currentUser.email : '';
+                const entry = { ts: new Date().toISOString(), type, value: String(value||''), by, ...(meta||{}) };
+                await db.collection('cases').doc(caseId).update({
+                    statusHistory: firebase.firestore.FieldValue.arrayUnion(entry)
+                });
+            } catch(e){
+                // silent
+            }
+        }
+
+        async function toggleCloseCase(caseId, close) {
+            const c = cases.find(x => x.id === caseId);
+            if (!c) return;
+            const update = { closed: !!close };
+            if (close) {
+                update.closedAt = todayStr();
+            } else {
+                update.closedAt = null;
+            }
+            try{
+                await db.collection('cases').doc(caseId).update(update);
+                await appendStatusHistory(caseId, 'close', close ? 'closed' : 'reopen', { action: 'close' });
+                await loadCases();
+                renderCaseList();
+                renderStats();
+                renderCalendar();
+            }catch(e){
+                alert('更新に失敗しました: ' + e.message);
+            }
+        }
+
+        function getHistoryCases(scope){
+            const s = scope || (document.getElementById('history-scope')?.value || 'all');
+            if (s === 'active') return cases.filter(c => !c.closed);
+            if (s === 'completed') return cases.filter(c => !!c.closed);
+            return cases;
+        }
+
+        function buildHistoryRows(scope){
+            const list = getHistoryCases(scope);
+            const rows = [];
+            list.forEach(c=>{
+                const start = c.createdAt ? ymd(c.createdAt) : (c.createdDate || '');
+                const startRef = c.createdAt ? c.createdAt : (start || null);
+
+                // measure / report step dates
+                const md = c.measureDates || {};
+                const rd = c.reportDates || {};
+
+                const hist = (c.statusHistory || []).slice().sort((a,b)=>new Date(a.ts||a.timestamp||0)-new Date(b.ts||b.timestamp||0));
+                function findLast(kind, step){
+                    const s=String(step||'');
+                    for(let i=hist.length-1;i>=0;i--){
+                        const h=hist[i];
+                        const ht = h.type || h.status || '';
+                        const hv = String(h.value ?? h.step ?? '');
+                        const hstep = String(h.step ?? h.value ?? '');
+                        if (kind==='close'){
+                            if (ht==='close' || ht==='case' || h.action==='close') return h;
+                        } else if (ht===kind){
+                            // match step if provided
+                            if (!s || hv===s || hstep===s) return h;
+                        }
+                    }
+                    return null;
+                }
+                function histSummary(h, kind, stepLabel){
+                    if(!h) return {by:'', ts:'', what:''};
+                    const ts = h.ts || h.timestamp || '';
+                    const by = h.by || '';
+                    if (h.action==='date'){
+                        return {by, ts, what:`完了日 ${h.from||''} → ${h.to||''}`};
+                    }
+                    if (h.action==='status'){
+                        const fromL = (kind==='measure' ? (measureLabels[h.from]||h.from) : (kind==='report' ? (reportLabels[h.from]||h.from) : h.from));
+                        const toL = (kind==='measure' ? (measureLabels[h.to]||h.to) : (kind==='report' ? (reportLabels[h.to]||h.to) : h.to));
+                        return {by, ts, what:`ステータス ${fromL} → ${toL}`};
+                    }
+                    if (h.action==='close'){
+                        return {by, ts, what: (String(h.value)==='closed' ? 'クローズ' : '再オープン')};
+                    }
+                    return {by, ts, what: h.note||''};
+                }
+
+
+                // 対策ステータス（1-7）
+                for(let i=1;i<=7;i++){
+                    const key=String(i);
+                    if (md[key]) {
+                        rows.push({
+                            caseId: c.id,
+                            refNo: c.refNo || '',
+                            defect: c.defect || '',
+                            kind: '対策ステータス',
+                            step: key,
+                            stepLabel: measureLabels[key] || key,
+                            startDate: start || ymd(startRef),
+                            doneDate: md[key],
+                            days: diffDays(startRef || start, md[key]),
+                            ...histSummary(findLast('measure', key), 'measure')
+                        });
+                    } else {
+                        rows.push({
+                            caseId: c.id,
+                            refNo: c.refNo || '',
+                            defect: c.defect || '',
+                            kind: '対策ステータス',
+                            step: key,
+                            stepLabel: measureLabels[key] || key,
+                            startDate: start || ymd(startRef),
+                            doneDate: '',
+                            days: '',
+                            ...histSummary(findLast('measure', key), 'measure')
+                        });
+                    }
+                }
+
+                // 対策書ステータス（1-3）
+                for(let i=1;i<=3;i++){
+                    const key=String(i);
+                    if (rd[key]) {
+                        rows.push({
+                            caseId: c.id,
+                            refNo: c.refNo || '',
+                            defect: c.defect || '',
+                            kind: '対策書ステータス',
+                            step: key,
+                            stepLabel: reportLabels[key] || key,
+                            startDate: start || ymd(startRef),
+                            doneDate: rd[key],
+                            days: diffDays(startRef || start, rd[key]),
+                            ...histSummary(findLast('report', key), 'report')
+                        });
+                    } else {
+                        rows.push({
+                            caseId: c.id,
+                            refNo: c.refNo || '',
+                            defect: c.defect || '',
+                            kind: '対策書ステータス',
+                            step: key,
+                            stepLabel: reportLabels[key] || key,
+                            startDate: start || ymd(startRef),
+                            doneDate: '',
+                            days: '',
+                            ...histSummary(findLast('measure', key), 'measure')
+                        });
+                    }
+                }
+
+                // クローズ情報
+                rows.push({
+                    caseId: c.id,
+                    refNo: c.refNo || '',
+                    defect: c.defect || '',
+                    kind: '案件',
+                    step: 'closed',
+                    stepLabel: 'クローズ',
+                    startDate: start || ymd(startRef),
+                    doneDate: c.closedAt || (c.closed ? 'closed' : ''),
+                    days: c.closedAt ? diffDays(startRef || start, c.closedAt) : '',
+                    ...histSummary(findLast('close',''), 'close')
+                
+                });
+            });
+            return rows;
+        }
+
+        
+        // ===== History Timeline helpers =====
+        function stepActorInfo(c, kind, step){
+            const hist = (c.statusHistory || []).slice();
+            // sort by timestamp ascending (defensive)
+            hist.sort((a,b)=> new Date(a.ts||a.timestamp||0) - new Date(b.ts||b.timestamp||0));
+            const s = String(step||'');
+            for(let i=hist.length-1;i>=0;i--){
+                const h = hist[i];
+                if((h.kind||h.type) !== kind) continue;
+                const hs = String(h.step||h.to||'');
+                if(hs !== s) continue;
+                const by = h.by || h.user || h.email || '';
+                const ts = ymd(h.ts || h.timestamp || '');
+                const what = h.action==='status' ? 'ステータス更新' : (h.action==='date' ? '日付更新' : (h.action||''));
+                return {by, ts, what};
+            }
+            return {by:'', ts:'', what:''};
+        }
+
+        function buildMeasureTimelineHTML(c){
+            const md = c.measureDates || {};
+            const rd = c.reportDates || {};
+            const originDate = c.date || c.createdAt || '';
+            const originYmd = ymd(originDate);
+            
+            const steps = [
+              { key:'origin', label: '発生日', isOrigin: true, categoryKey: null },
+              { key:'1', label: '現場確認', categoryKey: '1' },
+              { key:'2', label: '横にらみ', categoryKey: '2' },
+              { key:'3', label: '原因調査', categoryKey: '3' },
+              { key:'4', label: '対策実施', categoryKey: '4' },
+              { key:'5', label: '効果確認', categoryKey: '5' },
+              { key:'6', label: '標準化', categoryKey: '6' },
+              { key:'7', label: '横展', categoryKey: '7' }
+            ];
+
+            // カテゴリごとのタスクを取得
+            const tasks = c.tasks || [];
+            function getTasksForCategory(categoryKey){
+              if(!categoryKey) return [];
+              return tasks.filter(t => t.category === categoryKey);
+            }
+
+            // 発生日を含む完了日リスト
+            function getStepDate(key){
+              if(key === 'origin') return originYmd;
+              return md[key] || '';
+            }
+
+            // ステップ間日数計算
+            function calcBetween(fromKey, toKey){
+              const a = getStepDate(fromKey);
+              const b = getStepDate(toKey);
+              if(!a || !b) return '';
+              return diffDays(a, b);
+            }
+
+            // 発生日からの累積日数
+            function calcCumulative(stepKey){
+              if(stepKey === 'origin') return 0;
+              const a = originYmd;
+              const b = getStepDate(stepKey);
+              if(!a || !b) return '';
+              return diffDays(a, b);
+            }
+
+            // 日数に応じた色クラス
+            function getDaysClass(days){
+              if(days === '' || days === null) return '';
+              const d = parseInt(days);
+              if(d >= 14) return 'long';
+              if(d >= 7) return 'medium';
+              return '';
+            }
+
+            // 対策ステップタイムライン
+            let measureRow = '<div class="timeline-section measure"><div class="timeline-section-title">📋 対策ステップ進捗</div><div class="timeline-board"><div class="timeline-row">';
+            for(let i=0; i<steps.length; i++){
+              const s = steps[i];
+              const stepDate = getStepDate(s.key);
+              const done = !!stepDate;
+              const info = s.isOrigin ? {by:'', ts:'', what:''} : stepActorInfo(c, 'measure', s.key);
+              const cumulative = done ? calcCumulative(s.key) : '';
+              const stepClass = s.isOrigin ? 'step-origin' : `step-${s.key}`;
+              const stepTasks = getTasksForCategory(s.categoryKey);
+              const taskCount = stepTasks.length;
+              const hasUncompletedTasks = stepTasks.some(t => !t.completed);
+              const hasOverdueTasks = stepTasks.some(t => !t.completed && isOverdue(t.deadline));
+              const clickable = taskCount > 0 ? 'clickable' : '';
+              const onclick = taskCount > 0 ? `onclick="showStepTasks('${c.id}', '${s.categoryKey}', '${escapeHtml(s.label)}')"` : '';
+              const hasTasks = taskCount > 0 ? 'has-tasks' : '';
+              
+              // バッジの色: 完了→グレー、遅延→赤、進行中→青
+              let badgeColor = '#2563eb'; // 青（進行中）
+              if(!hasUncompletedTasks) badgeColor = '#9ca3af'; // グレー（完了）
+              else if(hasOverdueTasks) badgeColor = '#dc2626'; // 赤（遅延）
+              
+              measureRow += `
+                <div class="tl-node ${hasTasks}">
+                  <div class="tl-label">${escapeHtml(s.label)}</div>
+                  <div class="tl-circle ${done?'done':'pending'} ${stepClass} ${clickable}" ${onclick}>
+                    ${done?'✓':''}
+                    ${taskCount > 0 ? `<span class="tl-task-count" style="background:${badgeColor}">${taskCount}</span>` : ''}
+                  </div>
+                  <div class="tl-meta">
+                    ${stepDate ? `<span class="date">${escapeHtml(stepDate)}</span>` : '<span style="color:var(--text-muted);">未完了</span>'}
+                    ${info.by ? `<span class="actor">${escapeHtml(info.by)}</span>` : ''}
+                  </div>
+                  ${(cumulative !== '' && cumulative !== 0) ? `<div class="tl-cumulative">累計 ${cumulative}日</div>` : ''}
+                </div>
+              `;
+              
+              // 矢印セグメント（最後以外）
+              if(i < steps.length - 1){
+                const nextKey = steps[i+1].key;
+                const d = calcBetween(s.key, nextKey);
+                const bothDone = done && !!getStepDate(nextKey);
+                const daysClass = getDaysClass(d);
+                measureRow += `
+                  <div class="tl-seg ${bothDone?'done':''}">
+                    <div class="tl-days ${daysClass}">${d!==''?`${d}<span class="unit">日</span>`:''}</div>
+                    <div class="tl-line"></div>
+                    <div class="tl-arrow"></div>
+                  </div>
+                `;
+              }
+            }
+            measureRow += '</div></div></div>';
+
+            // 対策書提出タイムライン
+            const reportSteps = [
+              { key:'origin', label: '発生日', isOrigin: true },
+              { key:'2', label: '社内提出' },
+              { key:'3', label: '客先提出' }
+            ];
+            
+            function getReportDate(key){
+              if(key === 'origin') return originYmd;
+              return rd[key] || '';
+            }
+
+            function calcReportBetween(fromKey, toKey){
+              const a = getReportDate(fromKey);
+              const b = getReportDate(toKey);
+              if(!a || !b) return '';
+              return diffDays(a, b);
+            }
+
+            function calcReportCumulative(stepKey){
+              if(stepKey === 'origin') return 0;
+              const a = originYmd;
+              const b = getReportDate(stepKey);
+              if(!a || !b) return '';
+              return diffDays(a, b);
+            }
+
+            let reportRow = '<div class="timeline-section report"><div class="timeline-section-title">📄 対策書提出フロー</div><div class="timeline-board"><div class="timeline-row">';
+            for(let i=0; i<reportSteps.length; i++){
+              const s = reportSteps[i];
+              const stepDate = getReportDate(s.key);
+              const done = !!stepDate;
+              const info = s.isOrigin ? {by:'', ts:'', what:''} : stepActorInfo(c, 'report', s.key);
+              const cumulative = done ? calcReportCumulative(s.key) : '';
+              const stepClass = s.isOrigin ? 'report-origin' : `report-${s.key}`;
+              
+              reportRow += `
+                <div class="tl-node">
+                  <div class="tl-label">${escapeHtml(s.label)}</div>
+                  <div class="tl-circle ${done?'done':'pending'} ${stepClass}">${done?'✓':''}</div>
+                  <div class="tl-meta">
+                    ${stepDate ? `<span class="date">${escapeHtml(stepDate)}</span>` : '<span style="color:var(--text-muted);">未完了</span>'}
+                    ${info.by ? `<span class="actor">${escapeHtml(info.by)}</span>` : ''}
+                  </div>
+                  ${(cumulative !== '' && cumulative !== 0) ? `<div class="tl-cumulative">累計 ${cumulative}日</div>` : ''}
+                </div>
+              `;
+              
+              if(i < reportSteps.length - 1){
+                const nextKey = reportSteps[i+1].key;
+                const d = calcReportBetween(s.key, nextKey);
+                const bothDone = done && !!getReportDate(nextKey);
+                const daysClass = getDaysClass(d);
+                reportRow += `
+                  <div class="tl-seg ${bothDone?'done':''}">
+                    <div class="tl-days ${daysClass}">${d!==''?`${d}<span class="unit">日</span>`:''}</div>
+                    <div class="tl-line"></div>
+                    <div class="tl-arrow"></div>
+                  </div>
+                `;
+              }
+            }
+            reportRow += '</div></div></div>';
+
+            // リードタイムサマリー
+            const totalMeasureDays = calcCumulative('7');
+            const totalReportDays = calcReportCumulative('3');
+            const internalReportDays = calcReportCumulative('2');
+
+            function getValueClass(days, thresholds){
+              if(days === '' || days === null) return '';
+              const d = parseInt(days);
+              if(d <= thresholds.good) return 'good';
+              if(d <= thresholds.warning) return 'warning';
+              return 'danger';
+            }
+
+            let summaryHtml = `
+              <div class="leadtime-summary">
+                <div class="leadtime-item">
+                  <span class="leadtime-label">発生日</span>
+                  <span class="leadtime-value">${originYmd || '-'}</span>
+                </div>
+                <div class="leadtime-item">
+                  <span class="leadtime-label">対策完了（横展まで）</span>
+                  <span class="leadtime-value ${getValueClass(totalMeasureDays, {good:30, warning:60})}">${totalMeasureDays !== '' ? totalMeasureDays + '日' : '未完'}</span>
+                </div>
+                <div class="leadtime-item">
+                  <span class="leadtime-label">社内提出まで</span>
+                  <span class="leadtime-value ${getValueClass(internalReportDays, {good:7, warning:14})}">${internalReportDays !== '' ? internalReportDays + '日' : '未提出'}</span>
+                </div>
+                <div class="leadtime-item">
+                  <span class="leadtime-label">客先提出まで</span>
+                  <span class="leadtime-value ${getValueClass(totalReportDays, {good:14, warning:30})}">${totalReportDays !== '' ? totalReportDays + '日' : '未提出'}</span>
+                </div>
+              </div>
+            `;
+
+            return measureRow + reportRow + summaryHtml;
+        }
+
+        function renderHistoryTimelines(scope){
+            const wrap = document.getElementById('history-timeline-wrap');
+            if(!wrap) return;
+
+            const list = getHistoryCases(scope);
+            if(!list.length){
+              wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📌</div><div class="empty-title">表示対象がありません</div></div>';
+              return;
+            }
+
+            const cards = list.map(c=>{
+              const title = `${escapeHtml(c.refNo||'---')}｜${escapeHtml(c.defect||'')}`;
+              const statusText = c.closed ? 'クローズ済' : '対応中';
+              const statusClass = c.closed ? 'success' : 'warning';
+              const customer = c.customer || '';
+              const originDate = c.date || c.createdAt || '';
+              const originYmd = ymd(originDate);
+              const timeline = buildMeasureTimelineHTML(c);
+              
+              return `
+                <div class="history-timeline-card">
+                  <div class="history-timeline-head">
+                    <div>
+                      <div class="history-timeline-title">${title}</div>
+                      <div class="history-timeline-sub">
+                        ${customer ? `<span>客先: ${escapeHtml(customer)}</span>` : ''}
+                        <span style="color:var(--${statusClass}); font-weight:600;">${statusText}</span>
+                      </div>
+                    </div>
+                  </div>
+                  ${timeline}
+                </div>
+              `;
+            }).join('');
+            wrap.innerHTML = cards;
+        }
+
+        // ステップタスク表示ポップアップ
+        function showStepTasks(caseId, categoryKey, stepLabel){
+            const c = cases.find(x => x.id === caseId);
+            if(!c) return;
+            
+            const tasks = (c.tasks || []).filter(t => t.category === categoryKey);
+            const titleEl = document.getElementById('step-tasks-title');
+            const bodyEl = document.getElementById('step-tasks-body');
+            
+            titleEl.innerHTML = `📋 ${escapeHtml(stepLabel)} のタスク <span style="color:var(--text-muted);font-size:12px;">(${escapeHtml(c.refNo||'')})</span>`;
+            
+            if(tasks.length === 0){
+                bodyEl.innerHTML = '<div class="step-tasks-empty">このステップにはタスクがありません</div>';
+            } else {
+                bodyEl.innerHTML = tasks.map(t => {
+                    const completedClass = t.completed ? 'completed' : '';
+                    const overdueClass = !t.completed && isOverdue(t.deadline) ? 'overdue' : '';
+                    return `
+                        <div class="step-task-item ${completedClass} ${overdueClass}">
+                            <div class="step-task-title">${t.completed ? '✓ ' : ''}${escapeHtml(t.content || '')}</div>
+                            <div class="step-task-meta">
+                                <span>👤 ${escapeHtml(t.assignee || '未設定')}</span>
+                                ${t.deadline ? `<span>📅 ${escapeHtml(t.deadline)}</span>` : ''}
+                                ${t.completed ? '<span style="color:var(--success);">完了</span>' : (overdueClass ? '<span style="color:var(--danger);">遅延</span>' : '')}
+                            </div>
+                            ${t.note ? `<div style="font-size:11px;color:var(--text-muted);margin-top:6px;">📝 ${escapeHtml(t.note)}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            document.getElementById('step-tasks-overlay').classList.add('active');
+            document.getElementById('step-tasks-popup').classList.add('active');
+        }
+        
+        function closeStepTasksPopup(){
+            document.getElementById('step-tasks-overlay').classList.remove('active');
+            document.getElementById('step-tasks-popup').classList.remove('active');
+        }
+
+        // ===== 写真関連機能 =====
+        let currentPhotoCaseId = null;
+        let currentPhotoIndex = null;
+        let storage = null;
+
+        function initStorage(){
+            if(!storage && firebase.storage){
+                storage = firebase.storage();
+            }
+        }
+
+        function triggerPhotoUpload(caseId){
+            currentPhotoCaseId = caseId;
+            document.getElementById('photo-upload-input').click();
+        }
+
+        async function handlePhotoUpload(event){
+            const files = event.target.files;
+            if(!files || files.length === 0 || !currentPhotoCaseId) return;
+            
+            initStorage();
+            if(!storage){
+                alert('写真機能を使用するにはFirebase Storageの設定が必要です');
+                return;
+            }
+            
+            const c = cases.find(x => x.id === currentPhotoCaseId);
+            if(!c) return;
+            
+            // 既存の写真があれば削除
+            const oldPhotos = c.photos || [];
+            for(const oldPhoto of oldPhotos){
+                if(oldPhoto.path){
+                    try {
+                        await storage.ref(oldPhoto.path).delete();
+                    } catch(e) {
+                        console.error('Old photo delete error:', e);
+                    }
+                }
+            }
+            
+            // 新しい写真をアップロード（1枚のみ）
+            const file = files[0];
+            if(!file.type.startsWith('image/')){
+                alert('画像ファイルを選択してください');
+                event.target.value = '';
+                return;
+            }
+            
+            try {
+                // 画像を圧縮
+                const compressedDataUrl = await compressImage(file, 800, 0.7);
+                
+                // Firebase Storageにアップロード
+                const fileName = `cases/${currentPhotoCaseId}/${Date.now()}.jpg`;
+                const ref = storage.ref(fileName);
+                
+                // DataURLをBlobに変換
+                const response = await fetch(compressedDataUrl);
+                const blob = await response.blob();
+                
+                await ref.put(blob);
+                const url = await ref.getDownloadURL();
+                
+                const newPhoto = {
+                    url: url,
+                    path: fileName,
+                    uploadedAt: new Date().toISOString(),
+                    uploadedBy: currentUser?.email || ''
+                };
+                
+                // Firestoreを更新（1枚のみ保持）
+                await db.collection('cases').doc(currentPhotoCaseId).update({ photos: [newPhoto] });
+                
+            } catch(e) {
+                console.error('Photo upload error:', e);
+                alert('写真のアップロードに失敗しました: ' + e.message);
+            }
+            
+            // inputをリセット
+            event.target.value = '';
+            currentPhotoCaseId = null;
+        }
+
+        function compressImage(file, maxSize, quality){
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        if(width > height){
+                            if(width > maxSize){
+                                height *= maxSize / width;
+                                width = maxSize;
+                            }
+                        } else {
+                            if(height > maxSize){
+                                width *= maxSize / height;
+                                height = maxSize;
+                            }
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', quality));
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function openPhotoPreview(caseId, photoIndex){
+            const c = cases.find(x => x.id === caseId);
+            if(!c || !c.photos || !c.photos[photoIndex]) return;
+            
+            currentPhotoCaseId = caseId;
+            currentPhotoIndex = photoIndex;
+            
+            document.getElementById('photo-preview-img').src = c.photos[photoIndex].url;
+            document.getElementById('photo-preview-overlay').classList.add('active');
+        }
+
+        function closePhotoPreview(){
+            document.getElementById('photo-preview-overlay').classList.remove('active');
+            currentPhotoCaseId = null;
+            currentPhotoIndex = null;
+        }
+
+        async function deleteCurrentPhoto(){
+            if(currentPhotoCaseId === null || currentPhotoIndex === null) return;
+            
+            if(!confirm('この写真を削除しますか？')) return;
+            
+            const c = cases.find(x => x.id === currentPhotoCaseId);
+            if(!c || !c.photos || !c.photos[currentPhotoIndex]) return;
+            
+            const photo = c.photos[currentPhotoIndex];
+            
+            // Storageから削除
+            initStorage();
+            if(storage && photo.path){
+                try {
+                    await storage.ref(photo.path).delete();
+                } catch(e) {
+                    console.error('Storage delete error:', e);
+                }
+            }
+            
+            // 配列から削除
+            const photos = [...c.photos];
+            photos.splice(currentPhotoIndex, 1);
+            
+            // Firestoreを更新
+            try {
+                await db.collection('cases').doc(currentPhotoCaseId).update({ photos: photos });
+            } catch(e) {
+                alert('写真の削除に失敗しました: ' + e.message);
+            }
+            
+            closePhotoPreview();
+        }
+
+function renderHistoryView(){
+            const scope = document.getElementById('history-scope')?.value || 'all';
+            
+            const timelineWrap = document.getElementById('history-timeline-wrap');
+            const wrap = document.getElementById('history-table-wrap');
+            if(!wrap) return;
+
+            // リードタイム表を生成
+            const leadtimeHtml = renderLeadtimeTable(scope);
+            
+            // 完了タスク一覧を生成
+            const completedTasksHtml = renderCompletedTasksList(scope);
+
+            const rows = buildHistoryRows();
+
+            // 表示用に、未完は末尾へ
+            const viewRows = rows.slice().sort((a,b)=>{
+                const ak = (a.doneDate ? 0:1); 
+                const bk = (b.doneDate ? 0:1);
+                if(ak!==bk) return ak-bk;
+                return (a.refNo||'').localeCompare(b.refNo||'');
+            });
+
+            const thead = `
+                <h3 class="section-title" style="margin: 24px 0 12px 0;">📋 詳細履歴</h3>
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>整理No</th>
+                      <th>不具合</th>
+                      <th>区分</th>
+                      <th>ステップ</th>
+                      <th>開始</th>
+                      <th>完了日</th>
+                      <th>経過(日)</th><th>実施者</th><th>操作日時</th><th>内容</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+            `;
+            const tbody = viewRows.map(r=>`
+                <tr>
+                  <td>${escapeHtml(r.refNo)}</td>
+                  <td>${escapeHtml(r.defect)}</td>
+                  <td>${escapeHtml(r.kind)}</td>
+                  <td>${escapeHtml(r.stepLabel)}</td>
+                  <td>${escapeHtml(r.startDate||'')}</td>
+                  <td>${escapeHtml(r.doneDate||'')}</td>
+                  <td style="text-align:right;">${r.days!==''? r.days:''}</td>
+                  <td>${escapeHtml(r.by||'')}</td>
+                  <td>${escapeHtml(r.ts||'')}</td>
+                  <td>${escapeHtml(r.what||'')}</td>
+                </tr>
+            `).join('');
+            const tfoot = `</tbody></table>`;
+            
+            // リードタイム一覧を一番上に、次に完了タスク一覧
+            if(timelineWrap){
+                timelineWrap.innerHTML = leadtimeHtml + completedTasksHtml;
+            }
+            wrap.innerHTML = thead + tbody + tfoot;
+        }
+        
+        // 完了タスク一覧を生成
+        function renderCompletedTasksList(scope){
+            const list = getHistoryCases(scope);
+            
+            // 案件選択用のセレクトボックス
+            let html = `
+                <div class="completed-tasks-section" style="margin: 24px 0;">
+                    <h3 class="section-title" style="margin-bottom:12px;">✅ 完了タスク一覧</h3>
+                    <div style="margin-bottom: 12px;">
+                        <select class="filter-select" id="history-case-select" onchange="renderCompletedTasksTable()">
+                            <option value="">-- 案件を選択 --</option>
+                            ${list.map(c => `<option value="${c.id}">${escapeHtml(c.refNo || '---')} | ${escapeHtml(c.defect || '---')}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div id="completed-tasks-table"></div>
+                </div>
+            `;
+            
+            return html;
+        }
+        
+        // 選択した案件の完了タスクテーブルを描画
+        function renderCompletedTasksTable(){
+            const caseId = document.getElementById('history-case-select')?.value;
+            const container = document.getElementById('completed-tasks-table');
+            if(!container) return;
+            
+            if(!caseId){
+                container.innerHTML = '<div style="color: var(--text-muted); padding: 20px; text-align: center;">案件を選択してください</div>';
+                return;
+            }
+            
+            const c = cases.find(x => x.id === caseId);
+            if(!c){
+                container.innerHTML = '<div style="color: var(--text-muted); padding: 20px; text-align: center;">案件が見つかりません</div>';
+                return;
+            }
+            
+            const tasks = c.tasks || [];
+            const completedTasks = tasks.filter(t => t.completed);
+            
+            if(completedTasks.length === 0){
+                container.innerHTML = '<div style="color: var(--text-muted); padding: 20px; text-align: center;">完了タスクがありません</div>';
+                return;
+            }
+            
+            // 完了日または期限で時系列ソート
+            completedTasks.sort((a, b) => {
+                const aDate = a.completedAt || a.deadline || '';
+                const bDate = b.completedAt || b.deadline || '';
+                return new Date(aDate) - new Date(bDate);
+            });
+            
+            let tableHtml = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>完了日</th>
+                            <th>対応項目</th>
+                            <th>タスク内容</th>
+                            <th>担当者</th>
+                            <th>期限</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            completedTasks.forEach(t => {
+                const completedDate = t.completedAt ? ymd(t.completedAt) : '-';
+                tableHtml += `
+                    <tr>
+                        <td style="font-family: 'JetBrains Mono', monospace;">${completedDate}</td>
+                        <td>${escapeHtml(categoryLabels[t.category] || '-')}</td>
+                        <td>${escapeHtml(t.content || '-')}</td>
+                        <td>${escapeHtml(t.assignee || '-')}</td>
+                        <td style="font-family: 'JetBrains Mono', monospace;">${escapeHtml(t.deadline || '-')}</td>
+                    </tr>
+                `;
+            });
+            
+            tableHtml += '</tbody></table>';
+            container.innerHTML = tableHtml;
+        }
+
+        // リードタイム表を生成
+        function renderLeadtimeTable(scope){
+            const list = getHistoryCases(scope);
+            if(list.length === 0) return '';
+            
+let html = `
+                <div class="leadtime-table-section">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <h3 class="section-title" style="margin:0;">📊 案件別リードタイム一覧</h3>
+                        <button class="btn btn-secondary btn-sm" onclick="downloadLeadtimeCSV('${scope}')">📥 CSV出力</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                    <table class="table leadtime-table">
+                        <thead>
+                            <tr>
+                                <th rowspan="2">整理No</th>
+                                <th rowspan="2">不具合</th>
+                                <th colspan="7" style="text-align:center;background:#f0fdf4;">対策ステップ (日数)</th>
+                                <th rowspan="2" style="background:#d1fae5;">対策<br>総日数</th>
+                                <th colspan="2" style="text-align:center;background:#eff6ff;">対策書 (日数)</th>
+                                <th rowspan="2" style="background:#bfdbfe;">対策書<br>総日数</th>
+                            </tr>
+                            <tr>
+                                <th class="lt-header step-1">現場確認</th>
+                                <th class="lt-header step-2">横にらみ</th>
+                                <th class="lt-header step-3">原因調査</th>
+                                <th class="lt-header step-4">対策実施</th>
+                                <th class="lt-header step-5">効果確認</th>
+                                <th class="lt-header step-6">標準化</th>
+                                <th class="lt-header step-7">横展</th>
+                                <th class="lt-header report-2">社内提出</th>
+                                <th class="lt-header report-3">客先提出</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            list.forEach(c => {
+                const startDate = c.date || (c.createdAt ? ymd(c.createdAt) : '');
+                const md = c.measureDates || {};
+                
+                // 各ステップのリードタイム計算
+                const measureDays = [];
+                let prevDate = startDate;
+                for(let i = 1; i <= 7; i++){
+                    const stepDate = md[String(i)] || '';
+                    if(stepDate && prevDate){
+                        const days = diffDays(prevDate, stepDate);
+                        measureDays.push(days !== '' ? days : '-');
+                        prevDate = stepDate;
+                    } else {
+                        measureDays.push('-');
+                    }
+                }
+                
+                // 対策ステップ総日数（開始から最後の完了ステップまで）
+                let measureTotalDays = '-';
+                const lastMeasureDate = md['7'] || md['6'] || md['5'] || md['4'] || md['3'] || md['2'] || md['1'] || '';
+                if(startDate && lastMeasureDate){
+                    measureTotalDays = diffDays(startDate, lastMeasureDate);
+                }
+                
+                // 社内提出・客先提出のリードタイム計算
+                const internalDate = c.internalReportDate || '';
+                const customerDate = c.customerReportDate || '';
+                
+                let internalDays = '-';
+                if(startDate && internalDate){
+                    internalDays = diffDays(startDate, internalDate);
+                }
+                
+                let customerDays = '-';
+                if(internalDate && customerDate){
+                    customerDays = diffDays(internalDate, customerDate);
+                } else if(startDate && customerDate){
+                    customerDays = diffDays(startDate, customerDate);
+                }
+                
+                // 対策書総日数（開始から客先提出まで、なければ社内提出まで）
+                let reportTotalDays = '-';
+                const lastReportDate = customerDate || internalDate || '';
+                if(startDate && lastReportDate){
+                    reportTotalDays = diffDays(startDate, lastReportDate);
+                }
+                
+                html += `
+                    <tr>
+                        <td>${escapeHtml(c.refNo || '---')}</td>
+                        <td class="lt-defect">${escapeHtml(c.defect || '---')}</td>
+                        ${measureDays.map((d, idx) => `<td class="lt-cell ${d !== '-' && d >= 14 ? 'long' : d !== '-' && d >= 7 ? 'medium' : ''}">${d}</td>`).join('')}
+                        <td class="lt-total measure-total">${measureTotalDays}</td>
+                        <td class="lt-cell ${internalDays !== '-' && internalDays >= 14 ? 'long' : internalDays !== '-' && internalDays >= 7 ? 'medium' : ''}">${internalDays}</td>
+                        <td class="lt-cell ${customerDays !== '-' && customerDays >= 14 ? 'long' : customerDays !== '-' && customerDays >= 7 ? 'medium' : ''}">${customerDays}</td>
+                        <td class="lt-total report-total">${reportTotalDays}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            `;
+            
+            return html;
+        }
+// リードタイムCSV出力
+        function downloadLeadtimeCSV(scope){
+            const list = getHistoryCases(scope);
+            if(list.length === 0){ alert('データがありません'); return; }
+            
+            const header = ['整理No','不具合','発生日','現場確認','横にらみ','原因調査','対策実施','効果確認','標準化','横展','対策総日数','社内提出','客先提出','対策書総日数'];
+            const rows = list.map(c => {
+                const startDate = c.date || (c.createdAt ? ymd(c.createdAt) : '');
+                const md = c.measureDates || {};
+                
+                // 各ステップのリードタイム計算
+                const measureDays = [];
+                let prevDate = startDate;
+                for(let i = 1; i <= 7; i++){
+                    const stepDate = md[String(i)] || '';
+                    if(stepDate && prevDate){
+                        const days = diffDays(prevDate, stepDate);
+                        measureDays.push(days !== '' ? days : '');
+                        prevDate = stepDate;
+                    } else {
+                        measureDays.push('');
+                    }
+                }
+                
+                // 対策ステップ総日数
+                let measureTotalDays = '';
+                const lastMeasureDate = md['7'] || md['6'] || md['5'] || md['4'] || md['3'] || md['2'] || md['1'] || '';
+                if(startDate && lastMeasureDate){
+                    measureTotalDays = diffDays(startDate, lastMeasureDate);
+                }
+                
+                // 社内提出・客先提出のリードタイム
+                const internalDate = c.internalReportDate || '';
+                const customerDate = c.customerReportDate || '';
+                
+                let internalDays = '';
+                if(startDate && internalDate){
+                    internalDays = diffDays(startDate, internalDate);
+                }
+                
+                let customerDays = '';
+                if(internalDate && customerDate){
+                    customerDays = diffDays(internalDate, customerDate);
+                } else if(startDate && customerDate){
+                    customerDays = diffDays(startDate, customerDate);
+                }
+                
+                // 対策書総日数
+                let reportTotalDays = '';
+                const lastReportDate = customerDate || internalDate || '';
+                if(startDate && lastReportDate){
+                    reportTotalDays = diffDays(startDate, lastReportDate);
+                }
+                
+                return [
+                    c.refNo || '', c.defect || '', startDate,
+                    ...measureDays, measureTotalDays,
+                    internalDays, customerDays, reportTotalDays
+                ].map(x => `"${String(x).replaceAll('"','""')}"`).join(',');
+            });
+            
+            const bom = '\uFEFF';
+            const csv = bom + header.join(',') + '\n' + rows.join('\n');
+            const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `リードタイム一覧_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        function downloadHistoryCSV(){
+            const scopeSel = document.getElementById('history-csv-scope')?.value || 'visible';
+            const scope = (scopeSel === 'all') ? 'all' : (document.getElementById('history-scope')?.value || 'all');
+            const rows = buildHistoryRows(scope);
+
+            const header = ['整理No','不具合','区分','ステップ','開始日','完了日','経過(日)','caseId'];
+            const csvLines = [header.join(',')].concat(rows.map(r=>{
+                const arr = [
+                    r.refNo, r.defect, r.kind, r.stepLabel,
+                    r.startDate||'', r.doneDate||'', r.days!==''?r.days:'', r.caseId
+                ].map(x => `"${String(x??'').replaceAll('"','""')}"`);
+                return arr.join(',');
+            }));
+            const bom = '\uFEFF';
+            const blob = new Blob([bom + csvLines.join('\n')], {type:'text/csv;charset=utf-8;'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `history_${todayStr()}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        }
+
+</script>
+</body>
+</html>
+   
