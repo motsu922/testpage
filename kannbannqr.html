@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>1対1 QR照合</title>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a73e8, #0d47a1);
+            color: white;
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header h1 {
+            font-size: 17px;
+            font-weight: 600;
+        }
+
+        .header-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .container {
+            padding: 16px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* ステップ表示 */
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding: 16px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            opacity: 0.4;
+            transition: all 0.3s;
+        }
+
+        .step.active {
+            opacity: 1;
+        }
+
+        .step.done {
+            opacity: 1;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #666;
+        }
+
+        .step.active .step-number {
+            background: #1a73e8;
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+
+        .step.done .step-number {
+            background: #4caf50;
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .step-label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .step-arrow {
+            font-size: 24px;
+            color: #ccc;
+            align-self: center;
+        }
+
+        /* 読み取り値表示 */
+        .scan-values {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .scan-value-item {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            background: #f5f5f5;
+        }
+
+        .scan-value-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .scan-value-item.filled {
+            background: #e3f2fd;
+            border: 2px solid #1a73e8;
+        }
+
+        .scan-value-item.waiting {
+            background: #fff3e0;
+            border: 2px dashed #ff9800;
+        }
+
+        .scan-value-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .scan-value-content {
+            font-family: monospace;
+            font-size: 15px;
+            color: #333;
+            word-break: break-all;
+            min-height: 20px;
+        }
+
+        .scan-value-content.empty {
+            color: #999;
+            font-style: italic;
+        }
+
+        .scan-value-range {
+            font-size: 11px;
+            color: #1a73e8;
+            margin-top: 4px;
+            font-weight: 600;
+        }
+
+        /* カメラ */
+        .camera-section {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .camera-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+
+        #reader {
+            width: 100%;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .scan-instruction {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a73e8;
+        }
+
+        .camera-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .camera-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .start-btn {
+            background: #4caf50;
+            color: white;
+        }
+
+        .reset-btn {
+            background: #ff9800;
+            color: white;
+        }
+
+        .camera-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        /* 結果オーバーレイ */
+        .result-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .result-overlay.show {
+            display: flex;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .result-overlay.ok {
+            background: rgba(76, 175, 80, 0.97);
+        }
+
+        .result-overlay.ng {
+            background: rgba(244, 67, 54, 0.97);
+        }
+
+        .result-symbol {
+            font-size: min(55vw, 55vh);
+            font-weight: 900;
+            color: white;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            line-height: 1;
+        }
+
+        .result-text {
+            font-size: 28px;
+            color: white;
+            margin-top: 10px;
+            font-weight: 700;
+        }
+
+        .result-values {
+            margin-top: 20px;
+            padding: 16px 24px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .result-values p {
+            color: white;
+            font-size: 14px;
+            margin: 6px 0;
+            font-family: monospace;
+        }
+
+        .result-values .label {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        /* OK時のボタン */
+        .next-btn {
+            margin-top: 30px;
+            padding: 18px 50px;
+            background: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            color: #4caf50;
+        }
+
+        /* NG時のロック画面 */
+        .ng-locked .result-symbol {
+            animation: shake 0.5s ease infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        .admin-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .admin-section p {
+            color: white;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .admin-btn {
+            padding: 14px 30px;
+            background: white;
+            color: #f44336;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        #admin-reader {
+            margin-top: 12px;
+            border-radius: 8px;
+            overflow: hidden;
+            max-width: 280px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* 設定セクション */
+        .settings-section {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .settings-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+        }
+
+        .range-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .range-input {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .range-input label {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .range-input input {
+            width: 65px;
+            padding: 8px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 16px;
+            text-align: center;
+        }
+
+        .range-input input:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+
+        .range-note {
+            font-size: 11px;
+            color: #999;
+            margin-top: 8px;
+        }
+
+        .sound-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #eee;
+        }
+
+        .sound-toggle input {
+            width: 18px;
+            height: 18px;
+        }
+
+        .sound-toggle label {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* ログセクション */
+        .log-section {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .log-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .log-count {
+            font-size: 12px;
+            color: #666;
+            background: #f0f0f0;
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+
+        .log-list {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .log-item {
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .log-item.ok {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+        }
+
+        .log-item.ng {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+
+        .log-time {
+            color: #666;
+            font-size: 11px;
+        }
+
+        .log-result {
+            font-weight: 600;
+            margin: 4px 0;
+        }
+
+        .log-item.ok .log-result { color: #2e7d32; }
+        .log-item.ng .log-result { color: #c62828; }
+
+        .log-data {
+            font-family: monospace;
+            font-size: 11px;
+            color: #555;
+        }
+
+        .no-log {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+            font-size: 13px;
+        }
+
+        .log-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .log-btn {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background: #f9f9f9;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+        }
+
+        /* モーダル */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .modal-btn.cancel {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .modal-btn.save {
+            background: #1a73e8;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔄 1対1 QR照合</h1>
+        <div class="header-buttons">
+            <button class="header-btn" onclick="showSettingsModal()">⚙️</button>
+            <button class="header-btn" onclick="exportLog()">📥</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- ステップ表示 -->
+        <div class="step-indicator">
+            <div class="step active" id="step1">
+                <div class="step-number">1</div>
+                <div class="step-label">1枚目</div>
+            </div>
+            <div class="step-arrow">→</div>
+            <div class="step" id="step2">
+                <div class="step-number">2</div>
+                <div class="step-label">2枚目</div>
+            </div>
+            <div class="step-arrow">→</div>
+            <div class="step" id="step3">
+                <div class="step-number">✓</div>
+                <div class="step-label">照合</div>
+            </div>
+        </div>
+
+        <!-- 読み取り値表示 -->
+        <div class="scan-values">
+            <div class="scan-value-item waiting" id="value1Box">
+                <div class="scan-value-label">📋 1枚目のQR</div>
+                <div class="scan-value-content empty" id="value1">スキャン待ち...</div>
+                <div class="scan-value-range" id="value1Range"></div>
+            </div>
+            <div class="scan-value-item" id="value2Box">
+                <div class="scan-value-label">📋 2枚目のQR</div>
+                <div class="scan-value-content empty" id="value2">-</div>
+                <div class="scan-value-range" id="value2Range"></div>
+            </div>
+        </div>
+
+        <!-- カメラ -->
+        <div class="camera-section">
+            <div class="camera-title" id="cameraTitle">📷 1枚目をスキャン</div>
+            <div id="reader"></div>
+            <div class="camera-controls">
+                <button class="camera-btn start-btn" id="startBtn" onclick="startScanner()">▶️ スキャン開始</button>
+                <button class="camera-btn reset-btn" id="resetBtn" onclick="resetScan()">🔄 リセット</button>
+            </div>
+        </div>
+
+        <!-- 照合範囲設定 -->
+        <div class="settings-section">
+            <div class="settings-title">📐 照合範囲</div>
+            <div class="range-row">
+                <div class="range-input">
+                    <label>開始:</label>
+                    <input type="number" id="rangeStart" value="1" min="1">
+                </div>
+                <div class="range-input">
+                    <label>終了:</label>
+                    <input type="number" id="rangeEnd" value="0" min="0">
+                </div>
+            </div>
+            <div class="range-note">※ 終了を0にすると末尾まで照合</div>
+            <div class="sound-toggle">
+                <input type="checkbox" id="soundEnabled" checked>
+                <label for="soundEnabled">音を鳴らす</label>
+            </div>
+        </div>
+
+        <!-- ログ -->
+        <div class="log-section">
+            <div class="log-header">
+                <div class="log-title">📝 照合ログ</div>
+                <div class="log-count" id="logCount">0件</div>
+            </div>
+            <div class="log-list" id="logList">
+                <div class="no-log">ログはありません</div>
+            </div>
+            <div class="log-actions">
+                <button class="log-btn" onclick="clearLog()">🗑️ クリア</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 結果オーバーレイ -->
+    <div class="result-overlay" id="resultOverlay">
+        <div class="result-symbol" id="resultSymbol">○</div>
+        <div class="result-text" id="resultText">一致</div>
+        <div class="result-values" id="resultValues"></div>
+        
+        <!-- OK時: 次へボタン -->
+        <button class="next-btn" id="nextBtn" onclick="closeResultAndContinue()">次の照合へ</button>
+        
+        <!-- NG時: 管理者解除 -->
+        <div class="admin-section" id="adminSection" style="display:none;">
+            <p>⚠️ 管理者QRで解除してください</p>
+            <button class="admin-btn" onclick="startAdminScan()">🔐 管理者QR読取</button>
+            <div id="admin-reader"></div>
+        </div>
+    </div>
+
+    <!-- 設定モーダル -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <div class="modal-title">⚙️ 設定</div>
+            <label style="font-size:13px;color:#666;display:block;margin-bottom:6px;">管理者QR（エラー解除用）</label>
+            <input type="text" class="modal-input" id="adminQRInput" placeholder="管理者QRの値">
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" onclick="closeSettingsModal()">キャンセル</button>
+                <button class="modal-btn save" onclick="saveSettings()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 状態
+        let scanStep = 1; // 1:1枚目待ち, 2:2枚目待ち
+        let qr1 = '';
+        let qr2 = '';
+        let scanLog = [];
+        let html5QrCode = null;
+        let adminQrScanner = null;
+        let isNGLocked = false;
+        let adminQR = 'ADMIN123';
+        let audioContext = null;
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            loadLog();
+        });
+
+        // 設定
+        function loadSettings() {
+            const saved = localStorage.getItem('qr1to1Settings');
+            if (saved) {
+                const s = JSON.parse(saved);
+                adminQR = s.adminQR || 'ADMIN123';
+                document.getElementById('rangeStart').value = s.rangeStart || 1;
+                document.getElementById('rangeEnd').value = s.rangeEnd || 0;
+                document.getElementById('soundEnabled').checked = s.soundEnabled !== false;
+            }
+        }
+
+        function saveSettingsToStorage() {
+            const s = {
+                adminQR: adminQR,
+                rangeStart: parseInt(document.getElementById('rangeStart').value) || 1,
+                rangeEnd: parseInt(document.getElementById('rangeEnd').value) || 0,
+                soundEnabled: document.getElementById('soundEnabled').checked
+            };
+            localStorage.setItem('qr1to1Settings', JSON.stringify(s));
+        }
+
+        // ログ
+        function loadLog() {
+            const saved = localStorage.getItem('qr1to1Log');
+            if (saved) {
+                scanLog = JSON.parse(saved);
+                renderLog();
+            }
+        }
+
+        function saveLog() {
+            localStorage.setItem('qr1to1Log', JSON.stringify(scanLog));
+        }
+
+        // 音
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSound(type) {
+            if (!document.getElementById('soundEnabled').checked) return;
+            initAudio();
+            
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            gain.gain.value = 0.3;
+            
+            if (type === 'ok') {
+                osc.frequency.value = 1000;
+                osc.start();
+                setTimeout(() => osc.frequency.value = 1200, 100);
+                setTimeout(() => osc.stop(), 200);
+            } else if (type === 'ng') {
+                osc.frequency.value = 300;
+                osc.type = 'square';
+                osc.start();
+                setTimeout(() => osc.stop(), 500);
+            } else if (type === 'beep') {
+                osc.frequency.value = 800;
+                osc.start();
+                setTimeout(() => osc.stop(), 100);
+            }
+        }
+
+        // 範囲抽出
+        function extractRange(str, start, end) {
+            const s = start - 1;
+            const e = end === 0 ? str.length : end;
+            return str.substring(s, e);
+        }
+
+        function getRangeParams() {
+            return {
+                start: parseInt(document.getElementById('rangeStart').value) || 1,
+                end: parseInt(document.getElementById('rangeEnd').value) || 0
+            };
+        }
+
+        // UI更新
+        function updateStepUI() {
+            document.getElementById('step1').className = scanStep >= 1 ? (qr1 ? 'step done' : 'step active') : 'step';
+            document.getElementById('step2').className = scanStep === 2 ? 'step active' : (qr2 ? 'step done' : 'step');
+            document.getElementById('step3').className = (qr1 && qr2) ? 'step done' : 'step';
+            
+            document.getElementById('cameraTitle').textContent = 
+                scanStep === 1 ? '📷 1枚目をスキャン' : '📷 2枚目をスキャン';
+            
+            // 値ボックス
+            const box1 = document.getElementById('value1Box');
+            const box2 = document.getElementById('value2Box');
+            
+            if (qr1) {
+                box1.className = 'scan-value-item filled';
+                document.getElementById('value1').textContent = qr1;
+                document.getElementById('value1').className = 'scan-value-content';
+                const r = getRangeParams();
+                document.getElementById('value1Range').textContent = '照合部分: ' + extractRange(qr1, r.start, r.end);
+            } else {
+                box1.className = 'scan-value-item waiting';
+                document.getElementById('value1').textContent = 'スキャン待ち...';
+                document.getElementById('value1').className = 'scan-value-content empty';
+                document.getElementById('value1Range').textContent = '';
+            }
+            
+            if (qr2) {
+                box2.className = 'scan-value-item filled';
+                document.getElementById('value2').textContent = qr2;
+                document.getElementById('value2').className = 'scan-value-content';
+                const r = getRangeParams();
+                document.getElementById('value2Range').textContent = '照合部分: ' + extractRange(qr2, r.start, r.end);
+            } else if (scanStep === 2) {
+                box2.className = 'scan-value-item waiting';
+                document.getElementById('value2').textContent = 'スキャン待ち...';
+                document.getElementById('value2').className = 'scan-value-content empty';
+                document.getElementById('value2Range').textContent = '';
+            } else {
+                box2.className = 'scan-value-item';
+                document.getElementById('value2').textContent = '-';
+                document.getElementById('value2').className = 'scan-value-content empty';
+                document.getElementById('value2Range').textContent = '';
+            }
+        }
+
+        // スキャナー
+        function startScanner() {
+            if (isNGLocked) {
+                showNGOverlay();
+                return;
+            }
+            
+            html5QrCode = new Html5Qrcode('reader');
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            
+            html5QrCode.start(
+                { facingMode: 'environment' },
+                config,
+                onScanSuccess,
+                () => {}
+            ).then(() => {
+                document.getElementById('startBtn').disabled = true;
+            }).catch(err => {
+                alert('カメラ起動エラー: ' + err);
+            });
+        }
+
+        function stopScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    html5QrCode = null;
+                    document.getElementById('startBtn').disabled = false;
+                }).catch(() => {});
+            }
+        }
+
+        function onScanSuccess(decodedText) {
+            playSound('beep');
+            
+            if (scanStep === 1) {
+                qr1 = decodedText;
+                scanStep = 2;
+                updateStepUI();
+                // 続けてスキャン（停止しない）
+            } else if (scanStep === 2) {
+                qr2 = decodedText;
+                stopScanner();
+                performMatch();
+            }
+        }
+
+        // 照合実行
+        function performMatch() {
+            const r = getRangeParams();
+            const ext1 = extractRange(qr1, r.start, r.end);
+            const ext2 = extractRange(qr2, r.start, r.end);
+            const isMatch = ext1 === ext2;
+            
+            // ログ
+            const entry = {
+                timestamp: new Date().toISOString(),
+                qr1: qr1,
+                qr2: qr2,
+                compared1: ext1,
+                compared2: ext2,
+                rangeStart: r.start,
+                rangeEnd: r.end,
+                result: isMatch ? 'OK' : 'NG'
+            };
+            scanLog.unshift(entry);
+            if (scanLog.length > 100) scanLog.pop();
+            saveLog();
+            renderLog();
+            saveSettingsToStorage();
+            
+            // 結果表示
+            showResult(isMatch, ext1, ext2);
+        }
+
+        function showResult(isMatch, ext1, ext2) {
+            const overlay = document.getElementById('resultOverlay');
+            const symbol = document.getElementById('resultSymbol');
+            const text = document.getElementById('resultText');
+            const values = document.getElementById('resultValues');
+            const nextBtn = document.getElementById('nextBtn');
+            const adminSec = document.getElementById('adminSection');
+            
+            overlay.classList.add('show');
+            
+            if (isMatch) {
+                overlay.className = 'result-overlay show ok';
+                symbol.textContent = '○';
+                text.textContent = '一致';
+                values.innerHTML = `
+                    <p class="label">照合値</p>
+                    <p>${ext1}</p>
+                `;
+                nextBtn.style.display = 'block';
+                adminSec.style.display = 'none';
+                playSound('ok');
+            } else {
+                overlay.className = 'result-overlay show ng ng-locked';
+                symbol.textContent = '×';
+                text.textContent = '不一致';
+                values.innerHTML = `
+                    <p class="label">1枚目</p>
+                    <p>${ext1}</p>
+                    <p class="label" style="margin-top:8px;">2枚目</p>
+                    <p>${ext2}</p>
+                `;
+                nextBtn.style.display = 'none';
+                adminSec.style.display = 'block';
+                isNGLocked = true;
+                playSound('ng');
+            }
+        }
+
+        function showNGOverlay() {
+            const overlay = document.getElementById('resultOverlay');
+            overlay.className = 'result-overlay show ng ng-locked';
+            document.getElementById('resultSymbol').textContent = '×';
+            document.getElementById('resultText').textContent = 'エラー状態';
+            document.getElementById('resultValues').innerHTML = '<p>管理者QRで解除してください</p>';
+            document.getElementById('nextBtn').style.display = 'none';
+            document.getElementById('adminSection').style.display = 'block';
+        }
+
+        function closeResultAndContinue() {
+            document.getElementById('resultOverlay').classList.remove('show');
+            resetScan();
+            startScanner();
+        }
+
+        // リセット
+        function resetScan() {
+            stopScanner();
+            qr1 = '';
+            qr2 = '';
+            scanStep = 1;
+            updateStepUI();
+        }
+
+        // 管理者解除
+        function startAdminScan() {
+            adminQrScanner = new Html5Qrcode('admin-reader');
+            const config = { fps: 10, qrbox: { width: 180, height: 180 } };
+            
+            adminQrScanner.start(
+                { facingMode: 'environment' },
+                config,
+                (decoded) => {
+                    adminQrScanner.stop().catch(() => {});
+                    adminQrScanner = null;
+                    
+                    if (decoded === adminQR) {
+                        isNGLocked = false;
+                        playSound('ok');
+                        document.getElementById('resultOverlay').classList.remove('show');
+                        resetScan();
+                        alert('✅ エラー解除しました');
+                    } else {
+                        playSound('ng');
+                        alert('❌ 管理者QRが違います');
+                    }
+                },
+                () => {}
+            ).catch(err => {
+                alert('カメラエラー: ' + err);
+            });
+        }
+
+        // ログ表示
+        function renderLog() {
+            const container = document.getElementById('logList');
+            document.getElementById('logCount').textContent = scanLog.length + '件';
+            
+            if (scanLog.length === 0) {
+                container.innerHTML = '<div class="no-log">ログはありません</div>';
+                return;
+            }
+            
+            container.innerHTML = scanLog.slice(0, 50).map(log => {
+                const time = new Date(log.timestamp).toLocaleString('ja-JP');
+                return `
+                    <div class="log-item ${log.result.toLowerCase()}">
+                        <div class="log-time">${time}</div>
+                        <div class="log-result">${log.result === 'OK' ? '✅ OK' : '❌ NG'}</div>
+                        <div class="log-data">1: ${log.compared1}</div>
+                        <div class="log-data">2: ${log.compared2}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function clearLog() {
+            if (confirm('ログをクリアしますか？')) {
+                scanLog = [];
+                saveLog();
+                renderLog();
+            }
+        }
+
+        function exportLog() {
+            if (scanLog.length === 0) {
+                alert('ログがありません');
+                return;
+            }
+            
+            const headers = ['日時', '結果', 'QR1(全体)', 'QR2(全体)', '照合1', '照合2', '開始', '終了'];
+            const rows = scanLog.map(l => [
+                new Date(l.timestamp).toLocaleString('ja-JP'),
+                l.result,
+                l.qr1,
+                l.qr2,
+                l.compared1,
+                l.compared2,
+                l.rangeStart,
+                l.rangeEnd
+            ]);
+            
+            const csv = [headers, ...rows].map(r => 
+                r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')
+            ).join('\n');
+            
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `QR照合ログ_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // 設定モーダル
+        function showSettingsModal() {
+            document.getElementById('adminQRInput').value = adminQR;
+            document.getElementById('settingsModal').classList.add('show');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.remove('show');
+        }
+
+        function saveSettings() {
+            adminQR = document.getElementById('adminQRInput').value.trim() || 'ADMIN123';
+            saveSettingsToStorage();
+            closeSettingsModal();
+        }
+
+        // 初期表示
+        updateStepUI();
+    </script>
+</body>
+</html>
