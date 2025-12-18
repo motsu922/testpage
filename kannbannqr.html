@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>QR照合システム</title>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -103,30 +102,23 @@
         .scan-screen {
             display: none;
             flex-direction: column;
+            align-items: center;
             min-height: calc(100vh - 60px);
+            padding: 20px;
         }
 
         .scan-screen.active {
             display: flex;
         }
 
-        .camera-container {
-            background: #000;
+        .scan-box {
             width: 100%;
-        }
-
-        #reader {
-            width: 100%;
-        }
-
-        .scan-status {
+            max-width: 400px;
             background: white;
-            padding: 24px;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
             text-align: center;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
         }
 
         .scan-step {
@@ -136,9 +128,10 @@
         }
 
         .scan-message {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 700;
             color: #1a73e8;
+            margin-bottom: 24px;
         }
 
         .scan-message.step2 {
@@ -149,14 +142,55 @@
             color: #9e9e9e;
         }
 
+        .scan-input-area {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .scan-input {
+            width: 100%;
+            padding: 20px;
+            font-size: 24px;
+            text-align: center;
+            border: 3px solid #1a73e8;
+            border-radius: 12px;
+            outline: none;
+            font-family: monospace;
+        }
+
+        .scan-input:focus {
+            border-color: #4caf50;
+            box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.2);
+        }
+
+        .scan-input.step2 {
+            border-color: #ff9800;
+        }
+
+        .scan-input.step2:focus {
+            border-color: #ff9800;
+            box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.2);
+        }
+
+        .input-hint {
+            font-size: 14px;
+            color: #999;
+            margin-top: 10px;
+        }
+
+        .scanner-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
         .stop-btn {
-            margin: 20px;
-            padding: 16px;
+            margin-top: 20px;
+            padding: 14px 40px;
             background: #f44336;
             color: white;
             border: none;
             border-radius: 12px;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
             cursor: pointer;
         }
@@ -531,6 +565,21 @@
             margin-bottom: 10px;
         }
 
+        .admin-input-group {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+        }
+
+        .admin-input {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            width: 200px;
+            text-align: center;
+        }
+
         .admin-btn {
             padding: 12px 24px;
             background: white;
@@ -540,15 +589,6 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-        }
-
-        #admin-reader {
-            margin-top: 10px;
-            border-radius: 8px;
-            overflow: hidden;
-            max-width: 220px;
-            margin-left: auto;
-            margin-right: auto;
         }
     </style>
 </head>
@@ -586,13 +626,19 @@
 
         <!-- スキャン画面 -->
         <div class="scan-screen" id="scanScreen">
-            <div class="camera-container">
-                <div id="reader"></div>
-            </div>
-            <div class="scan-status">
+            <div class="scan-box">
+                <div class="scanner-icon">📟</div>
                 <div class="scan-step" id="scanStep">STEP 1 / 2</div>
                 <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
+                
+                <div class="scan-input-area">
+                    <input type="text" class="scan-input" id="scanInput" 
+                           placeholder="QRリーダーで読み取り" 
+                           autocomplete="off" autofocus>
+                    <div class="input-hint">QRリーダーでスキャンしてください</div>
+                </div>
             </div>
+            
             <button class="stop-btn" onclick="stopAndReset()">⏹️ 停止</button>
         </div>
     </div>
@@ -667,6 +713,11 @@
                         <span class="setting-label">照合音を鳴らす</span>
                         <div class="toggle-switch on" id="soundToggle" onclick="toggleSound()"></div>
                     </div>
+
+                    <div class="setting-row">
+                        <span class="setting-label">バイブレーション</span>
+                        <div class="toggle-switch on" id="vibrationToggle" onclick="toggleVibration()"></div>
+                    </div>
                 </div>
 
                 <button class="save-btn" onclick="saveAllSettings()">💾 設定を保存</button>
@@ -683,8 +734,9 @@
         <button class="result-btn" id="okBtn" onclick="closeAndContinue()">次の照合へ</button>
         <div class="admin-area" id="adminArea" style="display:none;">
             <p>⚠️ 管理者QRで解除してください</p>
-            <button class="admin-btn" onclick="startAdminScan()">🔐 管理者QR読取</button>
-            <div id="admin-reader"></div>
+            <div class="admin-input-group">
+                <input type="text" class="admin-input" id="adminInput" placeholder="管理者QRを読み取り">
+            </div>
         </div>
     </div>
 
@@ -693,12 +745,8 @@
         let currentStep = 0; // 0:待機, 1:1回目読取中, 2:2回目読取中
         let value1 = '';
         let value2 = '';
-        let isScanning = false;
         let isNGLocked = false;
-        let isWaiting = false;
         let scanLog = [];
-        let html5QrCode = null;
-        let adminScanner = null;
         let audioCtx = null;
 
         // 設定
@@ -709,18 +757,80 @@
             range2End: 0,
             adminPassword: 'admin',
             adminQR: 'ADMIN123',
-            soundEnabled: true
+            soundEnabled: true,
+            vibrationEnabled: true
         };
 
         // ========== 初期化 ==========
         document.addEventListener('DOMContentLoaded', () => {
             loadSettings();
             loadLog();
+            setupInputListeners();
         });
+
+        // ========== 入力リスナー設定 ==========
+        function setupInputListeners() {
+            const scanInput = document.getElementById('scanInput');
+            const adminInput = document.getElementById('adminInput');
+
+            // QRリーダーからの入力（Enterキーで確定）
+            scanInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = scanInput.value.trim();
+                    if (value && !isWaiting) {
+                        handleScan(value);
+                        scanInput.value = '';
+                    }
+                }
+            });
+
+            // 管理者QR入力
+            adminInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = adminInput.value.trim();
+                    if (value) {
+                        handleAdminScan(value);
+                        adminInput.value = '';
+                    }
+                }
+            });
+        }
+
+        // ========== スキャン処理 ==========
+        function handleScan(decoded) {
+            if (currentStep === 1) {
+                value1 = decoded;
+                playSound('beep');
+                currentStep = 2;
+                updateScanUI();
+                document.getElementById('scanInput').focus();
+                
+            } else if (currentStep === 2) {
+                value2 = decoded;
+                playSound('beep');
+                doMatch();
+            }
+        }
+
+        function handleAdminScan(value) {
+            if (value === settings.adminQR) {
+                isNGLocked = false;
+                playSound('ok');
+                document.getElementById('resultOverlay').classList.remove('show');
+                showStandby();
+                alert('✅ エラー解除しました');
+            } else {
+                playSound('ng');
+                alert('❌ 管理者QRが一致しません');
+                document.getElementById('adminInput').focus();
+            }
+        }
 
         // ========== 設定 ==========
         function loadSettings() {
-            const saved = localStorage.getItem('qrMatchSettings_v3');
+            const saved = localStorage.getItem('qrMatchSettings_v4');
             if (saved) {
                 settings = { ...settings, ...JSON.parse(saved) };
             }
@@ -734,6 +844,7 @@
             document.getElementById('range2End').value = settings.range2End;
             document.getElementById('adminQR').value = settings.adminQR;
             document.getElementById('soundToggle').className = settings.soundEnabled ? 'toggle-switch on' : 'toggle-switch';
+            document.getElementById('vibrationToggle').className = settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
         }
 
         function saveAllSettings() {
@@ -749,7 +860,7 @@
             
             settings.adminQR = document.getElementById('adminQR').value.trim() || 'ADMIN123';
 
-            localStorage.setItem('qrMatchSettings_v3', JSON.stringify(settings));
+            localStorage.setItem('qrMatchSettings_v4', JSON.stringify(settings));
             alert('✅ 設定を保存しました');
             document.getElementById('adminPassword').value = '';
         }
@@ -757,6 +868,11 @@
         function toggleSound() {
             settings.soundEnabled = !settings.soundEnabled;
             document.getElementById('soundToggle').className = settings.soundEnabled ? 'toggle-switch on' : 'toggle-switch';
+        }
+
+        function toggleVibration() {
+            settings.vibrationEnabled = !settings.vibrationEnabled;
+            document.getElementById('vibrationToggle').className = settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
         }
 
         // ========== 設定ロック ==========
@@ -792,7 +908,7 @@
 
         // ========== ログ ==========
         function loadLog() {
-            const saved = localStorage.getItem('qrMatchLog_v3');
+            const saved = localStorage.getItem('qrMatchLog_v4');
             if (saved) {
                 scanLog = JSON.parse(saved);
                 renderLog();
@@ -800,10 +916,10 @@
         }
 
         function saveLog() {
-            localStorage.setItem('qrMatchLog_v3', JSON.stringify(scanLog));
+            localStorage.setItem('qrMatchLog_v4', JSON.stringify(scanLog));
         }
 
-        // ========== 音 ==========
+        // ========== 音・バイブ ==========
         function initAudio() {
             if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
@@ -811,26 +927,45 @@
         function playSound(type) {
             if (!settings.soundEnabled) return;
             initAudio();
+            
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            gain.gain.value = 0.25;
 
             if (type === 'beep') {
-                osc.frequency.value = 880;
+                osc.frequency.value = 1400;
+                osc.type = 'sine';
+                gain.gain.value = 0.5;
                 osc.start();
-                setTimeout(() => osc.stop(), 80);
+                setTimeout(() => osc.stop(), 300);
+                vibrate([150]);
             } else if (type === 'ok') {
-                osc.frequency.value = 1000;
+                osc.frequency.value = 1200;
+                osc.type = 'sine';
+                gain.gain.value = 0.5;
                 osc.start();
-                setTimeout(() => osc.frequency.value = 1300, 100);
-                setTimeout(() => osc.stop(), 200);
+                setTimeout(() => osc.frequency.value = 1500, 120);
+                setTimeout(() => osc.stop(), 250);
+                vibrate([100, 50, 100]);
             } else if (type === 'ng') {
                 osc.frequency.value = 280;
                 osc.type = 'square';
+                gain.gain.value = 0.4;
                 osc.start();
-                setTimeout(() => osc.stop(), 400);
+                setTimeout(() => osc.stop(), 500);
+                vibrate([500]);
+            }
+        }
+
+        function vibrate(pattern) {
+            if (!settings.vibrationEnabled) return;
+            if (navigator.vibrate) {
+                navigator.vibrate(pattern);
             }
         }
 
@@ -850,106 +985,50 @@
         function showScanScreen() {
             document.getElementById('standbyScreen').style.display = 'none';
             document.getElementById('scanScreen').classList.add('active');
+            document.getElementById('scanInput').value = '';
+            document.getElementById('scanInput').focus();
         }
 
         function updateScanUI() {
             const step = document.getElementById('scanStep');
             const message = document.getElementById('scanMessage');
+            const input = document.getElementById('scanInput');
 
             if (currentStep === 1) {
                 step.textContent = 'STEP 1 / 2';
                 message.textContent = '1回目を読み取ってください';
                 message.className = 'scan-message';
+                input.className = 'scan-input';
+                input.placeholder = 'QRリーダーで読み取り';
             } else if (currentStep === 2) {
                 step.textContent = 'STEP 2 / 2';
                 message.textContent = '2回目を読み取ってください';
                 message.className = 'scan-message step2';
-            } else if (isWaiting) {
-                step.textContent = '';
-                message.textContent = '少々お待ちください...';
-                message.className = 'scan-message waiting';
+                input.className = 'scan-input step2';
+                input.placeholder = 'QRリーダーで読み取り';
             }
         }
 
-        // ========== スキャン ==========
+        // ========== スキャン開始・停止 ==========
         function startScanning() {
             if (isNGLocked) {
                 showNGOverlay();
                 return;
             }
 
-            // リセット
             value1 = '';
             value2 = '';
             currentStep = 1;
-            isWaiting = false;
 
             showScanScreen();
             updateScanUI();
-
-            html5QrCode = new Html5Qrcode('reader');
-
-            html5QrCode.start(
-                { facingMode: 'environment' },
-                { fps: 10, qrbox: { width: 250, height: 250 } },
-                onScanSuccess,
-                () => {}
-            ).then(() => {
-                isScanning = true;
-            }).catch(err => {
-                alert('カメラ起動エラー: ' + err);
-                showStandby();
-            });
         }
 
         function stopAndReset() {
-            if (html5QrCode && isScanning) {
-                html5QrCode.stop().then(() => {
-                    html5QrCode = null;
-                    isScanning = false;
-                    currentStep = 0;
-                    value1 = '';
-                    value2 = '';
-                    isWaiting = false;
-                    showStandby();
-                }).catch(() => {
-                    showStandby();
-                });
-            } else {
-                showStandby();
-            }
-        }
-
-        function onScanSuccess(decoded) {
-            if (currentStep === 1 && !isWaiting) {
-                value1 = decoded;
-                playSound('beep');
-                
-                // 1秒間のインターバル
-                isWaiting = true;
-                updateScanUI();
-                
-                setTimeout(() => {
-                    isWaiting = false;
-                    currentStep = 2;
-                    updateScanUI();
-                }, 1000);
-                
-            } else if (currentStep === 2 && !isWaiting) {
-                value2 = decoded;
-                playSound('beep');
-                
-                // スキャン停止して照合
-                if (html5QrCode) {
-                    html5QrCode.stop().then(() => {
-                        html5QrCode = null;
-                        isScanning = false;
-                        doMatch();
-                    }).catch(() => doMatch());
-                } else {
-                    doMatch();
-                }
-            }
+            currentStep = 0;
+            value1 = '';
+            value2 = '';
+            showStandby();
         }
 
         // ========== 照合 ==========
@@ -1006,6 +1085,7 @@
                 adminArea.style.display = 'block';
                 isNGLocked = true;
                 playSound('ng');
+                setTimeout(() => document.getElementById('adminInput').focus(), 100);
             }
         }
 
@@ -1017,37 +1097,13 @@
             document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
             document.getElementById('okBtn').style.display = 'none';
             document.getElementById('adminArea').style.display = 'block';
+            setTimeout(() => document.getElementById('adminInput').focus(), 100);
         }
 
         function closeAndContinue() {
             document.getElementById('resultOverlay').classList.remove('show');
-            showStandby();
             // 自動的に次のスキャンを開始
             setTimeout(() => startScanning(), 300);
-        }
-
-        // ========== 管理者解除 ==========
-        function startAdminScan() {
-            adminScanner = new Html5Qrcode('admin-reader');
-            adminScanner.start(
-                { facingMode: 'environment' },
-                { fps: 10, qrbox: { width: 160, height: 160 } },
-                (decoded) => {
-                    adminScanner.stop().catch(() => {});
-                    adminScanner = null;
-                    if (decoded === settings.adminQR) {
-                        isNGLocked = false;
-                        playSound('ok');
-                        document.getElementById('resultOverlay').classList.remove('show');
-                        showStandby();
-                        alert('✅ エラー解除しました');
-                    } else {
-                        playSound('ng');
-                        alert('❌ 管理者QRが一致しません');
-                    }
-                },
-                () => {}
-            ).catch(err => alert('カメラエラー: ' + err));
         }
 
         // ========== ログ表示 ==========
