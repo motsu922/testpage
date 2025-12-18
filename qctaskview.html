@@ -783,7 +783,90 @@
           gap: 8px;
           justify-content: flex-end;
         }
-        
+        /* 日別イベント一覧モーダル */
+.day-events-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 2000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.day-events-overlay.active{ display: flex; }
+.day-events-modal{
+  background: white;
+  border-radius: 12px;
+  max-width: 500px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.day-events-header{
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-secondary);
+}
+.day-events-title{
+  font-size: 16px;
+  font-weight: 700;
+}
+.day-events-close{
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--bg-card);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--text-secondary);
+}
+.day-events-close:hover{ background: var(--border-color); }
+.day-events-body{
+  padding: 16px 20px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.day-event-item{
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.day-event-item:last-child{ margin-bottom: 0; }
+.day-event-item:hover{ transform: translateX(4px); }
+.day-event-item.internal{ background: #fef3c7; border-left: 3px solid #f59e0b; }
+.day-event-item.internal-done{ background: #e5e7eb; border-left: 3px solid #9ca3af; opacity: 0.7; }
+.day-event-item.customer{ background: #fee2e2; border-left: 3px solid #dc2626; }
+.day-event-item.customer-done{ background: #e5e7eb; border-left: 3px solid #9ca3af; opacity: 0.7; }
+.day-event-item.task{ background: #dbeafe; border-left: 3px solid #2563eb; }
+.day-event-item.task-done{ background: #dcfce7; border-left: 3px solid #16a34a; opacity: 0.7; }
+.day-event-item.task-overdue{ background: #fee2e2; border-left: 3px solid #dc2626; }
+.day-event-defect{
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.day-event-item.task-done .day-event-defect,
+.day-event-item.task-done .day-event-task,
+.day-event-item.internal-done .day-event-defect,
+.day-event-item.customer-done .day-event-defect{ text-decoration: line-through; }
+.day-event-task{
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.day-event-meta{
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+}
         /* テーブル共通 */
         .table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .table th, .table td { padding: 8px 10px; border: 1px solid var(--border-color); text-align: left; }
@@ -1523,7 +1606,16 @@
             </div>
         </div>
     </div>
-
+<!-- 日別イベント一覧モーダル -->
+<div class="day-events-overlay" id="day-events-overlay" onclick="closeDayEvents()">
+    <div class="day-events-modal" onclick="event.stopPropagation()">
+        <div class="day-events-header">
+            <div class="day-events-title" id="day-events-title">2024年12月1日のイベント</div>
+            <button class="day-events-close" onclick="closeDayEvents()">×</button>
+        </div>
+        <div class="day-events-body" id="day-events-body"></div>
+    </div>
+</div>
     <!-- 写真プレビューモーダル -->
     <div class="photo-preview-overlay" id="photo-preview-overlay" onclick="closePhotoPreview()">
         <div class="photo-preview-container" onclick="event.stopPropagation()">
@@ -2105,6 +2197,7 @@ return `<div class="case-card ${(c.closed || c.measureStatus === '7') ? 'is-clos
             startDate.setDate(startDate.getDate() - firstDay.getDay());
             const today = new Date(); today.setHours(0, 0, 0, 0);
             const events = {};
+            
             const addEvent = (date, event) => { if (!events[date]) events[date] = []; events[date].push(event); };
             const filteredCases = caseFilter === 'all' ? cases : cases.filter(c => c.id === caseFilter);
             filteredCases.forEach(c => {
@@ -2152,7 +2245,8 @@ if (c.customerDeadline) addEvent(c.customerDeadline, {
                     }
                 });
             });
-            
+            // イベントをキャッシュに保存（日別一覧表示用）
+calendarEventsCache = events;
             let html = ['日','月','火','水','木','金','土'].map(d => `<div class="calendar-header-cell">${d}</div>`).join('');
             const current = new Date(startDate);
             for (let i = 0; i < 42; i++) {
@@ -2187,7 +2281,7 @@ if (c.customerDeadline) addEvent(c.customerDeadline, {
                             </div>`;
                         }
                     }).join('')}
-                    ${dayEvents.length > 4 ? `<div style="font-size:10px;color:var(--text-muted);">+${dayEvents.length - 4}件</div>` : ''}
+${dayEvents.length > 4 ? `<div style="font-size:10px;color:var(--text-muted);cursor:pointer;text-decoration:underline;" onclick="openDayEvents('${dateStr}')">+${dayEvents.length - 4}件</div>` : ''}
                 </div>`;
                 current.setDate(current.getDate() + 1);
             }
@@ -2277,7 +2371,53 @@ ${e.taskNote ? `<div class="calendar-detail-row">
         function closeCalendarDetail(){
             document.getElementById('calendar-detail-overlay').classList.remove('active');
         }
+// 日別イベント一覧
+let calendarEventsCache = {};
 
+function openDayEvents(dateStr){
+    const events = calendarEventsCache[dateStr] || [];
+    if(events.length === 0) return;
+    
+    // 日付をフォーマット
+    const d = new Date(dateStr);
+    const title = `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日のイベント（${events.length}件）`;
+    document.getElementById('day-events-title').textContent = title;
+    
+    // イベント一覧を生成
+    const body = document.getElementById('day-events-body');
+    body.innerHTML = events.map(e => {
+        const eventData = encodeURIComponent(JSON.stringify(e));
+        if(e.eventType === 'deadline'){
+            return `
+                <div class="day-event-item ${e.type}" onclick="closeDayEvents();openCalendarDetail('${eventData}')">
+                    <div class="day-event-defect">${escapeHtml(e.defect || e.caseName)}</div>
+                    <div class="day-event-meta">
+                        <span>${e.deadlineType}</span>
+                        <span>📅 ${escapeHtml(e.date)}</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            return `
+                <div class="day-event-item ${e.type}" onclick="closeDayEvents();openCalendarDetail('${eventData}')">
+                    <div class="day-event-defect">${escapeHtml(e.defect || e.caseName)}</div>
+                    <div class="day-event-task">${escapeHtml(e.taskContent)}</div>
+                    <div class="day-event-meta">
+                        <span>👤 ${escapeHtml(e.taskAssignee)}</span>
+                        <span>📅 ${escapeHtml(e.taskDeadline)}</span>
+                        ${e.taskCompleted ? '<span style="color:var(--success);">✓完了</span>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+    }).join('');
+    
+    document.getElementById('day-events-overlay').classList.add('active');
+}
+
+function closeDayEvents(){
+    document.getElementById('day-events-overlay').classList.remove('active');
+}
         function changeMonth(d) { currentCalendarDate.setMonth(currentCalendarDate.getMonth() + d); renderCalendar(); }
         function goToToday() { currentCalendarDate = new Date(); renderCalendar(); }
 
