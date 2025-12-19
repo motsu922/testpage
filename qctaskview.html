@@ -895,7 +895,28 @@
         .leadtime-table .lt-total { text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
         .leadtime-table .lt-total.measure-total { background: #d1fae5; }
         .leadtime-table .lt-total.report-total { background: #bfdbfe; }
-        
+        /* 停滞日数表示 */
+        .stagnant-days {
+            font-size: 11px;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            color: #4b5563;
+            background: #e5e7eb;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .stagnant-days.medium {
+            background: #fef08a;
+            color: #854d0e;
+        }
+        .stagnant-days.long {
+            background: #fecaca;
+            color: #991b1b;
+        }
         /* 担当者別ビュー */
         .assignee-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
         .assignee-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
@@ -1952,13 +1973,26 @@ container.innerHTML = filtered.map(c => renderCaseCard(c)).join('');
 
                 html += `<div class="step-date" onclick="event.stopPropagation();editMeasureDate('${c.id}', ${i})" title="クリックで完了日を編集">${stepDate}</div>`;
                 html += '</div>';
+             }
+            
+            // 最後の完了ステップから今日までの停滞日数を表示
+            const lastCompletedStep = parseInt(c.measureStatus) || 0;
+            if (lastCompletedStep > 0 && lastCompletedStep < 7) {
+                const md = c.measureDates || {};
+                const lastDate = md[String(lastCompletedStep)] || c.date || '';
+                if (lastDate) {
+                    const days = diffDays(lastDate, todayStr());
+                    if (days !== '' && days > 0) {
+                        let stagnantClass = '';
+                        if (days >= 14) stagnantClass = 'long';
+                        else if (days >= 7) stagnantClass = 'medium';
+                        html += `<div class="stagnant-days ${stagnantClass}" title="最終更新から${days}日経過">⏱${days}日</div>`;
+                    }
+                }
             }
+            
             return html;
-        
-
-
         }
-
         function renderCaseCard(c) {
             const nextTask = getNextTask(c);
             const nextTaskOverdue = nextTask && isOverdue(nextTask.deadline);
