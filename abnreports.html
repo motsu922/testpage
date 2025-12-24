@@ -1877,38 +1877,100 @@ document.getElementById('btnImportStart').addEventListener('click', async functi
 
 
  /* ワード候補 */
-  function extractCommonWords(field, filterSerialNo = null){
-    const words = {};
-    let targetData = anomalyCache;
-    
-    // 整理Noでフィルタリング
-    if (filterSerialNo && filterSerialNo.trim() !== '') {
-      targetData = anomalyCache.filter(item => item.serialNo === filterSerialNo.trim());
-      
-      // 整理Noに該当するデータがない場合は空配列を返す
-      if (targetData.length === 0) {
-        return [];
-      }
-    } else {
-      // 整理Noが入力されていない場合は候補を表示しない
-      return [];
-    }
-    
-    targetData.forEach(item => {
-      const text = item[field] || '';
-      const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
-      segments.forEach(seg => {
-        const trimmed = seg.trim();
-        if (trimmed.length >= 2 && trimmed.length <= 50) {
-          words[trimmed] = (words[trimmed] || 0) + 1;
-        }
-      });
-    });
-    return Object.entries(words)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-      .map(([word]) => word);
+/* ワード候補 - 部分一致対応版（Firestore全体検索） */
+
+// 部分一致でFirestore全体を検索
+async function fetchBySerialNoPartialMatch(searchTerm){
+  if (!searchTerm || searchTerm.trim() === '') return [];
+  
+  const normalizedSearch = normalizeSerial(searchTerm);
+  if (normalizedSearch.length < 1) return [];
+  
+  // 全データを取得
+  const allData = await fetchAllData();
+  
+  // 部分一致でフィルタリング
+  return allData.filter(item => {
+    const normalizedSerial = normalizeSerial(item.serialNo || '');
+    return normalizedSerial.includes(normalizedSearch);
+  });
+}
+
+// 非同期版：Firestore全体から部分一致検索
+async function extractCommonWordsAsync(field, filterSerialNo = null){
+  const words = {};
+  
+  if (!filterSerialNo || filterSerialNo.trim() === '') {
+    return { words: [], count: 0, partialCount: 0 };
   }
+  
+  // Firestore全体から部分一致検索
+  const targetData = await fetchBySerialNoPartialMatch(filterSerialNo);
+  
+  if (targetData.length === 0) {
+    return { words: [], count: 0, partialCount: 0 };
+  }
+  
+  // 完全一致のカウント
+  const normalizedSearch = normalizeSerial(filterSerialNo);
+  const exactMatchCount = targetData.filter(item => 
+    normalizeSerial(item.serialNo || '') === normalizedSearch
+  ).length;
+  
+  targetData.forEach(item => {
+    const text = item[field] || '';
+    const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
+    segments.forEach(seg => {
+      const trimmed = seg.trim();
+      if (trimmed.length >= 2 && trimmed.length <= 50) {
+        words[trimmed] = (words[trimmed] || 0) + 1;
+      }
+    });
+  });
+  
+  const sortedWords = Object.entries(words)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([word]) => word);
+  
+  return { 
+    words: sortedWords, 
+    count: exactMatchCount, 
+    partialCount: targetData.length 
+  };
+}
+
+// 旧関数（互換性のため残す - キャッシュのみ検索）
+function extractCommonWords(field, filterSerialNo = null){
+  const words = {};
+  let targetData = anomalyCache;
+  
+  if (filterSerialNo && filterSerialNo.trim() !== '') {
+    const normalizedSearch = normalizeSerial(filterSerialNo);
+    targetData = anomalyCache.filter(item => {
+      const normalizedSerial = normalizeSerial(item.serialNo || '');
+      return normalizedSerial.includes(normalizedSearch);
+    });
+    if (targetData.length === 0) return [];
+  } else {
+    return [];
+  }
+  
+  targetData.forEach(item => {
+    const text = item[field] || '';
+    const segments = text.split(/[。、\n]/).filter(s => s.trim().length >= 2);
+    segments.forEach(seg => {
+      const trimmed = seg.trim();
+      if (trimmed.length >= 2 && trimmed.length <= 50) {
+        words[trimmed] = (words[trimmed] || 0) + 1;
+      }
+    });
+  });
+  return Object.entries(words)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([word]) => word);
+}
   
   function updateSerialNoList(){
     const serialNoCounts = {};
@@ -1927,24 +1989,39 @@ document.getElementById('btnImportStart').addEventListener('click', async functi
     ).join('');
   }
   
-  function showWordSuggestions(targetId, suggestionsBoxId, wordsContainerId, field){
-    const serialNo = document.getElementById('serialNo').value.trim();
-    const words = extractCommonWords(field, serialNo);
-    const box = document.getElementById(suggestionsBoxId);
-    const container = document.getElementById(wordsContainerId);
+// 非同期版ワード候補表示（Firestore全体検索）
+async function showWordSuggestionsAsync(targetId, suggestionsBoxId, wordsContainerId, field){
+  const serialNo = document.getElementById('serialNo').value.trim();
+  const box = document.getElementById(suggestionsBoxId);
+  const container = document.getElementById(wordsContainerId);
+  const header = box.querySelector('.word-suggestion-header');
+  
+  if (!serialNo) { 
+    box.classList.remove('active'); 
+    return; 
+  }
+  
+  // 検索中表示
+  if (header) header.innerHTML = '🔍 検索中...';
+  container.innerHTML = '<div class="searching-indicator"><div class="spinner"></div>Firestore全体を検索中...</div>';
+  box.classList.add('active');
+  
+  try {
+    const result = await extractCommonWordsAsync(field, serialNo);
     
-    if (words.length === 0) { 
-      box.classList.remove('active'); 
+    if (result.words.length === 0) { 
+      if (header) header.textContent = '💡 候補なし';
+      container.innerHTML = '<div style="color:#999;padding:10px;">該当する過去データがありません</div>';
       return; 
     }
     
-    const filteredCount = anomalyCache.filter(item => item.serialNo === serialNo).length;
-    const headerText = `💡 整理No「${serialNo}」の過去の表現（${filteredCount}件の履歴から）`;
-    
-    const header = box.querySelector('.word-suggestion-header');
+    const headerText = `💡 整理No「${serialNo}」の過去の表現（完全一致:${result.count}件／部分一致:${result.partialCount}件）`;
     if (header) header.textContent = headerText;
-    container.innerHTML = words.map(word => `<span class="word-tag" data-word="${word}">${word}</span>`).join('');
-    box.classList.add('active');
+    
+    container.innerHTML = result.words.map(word => 
+      `<span class="word-tag" data-word="${word}">${word}</span>`
+    ).join('');
+    
     container.querySelectorAll('.word-tag').forEach(tag => {
       tag.addEventListener('click', () => {
         const textarea = document.getElementById(targetId);
@@ -1960,7 +2037,17 @@ document.getElementById('btnImportStart').addEventListener('click', async functi
         textarea.selectionStart = textarea.selectionEnd = cursorPos + insertion.length;
       });
     });
+  } catch (error) {
+    console.error('Word suggestions error:', error);
+    if (header) header.textContent = '💡 エラー';
+    container.innerHTML = '<div style="color:#c62828;padding:10px;">検索エラーが発生しました</div>';
   }
+}
+
+// 同期版（互換性のため残す）
+function showWordSuggestions(targetId, suggestionsBoxId, wordsContainerId, field){
+  showWordSuggestionsAsync(targetId, suggestionsBoxId, wordsContainerId, field);
+}
   
   document.getElementById('anomalyContent').addEventListener('focus', () => {
     showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
@@ -1968,26 +2055,50 @@ document.getElementById('btnImportStart').addEventListener('click', async functi
   document.getElementById('actionTaken').addEventListener('focus', () => {
     showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
   });
-  document.getElementById('serialNo').addEventListener('input', () => {
-    const serialNo = document.getElementById('serialNo').value.trim();
-    const infoBox = document.getElementById('serialNoInfo');
-    const countSpan = document.getElementById('serialNoCount');
-    if (serialNo !== '') {
-      const count = anomalyCache.filter(item => item.serialNo === serialNo).length;
-      countSpan.textContent = count;
-      infoBox.style.display = count > 0 ? 'block' : 'none';
-    } else {
-      infoBox.style.display = 'none';
-    }
+// 整理No入力時の情報更新（非同期版・部分一致対応）
+let serialNoSearchTimeout = null;
+document.getElementById('serialNo').addEventListener('input', () => {
+  const serialNo = document.getElementById('serialNo').value.trim();
+  const infoBox = document.getElementById('serialNoInfo');
+  const countSpan = document.getElementById('serialNoCount');
+  const partialCountSpan = document.getElementById('serialNoPartialCount');
+  
+  // デバウンス処理（300ms待機）
+  clearTimeout(serialNoSearchTimeout);
+  
+  if (serialNo !== '') {
+    infoBox.style.display = 'block';
+    countSpan.textContent = '検索中...';
+    if (partialCountSpan) partialCountSpan.textContent = '';
     
-    // フォーカスされているテキストエリアの候補を更新
-    const activeElement = document.activeElement;
-    if (activeElement.id === 'anomalyContent') {
-      showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
-    } else if (activeElement.id === 'actionTaken') {
-      showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
-    }
-  });
+    serialNoSearchTimeout = setTimeout(async () => {
+      try {
+        const targetData = await fetchBySerialNoPartialMatch(serialNo);
+        const normalizedSearch = normalizeSerial(serialNo);
+        const exactCount = targetData.filter(item => 
+          normalizeSerial(item.serialNo || '') === normalizedSearch
+        ).length;
+        
+        countSpan.textContent = exactCount;
+        if (partialCountSpan) partialCountSpan.textContent = targetData.length;
+        infoBox.style.display = targetData.length > 0 ? 'block' : 'none';
+        
+        // フォーカスされているテキストエリアの候補を更新
+        const activeElement = document.activeElement;
+        if (activeElement.id === 'anomalyContent') {
+          showWordSuggestions('anomalyContent', 'anomalyWordSuggestions', 'anomalyWords', 'anomalyContent');
+        } else if (activeElement.id === 'actionTaken') {
+          showWordSuggestions('actionTaken', 'actionWordSuggestions', 'actionWords', 'actionTaken');
+        }
+      } catch (error) {
+        console.error('Serial search error:', error);
+        countSpan.textContent = 'エラー';
+      }
+    }, 300);
+  } else {
+    infoBox.style.display = 'none';
+  }
+});
   document.getElementById('serialNo').addEventListener('change', () => {
     const anomalyBox = document.getElementById('anomalyWordSuggestions');
     const actionBox = document.getElementById('actionWordSuggestions');
