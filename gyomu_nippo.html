@@ -288,18 +288,25 @@
                         <h3>📋 タスク <span id="currentMemberName" style="color:#667eea;"></span></h3>
                         <div class="task-buttons" id="taskButtons"></div>
                     </div>
-                    <div class="card gantt-card">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                            <h3 style="margin:0;">📊 リアルタイム状況</h3>
-                            <span id="ganttCurrentTime" style="font-size:14px;font-weight:700;color:#667eea;"></span>
-                        </div>
-                        <div id="ganttFilterBadge"></div>
-                        <div id="ganttLegend" class="chart-legend" style="margin-bottom:10px;"></div>
-                        <div class="gantt-container" id="ganttContainer">
-                            <div class="gantt-header" id="ganttHeader"></div>
-                            <div class="gantt-body" id="ganttBody"></div>
-                        </div>
-                    </div>
+<div class="card gantt-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">
+        <h3 style="margin:0;">📊 リアルタイム状況</h3>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;">
+            <button class="btn btn-secondary btn-sm" onclick="changeGanttDate(-1)">← 前日</button>
+            <input type="date" id="ganttDate" onchange="onGanttDateChange(this.value)" style="padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
+            <button class="btn btn-secondary btn-sm" onclick="changeGanttDate(1)">翌日 →</button>
+            <button class="btn btn-primary btn-sm" onclick="goGanttToday()">今日</button>
+            <span id="ganttCurrentTime" style="font-size:12px;font-weight:700;color:#667eea;"></span>
+        </div>
+    </div>
+    <div id="ganttFilterBadge"></div>
+    <div id="ganttLegend" class="chart-legend" style="margin-bottom:10px;"></div>
+    <div class="gantt-container" id="ganttContainer">
+        <div class="gantt-header" id="ganttHeader"></div>
+        <div class="gantt-body" id="ganttBody"></div>
+    </div>
+</div>
+
                 </div>
                 <div class="tracker-right">
                     <h4>📊 本日の記録</h4>
@@ -505,7 +512,10 @@
         currentMember = members[0] || null;
         document.getElementById('todayDate').textContent = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'short'});
         document.getElementById('historyDate').value = formatDate(new Date());
-
+    const todayStr = formatDate(new Date());
+    ganttDate = todayStr;
+    const gd = document.getElementById('ganttDate');
+    if (gd) gd.value = todayStr;
         render();
 
         // タイマー・ガントのリアルタイム更新
@@ -820,93 +830,154 @@
 
     // ガントチャート
     let ganttFilterTask = null;
+let ganttDate = null;
 
-    function renderGantt() {
-        const container = document.getElementById('ganttContainer');
-        const header = document.getElementById('ganttHeader');
-        const body = document.getElementById('ganttBody');
-        const legend = document.getElementById('ganttLegend');
-        const timeDisplay = document.getElementById('ganttCurrentTime');
-        if (!container || !header || !body) return;
+function renderGantt() {
+    const container   = document.getElementById('ganttContainer');
+    const header      = document.getElementById('ganttHeader');
+    const body        = document.getElementById('ganttBody');
+    const legend      = document.getElementById('ganttLegend');
+    const timeDisplay = document.getElementById('ganttCurrentTime');
+    const dateInput   = document.getElementById('ganttDate');
+    if (!container || !header || !body) return;
 
-        const now = new Date();
-        const today = formatDate(now);
-        const currentHour = now.getHours();
-        const currentMinute = now.getMinutes();
+    const now      = new Date();
+    const todayStr = formatDate(now);
+    const target   = ganttDate || todayStr;
 
-        if (timeDisplay) {
-            timeDisplay.textContent = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${String(currentHour).padStart(2,'0')}:${String(currentMinute).padStart(2,'0')}`;
+    // 日付入力ボックスと同期
+    if (dateInput && dateInput.value !== target) {
+        dateInput.value = target;
+    }
+
+    const currentHour   = now.getHours();
+    const currentMinute = now.getMinutes();
+
+    if (timeDisplay) {
+        if (target === todayStr) {
+            timeDisplay.textContent =
+                `今: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+        } else {
+            timeDisplay.textContent = target.replace(/-/g, '/');
         }
+    }
 
-        const startHour = 6;
-        const endHour = 22;
-        const hours = [];
-        for (let h = startHour; h <= endHour; h++) hours.push(h);
+    const startHour = 6;
+    const endHour   = 22;
+    const hours = [];
+    for (let h = startHour; h <= endHour; h++) hours.push(h);
 
-        let headerHtml = '<div class="gantt-member-col">担当者</div>';
+    // ヘッダー
+    let headerHtml = '<div class="gantt-member-col">担当者</div>';
+    hours.forEach(h => {
+        const isCurrent = (target === todayStr && h === currentHour);
+        headerHtml += `<div class="gantt-time-label ${isCurrent?'current':''}">${h}:00</div>`;
+    });
+    header.innerHTML = headerHtml;
+
+    // 対象日のレコード
+    const dayRecs = records.filter(r => r.date === target);
+
+    // 凡例に出すタスク
+    const usedTasks = [
+        ...new Set([
+            ...dayRecs.map(r => r.task),
+            ...(target === todayStr ? Object.values(activeTimers).map(t => t.task) : [])
+        ])
+    ];
+
+    if (legend) {
+        legend.innerHTML = usedTasks.map(task => {
+            const color = getTaskColor(task);
+            const isFiltered = ganttFilterTask === task;
+            return `<div class="chart-legend-item ${isFiltered?'active':''}"
+                        onclick="toggleGanttFilter('${task}')"
+                        style="cursor:pointer;${isFiltered?'background:'+color+';color:white;border-radius:4px;':''}">
+                <div class="chart-legend-color" style="background:${color}"></div>
+                <span>${getTaskIcon(task)} ${task}</span>
+            </div>`;
+        }).join('');
+    }
+
+    // 行本体
+    let bodyHtml = '';
+    members.forEach(member => {
+        const timer   = activeTimers[member];
+        const isToday = (target === todayStr);
+        const isActiveToday = (isToday && !!timer);
+
+        bodyHtml += `<div class="gantt-row">
+            <div class="gantt-member-col">
+                <span class="status-dot ${isActiveToday?'active':'idle'}"></span>
+                <span class="member-name-text">${member}</span>
+            </div>`;
+
         hours.forEach(h => {
-            const isCurrent = h === currentHour;
-            headerHtml += `<div class="gantt-time-label ${isCurrent?'current':''}">${h}:00</div>`;
-        });
-        header.innerHTML = headerHtml;
-
-        const todayRecs = records.filter(r => r.date === today);
-        const usedTasks = [...new Set([...todayRecs.map(r => r.task), ...Object.values(activeTimers).map(t => t.task)])];
-
-        if (legend) {
-            legend.innerHTML = usedTasks.map(task => {
-                const color = getTaskColor(task);
-                const isFiltered = ganttFilterTask === task;
-                return `<div class="chart-legend-item ${isFiltered?'active':''}" onclick="toggleGanttFilter('${task}')" style="cursor:pointer;${isFiltered?'background:'+color+';color:white;border-radius:4px;':''}">
-                    <div class="chart-legend-color" style="background:${color}"></div>
-                    <span>${getTaskIcon(task)} ${task}</span>
-                </div>`;
-            }).join('');
-        }
-
-        let bodyHtml = '';
-        members.forEach(member => {
-            const timer = activeTimers[member];
-            const isActive = !!timer;
-
-            bodyHtml += `<div class="gantt-row">
-                <div class="gantt-member-col">
-                    <span class="status-dot ${isActive?'active':'idle'}"></span>
-                    <span>${member}</span>
-                </div>`;
-
-            hours.forEach(h => {
-                const isCurrent = h === currentHour;
-                bodyHtml += `<div class="gantt-cell ${isCurrent?'current':''}" data-hour="${h}" data-member="${member}">`;
-                if (isCurrent) {
-                    const minutePercent = (currentMinute / 60) * 100;
-                    bodyHtml += `<div class="gantt-now-line" style="left:${minutePercent}%"></div>`;
-                }
-                bodyHtml += '</div>';
-            });
-
+            const isCurrent = (isToday && h === currentHour);
+            bodyHtml += `<div class="gantt-cell ${isCurrent?'current':''}" data-hour="${h}" data-member="${member}">`;
+            if (isCurrent) {
+                const minutePercent = (currentMinute / 60) * 100;
+                bodyHtml += `<div class="gantt-now-line" style="left:${minutePercent}%"></div>`;
+            }
             bodyHtml += '</div>';
         });
-        body.innerHTML = bodyHtml;
 
-        members.forEach(member => {
-            const timer = activeTimers[member];
-            const memberRecs = todayRecs.filter(r => r.member === member);
+        bodyHtml += '</div>';
+    });
+    body.innerHTML = bodyHtml;
 
-            memberRecs.forEach(r => {
-                const [sh, sm] = r.startTime.split(':').map(Number);
-                const [eh, em] = r.endTime.split(':').map(Number);
-                placeGanttBar(member, r.task, sh, sm, eh, em, false);
-            });
+    // 各メンバーのバーを配置
+    members.forEach(member => {
+        const timer   = activeTimers[member];
+        const isToday = (target === todayStr);
 
-            if (timer) {
-                const start = new Date(timer.startTime);
-                const sh = start.getHours();
-                const sm = start.getMinutes();
-                placeGanttBar(member, timer.task, sh, sm, currentHour, currentMinute, true);
-            }
+        const memberRecs = dayRecs.filter(r => r.member === member);
+
+        // 過去記録
+        memberRecs.forEach(r => {
+            const [sh, sm] = r.startTime.split(':').map(Number);
+            const [eh, em] = r.endTime.split(':').map(Number);
+            placeGanttBar(member, r.task, sh, sm, eh, em, false);
         });
-    }
+
+        // 今日かつ稼働中なら「進行中バー」を描画
+        if (isToday && timer) {
+            const start = new Date(timer.startTime);
+            const sh    = start.getHours();
+            const sm    = start.getMinutes();
+            placeGanttBar(member, timer.task, sh, sm, currentHour, currentMinute, true);
+        }
+    });
+
+    // フィルタ状態の反映（badge と bar の透明度）
+    updateGanttFilter();
+}
+
+function changeGanttDate(delta) {
+    const input = document.getElementById('ganttDate');
+    const baseStr = (input && input.value) ? input.value : formatDate(new Date());
+    const d = new Date(baseStr);
+    if (isNaN(d.getTime())) return;
+
+    d.setDate(d.getDate() + delta);
+    const v = formatDate(d);
+    ganttDate = v;
+    if (input) input.value = v;
+    renderGantt();
+}
+
+function goGanttToday() {
+    const todayStr = formatDate(new Date());
+    ganttDate = todayStr;
+    const input = document.getElementById('ganttDate');
+    if (input) input.value = todayStr;
+    renderGantt();
+}
+
+function onGanttDateChange(val) {
+    ganttDate = val || formatDate(new Date());
+    renderGantt();
+}
 
     function placeGanttBar(member, task, startH, startM, endH, endM, isActive) {
         const startHour = 6;
