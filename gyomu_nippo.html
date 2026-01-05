@@ -38,6 +38,17 @@
         .member-list-item .status.running { background: #10b981; animation: pulse 1.5s infinite; box-shadow: 0 0 12px #10b981; }
         .member-list-item .status.idle { background: #d1d5db; }
         .member-list-item.active .status.idle { background: rgba(255,255,255,0.5); }
+        .status.alarm {
+  background: #dc2626;     /* 赤 */
+  box-shadow: 0 0 12px #dc2626;
+  animation: alarm-blink 1.2s infinite;
+}
+
+@keyframes alarm-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
         @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
         .timer-bar { background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 16px 24px; border-radius: 10px; display: none; align-items: center; justify-content: space-between; }
         .timer-bar.show { display: flex; }
@@ -588,23 +599,52 @@
         checkPendingTasks();
     }
 
-    function renderMemberTabs() {
-        const el = document.getElementById('memberList2');
-        if (el) {
-            el.innerHTML = members.map(m => {
-                const isActive = currentMember === m;
-                const timer = activeTimers[m];
-                const isRunning = !!timer;
-                const taskInfo = isRunning
-                    ? `<div class="member-task">${ICONS[timer.task]||'📋'} ${timer.task}</div>`
-                    : '<div class="member-task idle">待機中</div>';
-                return `<div class="member-list-item ${isActive ? 'active' : ''}" onclick="setCurrentMember('${m}')">
-                    <div class="member-info">
-                        <span class="member-name">${m}</span>
-                        ${taskInfo}
-                    </div>
-                    <span class="status ${isRunning ? 'running' : 'idle'}"></span>
-                </div>`;
+function renderMemberTabs() {
+    const el = document.getElementById('memberList2');
+    if (el) {
+        el.innerHTML = members.map(m => {
+            const isActive = currentMember === m;
+            const timer = activeTimers[m];
+            const isRunning = !!timer;
+            const currentTask = timer ? timer.task : null;
+
+            const taskInfo = isRunning
+                ? `<div class="member-task">${ICONS[currentTask] || '📋'} ${currentTask}</div>`
+                : '<div class="member-task idle">待機中</div>';
+
+            // 👇 ここでランプ用クラスを決める
+            let statusClass = 'idle';
+            if (isRunning) {
+                if (isAbnormalTask(currentTask)) {
+                    statusClass = 'alarm';   // 🔴 異常処置 / 不具合対応 → 赤点滅
+                } else {
+                    statusClass = 'running'; // 🟢 それ以外は緑
+                }
+            }
+
+            return `<div class="member-list-item ${isActive ? 'active' : ''}" onclick="setCurrentMember('${m}')">
+                <div class="member-info">
+                    <span class="member-name">${m}</span>
+                    ${taskInfo}
+                </div>
+                <span class="status ${statusClass}"></span>
+            </div>`;
+        }).join('');
+    }
+
+    const mobileSelect = document.getElementById('mobileMemberSelect');
+    if (mobileSelect) {
+        mobileSelect.innerHTML = members.map(m => {
+            const timer = activeTimers[m];
+            const taskInfo = timer ? ` (${timer.task})` : '';
+            return `<option value="${m}" ${m===currentMember?'selected':''}>${m}${taskInfo}</option>`;
+        }).join('');
+    }
+
+    const nameEl = document.getElementById('currentMemberName');
+    if (nameEl && currentMember) nameEl.textContent = `- ${currentMember}`;
+}
+
             }).join('');
         }
 
@@ -2064,6 +2104,17 @@ function openAddModal(startOverride, endOverride) {
         taskList = taskList.filter(t => t.id !== id);
         saveData(); renderTaskManager(); toast('🗑 削除');
     }
+        function isAbnormalTask(taskName) {
+  if (!taskName) return false;
+
+  return (
+    taskName.includes("異常") ||
+    taskName.includes("異常処置") ||
+    taskName.includes("不具合") ||
+    taskName.includes("不具合対応")
+  );
+}
+
     </script>
 </body>
 </html>
