@@ -403,10 +403,14 @@ textarea {
                         </div>
                         <button class="stop-btn" onclick="stopTimer()">⏹ 停止</button>
                     </div>
-                    <div class="card">
-                        <h3>📋 タスク <span id="currentMemberName" style="color:#667eea;"></span></h3>
-                        <div class="task-buttons" id="taskButtons"></div>
-                    </div>
+<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <h3 style="margin:0;">📋 タスク <span id="currentMemberName" style="color:#667eea;"></span></h3>
+        <button class="btn btn-secondary btn-sm" onclick="manualSave()">💾 保存</button>
+    </div>
+    <div class="task-buttons" id="taskButtons"></div>
+</div>
+
                     <div class="card gantt-card">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">
                             <h3 style="margin:0;">📊 リアルタイム状況</h3>
@@ -1514,6 +1518,11 @@ function renderRecordList(listId, summaryId, recs, showAdd) {
         renderBreaks();
         toast('✓ 休憩を追加しました');
     }
+function manualSave() {
+    // ローカル保存 + Firestore 同期
+    saveData();
+    toast('✓ 手動保存しました');
+}
 
     function deleteBreak(idx) {
         if (!confirm('この休憩設定を削除しますか？')) return;
@@ -1797,24 +1806,24 @@ function openAddModal(startOverride, endOverride) {
         docRef = fs.doc('timeTracker/state');
     }
 
-    function autoConnectFB() {
-        const cfg = localStorage.getItem('tt_firebaseConfig');
-        if (!cfg) return;
+function autoConnectFB() {
+    const cfg = localStorage.getItem('tt_firebaseConfig');
+    if (!cfg) return;  // 保存された設定がなければ何もしない
 
-        document.getElementById('firebaseConfig').value = cfg;
+    document.getElementById('firebaseConfig').value = cfg;
 
-        try {
-            initFirebase();
-            fbConnected = true;
-            updateSyncStatus(true);
-            setupFBListener();
-            // 起動時も常に「今のローカル状態」で上書き
-            syncPushToServer();
-        } catch(e) {
-            console.error(e);
-            updateSyncStatus(false);
-        }
+    try {
+        initFirebase();          // Firebase 初期化
+        fbConnected = true;
+        updateSyncStatus(true);  // 「✓ 同期中」表示
+        setupFBListener();       // ★ Firestore → ローカル の購読だけ行う
+        // ※ここでは syncPushToServer() は呼ばない
+    } catch (e) {
+        console.error(e);
+        updateSyncStatus(false);
     }
+}
+
 
     function connectFB() {
         try {
