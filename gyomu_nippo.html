@@ -665,8 +665,8 @@ textarea {
 
         // Firestoreへ即同期（Firestore→ローカル反映中はスキップ）
         if (!fbUpdating) {
-            syncPushToServer();
-        }
+    syncPushToServerSafe();
+}
     }
 
     function render() {
@@ -1956,7 +1956,35 @@ function autoConnectFB() {
             updateSyncStatus(false);
         });
     }
+async function syncPushToServerSafe() {
+    if (!fbConnected || !docRef) return;
 
+    await fs.runTransaction(async tx => {
+        const snap = await tx.get(docRef);
+        const server = snap.exists ? snap.data() : {};
+
+        // ⭐ サーバー側の最新版をベースにマージ
+        const merged = {
+            members: server.members || members,
+            customTasks: server.customTasks || customTasks,
+            customIcons: server.customIcons || customIcons,
+
+            // ← ★ここ超重要：
+            //   ローカル records を「置き換え」ではなく
+            //   server の records に「追記」する
+            records: [
+                ...(server.records || []),
+                ...(records || [])
+            ],
+
+            activeTimers: activeTimers,
+            taskList: taskList,
+            breakList: breakList
+        };
+
+        tx.set(docRef, merged, { merge: false });
+    });
+}
     function syncPushToServer() {
         if (!fbConnected || !docRef) return;
 
