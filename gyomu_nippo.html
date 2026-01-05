@@ -1944,18 +1944,21 @@ function autoConnectFB() {
             // Firestore → ローカル反映中は send を止める
             fbUpdating = true;
 
-            members      = data.members      || ['担当者1'];
-            customTasks  = data.customTasks  || {};
-            customIcons  = data.customIcons  || {};
-            records      = data.records      || [];
-            activeTimers = data.activeTimers || {};
-            taskList     = data.taskList     || [];
-            breakList    = data.breakList    || [];
+members      = data.members      || ['担当者1'];
+customTasks  = data.customTasks  || {};
+customIcons  = data.customIcons  || {};
+records      = data.records      || [];
+activeTimers = data.activeTimers || {};
+taskList     = data.taskList     || [];
+breakList    = data.breakList    || [];
 
-            saveData();  // ローカルキャッシュ更新（syncPushToServer は fbUpdating=true なので実行されない）
-            render();
+// ★ ここで一度だけ重複整理
+dedupeRecords();
 
-            fbUpdating = false;
+saveData();  // fbUpdating=true なので Firestore には書き戻さず、localStorage だけ更新
+render();
+
+fbUpdating = false;
         }, err => {
             console.error('onSnapshot error:', err);
             updateSyncStatus(false);
@@ -1964,34 +1967,57 @@ function autoConnectFB() {
 async function syncPushToServerSafe() {
     if (!fbConnected || !docRef) return;
 
-    await fs.runTransaction(async tx => {
-        const snap = await tx.get(docRef);
-        const server = snap.exists ? snap.data() : {};
+    const payload = {
+        members,
+        customTasks,
+        customIcons,
+        records,
+        activeTimers,
+        taskList,
+        breakList
+    };
 
-        // ⭐ サーバー側の最新版をベースにマージ
-        const merged = {
-            members: server.members || members,
-            customTasks: server.customTasks || customTasks,
-            customIcons: server.customIcons || customIcons,
-
-            // ← ★ここ超重要：
-            //   ローカル records を「置き換え」ではなく
-            //   server の records に「追記」する
-            records: [
-                ...(server.records || []),
-                ...(records || [])
-            ],
-
-            activeTimers: activeTimers,
-            taskList: taskList,
-            breakList: breakList
-        };
-
-        tx.set(docRef, merged, { merge: false });
+    // ★サーバの records を見に行かず、今のローカル状態で「上書き保存」
+    return docRef.set(payload, { merge: false }).catch(e => {
+        console.error('Firestore 書き込みエラー:', e);
     });
 }
 
+function dedupeRecords() {
+    if (!Array.isArray(records)) {
+        records = [];
+        return;
+    }
 
+    const seen = new Map();
+    const deduped = [];
+
+    records.forEach(r => {
+        if (!r) return;
+
+        // 「同じ作業」とみなすキー
+        const key = [
+            r.member,
+            r.date,
+            r.task,
+            r.startTime,
+            r.endTime,
+            r.autoFilled ? '1' : '0',
+            r.autoFilledTag || ''
+        ].join('|');
+
+        if (!seen.has(key)) {
+            seen.set(key, true);
+            deduped.push(r);
+        }
+    });
+
+    if (deduped.length !== records.length) {
+        console.log('dedupeRecords:', records.length, '→', deduped.length);
+    }
+
+    records = deduped;
+}
     function exportData() {
         const data={members,customTasks,customIcons,records,activeTimers,taskList,breakList,exported:new Date().toISOString()};
         const a=document.createElement('a');
