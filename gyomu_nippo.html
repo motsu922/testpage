@@ -1252,13 +1252,13 @@ function renderRecordList(listId, summaryId, recs, showAdd) {
     // recs は元配列への参照なので、sort はそのまま本体も整列される
     recs.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-    // ---- 15分未満のギャップは後ろのタスクにくっつける（開始時刻を補正） ----
-    // 勤務時間帯内のギャップを見て処理
+        // ---- 15分未満のギャップは後ろのタスクにくっつける（開始時刻を補正）
+    //      ただし、そのギャップが休憩時間と重なる場合はくっつけない ----
     for (let i = 0; i < recs.length - 1; i++) {
         const prev = recs[i];
         const next = recs[i + 1];
 
-        const prevEndMin  = timeToMinutes(prev.endTime);
+        const prevEndMin   = timeToMinutes(prev.endTime);
         const nextStartMin = timeToMinutes(next.startTime);
 
         // ギャップは「前タスク終了～次タスク開始」
@@ -1272,9 +1272,16 @@ function renderRecordList(listId, summaryId, recs, showAdd) {
         // 勤務時間帯の中だけ対象
         const isInsideWork = (gapStart >= WORK_START_MIN && gapEnd <= WORK_END_MIN);
 
-        // 15分未満なら → 次のタスクの開始時刻を前タスク終了に合わせる
-        if (isInsideWork && gapLen > 0 && gapLen < 15) {
-            // 本体 records の中身もそのまま補正される
+        // このギャップが休憩と重なっているか？
+        const overlapBreak = breakList.some(b => {
+            const bs = timeToMinutes(b.start);
+            const be = timeToMinutes(b.end);
+            // 区間 [gapStart, gapEnd) と [bs, be) が重なっているか
+            return Math.max(gapStart, bs) < Math.min(gapEnd, be);
+        });
+
+        // 15分未満かつ休憩と重ならないときだけ自動でくっつける
+        if (isInsideWork && gapLen > 0 && gapLen < 15 && !overlapBreak) {
             // ただし、もともと next.startTime < prev.endTime の場合は触らない
             if (nextStartMin > prevEndMin) {
                 next.startTime = minutesToTime(prevEndMin);
