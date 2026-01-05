@@ -367,10 +367,14 @@ textarea {
 <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <h3 style="margin:0;">📋 タスク <span id="currentMemberName" style="color:#667eea;"></span></h3>
-        <button class="btn btn-secondary btn-sm" onclick="manualSave()">💾 保存</button>
+        <div style="display:flex;gap:6px;">
+            <button class="btn btn-secondary btn-sm" onclick="manualSave()">💾 保存</button>
+            <button class="btn btn-danger btn-sm" onclick="endWorkToday()">業務終了</button>
+        </div>
     </div>
     <div class="task-buttons" id="taskButtons"></div>
 </div>
+
 
                     <div class="card gantt-card">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;">
@@ -1484,6 +1488,102 @@ function manualSave() {
     saveData();
     toast('✓ 手動保存しました');
 }
+function endWorkToday() {
+    if (!currentMember) {
+        alert('担当者を選択してください');
+        return;
+    }
+
+    const now = new Date();
+    const todayStr = formatDate(now);
+
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const startBoundary = WORK_START_MIN;            // 例: 8:00
+    const endBoundary   = Math.min(nowMin, 24 * 60); // ★ ここを修正：ボタン押下時刻まで（最大 24:00）
+
+    if (endBoundary <= startBoundary) {
+        alert('まだ勤務時間帯に入っていません');
+        return;
+    }
+
+    // ① この担当者・今日の「自動追加されたその他」を一旦削除
+    records = records.filter(r =>
+        !(
+            r.member === currentMember &&
+            r.date === todayStr &&
+            r.task === 'その他' &&
+            r.autoFilled === true
+        )
+    );
+
+    // ② この担当者・今日の既存レコード
+    const memberRecs = records.filter(r =>
+        r.member === currentMember && r.date === todayStr
+    );
+
+    // ③「埋まっている時間帯」（業務レコード＋休憩）
+    let covered = [];
+
+    memberRecs.forEach(r => {
+        let s = timeToMinutes(r.startTime);
+        let e = timeToMinutes(r.endTime);
+        s = Math.max(s, startBoundary);
+        e = Math.min(e, endBoundary);
+        if (e > s) covered.push({ start: s, end: e });
+    });
+
+    breakList.forEach(b => {
+        let s = timeToMinutes(b.start);
+        let e = timeToMinutes(b.end);
+        s = Math.max(s, startBoundary);
+        e = Math.min(e, endBoundary);
+        if (e > s) covered.push({ start: s, end: e });
+    });
+
+    // ④ covered をマージ
+    covered.sort((a, b) => a.start - b.start);
+    const merged = [];
+    covered.forEach(int => {
+        if (!merged.length || merged[merged.length - 1].end < int.start) {
+            merged.push({ start: int.start, end: int.end });
+        } else {
+            merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, int.end);
+        }
+    });
+
+    // ⑤ [startBoundary, endBoundary) の補集合 ⇒ 空白時間帯
+    const gaps = [];
+    let cursor = startBoundary;
+    merged.forEach(int => {
+        if (int.start > cursor) {
+            gaps.push({ start: cursor, end: int.start });
+        }
+        cursor = Math.max(cursor, int.end);
+    });
+    if (cursor < endBoundary) {
+        gaps.push({ start: cursor, end: endBoundary });
+    }
+
+    // ⑥ 空白時間帯を「その他」で登録
+    gaps.forEach(g => {
+        if (g.end <= g.start) return;
+
+        records.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            member: currentMember,
+            task: 'その他',
+            date: todayStr,
+            startTime: minutesToTime(g.start),
+            endTime: minutesToTime(g.end),
+            autoFilled: true
+        });
+    });
+
+    saveData();
+    render();
+    toast('✓ 業務終了：空白時間を「その他」で登録しました');
+}
+
 
     function deleteBreak(idx) {
         if (!confirm('この休憩設定を削除しますか？')) return;
