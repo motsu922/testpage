@@ -1060,150 +1060,210 @@
         return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
     }
 
-    function renderRecordList(listId, summaryId, recs, showAdd, dateStr) {
-        const listEl = document.getElementById(listId);
-        const summaryEl = document.getElementById(summaryId);
-        if (!listEl || !summaryEl) return;
+function renderRecordList(listId, summaryId, recs, showAdd) {
+    const listEl = document.getElementById(listId), summaryEl = document.getElementById(summaryId);
+    if (!listEl || !summaryEl) return;
 
-        if (!dateStr) dateStr = formatDate(new Date());
+    // ==== 共通ヘルパー ====
+    const WORK_START_MIN = 8 * 60;   // 8:00
+    const WORK_END_MIN   = 17 * 60;  // 17:00
 
-        // --- 未入力の自動挿入（勤務時間帯 8:00-17:00 のみ & まだ経過していない時間は対象外） ---
-        let augmented = [...recs];
-        const todayStr = formatDate(new Date());
+    function timeToMinutes(t) {
+        const [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
+    }
+    function minutesToTime(min) {
+        const h = Math.floor(min / 60);
+        const m = min % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
 
-        // 未来日は未入力を作らない
-        if (dateStr <= todayStr) {
-            let effectiveEndMin = WORK_END_MIN;
+    // 日付判定用（recs が空のときは今日扱い）
+    const todayStr = formatDate(new Date());
+    const dateStr = recs.length ? recs[0].date : todayStr;
+    const isToday = (dateStr === todayStr);
 
-            if (dateStr === todayStr) {
-                const now = new Date();
-                const nowMin = now.getHours() * 60 + now.getMinutes();
-                // 当日は 8:00〜「現在時刻 or 17:00 の小さい方」までを対象
-                effectiveEndMin = Math.min(WORK_END_MIN, Math.max(WORK_START_MIN, nowMin));
-                if (effectiveEndMin <= WORK_START_MIN) {
-                    // まだ勤務時間前なら未入力は何も作らない
-                    effectiveEndMin = null;
-                }
+    let nowMinutes = 24 * 60;
+    if (isToday) {
+        const now = new Date();
+        nowMinutes = now.getHours() * 60 + now.getMinutes();
+    }
+    const maxPastMin = isToday ? Math.min(nowMinutes, WORK_END_MIN) : WORK_END_MIN;
+
+    // ==== 時刻自動補正＆未入力区間抽出のためにソート ====
+    // recs は元配列への参照なので、sort はそのまま本体も整列される
+    recs.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    // ---- 15分未満のギャップは後ろのタスクにくっつける（開始時刻を補正） ----
+    // 勤務時間帯内のギャップを見て処理
+    for (let i = 0; i < recs.length - 1; i++) {
+        const prev = recs[i];
+        const next = recs[i + 1];
+
+        const prevEndMin  = timeToMinutes(prev.endTime);
+        const nextStartMin = timeToMinutes(next.startTime);
+
+        // ギャップは「前タスク終了～次タスク開始」
+        let gapStart = Math.max(prevEndMin, WORK_START_MIN);
+        let gapEnd   = Math.min(nextStartMin, maxPastMin);
+
+        if (gapEnd <= gapStart) continue; // ギャップなし or 逆転
+
+        const gapLen = gapEnd - gapStart;
+
+        // 勤務時間帯の中だけ対象
+        const isInsideWork = (gapStart >= WORK_START_MIN && gapEnd <= WORK_END_MIN);
+
+        // 15分未満なら → 次のタスクの開始時刻を前タスク終了に合わせる
+        if (isInsideWork && gapLen > 0 && gapLen < 15) {
+            // 本体 records の中身もそのまま補正される
+            // ただし、もともと next.startTime < prev.endTime の場合は触らない
+            if (nextStartMin > prevEndMin) {
+                next.startTime = minutesToTime(prevEndMin);
             }
+        }
+    }
 
-            if (dateStr < todayStr) {
-                effectiveEndMin = WORK_END_MIN;
-            }
+    // ---- 15分以上のギャップを「未入力」として保持 ----
+    const gaps = [];
 
-            if (effectiveEndMin !== null) {
-                const segments = [];
+    if (recs.length > 0) {
+        // 先頭前のギャップ（勤務開始～最初のタスク）
+        const first = recs[0];
+        const firstStartMin = timeToMinutes(first.startTime);
+        let gapStart = WORK_START_MIN;
+        let gapEnd = Math.min(firstStartMin, maxPastMin);
 
-                // 実タスクをセグメントに
-                recs.forEach(r => {
-                    let sMin = timeToMinutes(r.startTime);
-                    let eMin = timeToMinutes(r.endTime);
-                    if (eMin <= WORK_START_MIN || sMin >= WORK_END_MIN) return;
-                    sMin = Math.max(sMin, WORK_START_MIN);
-                    eMin = Math.min(eMin, effectiveEndMin);
-                    if (eMin > sMin) segments.push({ start: sMin, end: eMin });
-                });
-
-                // 休憩も埋まっている時間としてセグメントに
-                breakList.forEach(b => {
-                    if (!b.start || !b.end) return;
-                    let sMin = timeToMinutes(b.start);
-                    let eMin = timeToMinutes(b.end);
-                    if (eMin <= WORK_START_MIN || sMin >= WORK_END_MIN) return;
-                    sMin = Math.max(sMin, WORK_START_MIN);
-                    eMin = Math.min(eMin, effectiveEndMin);
-                    if (eMin > sMin) segments.push({ start: sMin, end: eMin, isBreak: true });
-                });
-
-                segments.sort((a,b)=>a.start-b.start);
-
-                // マージ
-                const merged = [];
-                segments.forEach(seg => {
-                    if (!merged.length || seg.start > merged[merged.length-1].end) {
-                        merged.push({ start: seg.start, end: seg.end });
-                    } else {
-                        merged[merged.length-1].end = Math.max(merged[merged.length-1].end, seg.end);
-                    }
-                });
-
-                const gaps = [];
-                let cursor = WORK_START_MIN;
-                merged.forEach(seg => {
-                    if (seg.start > cursor) {
-                        const gapStart = cursor;
-                        const gapEnd = Math.min(seg.start, effectiveEndMin);
-                        if (gapEnd - gapStart >= 30) {
-                            gaps.push({ start: gapStart, end: gapEnd });
-                        }
-                    }
-                    cursor = Math.max(cursor, seg.end);
-                });
-                if (effectiveEndMin > cursor) {
-                    const gapStart = cursor;
-                    const gapEnd = effectiveEndMin;
-                    if (gapEnd - gapStart >= 30) {
-                        gaps.push({ start: gapStart, end: gapEnd });
-                    }
-                }
-
-                const gapRecords = gaps.map((g, idx) => ({
-                    id: `gap-${dateStr}-${g.start}-${idx}`,
-                    member: currentMember,
-                    task: '未入力',
-                    date: dateStr,
-                    startTime: minutesToTime(g.start),
-                    endTime: minutesToTime(g.end),
-                    isGap: true
-                }));
-
-                augmented = [...recs, ...gapRecords];
+        if (gapEnd > gapStart) {
+            const len = gapEnd - gapStart;
+            if (len >= 15) {
+                gaps.push({ start: gapStart, end: gapEnd });
             }
         }
 
-        // サマリー（未入力は集計に含めない）
-        const totals = {}; let total = 0;
-        augmented.forEach(r => {
-            if (r.task === '未入力') return;
-            const h = calcHours(r.startTime, r.endTime);
-            totals[r.task] = (totals[r.task]||0) + h;
-            total += h;
+        // 間のギャップ（2つのタスクの間） ※ここでは 15分未満はもう補正済みなので 15分以上だけ拾う
+        for (let i = 0; i < recs.length - 1; i++) {
+            const prev = recs[i];
+            const next = recs[i + 1];
+
+            const prevEndMin  = timeToMinutes(prev.endTime);
+            const nextStartMin = timeToMinutes(next.startTime);
+
+            gapStart = Math.max(prevEndMin, WORK_START_MIN);
+            gapEnd   = Math.min(nextStartMin, maxPastMin);
+
+            if (gapEnd <= gapStart) continue;
+
+            const len = gapEnd - gapStart;
+            const isInsideWork = (gapStart >= WORK_START_MIN && gapEnd <= WORK_END_MIN);
+            if (isInsideWork && len >= 15) {
+                gaps.push({ start: gapStart, end: gapEnd });
+            }
+        }
+
+        // 最後のタスク～勤務終了のギャップ
+        const last = recs[recs.length - 1];
+        const lastEndMin = timeToMinutes(last.endTime);
+        gapStart = Math.max(lastEndMin, WORK_START_MIN);
+        gapEnd   = maxPastMin;
+
+        if (gapEnd > gapStart) {
+            const len = gapEnd - gapStart;
+            if (len >= 15 && gapStart >= WORK_START_MIN && gapEnd <= WORK_END_MIN) {
+                gaps.push({ start: gapStart, end: gapEnd });
+            }
+        }
+    } else {
+        // その日のタスクが1つもない場合
+        const gapStart = WORK_START_MIN;
+        const gapEnd   = maxPastMin;
+        if (gapEnd > gapStart) {
+            const len = gapEnd - gapStart;
+            if (len >= 15) {
+                gaps.push({ start: gapStart, end: gapEnd });
+            }
+        }
+    }
+
+    // ==== サマリ（未入力は合計時間に含めない） ====
+    const totals = {}; 
+    let total = 0;
+    recs.forEach(r => { 
+        const h = calcHours(r.startTime, r.endTime); 
+        totals[r.task] = (totals[r.task] || 0) + h; 
+        total += h; 
+    });
+
+    summaryEl.innerHTML =
+        `<div class="summary-item total"><div class="label">合計</div><div class="value">${total.toFixed(1)}h</div></div>` +
+        Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([t,h])=>{
+            const color = getTaskColor(t);
+            return `<div class="summary-item" style="border-left:4px solid ${color};">
+                <div class="label">${getTaskIcon(t)} ${t}</div>
+                <div class="value">${h.toFixed(1)}h</div>
+            </div>`;
+        }).join('');
+
+    // ==== 表示用エントリ（タスク + 未入力）を時系列で並べる ====
+    const items = [];
+
+    recs.forEach(r => {
+        items.push({
+            type: 'record',
+            startMin: timeToMinutes(r.startTime),
+            endMin: timeToMinutes(r.endTime),
+            rec: r
         });
-        summaryEl.innerHTML =
-            `<div class="summary-item total"><div class="label">合計</div><div class="value">${total.toFixed(1)}h</div></div>` +
-            Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([t,h])=>{
-                const color = getTaskColor(t);
-                return `<div class="summary-item" style="border-left:4px solid ${color};">
-                    <div class="label">${getTaskIcon(t)} ${t}</div>
-                    <div class="value">${h.toFixed(1)}h</div>
-                </div>`;
-            }).join('');
+    });
 
-        if (!augmented.length) {
-            listEl.innerHTML = `<div style="text-align:center;color:#888;padding:20px;">記録なし</div>${showAdd?`<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal()">＋ 手入力</button>`:''}`;
-            return;
-        }
+    gaps.forEach(g => {
+        items.push({
+            type: 'gap',
+            startMin: g.start,
+            endMin: g.end
+        });
+    });
 
-        augmented.sort((a,b) => a.startTime.localeCompare(b.startTime));
+    if (!items.length) {
+        // 何もない（勤務時間内に過去分もない）場合
         listEl.innerHTML =
-            augmented.map(r => {
-                const isGap = !!r.isGap;
-                const color = isGap ? '#fed7aa' : getTaskColor(r.task);
-                const icon = isGap ? '⏳' : getTaskIcon(r.task);
-                const label = isGap ? '未入力' : r.task;
-                const clickHandler = isGap
-                    ? `openAddModalGap('${r.startTime}','${r.endTime}','${r.date}')`
-                    : `openEditModal(${r.id})`;
-                return `<div class="record-item ${isGap?'gap':''}" onclick="${clickHandler}">
-                    <div class="color-bar" style="background:${color}"></div>
+            `<div style="text-align:center;color:#888;padding:20px;">記録なし</div>` +
+            (showAdd ? `<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal()">＋ 手入力</button>` : '');
+        return;
+    }
+
+    items.sort((a, b) => a.startMin - b.startMin);
+
+    listEl.innerHTML =
+        items.map(item => {
+            if (item.type === 'record') {
+                const r = item.rec;
+                return `<div class="record-item" onclick="openEditModal(${r.id})">
+                    <div class="color-bar" style="background:${getTaskColor(r.task)}"></div>
                     <div class="info">
-                        <div class="task-name">${icon} ${label}</div>
+                        <div class="task-name">${getTaskIcon(r.task)} ${r.task}</div>
                         <div class="time-range">${r.startTime} - ${r.endTime}</div>
                     </div>
                     <div class="duration">${calcHours(r.startTime,r.endTime).toFixed(1)}h</div>
                 </div>`;
-            }).join('') +
-            (showAdd?`<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal()">＋ 手入力</button>`:'');
-    }
+            } else {
+                // 未入力
+                const s = minutesToTime(item.startMin);
+                const e = minutesToTime(item.endMin);
+                return `<div class="record-item" style="opacity:0.9;background:#fff7ed;border:1px dashed #f97316;"
+                            onclick="openAddModal('${s}','${e}')">
+                    <div class="color-bar" style="background:#f97316"></div>
+                    <div class="info">
+                        <div class="task-name">⚠️ 未入力</div>
+                        <div class="time-range">${s} - ${e}</div>
+                    </div>
+                    <div class="duration">${((item.endMin-item.startMin)/60).toFixed(1)}h</div>
+                </div>`;
+            }
+        }).join('') +
+        (showAdd ? `<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal()">＋ 手入力</button>` : '');
+}
+
 
     function renderSettings() {
         const ml = document.getElementById('memberList');
@@ -1388,15 +1448,28 @@
         document.getElementById('addModal').classList.add('show');
     }
 
-    function openAddModalGap(start, end, dateStr) {
-        if(!currentMember){alert('担当者を選択');return;}
-        const tasks=[...DEFAULT_TASKS,...(customTasks[currentMember]||[])];
-        document.getElementById('addTaskName').innerHTML=tasks.map(t=>`<option value="${t}">${t}</option>`).join('');
-        document.getElementById('addStart').value = start;
-        document.getElementById('addEnd').value   = end;
-        addRecordDateStr = dateStr;
-        document.getElementById('addModal').classList.add('show');
+function openAddModal(startOverride, endOverride) {
+    if (!currentMember) { alert('担当者を選択'); return; }
+
+    const tasks = [...DEFAULT_TASKS, ...(customTasks[currentMember] || [])];
+    document.getElementById('addTaskName').innerHTML =
+        tasks.map(t => `<option value="${t}">${t}</option>`).join('');
+
+    const now = new Date();
+
+    // 引数で指定されていればそれを優先（未入力クリックのとき）
+    if (startOverride && endOverride) {
+        document.getElementById('addStart').value = startOverride;
+        document.getElementById('addEnd').value   = endOverride;
+    } else {
+        // 従来どおり「現在時刻の1時間前～現在」を初期値
+        document.getElementById('addStart').value = formatTime(new Date(now - 3600000));
+        document.getElementById('addEnd').value   = formatTime(now);
     }
+
+    document.getElementById('addModal').classList.add('show');
+}
+
 
     function closeAddModal() {
         document.getElementById('addModal').classList.remove('show');
