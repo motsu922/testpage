@@ -1282,63 +1282,87 @@ function renderRecordList(listId, summaryId, recs, showAdd) {
         }
     }
 
-    // ---- 15分以上のギャップを「未入力」として保持 ----
+     // ---- 15分以上のギャップを「未入力」として保持（休憩を除外） ----
     const gaps = [];
 
-    if (recs.length > 0) {
-        // 先頭前のギャップ（勤務開始～最初のタスク）
-        const first = recs[0];
-        const firstStartMin = timeToMinutes(first.startTime);
-        let gapStart = WORK_START_MIN;
-        let gapEnd = Math.min(firstStartMin, maxPastMin);
+    // ① recs（作業）＋ breakList（休憩）の「埋まっている区間」を集める
+    let covered = [];
 
-        if (gapEnd > gapStart) {
-            const len = gapEnd - gapStart;
+    // 作業レコード
+    recs.forEach(r => {
+        let s = timeToMinutes(r.startTime);
+        let e = timeToMinutes(r.endTime);
+        s = Math.max(s, WORK_START_MIN);
+        e = Math.min(e, maxPastMin);
+        if (e > s) {
+            covered.push({ start: s, end: e });
+        }
+    });
+
+    // 休憩（この時間帯も「未入力」扱いしない）
+    breakList.forEach(b => {
+        let s = timeToMinutes(b.start);
+        let e = timeToMinutes(b.end);
+        s = Math.max(s, WORK_START_MIN);
+        e = Math.min(e, maxPastMin);
+        if (e > s) {
+            covered.push({ start: s, end: e });
+        }
+    });
+
+    // 作業も休憩も何も無い場合 → 8:00〜maxPastMin がまるっとギャップ候補
+    if (covered.length === 0) {
+        const s = WORK_START_MIN;
+        const e = maxPastMin;
+        if (e > s) {
+            const len = e - s;
             if (len >= 15) {
-                gaps.push({ start: gapStart, end: gapEnd });
-            }
-        }
-
-        // 間のギャップ（2つのタスクの間） ※ここでは 15分未満はもう補正済みなので 15分以上だけ拾う
-        for (let i = 0; i < recs.length - 1; i++) {
-            const prev = recs[i];
-            const next = recs[i + 1];
-
-            const prevEndMin  = timeToMinutes(prev.endTime);
-            const nextStartMin = timeToMinutes(next.startTime);
-
-            gapStart = Math.max(prevEndMin, WORK_START_MIN);
-            gapEnd   = Math.min(nextStartMin, maxPastMin);
-
-            if (gapEnd <= gapStart) continue;
-
-            const len = gapEnd - gapStart;
-            const isInsideWork = (gapStart >= WORK_START_MIN && gapEnd <= WORK_END_MIN);
-            if (isInsideWork && len >= 15) {
-                gaps.push({ start: gapStart, end: gapEnd });
-            }
-        }
-
-        // 最後のタスク～勤務終了のギャップ
-        const last = recs[recs.length - 1];
-        const lastEndMin = timeToMinutes(last.endTime);
-        gapStart = Math.max(lastEndMin, WORK_START_MIN);
-        gapEnd   = maxPastMin;
-
-        if (gapEnd > gapStart) {
-            const len = gapEnd - gapStart;
-            if (len >= 15 && gapStart >= WORK_START_MIN && gapEnd <= WORK_END_MIN) {
-                gaps.push({ start: gapStart, end: gapEnd });
+                gaps.push({ start: s, end: e });
             }
         }
     } else {
-        // その日のタスクが1つもない場合
-        const gapStart = WORK_START_MIN;
-        const gapEnd   = maxPastMin;
-        if (gapEnd > gapStart) {
-            const len = gapEnd - gapStart;
-            if (len >= 15) {
-                gaps.push({ start: gapStart, end: gapEnd });
+        // ② covered をマージ（重なりをまとめる）
+        covered.sort((a, b) => a.start - b.start);
+        const merged = [];
+        covered.forEach(int => {
+            if (!merged.length || merged[merged.length - 1].end < int.start) {
+                merged.push({ start: int.start, end: int.end });
+            } else {
+                merged[merged.length - 1].end = Math.max(
+                    merged[merged.length - 1].end,
+                    int.end
+                );
+            }
+        });
+
+        // ③ [WORK_START_MIN, maxPastMin] との補集合 → 本当の「未入力」だけ抜き出す
+        let cursor = WORK_START_MIN;
+        merged.forEach(int => {
+            if (int.start > cursor) {
+                const s = cursor;
+                const e = int.start;
+                const len = e - s;
+                if (
+                    len >= 15 &&
+                    s >= WORK_START_MIN &&
+                    e <= WORK_END_MIN
+                ) {
+                    gaps.push({ start: s, end: e });
+                }
+            }
+            cursor = Math.max(cursor, int.end);
+        });
+
+        if (cursor < maxPastMin) {
+            const s = cursor;
+            const e = maxPastMin;
+            const len = e - s;
+            if (
+                len >= 15 &&
+                s >= WORK_START_MIN &&
+                e <= WORK_END_MIN
+            ) {
+                gaps.push({ start: s, end: e });
             }
         }
     }
