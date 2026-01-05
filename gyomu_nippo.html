@@ -1497,44 +1497,41 @@ function endWorkToday() {
     const now = new Date();
     const todayStr = formatDate(now);
 
-    const nowMin = now.getHours() * 60 + now.getMinutes();
-    const startBoundary = WORK_START_MIN;            // 例: 8:00
-    const endBoundary   = Math.min(nowMin, 24 * 60); // ボタン押下時刻まで（最大 24:00）
-    const GAP_THRESHOLD = 15;                        // ★ 15分未満の隙間は埋めない
+    // 8:00 〜 「業務終了ボタンを押した時刻」までを対象
+    const nowMin        = now.getHours() * 60 + now.getMinutes();
+    const startBoundary = WORK_START_MIN;          // 8:00
+    const endBoundary   = Math.min(nowMin, 24 * 60); // 最大 24:00
 
     if (endBoundary <= startBoundary) {
         alert('まだ勤務時間帯に入っていません');
         return;
     }
 
-    // 0. もしこの担当者でタイマーが動いていたら、先に記録として確定する
-    const running = activeTimers[currentMember];
-    if (running) {
-        const saved = saveTimerAsRecord(currentMember, running);
-        delete activeTimers[currentMember];
-        if (!saved) {
-            // 1分未満などで保存されなかった場合は何もしない
-        }
-    }
+    // ① 今日・自分の「自動で入れた その他」を一旦すべて削除
+    //    （過去バージョンのフラグもなるべく拾う）
+    records = records.filter(r => {
+        if (r.member !== currentMember) return true;
+        if (r.date !== todayStr) return true;
+        if (r.task !== 'その他') return true;
 
-    // ① この担当者・今日の「自動追加されたその他」を一旦削除
-    records = records.filter(r =>
-        !(
-            r.member === currentMember &&
-            r.date === todayStr &&
-            r.task === 'その他' &&
-            r.autoFilled === true
-        )
-    );
+        const isAuto =
+            r.autoFilled === true ||
+            r.autoFilled === 'endWork' ||
+            r.autoFilledTag === 'endWork';
 
-    // ② この担当者・今日の既存レコード
+        // 自動付与分だけ削除（手入力の「その他」は残す）
+        return !isAuto;
+    });
+
+    // ② 今日・自分の既存レコードを取得
     const memberRecs = records.filter(r =>
         r.member === currentMember && r.date === todayStr
     );
 
-    // ③「埋まっている時間帯」（業務レコード＋休憩）
+    // ③ 「埋まっている時間帯」（業務＋休憩）を集約
     let covered = [];
 
+    // 業務レコード
     memberRecs.forEach(r => {
         let s = timeToMinutes(r.startTime);
         let e = timeToMinutes(r.endTime);
@@ -1543,7 +1540,7 @@ function endWorkToday() {
         if (e > s) covered.push({ start: s, end: e });
     });
 
-    // 休憩も「埋まっている時間帯」として扱う
+    // 休憩
     breakList.forEach(b => {
         let s = timeToMinutes(b.start);
         let e = timeToMinutes(b.end);
@@ -1552,18 +1549,21 @@ function endWorkToday() {
         if (e > s) covered.push({ start: s, end: e });
     });
 
-    // ④ covered をマージ
+    // ④ covered をマージ（重なりを潰す）
     covered.sort((a, b) => a.start - b.start);
     const merged = [];
     covered.forEach(int => {
         if (!merged.length || merged[merged.length - 1].end < int.start) {
             merged.push({ start: int.start, end: int.end });
         } else {
-            merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, int.end);
+            merged[merged.length - 1].end = Math.max(
+                merged[merged.length - 1].end,
+                int.end
+            );
         }
     });
 
-    // ⑤ [startBoundary, endBoundary) の補集合 ⇒ 空白時間帯
+    // ⑤ [startBoundary, endBoundary) の補集合＝「空白時間帯」を求める
     const gaps = [];
     let cursor = startBoundary;
     merged.forEach(int => {
@@ -1576,11 +1576,9 @@ function endWorkToday() {
         gaps.push({ start: cursor, end: endBoundary });
     }
 
-    // ⑥ 空白時間帯（★15分以上だけ）を「その他」で登録
+    // ⑥ 空白時間帯を「その他」で登録
     gaps.forEach(g => {
-        const len = g.end - g.start;
-        if (len <= 0) return;
-        if (len < GAP_THRESHOLD) return;  // 15分未満はスキップ
+        if (g.end <= g.start) return; // 0分以下は無視
 
         records.push({
             id: Date.now() + Math.floor(Math.random() * 1000),
@@ -1589,13 +1587,14 @@ function endWorkToday() {
             date: todayStr,
             startTime: minutesToTime(g.start),
             endTime: minutesToTime(g.end),
-            autoFilled: true
+            autoFilled: true,          // 自動付与フラグ
+            autoFilledTag: 'endWork'   // 業務終了ボタン由来
         });
     });
 
     saveData();
     render();
-    toast('✓ 業務終了：空白(15分以上)を「その他」で登録しました');
+    toast('✓ 業務終了：空白時間を「その他」で登録しました');
 }
 
     function updateTimerBar() {
