@@ -1499,11 +1499,22 @@ function endWorkToday() {
 
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const startBoundary = WORK_START_MIN;            // 例: 8:00
-    const endBoundary   = Math.min(nowMin, 24 * 60); // ★ ここを修正：ボタン押下時刻まで（最大 24:00）
+    const endBoundary   = Math.min(nowMin, 24 * 60); // ボタン押下時刻まで（最大 24:00）
+    const GAP_THRESHOLD = 15;                        // ★ 15分未満の隙間は埋めない
 
     if (endBoundary <= startBoundary) {
         alert('まだ勤務時間帯に入っていません');
         return;
+    }
+
+    // 0. もしこの担当者でタイマーが動いていたら、先に記録として確定する
+    const running = activeTimers[currentMember];
+    if (running) {
+        const saved = saveTimerAsRecord(currentMember, running);
+        delete activeTimers[currentMember];
+        if (!saved) {
+            // 1分未満などで保存されなかった場合は何もしない
+        }
     }
 
     // ① この担当者・今日の「自動追加されたその他」を一旦削除
@@ -1532,6 +1543,7 @@ function endWorkToday() {
         if (e > s) covered.push({ start: s, end: e });
     });
 
+    // 休憩も「埋まっている時間帯」として扱う
     breakList.forEach(b => {
         let s = timeToMinutes(b.start);
         let e = timeToMinutes(b.end);
@@ -1564,9 +1576,11 @@ function endWorkToday() {
         gaps.push({ start: cursor, end: endBoundary });
     }
 
-    // ⑥ 空白時間帯を「その他」で登録
+    // ⑥ 空白時間帯（★15分以上だけ）を「その他」で登録
     gaps.forEach(g => {
-        if (g.end <= g.start) return;
+        const len = g.end - g.start;
+        if (len <= 0) return;
+        if (len < GAP_THRESHOLD) return;  // 15分未満はスキップ
 
         records.push({
             id: Date.now() + Math.floor(Math.random() * 1000),
@@ -1581,16 +1595,8 @@ function endWorkToday() {
 
     saveData();
     render();
-    toast('✓ 業務終了：空白時間を「その他」で登録しました');
+    toast('✓ 業務終了：空白(15分以上)を「その他」で登録しました');
 }
-
-
-    function deleteBreak(idx) {
-        if (!confirm('この休憩設定を削除しますか？')) return;
-        breakList.splice(idx, 1);
-        saveData();
-        renderBreaks();
-    }
 
     function updateTimerBar() {
         const bar = document.getElementById('timerBar');
