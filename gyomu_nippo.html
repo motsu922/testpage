@@ -109,6 +109,7 @@
         .sync-status { font-size: 14px; padding: 6px 14px; border-radius: 6px; }
         .sync-status.connected { background: #d1fae5; color: #059669; }
         .sync-status.disconnected { background: #fee2e2; color: #dc2626; }
+        .sync-status.syncing { background: #fef3c7; color: #d97706; }
 
         .toast { position: fixed; bottom: 24px; right: 24px; background: #333; color: white; padding: 14px 24px; font-weight: 500; font-size: 15px; z-index: 2000; }
 
@@ -210,6 +211,12 @@
         .pending-actions button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px; }
         .pending-actions .btn-complete { background: white; color: #d97706; }
         .pending-actions .btn-discard { background: rgba(0,0,0,0.2); color: white; }
+
+        /* 同期競合警告 */
+        .conflict-banner { background: #fef3c7; border-bottom: 2px solid #f59e0b; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+        .conflict-banner.hidden { display: none; }
+        .conflict-banner .message { color: #92400e; font-weight: 600; }
+        .conflict-banner button { padding: 8px 16px; background: #f59e0b; color: white; border: none; cursor: pointer; font-weight: 600; }
 
         /* スマホ対応 */
         @media (max-width: 768px) {
@@ -332,12 +339,21 @@
 </head>
 <body>
 <div class="container">
+    <!-- 同期競合警告バナー -->
+    <div id="conflictBanner" class="conflict-banner hidden">
+        <span class="message">⚠️ 他の端末で更新がありました。最新データを取得してください。</span>
+        <button onclick="forceReload()">最新データを取得</button>
+    </div>
+
     <div class="header">
         <div>
             <h1>⏱️ 日報入力</h1>
             <div id="todayDate" style="font-size:13px;opacity:0.9;margin-top:4px;"></div>
         </div>
-        <div class="sync-status disconnected" id="syncStatus">未接続</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span id="versionDisplay" style="font-size:11px;opacity:0.7;"></span>
+            <div class="sync-status disconnected" id="syncStatus">未接続</div>
+        </div>
     </div>
 
     <div class="tabs">
@@ -498,9 +514,11 @@
             </textarea>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <button class="btn btn-primary" onclick="connectFB()">接続 / 再接続</button>
+                <button class="btn btn-secondary" onclick="forcePushToServer()">強制アップロード</button>
             </div>
             <p style="font-size:11px;color:#666;margin-top:8px;">
-                ※起動時に自動接続します。設定を変更したいときだけ上のボタンを押してください。
+                ※起動時に自動接続します。設定を変更したいときだけ上のボタンを押してください。<br>
+                ※「強制アップロード」は現在のローカルデータをサーバーに上書きします（競合時の手動解決用）。
             </p>
         </div>
         <div class="card">
@@ -601,9 +619,12 @@ let fs = null;
 let docRef = null;
 let fbUnsubscribe = null;
 let fbConnected = false;
-let fbUpdating = false;
-// 🔐 バージョン管理用（Firestore とローカルの “どっちが新しいか” を判定）
+let fbUpdating = false;  // サーバーからの受信中フラグ
+
+// 🔐 バージョン管理（修正版）
 let localVersion = 0;
+let pendingLocalChanges = false;  // ローカルに未同期の変更があるか
+let lastSyncTime = 0;  // 最後に同期した時刻
 
 // タスク管理
 let taskList = [];
@@ -641,6 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (gd) gd.value = todayStr;
 
     render();
+    updateVersionDisplay();
 
     setInterval(() => {
         updateTimerBar();
@@ -665,11 +687,14 @@ function loadData(){
             JSON.parse(localStorage.getItem('tt_currentMember')) ||
             members[0] || null;
         localVersion = parseInt(localStorage.getItem('tt_version') || '0', 10) || 0;
-    }catch(e){}
+        lastSyncTime = parseInt(localStorage.getItem('tt_lastSyncTime') || '0', 10) || 0;
+    }catch(e){
+        console.error('loadData error:', e);
+    }
 }
 
-// ローカル保存 + Firestore同期
-function saveData(){
+// ローカル保存（Firestoreへの同期は別途）
+function saveDataLocal(){
     localStorage.setItem('tt_members',      JSON.stringify(members));
     localStorage.setItem('tt_customTasks',  JSON.stringify(customTasks));
     localStorage.setItem('tt_customIcons',  JSON.stringify(customIcons));
@@ -678,11 +703,27 @@ function saveData(){
     localStorage.setItem('tt_taskList',     JSON.stringify(taskList));
     localStorage.setItem('tt_breakList',    JSON.stringify(breakList));
     localStorage.setItem('tt_currentMember', JSON.stringify(currentMember));
-    localStorage.setItem('tt_version', String(localVersion || 0));
+    localStorage.setItem('tt_version', String(localVersion));
+    localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
+}
 
+// ローカル保存 + Firestore同期
+function saveData(){
+    saveDataLocal();
+    pendingLocalChanges = true;
+    
     // Firestoreへの送信（サーバから受信中 fbUpdating=true のときはスキップ）
-    if (!fbUpdating){
-        syncPushToServerSafe();
+    if (!fbUpdating && fbConnected){
+        syncPushToServer();
+    }
+    
+    updateVersionDisplay();
+}
+
+function updateVersionDisplay(){
+    const el = document.getElementById('versionDisplay');
+    if (el){
+        el.textContent = `v${localVersion}`;
     }
 }
 
@@ -1223,7 +1264,7 @@ function renderRecordList(listId,summaryId,recs,showAdd){
     // ソート（元配列も並び替え）
     recs.sort((a,b)=>a.startTime.localeCompare(b.startTime));
 
-    // 休憩を “埋まっている区間” に含めないため、ギャップ計算だけで使う
+    // 休憩を "埋まっている区間" に含めないため、ギャップ計算だけで使う
     const gaps = [];
 
     // 自動くっつけロジックから休憩を除外するため、
@@ -1400,6 +1441,13 @@ function addBreak(){
     saveData();
     renderBreaks();
     toast('✓ 休憩を追加しました');
+}
+function deleteBreak(idx){
+    if (!confirm('削除しますか？')) return;
+    breakList.splice(idx, 1);
+    saveData();
+    renderBreaks();
+    toast('🗑 削除しました');
 }
 
 // 手動保存
@@ -1730,7 +1778,10 @@ function goToday(){
     renderHistory();
 }
 
-// ----- Firestore -----
+// ============================================
+// 🔐 修正版 Firestore 同期ロジック
+// ============================================
+
 function initFirebase(){
     if (fs) return;
     const cfgText=document.getElementById('firebaseConfig').value;
@@ -1749,11 +1800,11 @@ function autoConnectFB(){
     try{
         initFirebase();
         fbConnected=true;
-        updateSyncStatus(true);
+        updateSyncStatus('syncing');
         setupFBListener();
     }catch(e){
         console.error(e);
-        updateSyncStatus(false);
+        updateSyncStatus('disconnected');
     }
 }
 
@@ -1762,71 +1813,123 @@ function connectFB(){
         const cfg=document.getElementById('firebaseConfig').value;
         JSON.parse(cfg);
         localStorage.setItem('tt_firebaseConfig',cfg);
+        
+        // 既存のリスナーを解除
+        if (fbUnsubscribe) {
+            fbUnsubscribe();
+            fbUnsubscribe = null;
+        }
+        
+        // Firebase再初期化
+        fs = null;
         initFirebase();
         fbConnected=true;
-        updateSyncStatus(true);
+        updateSyncStatus('syncing');
         setupFBListener();
         toast('✓ 接続 / 再接続');
     }catch(e){
         alert('エラー: '+e.message);
     }
 }
-function updateSyncStatus(c){
+
+function updateSyncStatus(status){
     const el=document.getElementById('syncStatus');
-    el.textContent = c?'✓ 同期中':'未接続';
-    el.className   = 'sync-status '+(c?'connected':'disconnected');
+    if (status === 'connected') {
+        el.textContent = '✓ 同期中';
+        el.className = 'sync-status connected';
+    } else if (status === 'syncing') {
+        el.textContent = '⟳ 同期中...';
+        el.className = 'sync-status syncing';
+    } else {
+        el.textContent = '未接続';
+        el.className = 'sync-status disconnected';
+    }
 }
 
-// onSnapshot でサーバの状態を反映
+// 🔐 修正: onSnapshot でバージョン比較を行う
 function setupFBListener(){
     if (!docRef) return;
     if (fbUnsubscribe) fbUnsubscribe();
 
-    fbUnsubscribe = docRef.onSnapshot(snapshot=>{
+    fbUnsubscribe = docRef.onSnapshot(snapshot => {
         if (!snapshot.exists){
-            // ドキュメントが存在しない場合は「ローカルを消さず」次の保存で作成させる
+            // ドキュメントが存在しない場合
+            // ローカルデータがあれば、それをサーバーにプッシュ
+            console.log('Firestore document does not exist. Will create on next save.');
             fbUpdating = false;
+            updateSyncStatus('connected');
+            
+            // ローカルにデータがあれば初回アップロード
+            if (records.length > 0 || members.length > 1) {
+                syncPushToServer();
+            }
             return;
         }
-        const data = snapshot.data() || {};
-        fbUpdating = true;
-
-        members      = data.members      || ['担当者1'];
-        customTasks  = data.customTasks  || {};
-        customIcons  = data.customIcons  || {};
-        records      = data.records      || [];
-        activeTimers = data.activeTimers || {};
-        taskList     = data.taskList     || [];
-        breakList    = data.breakList    || [];
-        localVersion = data.lastUpdatedVersion || 0;
-        localStorage.setItem('tt_version', String(localVersion));
-
-        saveData(); // fbUpdating=true のためここでは Firestore へ再送しない
-        render();
-        fbUpdating = false;
-        updateSyncStatus(true);
-    }, err=>{
-        console.error('onSnapshot error:',err);
-        updateSyncStatus(false);
+        
+        const serverData = snapshot.data() || {};
+        const serverVersion = serverData.lastUpdatedVersion || 0;
+        
+        console.log(`[Sync] Server version: ${serverVersion}, Local version: ${localVersion}`);
+        
+        // 🔐 重要: サーバーのバージョンがローカルより新しい場合のみ更新
+        if (serverVersion > localVersion) {
+            console.log('[Sync] Server is newer. Updating local data.');
+            fbUpdating = true;
+            
+            members      = serverData.members      || ['担当者1'];
+            customTasks  = serverData.customTasks  || {};
+            customIcons  = serverData.customIcons  || {};
+            records      = serverData.records      || [];
+            activeTimers = serverData.activeTimers || {};
+            taskList     = serverData.taskList     || [];
+            breakList    = serverData.breakList    || [];
+            localVersion = serverVersion;
+            lastSyncTime = Date.now();
+            
+            saveDataLocal();  // ローカルのみ保存（Firestoreには送らない）
+            render();
+            updateVersionDisplay();
+            hideConflictBanner();
+            
+            fbUpdating = false;
+            updateSyncStatus('connected');
+        } else if (serverVersion < localVersion) {
+            // ローカルの方が新しい → サーバーにプッシュ
+            console.log('[Sync] Local is newer. Pushing to server.');
+            updateSyncStatus('connected');
+            syncPushToServer();
+        } else {
+            // バージョン同じ → 何もしない
+            console.log('[Sync] Versions match. No action needed.');
+            updateSyncStatus('connected');
+        }
+    }, err => {
+        console.error('onSnapshot error:', err);
+        updateSyncStatus('disconnected');
     });
 }
 
-// 🔐 lastUpdatedVersion ガード付きの同期
-async function syncPushToServerSafe(){
+// 🔐 修正: トランザクションでバージョンガード付き書き込み
+async function syncPushToServer(){
     if (!fbConnected || !docRef || !fs) return;
-    try{
-        await fs.runTransaction(async tx=>{
-            const snap   = await tx.get(docRef);
-            const server = snap.exists ? snap.data() : {};
-            const serverVersion = server.lastUpdatedVersion || 0;
-
-            // サーバの方が新しければ、自分は古い ⇒ 書き込み禁止
-            if (serverVersion > (localVersion || 0)){
-                throw new Error('STALE_CLIENT');
+    
+    updateSyncStatus('syncing');
+    
+    try {
+        await fs.runTransaction(async tx => {
+            const snap = await tx.get(docRef);
+            const serverData = snap.exists ? snap.data() : {};
+            const serverVersion = serverData.lastUpdatedVersion || 0;
+            
+            // 🔐 サーバーの方が新しければ書き込みを中止
+            if (serverVersion > localVersion) {
+                console.warn('[Sync] Conflict detected. Server has newer data.');
+                throw new Error('CONFLICT');
             }
-
-            const newVersion = serverVersion + 1;
-
+            
+            // バージョンをインクリメント
+            const newVersion = Math.max(serverVersion, localVersion) + 1;
+            
             const payload = {
                 members,
                 customTasks,
@@ -1836,36 +1939,175 @@ async function syncPushToServerSafe(){
                 taskList,
                 breakList,
                 lastUpdatedVersion: newVersion,
-                lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastUpdatedBy: getDeviceId()  // どのデバイスが更新したか
             };
-
-            tx.set(docRef, payload, {merge:false});
-
-            // 自分のバージョンも更新（楽観的に）
+            
+            tx.set(docRef, payload, { merge: false });
+            
+            // ローカルバージョンも更新
             localVersion = newVersion;
+            lastSyncTime = Date.now();
             localStorage.setItem('tt_version', String(localVersion));
+            localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
         });
-    }catch(e){
-        if (e.message==='STALE_CLIENT'){
-            console.warn('stale client detected');
-            toast('⚠ 他の端末で新しい更新があります。この画面を再読み込みしてから操作してください。');
-            updateSyncStatus(false);
-        }else{
-            console.error('sync error:',e);
-            updateSyncStatus(false);
+        
+        console.log(`[Sync] Successfully pushed. New version: ${localVersion}`);
+        pendingLocalChanges = false;
+        updateSyncStatus('connected');
+        updateVersionDisplay();
+        
+    } catch (e) {
+        if (e.message === 'CONFLICT') {
+            console.warn('[Sync] Conflict! Showing banner.');
+            showConflictBanner();
+            updateSyncStatus('connected');
+        } else {
+            console.error('[Sync] Push error:', e);
+            updateSyncStatus('disconnected');
         }
     }
 }
 
+// 強制アップロード（競合時の手動解決用）
+async function forcePushToServer(){
+    if (!fbConnected || !docRef || !fs) {
+        alert('Firebaseに接続されていません');
+        return;
+    }
+    
+    if (!confirm('現在のローカルデータでサーバーを上書きします。\n他の端末のデータは失われます。よろしいですか？')) {
+        return;
+    }
+    
+    updateSyncStatus('syncing');
+    
+    try {
+        // サーバーの現在のバージョンを取得
+        const snap = await docRef.get();
+        const serverData = snap.exists ? snap.data() : {};
+        const serverVersion = serverData.lastUpdatedVersion || 0;
+        
+        // バージョンをサーバーより大きくする
+        const newVersion = Math.max(serverVersion, localVersion) + 1;
+        
+        const payload = {
+            members,
+            customTasks,
+            customIcons,
+            records,
+            activeTimers,
+            taskList,
+            breakList,
+            lastUpdatedVersion: newVersion,
+            lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastUpdatedBy: getDeviceId(),
+            forcePushed: true
+        };
+        
+        await docRef.set(payload);
+        
+        localVersion = newVersion;
+        lastSyncTime = Date.now();
+        localStorage.setItem('tt_version', String(localVersion));
+        localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
+        
+        hideConflictBanner();
+        updateSyncStatus('connected');
+        updateVersionDisplay();
+        toast('✓ 強制アップロード完了');
+        
+    } catch (e) {
+        console.error('Force push error:', e);
+        alert('アップロードに失敗しました: ' + e.message);
+        updateSyncStatus('disconnected');
+    }
+}
+
+// デバイスIDを取得/生成
+function getDeviceId(){
+    let deviceId = localStorage.getItem('tt_deviceId');
+    if (!deviceId) {
+        deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('tt_deviceId', deviceId);
+    }
+    return deviceId;
+}
+
+// 競合バナーの表示/非表示
+function showConflictBanner(){
+    const banner = document.getElementById('conflictBanner');
+    if (banner) banner.classList.remove('hidden');
+}
+
+function hideConflictBanner(){
+    const banner = document.getElementById('conflictBanner');
+    if (banner) banner.classList.add('hidden');
+}
+
+// 最新データを強制取得
+function forceReload(){
+    if (!docRef) {
+        location.reload();
+        return;
+    }
+    
+    updateSyncStatus('syncing');
+    
+    docRef.get().then(snap => {
+        if (!snap.exists) {
+            toast('⚠️ サーバーにデータがありません');
+            updateSyncStatus('connected');
+            return;
+        }
+        
+        const serverData = snap.data();
+        
+        members      = serverData.members      || ['担当者1'];
+        customTasks  = serverData.customTasks  || {};
+        customIcons  = serverData.customIcons  || {};
+        records      = serverData.records      || [];
+        activeTimers = serverData.activeTimers || {};
+        taskList     = serverData.taskList     || [];
+        breakList    = serverData.breakList    || [];
+        localVersion = serverData.lastUpdatedVersion || 0;
+        lastSyncTime = Date.now();
+        
+        saveDataLocal();
+        render();
+        updateVersionDisplay();
+        hideConflictBanner();
+        updateSyncStatus('connected');
+        toast('✓ 最新データを取得しました');
+        
+    }).catch(err => {
+        console.error('Force reload error:', err);
+        alert('データ取得に失敗しました: ' + err.message);
+        updateSyncStatus('disconnected');
+    });
+}
+
 // エクスポート/インポート/削除
 function exportData(){
-    const data={members,customTasks,customIcons,records,activeTimers,taskList,breakList,version:localVersion,exported:new Date().toISOString()};
+    const data={
+        members,
+        customTasks,
+        customIcons,
+        records,
+        activeTimers,
+        taskList,
+        breakList,
+        version: localVersion,
+        exported: new Date().toISOString(),
+        deviceId: getDeviceId()
+    };
     const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
     a.download=`日報入力_${formatDate(new Date())}.json`;
     a.click();
     toast('✓ エクスポート');
 }
+
 function importData(){
     const input=document.createElement('input');
     input.type='file';
@@ -1875,7 +2117,7 @@ function importData(){
         reader.onload=ev=>{
             try{
                 const data=JSON.parse(ev.target.result);
-                if (!confirm('上書きしますか？')) return;
+                if (!confirm('上書きしますか？\n現在のデータは失われます。')) return;
                 members      = data.members      || members;
                 customTasks  = data.customTasks  || {};
                 customIcons  = data.customIcons  || {};
@@ -1883,9 +2125,11 @@ function importData(){
                 activeTimers = data.activeTimers || {};
                 taskList     = data.taskList     || [];
                 breakList    = data.breakList    || [];
-                localVersion = data.version || localVersion;
+                // インポート時はバージョンをリセット
+                localVersion = (data.version || 0) + 1;
                 saveData();
                 render();
+                updateVersionDisplay();
                 toast('✓ インポート');
             }catch(e){
                 alert('エラー: '+e.message);
@@ -1895,6 +2139,7 @@ function importData(){
     };
     input.click();
 }
+
 function clearData(){
     if (!confirm('全削除しますか？')) return;
     if (!confirm('本当に？')) return;
@@ -1906,9 +2151,10 @@ function clearData(){
     taskList=[];
     breakList=[];
     currentMember=members[0];
-    localVersion=0;
+    localVersion = localVersion + 1;  // バージョンはインクリメント
     saveData();
     render();
+    updateVersionDisplay();
     toast('🗑 削除');
 }
 
