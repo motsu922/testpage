@@ -140,7 +140,7 @@
   .data-table tr:hover td{ background:#fafafa; }
   .empty{ text-align:center; padding:60px 20px; color:#9ca3af; font-size:14px; }
 
-  /* ▼ 解析タブ：品番別 不良推移 */
+  /* ▼ 解析タブ：品番別 不良推移 ＋ 内訳 */
   .trend-section{
     background:#fff;
     border-radius:2px;
@@ -180,11 +180,24 @@
   .trend-chart-wrapper{
     position:relative;
     width:100%;
-    min-height:520px;  /* 高さ2倍 */
+    min-height:520px;  /* 高さを倍に */
   }
   .trend-chart-wrapper canvas{
     width:100% !important;
-    height:520px !important; /* 高さ2倍 */
+    height:520px !important;
+  }
+  .trend-subtitle{
+    margin-top:18px;
+    margin-bottom:4px;
+    font-size:13px;
+    font-weight:600;
+    color:#111827;
+  }
+  .trend-chart-wrapper.small{
+    min-height:360px;
+  }
+  .trend-chart-wrapper.small canvas{
+    height:360px !important;
   }
 
   @media(max-width:768px){
@@ -350,11 +363,18 @@
           対象データがありません
         </div>
       </div>
+
+      <div class="trend-subtitle">不良内訳（上位5項目）</div>
+      <div class="trend-chart-wrapper small">
+        <canvas id="defectBreakdownChart"></canvas>
+      </div>
+
       <div class="trend-note">
         ・上部フィルタの「整理No」で品番を選択し、期間を指定して「絞り込み」を押すと、<br>
         &emsp;その品番の <strong>不良数（棒グラフ）</strong> と <strong>不良率（折れ線）</strong> を表示します。<br>
         ・「横軸」を <strong>検査日 / ロットNo</strong> で切り替えることで、見たい軸で推移を確認できます。<br>
-        ・ロット軸のときは、ロットNoの<strong>3桁目</strong>から月を読み取り、月順（1〜12月）に並び替えています。
+        ・ロット軸のときは、ロットNoの<strong>3桁目</strong>から月を読み取り、月順（1〜12月）に並び替えています。<br>
+        ・下のグラフでは、同じ横軸に対して<strong>不良内訳（NGコード上位5件）</strong>を色分けして表示します。
       </div>
     </div>
   </div>
@@ -383,7 +403,8 @@ let filteredData = [];
 let cols = new Map();
 let master = {};
 let autoLogoutTimer = null;
-let defectTrendChart = null; // 解析タブのチャート
+let defectTrendChart = null;       // 上の推移グラフ
+let defectBreakdownChart = null;   // 下の内訳グラフ
 
 try {
   firebase.initializeApp(firebaseConfig);
@@ -1121,7 +1142,7 @@ function getMonthFromLot(lot){
   return 99; // 判定できないものは後ろ
 }
 
-/* ▼ 品番別 不良推移（解析タブ用） */
+/* ▼ 品番別 不良推移 ＋ 内訳（解析タブ用） */
 function updateDefectTrend() {
   const productSelect = document.getElementById('filter-product');
   const productCode = productSelect.value;
@@ -1130,6 +1151,7 @@ function updateDefectTrend() {
   const labelEl   = document.getElementById('trend-product-label');
   const emptyEl   = document.getElementById('trend-empty');
   const canvas    = document.getElementById('defectTrendChart');
+  const breakdownCanvas = document.getElementById('defectBreakdownChart');
   const xAxisEl   = document.getElementById('trend-xaxis');
   const xAxisMode = xAxisEl ? xAxisEl.value : 'date'; // 'date' or 'lot'
 
@@ -1140,13 +1162,17 @@ function updateDefectTrend() {
       defectTrendChart.destroy();
       defectTrendChart = null;
     }
+    if (defectBreakdownChart) {
+      defectBreakdownChart.destroy();
+      defectBreakdownChart = null;
+    }
     return;
   }
 
   const axisLabel = xAxisMode === 'date' ? '検査日' : 'ロットNo';
   labelEl.textContent = `整理No：${productCode} ／ 期間：${startDate || '-'} ～ ${endDate || '-'} ／ 横軸：${axisLabel}`;
 
-  const bucketMap = new Map(); // key -> { inspection, defects }
+  const bucketMap = new Map(); // key -> { inspection, defects, codes: Map }
 
   filteredData.forEach(item => {
     if (item.on !== productCode) return;
@@ -1159,7 +1185,7 @@ function updateDefectTrend() {
     }
 
     if (!bucketMap.has(key)) {
-      bucketMap.set(key, { inspection: 0, defects: 0 });
+      bucketMap.set(key, { inspection: 0, defects: 0, codes: new Map() });
     }
     const bucket = bucketMap.get(key);
 
@@ -1168,8 +1194,12 @@ function updateDefectTrend() {
 
     let itemDefects = 0;
     if (item.ngMap) {
-      item.ngMap.forEach(v => {
-        itemDefects += parseInt(v || 0);
+      item.ngMap.forEach((v, code) => {
+        const cnt = parseInt(v || 0);
+        if (cnt > 0) {
+          itemDefects += cnt;
+          bucket.codes.set(code, (bucket.codes.get(code) || 0) + cnt);
+        }
       });
     }
     bucket.defects += itemDefects;
@@ -1195,6 +1225,10 @@ function updateDefectTrend() {
       defectTrendChart.destroy();
       defectTrendChart = null;
     }
+    if (defectBreakdownChart) {
+      defectBreakdownChart.destroy();
+      defectBreakdownChart = null;
+    }
     return;
   } else {
     emptyEl.style.display = 'none';
@@ -1207,8 +1241,8 @@ function updateDefectTrend() {
   });
 
   // 不良率が高いところを強調
-  const HIGH_THRESHOLD = 3; // 3%以上を「高い」とする（必要なら調整）
-  const MED_THRESHOLD  = 1; // 1%以上を中程度
+  const HIGH_THRESHOLD = 3; // 3%以上を「高い」
+  const MED_THRESHOLD  = 1; // 1%以上を「中」
 
   const barBgColors = defectRates.map(rate => {
     if (rate >= HIGH_THRESHOLD) return 'rgba(220,38,38,0.7)';     // 赤系（高い）
@@ -1303,6 +1337,119 @@ function updateDefectTrend() {
               } else {
                 return `不良率: ${context.parsed.y.toFixed(2)}%`;
               }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  /* ▼ 不良内訳（NGコード別 上位5件）の積み上げ棒グラフ */
+
+  // NGコード別の合計値（どのラベルでも）を集計して上位5件を抽出
+  const codeTotals = new Map();
+  labels.forEach(lbl => {
+    const bucket = bucketMap.get(lbl);
+    if (!bucket || !bucket.codes) return;
+    bucket.codes.forEach((cnt, code) => {
+      if (cnt > 0) {
+        codeTotals.set(code, (codeTotals.get(code) || 0) + cnt);
+      }
+    });
+  });
+
+  const topCodes = Array.from(codeTotals.entries())
+    .sort((a,b) => b[1] - a[1])
+    .slice(0, 5)  // 上位5件
+    .map(([code]) => code);
+
+  if (defectBreakdownChart) {
+    defectBreakdownChart.destroy();
+    defectBreakdownChart = null;
+  }
+
+  if (topCodes.length === 0) {
+    // 対象NGコードが無い場合は何も表示しない（グラフ破棄済み）
+    return;
+  }
+
+  const palette = [
+    'rgba(37,99,235,0.7)',   // 青
+    'rgba(16,185,129,0.7)',  // 緑
+    'rgba(234,179,8,0.7)',   // 黄
+    'rgba(239,68,68,0.7)',   // 赤
+    'rgba(139,92,246,0.7)'   // 紫
+  ];
+  const paletteBorder = [
+    'rgba(37,99,235,1)',
+    'rgba(16,185,129,1)',
+    'rgba(202,138,4,1)',
+    'rgba(185,28,28,1)',
+    'rgba(124,58,237,1)'
+  ];
+
+  const datasets = topCodes.map((code, idx) => {
+    const color = palette[idx % palette.length];
+    const borderColor = paletteBorder[idx % paletteBorder.length];
+    const name = cols.get(code) || '';
+    return {
+      type: 'bar',
+      label: name ? `${code}：${name}` : code,
+      data: labels.map(lbl => {
+        const bucket = bucketMap.get(lbl);
+        if (!bucket || !bucket.codes) return 0;
+        return bucket.codes.get(code) || 0;
+      }),
+      backgroundColor: color,
+      borderColor: borderColor,
+      borderWidth: 1,
+      stack: 'ngStack'
+    };
+  });
+
+  const bctx = breakdownCanvas.getContext('2d');
+  defectBreakdownChart = new Chart(bctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: datasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: axisLabel
+          },
+          stacked: true,
+          ticks: {
+            autoSkip: !isLotAxis,
+            maxRotation: isLotAxis ? 45 : 0,
+            minRotation: isLotAxis ? 45 : 0
+          }
+        },
+        y: {
+          title: {
+            display: true,
+            text: '不良数（内訳）'
+          },
+          beginAtZero: true,
+          stacked: true
+        }
+      },
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label: function(context){
+              const dsLabel = context.dataset.label || '';
+              return `${dsLabel}: ${context.parsed.y}個`;
             }
           }
         }
