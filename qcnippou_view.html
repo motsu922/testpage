@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>日報ビュアー</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system,BlinkMacSystemFont,"Noto Sans JP",sans-serif;
+      background:#020617;
+      color:#e5e7eb;
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+    }
+
+    /* ===== Header ===== */
+    header{
+      background:linear-gradient(135deg,#020617,#020617 40%,#0f172a 100%);
+      border-bottom:1px solid #1f2937;
+      padding:10px 18px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .header-left{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .app-title{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:18px;
+      font-weight:700;
+    }
+    .app-title span{
+      font-size:22px;
+    }
+    .sub-title{
+      font-size:12px;
+      color:#9ca3af;
+    }
+    .header-right{
+      display:flex;
+      align-items:center;
+      gap:16px;
+    }
+    .clock-block{
+      text-align:right;
+    }
+    .clock-time{
+      font-family:system-ui,monospace;
+      font-size:26px;
+      font-weight:700;
+      letter-spacing:2px;
+      color:#60a5fa;
+    }
+    .clock-date{
+      font-size:12px;
+      color:#9ca3af;
+    }
+    .sync-status{
+      font-size:11px;
+      padding:4px 10px;
+      border-radius:999px;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      border:1px solid transparent;
+    }
+    .sync-status.ok{
+      background:rgba(34,197,94,0.12);
+      border-color:rgba(34,197,94,0.4);
+      color:#4ade80;
+    }
+    .sync-status.err{
+      background:rgba(248,113,113,0.08);
+      border-color:rgba(248,113,113,0.4);
+      color:#fca5a5;
+    }
+    .sync-dot{
+      width:7px;height:7px;border-radius:999px;
+    }
+    .sync-dot.ok{background:#22c55e;box-shadow:0 0 8px #22c55e;}
+    .sync-dot.err{background:#f97373;}
+
+    /* ===== Layout ===== */
+    .main{
+      flex:1;
+      display:grid;
+      grid-template-columns: minmax(0,2fr) minmax(0,1fr); /* 左 2 : 右 1 */
+      gap:14px;
+      padding:12px 14px 16px;
+    }
+    .left-column{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      min-height:0;
+    }
+    @media(max-width:1024px){
+      .main{
+        grid-template-columns:1fr;
+      }
+      .left-column{
+        min-height:auto;
+      }
+    }
+
+    .card{
+      background:#020617;
+      border-radius:14px;
+      border:1px solid #1e293b;
+      padding:12px 14px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.6);
+    }
+    .card-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:8px;
+    }
+    .card-title{
+      font-size:14px;
+      font-weight:600;
+      display:flex;
+      align-items:center;
+      gap:6px;
+    }
+    .card-title span.icon{
+      font-size:16px;
+    }
+    .card-sub{
+      font-size:11px;
+      color:#9ca3af;
+    }
+
+    /* 左上：ガント用カード */
+    .card-gantt{
+      flex:1;
+      min-height:260px;
+      display:flex;
+      flex-direction:column;
+    }
+
+    /* ===== Left: Gantt ===== */
+    .gantt-toolbar{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:11px;
+      margin-bottom:8px;
+      flex-wrap:wrap;
+    }
+    .gantt-toolbar button{
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid #1f2937;
+      background:#020617;
+      color:#e5e7eb;
+      font-size:11px;
+      cursor:pointer;
+    }
+    .gantt-toolbar button.primary{
+      background:#2563eb;
+      border-color:#2563eb;
+    }
+    .gantt-toolbar button:hover{
+      background:#111827;
+    }
+    .gantt-toolbar button.primary:hover{
+      background:#1d4ed8;
+    }
+    .gantt-toolbar input[type="date"]{
+      background:#020617;
+      border-radius:999px;
+      border:1px solid #1f2937;
+      padding:4px 10px;
+      font-size:11px;
+      color:#e5e7eb;
+    }
+    .gantt-toolbar input[type="date"]::-webkit-calendar-picker-indicator{
+      filter:invert(1);
+    }
+    .gantt-current{
+      margin-left:auto;
+      font-size:11px;
+      color:#93c5fd;
+      display:flex;
+      align-items:center;
+      gap:4px;
+    }
+
+    .gantt-container{
+      margin-top:4px;
+      border-radius:10px;
+      border:1px solid #1f2937;
+      overflow:auto;
+      background:radial-gradient(circle at top left,#0b1120 0,#020617 55%);
+      position:relative;
+      max-height:calc(100vh - 220px);
+    }
+    .gantt-header{
+      display:flex;
+      position:sticky;
+      top:0;
+      z-index:5;
+      background:rgba(15,23,42,0.96);
+      border-bottom:1px solid #1f2937;
+    }
+    .gantt-member-col-header{
+      width:140px;
+      flex-shrink:0;
+      padding:6px 8px;
+      font-size:11px;
+      font-weight:600;
+      color:#9ca3af;
+      border-right:1px solid #1f2937;
+    }
+    .gantt-time-col{
+      width:60px;
+      flex-shrink:0;
+      font-size:11px;
+      text-align:center;
+      padding:4px 0;
+      border-right:1px solid #1f2937;
+      color:#9ca3af;
+    }
+    .gantt-time-col.current{
+      background:#1d4ed8;
+      color:white;
+      position:relative;
+    }
+
+    .gantt-body{}
+    .gantt-row{
+      display:flex;
+      border-bottom:1px solid #020617;
+      min-height:36px;
+    }
+    .gantt-row:nth-child(odd){
+      background:rgba(15,23,42,0.7);
+    }
+    .gantt-row:nth-child(even){
+      background:rgba(15,23,42,0.9);
+    }
+    .gantt-row:hover{
+      background:rgba(30,64,175,0.2);
+    }
+    .gantt-member-col{
+      width:140px;
+      flex-shrink:0;
+      padding:6px 8px;
+      border-right:1px solid #1f2937;
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .member-name{
+      font-size:12px;
+      font-weight:600;
+      display:flex;
+      align-items:center;
+      gap:6px;
+    }
+    .status-dot{
+      width:8px;height:8px;border-radius:999px;
+    }
+    .status-dot.running{
+      background:#22c55e;
+      box-shadow:0 0 6px #22c55e;
+    }
+    .status-dot.idle{
+      background:#6b7280;
+    }
+
+    /* ★ 異常処置 / 不具合対応中 用の点滅スタイル */
+    .status-dot.danger-blink{
+      background:#ef4444;
+      box-shadow:0 0 10px #ef4444;
+      animation:pulse-red 1s infinite;
+    }
+    .ms-state.danger{
+      background:rgba(239,68,68,0.25);
+      color:#fecaca;
+    }
+    .gantt-bar.danger-blink{
+      background:#dc2626 !important;
+      animation:pulse-red 1.1s infinite;
+    }
+    @keyframes pulse-red{
+      0%{ box-shadow:0 0 4px rgba(248,113,113,0.6); }
+      50%{ box-shadow:0 0 16px rgba(248,113,113,1); }
+      100%{ box-shadow:0 0 4px rgba(248,113,113,0.6); }
+    }
+
+    .member-sub{
+      font-size:10px;
+      color:#9ca3af;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .gantt-cell{
+      width:60px;
+      flex-shrink:0;
+      border-right:1px solid #020617;
+      position:relative;
+    }
+    .gantt-cell.current{
+      background:rgba(37,99,235,0.15);
+    }
+
+    .gantt-now-line{
+      position:absolute;
+      top:0;bottom:0;
+      width:2px;
+      background:#f97316;
+      z-index:3;
+    }
+
+    .gantt-bar{
+      position:absolute;
+      top:6px;
+      bottom:6px;
+      border-radius:0;
+      display:flex;
+      align-items:center;
+      padding:0 8px;
+      font-size:11px;
+      font-weight:600;
+      color:white;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      box-shadow:0 4px 12px rgba(0,0,0,0.5);
+      z-index:2;
+      cursor:default;
+    }
+    .gantt-bar.running{
+      outline:1px solid rgba(248,250,252,0.5);
+      box-shadow:0 0 0 1px rgba(15,23,42,0.9),0 0 12px rgba(96,165,250,0.8);
+    }
+    .bar-icon{
+      margin-right:4px;
+      font-size:12px;
+    }
+
+    /* ===== Right column layout ===== */
+    .right-column{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .card-body-scroll{
+      max-height:calc(50vh - 80px);
+      overflow:auto;
+      padding-top:4px;
+    }
+
+    /* メンバーステータス */
+    .member-status-list{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr)); /* 横2列 */
+      gap:8px;
+    }
+    @media(max-width:800px){
+      .member-status-list{
+        grid-template-columns:1fr; /* 狭い画面では1列 */
+      }
+    }
+    .member-status-item{
+      padding:6px 8px;
+      border-radius:9px;
+      background:rgba(15,23,42,0.9);
+      border:1px solid #111827;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      font-size:12px;
+    }
+    .ms-left{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .ms-name-row{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      font-weight:600;
+    }
+    .ms-state{
+      font-size:10px;
+      padding:2px 7px;
+      border-radius:999px;
+    }
+    .ms-state.running{
+      background:rgba(34,197,94,0.12);
+      color:#4ade80;
+    }
+    .ms-state.idle{
+      background:rgba(148,163,184,0.18);
+      color:#e5e7eb;
+    }
+    .ms-task{
+      font-size:11px;
+      color:#9ca3af;
+    }
+    .ms-right{
+      text-align:right;
+      font-family:monospace;
+      font-size:12px;
+      color:#93c5fd;
+    }
+
+    /* 担当者別 本日の作業内訳 */
+    .per-member-block{
+      padding:6px 8px;
+      border-radius:10px;
+      background:rgba(15,23,42,0.95);
+      border:1px solid #0f172a;
+      margin-bottom:6px;
+    }
+    .per-member-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:4px;
+    }
+    .per-member-name{
+      font-size:12px;
+      font-weight:600;
+      display:flex;
+      align-items:center;
+      gap:6px;
+    }
+    .per-member-total{
+      font-size:11px;
+      color:#93c5fd;
+    }
+    .task-row{
+      display:grid;
+      grid-template-columns:auto 80px 1fr auto; /* ● / ラベル / バー / 値 */
+      align-items:center;
+      gap:6px;
+      font-size:11px;
+      margin-top:2px;
+    }
+    .task-color-dot{
+      width:10px;height:10px;border-radius:999px;flex-shrink:0;
+    }
+    .task-label{
+      width:80px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      color:#e5e7eb;
+    }
+    .task-bar-wrap{
+      width:100%;
+      height:10px;
+      border-radius:0;
+      background:#020617;
+      overflow:hidden;
+    }
+    .task-bar{
+      height:100%;
+      border-radius:0;
+    }
+    .task-val{
+      font-family:monospace;
+      font-size:10px;
+      color:#9ca3af;
+      width:40px;
+      text-align:right;
+    }
+
+    /* タスク進捗カード & アラート（左下に移動） */
+    .alert-block{
+      margin-bottom:6px;
+      border-radius:10px;
+      padding:6px 8px;
+      font-size:11px;
+    }
+    .alert-block.danger{
+      background:rgba(248,113,113,0.08);
+      border:1px solid rgba(248,113,113,0.5);
+      color:#fecaca;
+    }
+    .alert-block.warning{
+      background:rgba(234,179,8,0.08);
+      border:1px solid rgba(234,179,8,0.6);
+      color:#facc15;
+    }
+    .alert-title{
+      font-weight:600;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      margin-bottom:2px;
+    }
+    .alert-item{
+      font-size:10px;
+      color:#e5e7eb;
+      opacity:0.9;
+    }
+
+    .task-progress-grid{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      margin-top:4px;
+    }
+    .task-progress-item{
+      border-radius:9px;
+      padding:6px 8px;
+      background:rgba(15,23,42,0.95);
+      border:1px solid #111827;
+      font-size:11px;
+      display:grid;
+      grid-template-columns:minmax(0,1.4fr) 1fr;
+      gap:4px 8px;
+      align-items:center;
+    }
+    .tp-name{
+      font-weight:600;
+      color:#e5e7eb;
+    }
+    .tp-meta{
+      font-size:10px;
+      color:#9ca3af;
+    }
+    .tp-progress-wrap{
+      grid-row:1 / span 2;
+      grid-column:2 / 3;
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .tp-bar-bg{
+      height:8px;
+      border-radius:0;
+      background:#020617;
+      overflow:hidden;
+    }
+    .tp-bar{
+      height:100%;
+      border-radius:0;
+    }
+    .tp-bar.low{background:linear-gradient(90deg,#ef4444,#f97316);}
+    .tp-bar.mid{background:linear-gradient(90deg,#eab308,#22c55e);}
+    .tp-bar.high{background:linear-gradient(90deg,#22c55e,#2dd4bf);}
+    .tp-perc{
+      font-size:10px;
+      font-family:monospace;
+      text-align:right;
+      color:#e5e7eb;
+    }
+    .tp-deadline{
+      font-size:10px;
+      color:#9ca3af;
+      text-align:right;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="header-left">
+    <div class="app-title">
+      <span>📊</span> <div>リアルタイム日報ビュアー</div>
+    </div>
+  
+  </div>
+  <div class="header-right">
+    <div class="clock-block">
+      <div class="clock-time" id="clockTime">--:--:--</div>
+      <div class="clock-date" id="clockDate">----</div>
+    </div>
+    <div id="syncStatus" class="sync-status err">
+      <span class="sync-dot err"></span> 未接続
+    </div>
+  </div>
+</header>
+
+<main class="main">
+  <!-- 左：ガント + タスク進捗カード&アラート -->
+  <section class="left-column">
+    <!-- Gantt -->
+    <section class="card card-gantt">
+      <div class="card-header">
+        <div>
+          <div class="card-title"><span class="icon">📉</span>リアルタイム状況（ガントチャート）</div>
+
+        </div>
+      </div>
+      <div class="gantt-toolbar">
+        <button onclick="changeGanttDate(-1)">← 前日</button>
+        <input type="date" id="ganttDate" onchange="onGanttDateChange(this.value)">
+        <button onclick="changeGanttDate(1)">翌日 →</button>
+        <button class="primary" onclick="goGanttToday()">今日</button>
+        <div class="gantt-current" id="ganttCurrentInfo">--</div>
+      </div>
+
+      <div class="gantt-container" id="ganttContainer">
+        <div class="gantt-header" id="ganttHeader"></div>
+        <div class="gantt-body" id="ganttBody"></div>
+      </div>
+    </section>
+
+    <!-- タスク進捗カード & アラート（左下） -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title"><span class="icon">✅</span>タスク進捗カード & アラート</div>
+          <div class="card-sub">期限超過・期限間近と、進捗率の一覧</div>
+        </div>
+      </div>
+      <div id="taskAlerts"></div>
+      <div class="task-progress-grid" id="taskProgressList"></div>
+    </section>
+  </section>
+
+  <!-- 右：メンバーステータス / 担当者別 本日の作業内訳 -->
+  <section class="right-column">
+    <!-- Member status -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title"><span class="icon">👥</span>メンバーステータス</div>
+          <div class="card-sub">今どのタスクで動いているか／待機中かを表示</div>
+        </div>
+      </div>
+      <div class="card-body-scroll">
+        <div id="memberStatusList" class="member-status-list"></div>
+      </div>
+    </div>
+
+    <!-- Today per member -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title"><span class="icon">📚</span>担当者別 本日の作業内訳</div>
+          <div class="card-sub">今日の記録をタスク別に集計（1人あたり）</div>
+        </div>
+      </div>
+      <div class="card-body-scroll" id="todayPerMember"></div>
+    </div>
+  </section>
+</main>
+
+<!-- Firebase (compat) -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script>
+  // ===== Firestore config（必要に応じて編集）=====
+  const firebaseConfig = {
+    apiKey: "AIzaSyAwZQMhF5qIv1XSADce2JiN_qAV88TxEQ8",
+    projectId: "qcnippo"
+  };
+  const DOC_PATH = "timeTracker/state"; // 入力側と合わせる
+
+  // ===== 共通データ =====
+  const DEFAULT_TASKS = ['朝礼','打合せ','不具合対応','異常処置','保留品対応','資料作成','メール','外出','来客対応','その他'];
+  const ICONS = {'朝礼':'🌅','打合せ':'👥','不具合対応':'🔧','異常処置':'⚠️','保留品対応':'📦','資料作成':'📝','メール':'✉️','外出':'🚗','来客対応':'🤝','その他':'📌'};
+  const COLORS = {'朝礼':'#f59e0b','打合せ':'#3b82f6','不具合対応':'#ef4444','異常処置':'#dc2626','保留品対応':'#8b5cf6','資料作成':'#10b981','メール':'#06b6d4','外出':'#14b8a6','来客対応':'#ec4899','その他':'#6b7280'};
+  const CUSTOM_COLORS = ['#f43f5e','#a855f7','#6366f1','#0ea5e9','#22c55e','#eab308','#f97316','#64748b','#78716c','#84cc16'];
+
+  let members = [];
+  let records = [];
+  let activeTimers = {};
+  let taskList = [];
+  let customTasks = {};
+  let customIcons = {};
+  let breakList = [];
+
+  let fb = null;
+  let fs = null;
+  let docRef = null;
+  let unsub = null;
+
+  // ===== ユーティリティ =====
+  function formatDate(d){
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function formatTimeHM(d){
+    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  function timeToMinutes(t){
+    const [h,m] = t.split(':').map(Number);
+    return h*60 + m;
+  }
+  function minutesToTime(min){
+    const h = Math.floor(min/60);
+    const m = min%60;
+    return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+  }
+  function calcHours(s,e){
+    const [sh,sm]=s.split(':').map(Number);
+    const [eh,em]=e.split(':').map(Number);
+    return (eh*60+em - (sh*60+sm))/60;
+  }
+  function getTaskIcon(task){
+    return ICONS[task] || customIcons[task] || '📋';
+  }
+  function getTaskColor(task){
+    if (COLORS[task]) return COLORS[task];
+    const allCustom = Object.values(customTasks||{}).flat();
+    const idx = allCustom.indexOf(task);
+    if (idx>=0) return CUSTOM_COLORS[idx % CUSTOM_COLORS.length];
+    return '#4f46e5';
+  }
+
+  // ===== Clock =====
+  function updateClock(){
+    const now = new Date();
+    document.getElementById('clockTime').textContent =
+      now.toTimeString().slice(0,8);
+    const wd = ['日','月','火','水','木','金','土'][now.getDay()];
+    document.getElementById('clockDate').textContent =
+      `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 (${wd})`;
+  }
+
+  // ===== Firestore接続 =====
+  function initFirebase(){
+    try{
+      if (!firebase.apps.length){
+        fb = firebase.initializeApp(firebaseConfig);
+      }else{
+        fb = firebase.app();
+      }
+      fs = firebase.firestore();
+      docRef = fs.doc(DOC_PATH);
+      document.getElementById('syncStatus').className = 'sync-status ok';
+      document.getElementById('syncStatus').innerHTML =
+        '<span class="sync-dot ok"></span>同期中';
+      setupListener();
+    }catch(e){
+      console.error(e);
+      document.getElementById('syncStatus').className = 'sync-status err';
+      document.getElementById('syncStatus').innerHTML =
+        '<span class="sync-dot err"></span>接続エラー';
+    }
+  }
+
+  function setupListener(){
+    if (!docRef) return;
+    if (unsub) unsub();
+
+    unsub = docRef.onSnapshot(snap=>{
+      if (!snap.exists){
+        members = [];
+        records = [];
+        activeTimers = {};
+        taskList = [];
+        customTasks = {};
+        customIcons = {};
+        breakList = [];
+      }else{
+        const d = snap.data() || {};
+        members      = d.members      || [];
+        records      = d.records      || [];
+        activeTimers = d.activeTimers || {};
+        taskList     = d.taskList     || [];
+        customTasks  = d.customTasks  || {};
+        customIcons  = d.customIcons  || {};
+        breakList    = d.breakList    || [];
+      }
+      renderAll();
+    },err=>{
+      console.error(err);
+      document.getElementById('syncStatus').className = 'sync-status err';
+      document.getElementById('syncStatus').innerHTML =
+        '<span class="sync-dot err"></span>通信エラー';
+    });
+  }
+
+  // ===== レンダリング =====
+  let ganttDate = null;
+
+  function renderAll(){
+    if (!ganttDate){
+      const today = formatDate(new Date());
+      ganttDate = today;
+      const inp = document.getElementById('ganttDate');
+      if (inp) inp.value = today;
+    }
+    renderGantt();
+    renderMemberStatus();
+    renderTodayPerMember();
+    renderTaskProgressAndAlerts();
+  }
+
+  // ---- Gantt ----
+  function renderGantt(){
+    const header = document.getElementById('ganttHeader');
+    const body   = document.getElementById('ganttBody');
+    const info   = document.getElementById('ganttCurrentInfo');
+    if (!header || !body) return;
+
+    const now = new Date();
+    const todayStr = formatDate(now);
+    const target = ganttDate || todayStr;
+
+    const isToday = (target === todayStr);
+    if (isToday){
+      info.textContent = `今日 ${formatTimeHM(now)} 現在`;
+    }else{
+      info.textContent = target.replace(/-/g,'/');
+    }
+
+    // ヘッダー
+    const startHour = 8;
+    const endHour   = 20;
+    const hours = [];
+    for (let h=startHour; h<=endHour; h++) hours.push(h);
+
+    let hHtml = `<div class="gantt-member-col-header">担当者</div>`;
+    hours.forEach(h=>{
+      const isCurrent = isToday && h===now.getHours();
+      hHtml += `<div class="gantt-time-col ${isCurrent?'current':''}">${String(h).padStart(2,'0')}:00</div>`;
+    });
+    header.innerHTML = hHtml;
+
+    // 本体
+    body.innerHTML = '';
+    const dayRecs = records.filter(r=>r.date===target);
+
+    members.forEach(member=>{
+      const row = document.createElement('div');
+      row.className = 'gantt-row';
+
+      // 左メンバー列
+      const mCol = document.createElement('div');
+      mCol.className = 'gantt-member-col';
+      const timer = activeTimers[member];
+      const running = !!timer && isToday;
+
+      const mName = document.createElement('div');
+      mName.className = 'member-name';
+      const dot = document.createElement('span');
+      dot.className = 'status-dot ' + (running?'running':'idle');
+      mName.appendChild(dot);
+      const nm = document.createElement('span');
+      nm.textContent = member;
+      mName.appendChild(nm);
+
+      const mSub = document.createElement('div');
+      mSub.className = 'member-sub';
+      if (running){
+        mSub.textContent = `${getTaskIcon(timer.task)} ${timer.task} 実行中`;
+      }else{
+        mSub.textContent = '待機 / 記録なし';
+      }
+
+      mCol.appendChild(mName);
+      mCol.appendChild(mSub);
+      row.appendChild(mCol);
+
+      // 時間セル
+      hours.forEach(h=>{
+        const cell = document.createElement('div');
+        cell.className = 'gantt-cell';
+        if (isToday && h===now.getHours()){
+          cell.classList.add('current');
+          const pct = (now.getMinutes()/60)*100;
+          const line = document.createElement('div');
+          line.className = 'gantt-now-line';
+          line.style.left = pct+'%';
+          cell.appendChild(line);
+        }
+        cell.dataset.hour = h;
+        cell.dataset.member = member;
+        row.appendChild(cell);
+      });
+
+      body.appendChild(row);
+
+      // 当日レコードバー
+      const mRecs = dayRecs.filter(r=>r.member===member);
+      mRecs.forEach(r=>{
+        const [sh,sm] = r.startTime.split(':').map(Number);
+        const [eh,em] = r.endTime.split(':').map(Number);
+        placeGanttBar(member,r.task,sh,sm,eh,em,false,isToday,now,startHour,endHour);
+      });
+
+      // 進行中バー
+      if (running){
+        const start = new Date(timer.startTime);
+        const sh = start.getHours();
+        const sm = start.getMinutes();
+        placeGanttBar(member,timer.task,sh,sm,now.getHours(),now.getMinutes(),true,isToday,now,startHour,endHour);
+      }
+    });
+  }
+
+  function placeGanttBar(member,task,sh,sm,eh,em,isRunning,isToday,now,startHour,endHour){
+    // 表示範囲外
+    if (eh < startHour || sh > endHour) return;
+
+    const startPos = Math.max(startHour, sh + sm/60);
+    const endPos   = Math.min(endHour+1, eh + em/60);
+    const widthHours = endPos - startPos;
+    if (widthHours <= 0) return;
+
+    const baseHour  = Math.floor(startPos);
+    const baseCell = document.querySelector(`.gantt-cell[data-member="${member}"][data-hour="${baseHour}"]`);
+    if (!baseCell) return;
+
+    const cellWidth = 60; // CSSと合わせる
+    const leftOffset = (startPos - baseHour) * cellWidth;
+    const widthPx = widthHours * cellWidth;
+
+    const bar = document.createElement('div');
+    bar.className = 'gantt-bar';
+    if (isRunning) bar.classList.add('running');
+    bar.style.left  = leftOffset+'px';
+    bar.style.width = widthPx+'px';
+    bar.style.background = getTaskColor(task);
+
+    const icon = getTaskIcon(task);
+    const isDangerTask = task && (task.includes('異常処置') || task.includes('不具合対応'));
+    if (isDangerTask) bar.classList.add('danger-blink');
+
+    bar.innerHTML = `<span class="bar-icon">${icon}</span>${task}`;
+    bar.title = `${task}\n${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')} - ${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}${isRunning?'（進行中）':''}`;
+
+    baseCell.appendChild(bar);
+  }
+
+  function changeGanttDate(delta){
+    const inp = document.getElementById('ganttDate');
+    const baseStr = (inp && inp.value) ? inp.value : formatDate(new Date());
+    const d = new Date(baseStr);
+    if (isNaN(d)) return;
+    d.setDate(d.getDate()+delta);
+    const v = formatDate(d);
+    ganttDate = v;
+    if (inp) inp.value = v;
+    renderGantt();
+  }
+  function goGanttToday(){
+    const t = formatDate(new Date());
+    ganttDate = t;
+    const inp = document.getElementById('ganttDate');
+    if (inp) inp.value = t;
+    renderGantt();
+  }
+  function onGanttDateChange(v){
+    ganttDate = v || formatDate(new Date());
+    renderGantt();
+  }
+
+  // ---- Member Status ----
+  function renderMemberStatus(){
+    const el = document.getElementById('memberStatusList');
+    if (!el) return;
+    if (!members.length){
+      el.innerHTML = '<div style="font-size:11px;color:#9ca3af;">担当者が登録されていません</div>';
+      return;
+    }
+    const now = new Date();
+    const todayStr = formatDate(now);
+
+    el.innerHTML = members.map(m=>{
+      const timer = activeTimers[m];
+      const running = !!timer && formatDate(new Date(timer.startTime))===todayStr;
+
+      let taskLabel = '待機中';
+      let taskIcon  = '💤';
+      let elapsedStr = '--:--:--';
+      let isDangerTask = false;
+
+      if (running){
+        taskLabel = timer.task;
+        taskIcon  = getTaskIcon(timer.task);
+        isDangerTask = timer.task && (timer.task.includes('異常処置') || timer.task.includes('不具合対応'));
+        const ms = now - new Date(timer.startTime);
+        const s  = Math.floor(ms/1000);
+        const mm = Math.floor(s/60);
+        const hh = Math.floor(mm/60);
+        elapsedStr =
+          String(hh).padStart(2,'0')+':' +
+          String(mm%60).padStart(2,'0')+':' +
+          String(s%60).padStart(2,'0');
+      }
+
+      return `
+        <div class="member-status-item">
+          <div class="ms-left">
+            <div class="ms-name-row">
+              <span class="status-dot ${isDangerTask?'running danger-blink':(running?'running':'idle')}"></span>
+              <span>${m}</span>
+              <span class="ms-state ${isDangerTask?'running danger':(running?'running':'idle')}">
+                ${running?'稼働中':'待機中'}
+              </span>
+            </div>
+            <div class="ms-task">${taskIcon} ${taskLabel}</div>
+          </div>
+          <div class="ms-right">
+            <div style="font-size:10px;color:#64748b;">経過</div>
+            <div>${elapsedStr}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ---- Today per member（★全担当者で縮尺を共通化）----
+  function renderTodayPerMember(){
+    const el = document.getElementById('todayPerMember');
+    if (!el) return;
+    const todayStr = formatDate(new Date());
+    const todayRecs = records.filter(r=>r.date===todayStr);
+    if (!members.length){
+      el.innerHTML = '<div style="font-size:11px;color:#9ca3af;">担当者が登録されていません</div>';
+      return;
+    }
+
+    if (!todayRecs.length){
+      el.innerHTML = '<div style="font-size:11px;color:#9ca3af;">本日の記録がありません</div>';
+      return;
+    }
+
+    // メンバーごとにタスク合計
+    const perMember = {};
+    todayRecs.forEach(r=>{
+      if (!perMember[r.member]) perMember[r.member] = {};
+      const h = calcHours(r.startTime,r.endTime);
+      perMember[r.member][r.task] =
+        (perMember[r.member][r.task]||0) + h;
+    });
+
+    // ★ 全担当者・全タスクの中での最大値（globalMax）を算出し、縮尺を統一
+    const allVals = Object.values(perMember).flatMap(obj => Object.values(obj));
+    const globalMax = allVals.length ? Math.max(...allVals) : 1;
+
+    el.innerHTML = members.map(m=>{
+      const data = perMember[m];
+      if (!data){
+        return `
+          <div class="per-member-block">
+            <div class="per-member-header">
+              <div class="per-member-name">👤 ${m}</div>
+              <div class="per-member-total">記録なし</div>
+            </div>
+          </div>`;
+      }
+      const entries = Object.entries(data).sort((a,b)=>b[1]-a[1]);
+      const total = entries.reduce((s,[,h])=>s+h,0);
+
+      return `
+        <div class="per-member-block">
+          <div class="per-member-header">
+            <div class="per-member-name">👤 ${m}</div>
+            <div class="per-member-total">合計 ${total.toFixed(1)}h</div>
+          </div>
+          ${entries.map(([task,h])=>{
+            const color = getTaskColor(task);
+            const ratio = globalMax > 0 ? (h/globalMax)*100 : 0;  // ★ここで共通縮尺
+            return `
+              <div class="task-row">
+                <div class="task-color-dot" style="background:${color};"></div>
+                <div class="task-label" title="${task}">${getTaskIcon(task)} ${task}</div>
+                <div class="task-bar-wrap">
+                  <div class="task-bar" style="width:${Math.max(8,ratio)}%;background:${color};"></div>
+                </div>
+                <div class="task-val">${h.toFixed(1)}h</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ---- Task progress & alerts ----
+  function renderTaskProgressAndAlerts(){
+    const alertsEl = document.getElementById('taskAlerts');
+    const listEl   = document.getElementById('taskProgressList');
+    if (!alertsEl || !listEl) return;
+
+    if (!taskList.length){
+      alertsEl.innerHTML = '';
+      listEl.innerHTML = '<div style="font-size:11px;color:#9ca3af;">タスク管理データがありません</div>';
+      return;
+    }
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const overdue = [];
+    const warning = [];
+
+    taskList.filter(t=>!t.completed && t.deadline).forEach(t=>{
+      const dl = new Date(t.deadline);
+      dl.setHours(0,0,0,0);
+      const diff = Math.ceil((dl - today)/86400000);
+      if (diff < 0){
+        overdue.push({...t,days:Math.abs(diff)});
+      }else if (diff <= 3){
+        warning.push({...t,days:diff});
+      }
+    });
+
+    let alertHtml = '';
+    if (overdue.length){
+      alertHtml += `<div class="alert-block danger">
+        <div class="alert-title">🚨 期限超過タスク</div>
+        ${overdue.map(t=>`<div class="alert-item">・${t.name}（${t.assignee||'担当未設定'}）: ${t.days}日超過</div>`).join('')}
+      </div>`;
+    }
+    if (warning.length){
+      alertHtml += `<div class="alert-block warning">
+        <div class="alert-title">⚠️ 期限間近タスク</div>
+        ${warning.map(t=>{
+          const label = t.days===0?'今日が期限':`あと${t.days}日`;
+          return `<div class="alert-item">・${t.name}（${t.assignee||'担当未設定'}）: ${label}</div>`;
+        }).join('')}
+      </div>`;
+    }
+    alertsEl.innerHTML = alertHtml;
+
+    // 進捗カード
+    const sorted = [...taskList].sort((a,b)=>{
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return new Date(a.deadline) - new Date(b.deadline);
+    });
+
+    listEl.innerHTML = sorted.map(t=>{
+      const prog = t.progress || 0;
+      let barClass = 'low';
+      if (prog >= 70) barClass = 'high';
+      else if (prog >= 30) barClass = 'mid';
+
+      let deadlineStr = '期限: -';
+      if (t.deadline){
+        const dl = new Date(t.deadline);
+        deadlineStr = `期限: ${dl.getMonth()+1}/${dl.getDate()}`;
+      }
+      const statusTag = t.completed ? '完了' : '進行中';
+
+      return `
+        <div class="task-progress-item">
+          <div>
+            <div class="tp-name">${t.name}</div>
+            <div class="tp-meta">担当: ${t.assignee||'未設定'} / 状態: ${statusTag}</div>
+          </div>
+          <div class="tp-progress-wrap">
+            <div class="tp-bar-bg">
+              <div class="tp-bar ${barClass}" style="width:${Math.min(100,Math.max(0,prog))}%;"></div>
+            </div>
+            <div class="tp-perc">${prog}%</div>
+            <div class="tp-deadline">${deadlineStr}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // ===== 起動 =====
+  document.addEventListener('DOMContentLoaded',()=>{
+    updateClock();
+    setInterval(updateClock,1000);
+    const today = formatDate(new Date());
+    const gd = document.getElementById('ganttDate');
+    if (gd) gd.value = today;
+    ganttDate = today;
+    initFirebase();
+  });
+</script>
+</body>
+</html>
