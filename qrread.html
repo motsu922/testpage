@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>QR照合システム</title>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:#0a0a0a !important;
+      min-height:100vh;
+      color:#e0e0e0;
+    }
+    html{ background:#0a0a0a !important; }
+
+    /* タブナビ */
+    .tab-nav{
+      display:flex;
+      background:#1a1a1a;
+      position:sticky;
+      top:0;
+      z-index:100;
+      border-bottom:1px solid #333;
+    }
+    .tab-btn{
+      flex:1;
+      padding:16px;
+      background:transparent;
+      border:none;
+      color:rgba(255,255,255,0.5);
+      font-size:15px;
+      font-weight:600;
+      cursor:pointer;
+      transition:all .2s;
+      border-bottom:3px solid transparent;
+    }
+    .tab-btn.active{
+      color:#4fc3f7;
+      background:rgba(79,195,247,0.1);
+      border-bottom-color:#4fc3f7;
+    }
+    .tab-content{ display:none; background:#0a0a0a; }
+    .tab-content.active{ display:block; background:#0a0a0a; }
+
+    /* Firebase状態 */
+    .firebase-status{
+      padding:8px 16px;
+      font-size:12px;
+      text-align:center;
+    }
+    .firebase-status.connected{ background:#1b3d1b; color:#4caf50; }
+    .firebase-status.disconnected{ background:#3d2e1b; color:#ff9800; }
+    .firebase-status.error{ background:#3d1b1b; color:#f44336; }
+
+    /* ========== 照合 ========== */
+    .scan-screen{
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      min-height:calc(100vh - 100px);
+      padding:20px;
+      background:#0a0a0a;
+      position:relative; /* 暗転レイヤ用 */
+    }
+
+    /* STEP2 暗転レイヤ */
+    .dim-layer{
+      position:absolute;
+      inset:0;
+      background:rgba(0,0,0,0.55);
+      display:none;
+      z-index:1;
+      pointer-events:none; /* 見た目だけ。stopボタン等はそのまま押せる */
+    }
+    .dim-layer.show{ display:block; }
+
+    .scan-box{
+      width:100%;
+      max-width:400px;
+      background:#1a1a1a;
+      border-radius:20px;
+      padding:30px;
+      box-shadow:0 4px 20px rgba(0,0,0,0.5);
+      text-align:center;
+      border:1px solid #333;
+      position:relative;
+      z-index:2; /* 暗転より前 */
+    }
+    .scan-step{
+      font-size:16px;
+      color:#888;
+      margin-bottom:8px;
+    }
+    .scan-message{
+      font-size:26px;
+      font-weight:700;
+      color:#4fc3f7;
+      margin-bottom:24px;
+    }
+    .scan-message.step2{ color:#ffb74d; }
+
+    .scan-input-area{ position:relative; margin-bottom:20px; }
+    .scan-input{
+      width:100%;
+      padding:20px;
+      font-size:24px;
+      text-align:center;
+      border:3px solid #4fc3f7;
+      border-radius:12px;
+      outline:none;
+      font-family:monospace;
+      ime-mode:disabled;
+      -webkit-ime-mode:disabled;
+      background:#0a0a0a;
+      color:#fff;
+    }
+    .scan-input:focus{
+      border-color:#00c853;
+      box-shadow:0 0 0 4px rgba(0,200,83,0.3);
+    }
+    .scan-input.step2{ border-color:#ffb74d; }
+    .scan-input.step2:focus{
+      border-color:#ffb74d;
+      box-shadow:0 0 0 4px rgba(255,183,77,0.3);
+    }
+    .input-hint{ font-size:14px; color:#666; margin-top:10px; }
+    .scanner-icon{ font-size:64px; margin-bottom:20px; }
+
+    .stop-btn{
+      margin-top:20px;
+      padding:14px 40px;
+      background:#d32f2f;
+      color:white;
+      border:none;
+      border-radius:12px;
+      font-size:16px;
+      font-weight:700;
+      cursor:pointer;
+      position:relative;
+      z-index:2; /* 暗転より前 */
+    }
+
+    /* ログ */
+    .log-card{
+      background:#1a1a1a;
+      border-radius:12px;
+      padding:16px;
+      margin-top:20px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.3);
+      border:1px solid #333;
+      width:100%;
+      max-width:400px;
+    }
+    .log-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:10px;
+    }
+    .log-title{ font-size:14px; font-weight:600; color:#e0e0e0; }
+    .log-count{
+      font-size:11px;
+      color:#888;
+      background:#2a2a2a;
+      padding:3px 8px;
+      border-radius:8px;
+    }
+    .log-list{ max-height:200px; overflow-y:auto; }
+    .log-item{
+      padding:8px 10px;
+      border-radius:6px;
+      margin-bottom:4px;
+      font-size:11px;
+    }
+    .log-item.ok{ background:#1b3d1b; border-left:3px solid #4caf50; }
+    .log-item.ng{ background:#3d1b1b; border-left:3px solid #f44336; }
+    .log-time{ color:#888; font-size:10px; }
+    .log-result{ font-weight:600; margin:2px 0; }
+    .log-item.ok .log-result{ color:#4caf50; }
+    .log-item.ng .log-result{ color:#f44336; }
+    .log-values{ font-family:monospace; font-size:10px; color:#aaa; }
+    .no-log{ text-align:center; color:#666; padding:16px; font-size:12px; }
+
+    .log-actions{ display:flex; gap:8px; margin-top:10px; }
+    .log-btn{
+      flex:1;
+      padding:8px;
+      background:#2a2a2a;
+      border:1px solid #444;
+      border-radius:6px;
+      font-size:12px;
+      color:#aaa;
+      cursor:pointer;
+    }
+    .log-btn:hover{ background:#333; }
+
+    /* ========== 設定 ========== */
+    .container{ padding:16px; max-width:500px; margin:0 auto; background:#0a0a0a; }
+    .settings-locked{ text-align:center; padding:40px 20px; }
+    .lock-icon{ font-size:64px; margin-bottom:16px; }
+    .lock-text{ font-size:16px; color:#888; margin-bottom:20px; }
+    .password-input-group{ display:flex; gap:8px; max-width:300px; margin:0 auto; }
+    .password-input-group input{
+      flex:1; padding:12px; border:2px solid #444; border-radius:8px;
+      font-size:16px; background:#1a1a1a; color:#fff;
+    }
+    .password-input-group button{
+      padding:12px 20px; background:#4fc3f7; color:#000; border:none;
+      border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;
+    }
+    .settings-unlocked{ display:none; }
+    .settings-card{
+      background:#1a1a1a;
+      border-radius:12px;
+      padding:16px;
+      margin-bottom:16px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.3);
+      border:1px solid #333;
+    }
+    .settings-card-title{
+      font-size:15px; font-weight:700; color:#4fc3f7;
+      margin-bottom:14px; padding-bottom:10px; border-bottom:2px solid #333;
+    }
+    .setting-row{
+      display:flex; justify-content:space-between; align-items:center;
+      padding:12px 0; border-bottom:1px solid #333;
+    }
+    .setting-row:last-child{ border-bottom:none; }
+    .setting-label{ font-size:14px; color:#e0e0e0; }
+
+    .setting-input{
+      width:100%; padding:8px; border:2px solid #444; border-radius:6px;
+      font-size:14px; margin-top:8px; background:#0a0a0a; color:#fff;
+    }
+    .setting-input-wide{
+      width:100%; padding:10px; border:2px solid #444; border-radius:6px;
+      font-size:12px; font-family:monospace; margin-top:8px;
+      background:#0a0a0a; color:#fff;
+    }
+
+    .toggle-switch{
+      width:50px; height:28px; background:#444; border-radius:14px;
+      position:relative; cursor:pointer; transition:background .3s;
+    }
+    .toggle-switch.on{ background:#00c853; }
+    .toggle-switch::after{
+      content:''; position:absolute; width:24px; height:24px; background:#fff;
+      border-radius:50%; top:2px; left:2px; transition:left .3s;
+      box-shadow:0 2px 4px rgba(0,0,0,0.3);
+    }
+    .toggle-switch.on::after{ left:24px; }
+
+    .save-btn{
+      width:100%; padding:16px; background:#00c853; color:#000; border:none;
+      border-radius:12px; font-size:18px; font-weight:700; cursor:pointer;
+      margin-top:8px;
+    }
+    .lock-settings-btn{
+      width:100%; padding:12px; background:#2a2a2a; color:#888;
+      border:2px solid #444; border-radius:10px; font-size:14px;
+      cursor:pointer; margin-top:12px;
+    }
+
+    /* ========== 結果オーバーレイ ========== */
+    .result-overlay{
+      position:fixed; top:0; left:0; width:100%; height:100%;
+      display:none; flex-direction:column; justify-content:center; align-items:center;
+      z-index:1000;
+    }
+    .result-overlay.show{ display:flex; animation:fadeIn .15s ease; }
+    @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+    .result-overlay.ok{ background:rgba(0,100,0,0.97); }
+    .result-overlay.ng{ background:rgba(139,0,0,0.97); }
+
+    .result-symbol{
+      font-size:min(50vw,50vh);
+      font-weight:900;
+      color:#fff;
+      text-shadow:0 4px 20px rgba(0,0,0,0.5);
+      line-height:1;
+    }
+    .result-text{ font-size:32px; color:#fff; margin-top:10px; font-weight:700; }
+    .result-detail{
+      margin-top:20px; padding:16px 24px; background:rgba(255,255,255,0.1);
+      border-radius:12px; text-align:center;
+    }
+    .result-detail p{ color:#fff; font-size:14px; margin:4px 0; font-family:monospace; }
+    .result-detail .label{ font-size:11px; opacity:0.8; font-family:inherit; }
+    .result-btn{
+      margin-top:24px; padding:16px 50px; background:#fff; border:none;
+      border-radius:10px; font-size:18px; font-weight:700; cursor:pointer;
+    }
+    .result-overlay.ok .result-btn{ color:#006400; }
+    .result-overlay.ng .result-btn{ color:#8b0000; }
+
+    .ng-locked .result-symbol{ animation:shake .4s ease infinite; }
+    @keyframes shake{
+      0%,100%{transform:translateX(0)}
+      25%{transform:translateX(-8px)}
+      75%{transform:translateX(8px)}
+    }
+
+    .admin-area{
+      margin-top:20px; padding:16px; background:rgba(255,255,255,0.1);
+      border-radius:12px; text-align:center;
+    }
+    .admin-area p{ color:#fff; font-size:13px; margin-bottom:10px; }
+    .admin-input{
+      padding:12px; border:none; border-radius:8px; font-size:16px; width:200px;
+      text-align:center; background:rgba(255,255,255,0.9); color:#000;
+    }
+
+    /* scroll */
+    ::-webkit-scrollbar{ width:6px; }
+    ::-webkit-scrollbar-track{ background:#1a1a1a; }
+    ::-webkit-scrollbar-thumb{ background:#444; border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover{ background:#555; }
+  </style>
+</head>
+
+<body>
+  <!-- タブナビ -->
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('scan')">📷 照合</button>
+    <button class="tab-btn" onclick="switchTab('settings')">⚙️ 設定</button>
+  </div>
+
+  <!-- Firebase接続状態 -->
+  <div class="firebase-status disconnected" id="firebaseStatus">🔌 Firebase未接続</div>
+
+  <!-- ========== 照合タブ ========== -->
+  <div class="tab-content active" id="tab-scan">
+    <!-- スキャン画面（スタートボタン無し：起動＝即スキャン） -->
+    <div class="scan-screen" id="scanScreen" onclick="focusScanInput()">
+      <div class="dim-layer" id="dimLayer"></div>
+
+      <div class="scan-box">
+        <div class="scanner-icon">📟</div>
+        <div class="scan-step" id="scanStep">STEP 1 / 2</div>
+        <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
+
+        <div class="scan-input-area">
+          <input type="text" class="scan-input" id="scanInput"
+                 placeholder="QRリーダーで読み取り"
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                 inputmode="latin"
+                 style="ime-mode: disabled;">
+          <div class="input-hint">QRリーダーでスキャンしてください</div>
+        </div>
+      </div>
+
+      <button class="stop-btn" onclick="stopAndReset()">⏹️ リセット</button>
+
+      <!-- ログ（常時表示） -->
+      <div class="log-card">
+        <div class="log-header">
+          <div class="log-title">📝 照合履歴</div>
+          <div class="log-count" id="logCount">0件</div>
+        </div>
+        <div class="log-list" id="logList">
+          <div class="no-log">履歴はありません</div>
+        </div>
+        <div class="log-actions">
+          <button class="log-btn" onclick="clearLog()">🗑️ クリア</button>
+          <button class="log-btn" onclick="exportLog()">📥 出力</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 設定タブ ========== -->
+  <div class="tab-content" id="tab-settings">
+    <div class="container">
+      <!-- ロック画面 -->
+      <div class="settings-locked" id="settingsLocked">
+        <div class="lock-icon">🔒</div>
+        <div class="lock-text">設定を変更するには<br>管理者パスワードを入力してください</div>
+        <div class="password-input-group">
+          <input type="password" id="unlockPassword" placeholder="パスワード">
+          <button onclick="unlockSettings()">解除</button>
+        </div>
+      </div>
+
+      <!-- 設定画面 -->
+      <div class="settings-unlocked" id="settingsUnlocked">
+        <!-- Firebase設定 -->
+        <div class="settings-card">
+          <div class="settings-card-title">🔥 Firebase設定</div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="setting-label">API Key</span>
+            <input type="text" class="setting-input-wide" id="fbApiKey" placeholder="AIza...">
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="setting-label">Auth Domain</span>
+            <input type="text" class="setting-input-wide" id="fbAuthDomain" placeholder="your-app.firebaseapp.com">
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="setting-label">Database URL</span>
+            <input type="text" class="setting-input-wide" id="fbDatabaseURL" placeholder="https://your-app-default-rtdb.firebaseio.com">
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="setting-label">Project ID</span>
+            <input type="text" class="setting-input-wide" id="fbProjectId" placeholder="your-project-id">
+          </div>
+
+          <button class="log-btn" style="width: 100%; margin-top: 12px;" onclick="testFirebaseConnection()">🔌 接続テスト</button>
+        </div>
+
+        <!-- 品番抽出ルール -->
+        <div class="settings-card">
+          <div class="settings-card-title">📐 品番抽出ルール設定</div>
+          <p style="font-size:12px;color:#666;margin-bottom:12px;">
+            2回目QRの全体文字数に応じて、品番の開始位置と文字数を設定します。<br>
+            1回目QRの中にこの品番が含まれていれば一致(○)となります。
+          </p>
+
+          <div id="extractRulesContainer"></div>
+          <button class="log-btn" style="width: 100%; margin-top: 12px;" onclick="addExtractRule()">➕ ルールを追加</button>
+        </div>
+
+        <!-- 管理者設定 -->
+        <div class="settings-card">
+          <div class="settings-card-title">🔐 管理者設定</div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="setting-label">管理者パスワード</span>
+            <input type="password" class="setting-input" id="adminPassword" placeholder="新しいパスワード" style="width: 100%;">
+          </div>
+
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="setting-label">管理者QR（エラー解除用）</span>
+            <input type="text" class="setting-input" id="adminQR" placeholder="QRの値" style="width: 100%;">
+          </div>
+        </div>
+
+        <!-- その他 -->
+        <div class="settings-card">
+          <div class="settings-card-title">🔊 その他</div>
+
+          <div class="setting-row">
+            <span class="setting-label">照合音を鳴らす</span>
+            <div class="toggle-switch on" id="soundToggle" onclick="toggleSound()"></div>
+          </div>
+
+          <div class="setting-row">
+            <span class="setting-label">バイブレーション</span>
+            <div class="toggle-switch on" id="vibrationToggle" onclick="toggleVibration()"></div>
+          </div>
+
+          <div class="setting-row">
+            <span class="setting-label">全角→半角変換</span>
+            <div class="toggle-switch on" id="normalizeToggle" onclick="toggleNormalize()"></div>
+          </div>
+        </div>
+
+        <button class="save-btn" onclick="saveAllSettings()">💾 設定を保存</button>
+        <button class="lock-settings-btn" onclick="lockSettings()">🔒 設定をロック</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 結果オーバーレイ -->
+  <div class="result-overlay" id="resultOverlay">
+    <div class="result-symbol" id="resultSymbol">○</div>
+    <div class="result-text" id="resultText">一致</div>
+    <div class="result-detail" id="resultDetail"></div>
+    <button class="result-btn" id="okBtn" onclick="closeAndContinue()">次の照合へ</button>
+
+    <div class="admin-area" id="adminArea" style="display:none;">
+      <p>⚠️ 管理者QRで解除してください</p>
+      <input type="text" class="admin-input" id="adminInput"
+             placeholder="管理者QRを読み取り"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+             inputmode="latin"
+             style="ime-mode: disabled;">
+    </div>
+  </div>
+
+  <script>
+    // ========== 状態 ==========
+    let currentStep = 0; // 0:停止 1:STEP1待ち 2:STEP2待ち
+    let value1 = '';
+    let value2 = '';
+    let isNGLocked = false;
+
+    let scanLog = [];
+    let audioCtx = null;
+
+    let firebaseApp = null;
+    let database = null;
+    let logsRef = null;
+
+    let scanFocusTimer = null;
+
+    // 設定
+    let settings = {
+      adminPassword: 'admin',
+      adminQR: 'ADMIN123',
+      soundEnabled: true,
+      vibrationEnabled: true,
+      normalizeToHalfWidth: true,
+      firebase: { apiKey:'', authDomain:'', databaseURL:'', projectId:'' },
+      extractRules: [
+        { totalLength: 10, startPos: 1, charCount: 5 },
+        { totalLength: 15, startPos: 3, charCount: 6 },
+        { totalLength: 20, startPos: 5, charCount: 8 }
+      ]
+    };
+
+    // ========== 全角→半角 ==========
+    function toHalfWidth(str){
+      if (!str) return '';
+      return str
+        .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+        .replace(/\u3000/g, ' ');
+    }
+    function normalizeInput(str){
+      if (!str) return '';
+      return settings.normalizeToHalfWidth ? toHalfWidth(str) : str;
+    }
+
+    // ========== 初期化 ==========
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSettings();
+      loadLog();
+      setupInputListeners();
+      initFirebase();
+
+      // ⭐ 起動＝即スキャン（スタートボタン無し）
+      startScanning();
+
+      // iPhone対策：表示が落ち着いた後に再フォーカス
+      setTimeout(() => focusScanInput(), 200);
+    });
+
+    // ========== フォーカス制御 ==========
+    function focusScanInput(){
+      const input = document.getElementById('scanInput');
+      if (input) input.focus();
+    }
+    function startScanFocusGuard(){
+      stopScanFocusGuard();
+      scanFocusTimer = setInterval(() => {
+        const overlayShown = document.getElementById('resultOverlay').classList.contains('show');
+        if (currentStep > 0 && !overlayShown){
+          const input = document.getElementById('scanInput');
+          if (input && document.activeElement !== input){
+            input.focus();
+          }
+        }
+      }, 1000);
+    }
+    function stopScanFocusGuard(){
+      if (scanFocusTimer){
+        clearInterval(scanFocusTimer);
+        scanFocusTimer = null;
+      }
+    }
+
+    // ========== Firebase ==========
+    function initFirebase(){
+      if (!settings.firebase.apiKey || !settings.firebase.databaseURL){
+        updateFirebaseStatus('disconnected','🔌 Firebase未設定');
+        return;
+      }
+      try{
+        const firebaseConfig = {
+          apiKey: settings.firebase.apiKey,
+          authDomain: settings.firebase.authDomain,
+          databaseURL: settings.firebase.databaseURL,
+          projectId: settings.firebase.projectId
+        };
+
+        if (firebaseApp){
+          firebaseApp.delete();
+        }
+
+        firebaseApp = firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+        logsRef = database.ref('qr_match_logs');
+
+        database.ref('.info/connected').on('value', (snapshot) => {
+          if (snapshot.val() === true){
+            updateFirebaseStatus('connected','🟢 Firebase接続中');
+            setupRealtimeSync();
+          }else{
+            updateFirebaseStatus('disconnected','🔌 Firebase未接続');
+          }
+        });
+      }catch(err){
+        console.error('Firebase初期化エラー:', err);
+        updateFirebaseStatus('error','❌ Firebase接続エラー');
+      }
+    }
+
+    function setupRealtimeSync(){
+      if (!logsRef) return;
+      logsRef.orderByChild('timestamp').limitToLast(100).on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data){
+          scanLog = Object.entries(data)
+            .map(([key,val]) => ({...val, firebaseKey:key}))
+            .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+          renderLog();
+        }
+      });
+    }
+
+    function updateFirebaseStatus(status, message){
+      const el = document.getElementById('firebaseStatus');
+      el.className = 'firebase-status ' + status;
+      el.textContent = message;
+    }
+
+    function testFirebaseConnection(){
+      settings.firebase.apiKey = document.getElementById('fbApiKey').value.trim();
+      settings.firebase.authDomain = document.getElementById('fbAuthDomain').value.trim();
+      settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
+      settings.firebase.projectId = document.getElementById('fbProjectId').value.trim();
+      initFirebase();
+      alert('接続テストを実行しました。上部ステータスを確認してください。');
+    }
+
+    function saveLogToFirebase(logEntry){
+      if (!logsRef) return;
+      logsRef.push(logEntry).catch(err => console.error('Firebase保存エラー:', err));
+    }
+
+    function clearFirebaseLogs(){
+      if (!logsRef) return;
+      logsRef.remove().catch(err => console.error('Firebaseクリアエラー:', err));
+    }
+
+    // ========== 入力リスナー（Enter無しでも確定） ==========
+    function setupQRLikeInput(el, onCommit){
+      if (!el) return;
+      let timer = null;
+      const DELAY = 120;
+
+      el.addEventListener('input', () => {
+        if (timer) clearTimeout(timer);
+        if (!el.value) return;
+
+        timer = setTimeout(() => {
+          let v = normalizeInput(el.value.trim());
+          if (v) onCommit(v);
+          el.value = '';
+        }, DELAY);
+      });
+
+      el.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter'){
+          e.preventDefault();
+          let v = normalizeInput(el.value.trim());
+          if (v) onCommit(v);
+          el.value = '';
+        }
+      });
+    }
+
+    function setupInputListeners(){
+      const scanInput  = document.getElementById('scanInput');
+      const adminInput = document.getElementById('adminInput');
+      setupQRLikeInput(scanInput, handleScan);
+      setupQRLikeInput(adminInput, handleAdminScan);
+    }
+
+    // ========== 音・バイブ ==========
+    function initAudio(){
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    /**
+     * 音の種類:
+     *  - step1: 1回目読み取り完了
+     *  - step2: 2回目読み取り完了
+     *  - ok: 一致
+     *  - ng: 不一致（この時だけ長バイブ）
+     */
+    function playSound(type){
+      if (!settings.soundEnabled) return;
+      initAudio();
+
+      if (audioCtx.state === 'suspended'){
+        audioCtx.resume();
+      }
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      // デフォルト
+      gain.gain.value = 0.45;
+
+      if (type === 'step1'){
+        osc.type = 'sine';
+        osc.frequency.value = 1050;
+        osc.start();
+        setTimeout(() => osc.stop(), 90);
+        // バイブ無し（要望）
+      }
+      else if (type === 'step2'){
+        osc.type = 'sine';
+        osc.frequency.value = 1450;
+        osc.start();
+        setTimeout(() => osc.stop(), 110);
+        // バイブ無し（要望）
+      }
+      else if (type === 'ok'){
+        osc.type = 'sine';
+        osc.frequency.value = 1200;
+        osc.start();
+        setTimeout(() => osc.frequency.value = 1550, 90);
+        setTimeout(() => osc.stop(), 200);
+        // バイブ無し（要望：NGのみ長バイブ）
+      }
+      else if (type === 'ng'){
+        osc.type = 'square';
+        osc.frequency.value = 260;
+        gain.gain.value = 0.38;
+        osc.start();
+        setTimeout(() => osc.stop(), 450);
+
+        // ✅ NG時だけ長バイブ
+        vibrateLongOnly();
+      }
+    }
+
+    function vibrateLongOnly(){
+      if (!settings.vibrationEnabled) return;
+      if (navigator.vibrate){
+        navigator.vibrate([800]); // 長め
+      }
+    }
+
+    function toggleSound(){
+      settings.soundEnabled = !settings.soundEnabled;
+      document.getElementById('soundToggle').className =
+        settings.soundEnabled ? 'toggle-switch on' : 'toggle-switch';
+    }
+    function toggleVibration(){
+      settings.vibrationEnabled = !settings.vibrationEnabled;
+      document.getElementById('vibrationToggle').className =
+        settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
+    }
+    function toggleNormalize(){
+      const el = document.getElementById('normalizeToggle');
+      el.classList.toggle('on');
+      settings.normalizeToHalfWidth = el.classList.contains('on');
+    }
+
+    // ========== スキャン処理 ==========
+    function handleScan(decoded){
+      if (currentStep === 1){
+        value1 = decoded;
+        playSound('step1');    // ✅ STEP1音
+        currentStep = 2;
+        updateScanUI();
+        focusScanInput();
+      }
+      else if (currentStep === 2){
+        value2 = decoded;
+        playSound('step2');    // ✅ STEP2音
+        doMatch();
+      }
+    }
+
+    function handleAdminScan(value){
+      if (value === settings.adminQR){
+        isNGLocked = false;
+        playSound('ok');
+        document.getElementById('resultOverlay').classList.remove('show');
+        // 解除後は即再開
+        startScanning();
+        alert('✅ エラー解除しました');
+      }else{
+        playSound('ng');
+        alert('❌ 管理者QRが一致しません');
+        document.getElementById('adminInput').focus();
+      }
+    }
+
+    // ========== 品番抽出 ==========
+    function extractPartNumber(qr2){
+      const totalLen = qr2.length;
+      const rule = settings.extractRules.find(r => r.totalLength === totalLen);
+      if (rule){
+        const start = rule.startPos - 1;
+        return qr2.substring(start, start + rule.charCount);
+      }
+      return qr2;
+    }
+
+    // ========== 照合 ==========
+    function doMatch(){
+      const partNumber = extractPartNumber(value2);
+      const isOK = value1.includes(partNumber);
+
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        qr1: value1,
+        qr2: value2,
+        partNumber,
+        qr2Length: value2.length,
+        result: isOK ? 'OK' : 'NG'
+      };
+
+      scanLog.unshift(logEntry);
+      if (scanLog.length > 100) scanLog.pop();
+      saveLog();
+      renderLog();
+      saveLogToFirebase(logEntry);
+
+      showResult(isOK, partNumber);
+    }
+
+    // ========== 結果表示 ==========
+    function showResult(isOK, partNumber){
+      const overlay = document.getElementById('resultOverlay');
+      const symbol  = document.getElementById('resultSymbol');
+      const text    = document.getElementById('resultText');
+      const detail  = document.getElementById('resultDetail');
+      const okBtn   = document.getElementById('okBtn');
+      const adminArea = document.getElementById('adminArea');
+
+      overlay.classList.add('show');
+
+      if (isOK){
+        overlay.className = 'result-overlay show ok';
+        symbol.textContent = '○';
+        text.textContent = '一致';
+        detail.innerHTML = `<p class="label">品番</p><p>${partNumber}</p>`;
+        okBtn.style.display = 'block';
+        adminArea.style.display = 'none';
+        playSound('ok');
+
+        // ★完全ノータッチ運用にしたい場合：自動で次へ
+        // setTimeout(() => closeAndContinue(), 450);
+
+      }else{
+        overlay.className = 'result-overlay show ng ng-locked';
+        symbol.textContent = '×';
+        text.textContent = '不一致';
+        detail.innerHTML = `
+          <p class="label">抽出した品番</p><p>${partNumber}</p>
+          <p class="label" style="margin-top:8px;">1回目QRに含まれていません</p>
+        `;
+        okBtn.style.display = 'none';
+        adminArea.style.display = 'block';
+        isNGLocked = true;
+        playSound('ng');
+        stopScanFocusGuard(); // NG時は管理者入力優先
+        setTimeout(() => document.getElementById('adminInput').focus(), 120);
+      }
+    }
+
+    function closeAndContinue(){
+      document.getElementById('resultOverlay').classList.remove('show');
+      setTimeout(() => startScanning(), 120);
+    }
+
+    // ========== UI ==========
+    function setDimLayer(on){
+      const dim = document.getElementById('dimLayer');
+      if (!dim) return;
+      dim.classList.toggle('show', !!on);
+    }
+
+    function updateScanUI(){
+      const step = document.getElementById('scanStep');
+      const message = document.getElementById('scanMessage');
+      const input = document.getElementById('scanInput');
+
+      if (currentStep === 1){
+        step.textContent = 'STEP 1 / 2';
+        message.textContent = '1回目を読み取ってください';
+        message.className = 'scan-message';
+        input.className = 'scan-input';
+        input.placeholder = 'QRリーダーで読み取り';
+        setDimLayer(false); // ✅ 暗転OFF
+      }
+      else if (currentStep === 2){
+        step.textContent = 'STEP 2 / 2';
+        message.textContent = '2回目を読み取ってください';
+        message.className = 'scan-message step2';
+        input.className = 'scan-input step2';
+        input.placeholder = 'QRリーダーで読み取り';
+        setDimLayer(true); // ✅ STEP2待ち中は暗転
+      }
+    }
+
+    // ========== スキャン開始・停止 ==========
+    function startScanning(){
+      if (isNGLocked){
+        showNGOverlay();
+        return;
+      }
+
+      value1 = '';
+      value2 = '';
+      currentStep = 1;
+
+      updateScanUI();
+      focusScanInput();
+      startScanFocusGuard();
+    }
+
+    function stopAndReset(){
+      // 現場向け：停止ではなく「STEP1へ戻す」
+      isNGLocked = false;
+      document.getElementById('resultOverlay').classList.remove('show');
+
+      value1 = '';
+      value2 = '';
+      currentStep = 1;
+
+      updateScanUI();
+      focusScanInput();
+      startScanFocusGuard();
+    }
+
+    function showNGOverlay(){
+      const overlay = document.getElementById('resultOverlay');
+      overlay.className = 'result-overlay show ng ng-locked';
+      document.getElementById('resultSymbol').textContent = '×';
+      document.getElementById('resultText').textContent = 'エラー状態';
+      document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
+      document.getElementById('okBtn').style.display = 'none';
+      document.getElementById('adminArea').style.display = 'block';
+      stopScanFocusGuard();
+      setTimeout(() => document.getElementById('adminInput').focus(), 120);
+    }
+
+    // ========== 設定ロック ==========
+    function unlockSettings(){
+      const input = document.getElementById('unlockPassword').value;
+      if (input === settings.adminPassword){
+        document.getElementById('settingsLocked').style.display = 'none';
+        document.getElementById('settingsUnlocked').style.display = 'block';
+        document.getElementById('unlockPassword').value = '';
+      }else{
+        alert('❌ パスワードが違います');
+      }
+    }
+    function lockSettings(){
+      document.getElementById('settingsLocked').style.display = 'block';
+      document.getElementById('settingsUnlocked').style.display = 'none';
+    }
+
+    // ========== タブ切替 ==========
+    function switchTab(tab){
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+      if (tab === 'scan'){
+        document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+        document.getElementById('tab-scan').classList.add('active');
+        setTimeout(() => focusScanInput(), 120);
+      }else{
+        document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+        document.getElementById('tab-settings').classList.add('active');
+        stopScanFocusGuard();
+      }
+    }
+
+    // ========== 設定保存/表示 ==========
+    function loadSettings(){
+      const saved = localStorage.getItem('qrMatchSettings_v6');
+      if (saved){
+        settings = { ...settings, ...JSON.parse(saved) };
+      }
+      applySettingsToForm();
+    }
+
+    function applySettingsToForm(){
+      document.getElementById('adminQR').value = settings.adminQR;
+
+      document.getElementById('soundToggle').className =
+        settings.soundEnabled ? 'toggle-switch on' : 'toggle-switch';
+
+      document.getElementById('vibrationToggle').className =
+        settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
+
+      const norm = document.getElementById('normalizeToggle');
+      norm.className = settings.normalizeToHalfWidth ? 'toggle-switch on' : 'toggle-switch';
+
+      document.getElementById('fbApiKey').value = settings.firebase.apiKey || '';
+      document.getElementById('fbAuthDomain').value = settings.firebase.authDomain || '';
+      document.getElementById('fbDatabaseURL').value = settings.firebase.databaseURL || '';
+      document.getElementById('fbProjectId').value = settings.firebase.projectId || '';
+
+      renderExtractRules();
+    }
+
+    function renderExtractRules(){
+      const container = document.getElementById('extractRulesContainer');
+      container.innerHTML = settings.extractRules.map((rule, index) => `
+        <div class="settings-card" style="background:#0a0a0a;border:1px solid #333;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-weight:700;color:#ffb74d;">ルール ${index+1}</div>
+            <button class="log-btn" style="flex:0 0 auto; padding:6px 10px; background:#f44336; color:#fff; border:none;"
+                    onclick="removeExtractRule(${index})">削除</button>
+          </div>
+          <div class="setting-row" style="border-bottom:none; flex-direction:column; align-items:flex-start;">
+            <label class="setting-label" style="color:#888;">全体文字数</label>
+            <input type="number" class="setting-input-wide rule-totalLength" value="${rule.totalLength}" min="1">
+          </div>
+          <div class="setting-row" style="border-bottom:none; flex-direction:column; align-items:flex-start;">
+            <label class="setting-label" style="color:#888;">開始位置</label>
+            <input type="number" class="setting-input-wide rule-startPos" value="${rule.startPos}" min="1">
+          </div>
+          <div class="setting-row" style="border-bottom:none; flex-direction:column; align-items:flex-start;">
+            <label class="setting-label" style="color:#888;">文字数</label>
+            <input type="number" class="setting-input-wide rule-charCount" value="${rule.charCount}" min="1">
+          </div>
+          <div style="font-size:11px;color:#666;margin-top:6px;">
+            例: 全体${rule.totalLength}文字 → ${rule.startPos}文字目から${rule.charCount}文字抽出
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function addExtractRule(){
+      settings.extractRules.push({ totalLength: 10, startPos: 1, charCount: 5 });
+      renderExtractRules();
+    }
+
+    function removeExtractRule(index){
+      if (settings.extractRules.length <= 1){
+        alert('最低1つのルールが必要です');
+        return;
+      }
+      settings.extractRules.splice(index, 1);
+      renderExtractRules();
+    }
+
+    function collectExtractRules(){
+      const totals = document.querySelectorAll('.rule-totalLength');
+      const starts = document.querySelectorAll('.rule-startPos');
+      const counts = document.querySelectorAll('.rule-charCount');
+
+      const rules = [];
+      totals.forEach((el, i) => {
+        rules.push({
+          totalLength: parseInt(el.value) || 10,
+          startPos: parseInt(starts[i].value) || 1,
+          charCount: parseInt(counts[i].value) || 5
+        });
+      });
+      return rules;
+    }
+
+    function saveAllSettings(){
+      const newPassword = document.getElementById('adminPassword').value.trim();
+      if (newPassword){
+        settings.adminPassword = newPassword;
+      }
+
+      settings.adminQR = document.getElementById('adminQR').value.trim() || 'ADMIN123';
+
+      settings.firebase.apiKey = document.getElementById('fbApiKey').value.trim();
+      settings.firebase.authDomain = document.getElementById('fbAuthDomain').value.trim();
+      settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
+      settings.firebase.projectId = document.getElementById('fbProjectId').value.trim();
+
+      settings.extractRules = collectExtractRules();
+
+      localStorage.setItem('qrMatchSettings_v6', JSON.stringify(settings));
+      initFirebase();
+
+      alert('✅ 設定を保存しました');
+      document.getElementById('adminPassword').value = '';
+    }
+
+    // ========== ログ ==========
+    function loadLog(){
+      const saved = localStorage.getItem('qrMatchLog_v6');
+      if (saved){
+        scanLog = JSON.parse(saved);
+        renderLog();
+      }
+    }
+    function saveLog(){
+      localStorage.setItem('qrMatchLog_v6', JSON.stringify(scanLog));
+    }
+    function renderLog(){
+      const container = document.getElementById('logList');
+      document.getElementById('logCount').textContent = scanLog.length + '件';
+
+      if (scanLog.length === 0){
+        container.innerHTML = '<div class="no-log">履歴はありません</div>';
+        return;
+      }
+
+      container.innerHTML = scanLog.slice(0, 50).map(l => {
+        const t = new Date(l.timestamp).toLocaleString('ja-JP');
+        return `
+          <div class="log-item ${l.result.toLowerCase()}">
+            <div class="log-time">${t}</div>
+            <div class="log-result">${l.result === 'OK' ? '✅ OK' : '❌ NG'}</div>
+            <div class="log-values">品番: ${l.partNumber} (${l.qr2Length}文字から抽出)</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function clearLog(){
+      if (confirm('履歴をクリアしますか？\n（Firebaseのデータも削除されます）')){
+        scanLog = [];
+        saveLog();
+        renderLog();
+        clearFirebaseLogs();
+      }
+    }
+
+    function exportLog(){
+      if (scanLog.length === 0) return alert('履歴がありません');
+      const headers = ['日時','結果','1回目QR','2回目QR','抽出品番','2回目文字数'];
+      const rows = scanLog.map(l => [
+        new Date(l.timestamp).toLocaleString('ja-JP'),
+        l.result, l.qr1, l.qr2, l.partNumber, l.qr2Length
+      ]);
+      const csv = [headers, ...rows]
+        .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
+        .join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], {type:'text/csv'}));
+      a.download = `QR照合履歴_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+  </script>
+</body>
+</html>
