@@ -406,6 +406,11 @@ let autoLogoutTimer = null;
 let defectTrendChart = null;       // 上の推移グラフ
 let defectBreakdownChart = null;   // 下の内訳グラフ
 
+// 入力チェック共有用
+let inputCheckUnsub = null;
+let sharedCheckState = {};   // key: cardKey, value: true/false
+let currentDateKeyForChecks = null;
+
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
@@ -424,6 +429,13 @@ try {
       document.getElementById('login-screen').classList.add('active');
       document.getElementById('user-info').style.display = 'none';
       clearAutoLogout();
+
+      // 入力チェックのサブスクも解除
+      if (inputCheckUnsub) {
+        inputCheckUnsub();
+        inputCheckUnsub = null;
+      }
+      sharedCheckState = {};
     }
   });
 } catch (error) {
@@ -533,19 +545,61 @@ function switchTab(tabId){
   }
 }
 
-/* ▼ チェックボックス状態保持関連 */
-function saveCheckState(productCode, date, checked) {
-  const key = `check_${currentUser ? currentUser.uid : 'guest'}_${date}_${productCode}`;
+/* ▼ 入力チェック（Firebase共有）関連 */
+
+// Firestoreから dateKey に紐づくチェック状態を購読
+function subscribeInputChecks(dateKey){
+  if (!dateKey) return;
+
+  if (inputCheckUnsub) {
+    inputCheckUnsub();
+    inputCheckUnsub = null;
+  }
+
+  currentDateKeyForChecks = dateKey;
+  sharedCheckState = {};
+
+  inputCheckUnsub = db.collection('inputChecks')
+    .where('dateKey', '==', dateKey)
+    .onSnapshot(snapshot => {
+      sharedCheckState = {};
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d.cardKey) {
+          sharedCheckState[d.cardKey] = !!d.checked;
+        }
+      });
+      // Firestore側の変更を反映
+      renderProductDefects();
+    });
+}
+
+// Firestoreへ保存
+function saveCheckState(cardKey, dateKey, checked) {
+  if (!dateKey || !cardKey) return;
+  const docId = `${dateKey}_${cardKey}`;
+  const ref = db.collection('inputChecks').doc(docId);
+
   if (checked) {
-    localStorage.setItem(key, 'true');
+    ref.set({
+      dateKey,
+      cardKey,
+      checked: true,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser ? currentUser.email : null
+    }, { merge: true }).catch(err => {
+      console.error('入力チェック保存エラー:', err);
+    });
   } else {
-    localStorage.removeItem(key);
+    ref.delete().catch(err => {
+      console.error('入力チェック削除エラー:', err);
+    });
   }
 }
 
-function getCheckState(productCode, date) {
-  const key = `check_${currentUser ? currentUser.uid : 'guest'}_${date}_${productCode}`;
-  return localStorage.getItem(key) === 'true';
+// メモリ上の状態を参照
+function getCheckState(cardKey, dateKey) {
+  return !!sharedCheckState[cardKey];
 }
 
 function clearAllChecks() {
@@ -556,9 +610,9 @@ function clearAllChecks() {
     
     const checkboxes = document.querySelectorAll('.product-complete-check');
     checkboxes.forEach(checkbox => {
-      const productCode = checkbox.dataset.product;
+      const cardKey = checkbox.dataset.product;
       checkbox.checked = false;
-      saveCheckState(productCode, dateKey, false);
+      saveCheckState(cardKey, dateKey, false);
       
       const card = checkbox.closest('.product-card');
       if (card) {
@@ -568,12 +622,12 @@ function clearAllChecks() {
   }
 }
 
-function handleCheckChange(checkbox, productCode) {
+function handleCheckChange(checkbox, cardKey) {
   const startDate = document.getElementById('filter-start-date').value;
   const endDate = document.getElementById('filter-end-date').value;
   const dateKey = `${startDate}_${endDate}`;
   
-  saveCheckState(productCode, dateKey, checkbox.checked);
+  saveCheckState(cardKey, dateKey, checkbox.checked);
   
   const card = checkbox.closest('.product-card');
   if (card) {
@@ -674,6 +728,11 @@ function applyFilters() {
   });
   
   updateStats();
+
+  // 入力チェック共有の購読を更新
+  const dateKey = `${startDate}_${endDate}`;
+  subscribeInputChecks(dateKey);
+
   renderTable();
   updateDefectTrend();
 }
@@ -827,9 +886,7 @@ function renderProductDefects() {
     return;
   }
 
-  const startDateStr = document.getElementById('filter-start-date').value;
-  const endDateStr = document.getElementById('filter-end-date').value;
-  const dateKey = `${startDateStr}_${endDateStr}`;
+  const dateKey = `${startDate}_${endDate}`;
   let html = '';
 
   sorted.forEach(([key, data]) => {
@@ -868,6 +925,8 @@ function renderProductDefects() {
       }
     }
 
+    const displayStart = new Date(startDate);
+    const displayEnd = new Date(endDate);
     const periodDays = Math.floor((displayEnd - displayStart) / (1000 * 60 * 60 * 24)) + 1;
     if (periodDays >= 7 && !alerts.some(a => a.level === 'high' || a.message.includes('上昇'))) {
       const midPoint = new Date(displayStart.getTime() + (displayEnd.getTime() - displayStart.getTime()) / 2);
@@ -1131,15 +1190,15 @@ function exportCSV() {
 function getMonthFromLot(lot){
   if(!lot) return 99;
   const s = lot.toString().trim();
-  if(s.length < 3) return 99;          // 3文字未満は判定不可
-  const ch = s[2].toUpperCase();      // 3桁目を見る
+  if(s.length < 3) return 99;
+  const ch = s[2].toUpperCase();
 
-  if(ch >= '1' && ch <= '9') return parseInt(ch, 10); // 1〜9 → 1〜9月
-  if(ch === '0' || ch === 'O') return 10;             // 0 / O → 10月
-  if(ch === 'N') return 11;                           // N → 11月
-  if(ch === 'D') return 12;                           // D → 12月
+  if(ch >= '1' && ch <= '9') return parseInt(ch, 10);
+  if(ch === '0' || ch === 'O') return 10;
+  if(ch === 'N') return 11;
+  if(ch === 'D') return 12;
 
-  return 99; // 判定できないものは後ろ
+  return 99;
 }
 
 /* ▼ 品番別 不良推移 ＋ 内訳（解析タブ用） */
@@ -1170,7 +1229,9 @@ function updateDefectTrend() {
   }
 
   const axisLabel = xAxisMode === 'date' ? '検査日' : 'ロットNo';
-  labelEl.textContent = `整理No：${productCode} ／ 期間：${startDate || '-'} ～ ${endDate || '-'} ／ 横軸：${axisLabel}`;
+  const fullTitle =
+    `整理No：${productCode} ／ 期間：${startDate || '-'} ～ ${endDate || '-'} ／ 横軸：${axisLabel}`;
+  labelEl.textContent = fullTitle;
 
   const bucketMap = new Map(); // key -> { inspection, defects, codes: Map }
 
@@ -1207,7 +1268,6 @@ function updateDefectTrend() {
 
   let labels;
   if (xAxisMode === 'lot') {
-    // ロット軸：3桁目→月でソート
     labels = Array.from(bucketMap.keys()).sort((a, b) => {
       const ma = getMonthFromLot(a);
       const mb = getMonthFromLot(b);
@@ -1215,7 +1275,6 @@ function updateDefectTrend() {
       return a.localeCompare(b, 'ja', { numeric:true, sensitivity:'base' });
     });
   } else {
-    // 検査日：日付文字列でソート（YYYY-MM-DD 前提）
     labels = Array.from(bucketMap.keys()).sort();
   }
 
@@ -1240,14 +1299,13 @@ function updateDefectTrend() {
     return b.inspection > 0 ? +(b.defects / b.inspection * 100).toFixed(2) : 0;
   });
 
-  // 不良率が高いところを強調
-  const HIGH_THRESHOLD = 3; // 3%以上を「高い」
-  const MED_THRESHOLD  = 1; // 1%以上を「中」
+  const HIGH_THRESHOLD = 3;
+  const MED_THRESHOLD  = 1;
 
   const barBgColors = defectRates.map(rate => {
-    if (rate >= HIGH_THRESHOLD) return 'rgba(220,38,38,0.7)';     // 赤系（高い）
-    if (rate >= MED_THRESHOLD)  return 'rgba(245,158,11,0.7)';    // オレンジ系（中）
-    return 'rgba(55,65,81,0.7)';                                  // グレー（低）
+    if (rate >= HIGH_THRESHOLD) return 'rgba(220,38,38,0.7)';
+    if (rate >= MED_THRESHOLD)  return 'rgba(245,158,11,0.7)';
+    return 'rgba(55,65,81,0.7)';
   });
   const barBorderColors = defectRates.map(rate => {
     if (rate >= HIGH_THRESHOLD) return 'rgba(185,28,28,1)';
@@ -1258,7 +1316,7 @@ function updateDefectTrend() {
   const lineColors = defectRates.map(rate => {
     if (rate >= HIGH_THRESHOLD) return 'rgba(220,38,38,1)';
     if (rate >= MED_THRESHOLD)  return 'rgba(245,158,11,1)';
-    return 'rgba(37,99,235,1)'; // 通常は青
+    return 'rgba(37,99,235,1)';
   });
 
   if (defectTrendChart) {
@@ -1310,7 +1368,7 @@ function updateDefectTrend() {
             text: axisLabel
           },
           ticks: {
-            autoSkip: !isLotAxis,          // ロットのときは autoSkip しない（全部表示）
+            autoSkip: !isLotAxis,
             maxRotation: isLotAxis ? 45 : 0,
             minRotation: isLotAxis ? 45 : 0
           }
@@ -1329,6 +1387,12 @@ function updateDefectTrend() {
       },
       plugins: {
         legend: { display: true },
+        title: {
+          display: true,
+          text: fullTitle,
+          font: { size: 16, weight: 'bold' },
+          padding: { top: 4, bottom: 8 }
+        },
         tooltip: {
           callbacks: {
             label: function(context){
@@ -1346,7 +1410,6 @@ function updateDefectTrend() {
 
   /* ▼ 不良内訳（NGコード別 上位5件）の積み上げ棒グラフ */
 
-  // NGコード別の合計値（どのラベルでも）を集計して上位5件を抽出
   const codeTotals = new Map();
   labels.forEach(lbl => {
     const bucket = bucketMap.get(lbl);
@@ -1360,7 +1423,7 @@ function updateDefectTrend() {
 
   const topCodes = Array.from(codeTotals.entries())
     .sort((a,b) => b[1] - a[1])
-    .slice(0, 5)  // 上位5件
+    .slice(0, 5)
     .map(([code]) => code);
 
   if (defectBreakdownChart) {
@@ -1369,16 +1432,15 @@ function updateDefectTrend() {
   }
 
   if (topCodes.length === 0) {
-    // 対象NGコードが無い場合は何も表示しない（グラフ破棄済み）
     return;
   }
 
   const palette = [
-    'rgba(37,99,235,0.7)',   // 青
-    'rgba(16,185,129,0.7)',  // 緑
-    'rgba(234,179,8,0.7)',   // 黄
-    'rgba(239,68,68,0.7)',   // 赤
-    'rgba(139,92,246,0.7)'   // 紫
+    'rgba(37,99,235,0.7)',
+    'rgba(16,185,129,0.7)',
+    'rgba(234,179,8,0.7)',
+    'rgba(239,68,68,0.7)',
+    'rgba(139,92,246,0.7)'
   ];
   const paletteBorder = [
     'rgba(37,99,235,1)',
@@ -1445,6 +1507,12 @@ function updateDefectTrend() {
       },
       plugins: {
         legend: { display: true },
+        title: {
+          display: true,
+          text: fullTitle + ' - 不良内訳',
+          font: { size: 14, weight: 'bold' },
+          padding: { top: 4, bottom: 4 }
+        },
         tooltip: {
           callbacks: {
             label: function(context){
