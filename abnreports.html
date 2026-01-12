@@ -1935,11 +1935,23 @@ async function showPastChangePoints(serialNo, boxId, contentId, showMoreBtnId) {
     // serialNoフィールド（文字列）で部分一致検索 & type='planned'のみ
     const changePointData = snap.docs
       .map(d => ({ _id: d.id, ...d.data() }))
-      .filter(item => {
-     //   if (item.type !== 'planned') return false;
-        const itemSerial = normalizeSerial(item.serialNo || '');
-        return itemSerial.includes(normalizedSearch) || normalizedSearch.includes(itemSerial);
-      })
+.filter(item => {
+  // typeが無い旧データも、suddenも plannedも拾う
+  const t = item.type || 'planned';
+  if (!['planned', 'sudden'].includes(t)) return false;
+
+  // フィールド名ズレ対策（旧データ救済）
+  const rawSerial =
+    item.serialNo ??
+    item.targetSerials ??
+    item.targetSerial ??
+    '';
+
+  const itemSerial = normalizeSerial(String(rawSerial));
+
+  return itemSerial.includes(normalizedSearch) ||
+         normalizedSearch.includes(itemSerial);
+})
       .sort((a, b) => (b.occurrenceDate || '').localeCompare(a.occurrenceDate || ''));
     
     if (changePointData.length === 0) {
