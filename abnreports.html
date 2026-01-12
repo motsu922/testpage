@@ -2329,7 +2329,22 @@ const base = {
 };
 
     const docRef = await addDoc(collection(db, 'anomalies'), base);
-    
+       // 変化点がある場合、changepointsコレクションにも記録
+    if (hasChangePoint && changePointCategory) {
+      const changepointData = {
+        type: 'sudden',
+        category: changePointCategory,
+        content: changePointContent,
+        department: base.department,
+        lineName: base.lineName,
+        serialNo: base.serialNo,
+        occurrenceDate: base.occurrenceDate,
+        occurrenceTime: base.occurrenceTime || '',
+        relatedAnomalyId: docRef.id,
+        createdAt: serverTimestamp()
+      };
+      await addDoc(collection(db, 'changepoints'), changepointData);
+    }
     if (mfgPhotos.length > 0) {
       submitBtn.textContent = `画像アップロード中... (${mfgPhotos.length}枚)`;
       const photoUrls = await uploadPhotos(docRef.id, 'mfg', mfgPhotos);
@@ -2445,7 +2460,23 @@ if (rootText.trim()) {
     }
     
     await updateDoc(doc(db, 'anomalies', id), updates);
-    
+      // 変化点がある場合、changepointsコレクションにも記録
+    if (hasChangePoint && changePointCategory) {
+      const existingItem = anomalyCache.find(x => x._id === id);
+      const changepointData = {
+        type: 'sudden',
+        category: changePointCategory,
+        content: changePointContent,
+        department: existingItem?.department || '',
+        lineName: existingItem?.lineName || '',
+        serialNo: existingItem?.serialNo || '',
+        occurrenceDate: existingItem?.occurrenceDate || '',
+        occurrenceTime: existingItem?.occurrenceTime || '',
+        relatedAnomalyId: id,
+        createdAt: serverTimestamp()
+      };
+      await addDoc(collection(db, 'changepoints'), changepointData);
+    }
     const cacheIndex = anomalyCache.findIndex(x => x._id === id);
     if (cacheIndex !== -1) {
       anomalyCache[cacheIndex] = { ...anomalyCache[cacheIndex], ...updates };
