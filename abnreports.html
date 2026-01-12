@@ -1906,7 +1906,8 @@ document.getElementById('selectSerialNo').addEventListener('change', async ()=>{
   }
 });
 
-// 過去の変化点を取得・表示する関数
+
+// 過去の変化点を取得・表示する関数（changepointsコレクションから）
 async function showPastChangePoints(serialNo, boxId, contentId, showMoreBtnId) {
   const box = document.getElementById(boxId);
   const content = document.getElementById(contentId);
@@ -1921,14 +1922,21 @@ async function showPastChangePoints(serialNo, boxId, contentId, showMoreBtnId) {
   box.classList.add('active');
   
   try {
-    const allData = await fetchAllData();
+    // changepointsコレクションから検索
+    const q = query(collection(db, 'changepoints'), orderBy('occurrenceDate', 'desc'));
+    const snap = await getDocs(q);
+    
     const normalizedSearch = normalizeSerial(serialNo);
     
-    // 変化点があるデータのみ抽出
-    const changePointData = allData.filter(item => {
-      const normalizedSerial = normalizeSerial(item.serialNo || '');
-      return normalizedSerial.includes(normalizedSearch) && item.changePointCategory;
-    }).sort((a, b) => (b.occurrenceDate || '').localeCompare(a.occurrenceDate || ''));
+    // serialNoフィールド（文字列）で部分一致検索 & type='planned'のみ
+    const changePointData = snap.docs
+      .map(d => ({ _id: d.id, ...d.data() }))
+      .filter(item => {
+        if (item.type !== 'planned') return false;
+        const itemSerial = normalizeSerial(item.serialNo || '');
+        return itemSerial.includes(normalizedSearch) || normalizedSearch.includes(itemSerial);
+      })
+      .sort((a, b) => (b.occurrenceDate || '').localeCompare(a.occurrenceDate || ''));
     
     if (changePointData.length === 0) {
       content.innerHTML = '<div style="text-align:center;padding:20px;color:#666;">この整理Noの過去の変化点はありません</div>';
@@ -1939,38 +1947,30 @@ async function showPastChangePoints(serialNo, boxId, contentId, showMoreBtnId) {
     const displayCount = 5;
     const displayData = changePointData.slice(0, displayCount);
     
-    content.innerHTML = displayData.map(item => `
+    const renderItem = (item) => `
       <div class="past-changepoint-item">
         <div class="past-cp-date">
-          📅 ${item.occurrenceDate || ''}
-          <span class="past-cp-category changepoint-badge ${getChangePointBadgeClass(item.changePointCategory)}">
-            ${item.changePointCategory}
+          📅 ${item.occurrenceDate || ''} ${item.occurrenceTime || ''}
+          <span class="past-cp-category changepoint-badge ${getChangePointBadgeClass(item.category)}">
+            ${item.category || ''}
           </span>
         </div>
         <div class="past-cp-content">
-          <strong>異常内容:</strong> ${item.anomalyContent || '-'}<br>
-          <strong>変化点内容:</strong> ${item.changePointContent || '-'}
+          <strong>起案部署:</strong> ${item.planneddepartment || '-'}<br>
+          <strong>発生部署:</strong> ${item.department || '-'}<br>
+          <strong>対象ライン:</strong> ${item.lineName || '-'}<br>
+          <strong>対象整理No:</strong> ${item.serialNo || '-'}<br>
+          <strong>変化点内容:</strong> ${item.content || '-'}
         </div>
       </div>
-    `).join('');
+    `;
+    
+    content.innerHTML = displayData.map(renderItem).join('');
     
     if (changePointData.length > displayCount) {
       showMoreBtn.style.display = 'block';
       showMoreBtn.onclick = () => {
-        content.innerHTML = changePointData.map(item => `
-          <div class="past-changepoint-item">
-            <div class="past-cp-date">
-              📅 ${item.occurrenceDate || ''}
-              <span class="past-cp-category changepoint-badge ${getChangePointBadgeClass(item.changePointCategory)}">
-                ${item.changePointCategory}
-              </span>
-            </div>
-            <div class="past-cp-content">
-              <strong>異常内容:</strong> ${item.anomalyContent || '-'}<br>
-              <strong>変化点内容:</strong> ${item.changePointContent || '-'}
-            </div>
-          </div>
-        `).join('');
+        content.innerHTML = changePointData.map(renderItem).join('');
         showMoreBtn.style.display = 'none';
       };
     } else {
@@ -3063,8 +3063,277 @@ document.addEventListener('click', async (e)=>{
     
     modal.classList.add('active');
   };
+// ========== 編集モーダル機能 ==========
+  let editingId = null;
+  let editCurrentTab = 'mfg';
 
+  // 編集ボタンのクリックハンドラー
+  document.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('button[data-edit]');
+    if (!editBtn) return;
+    
+    editingId = editBtn.getAttribute('data-edit');
+    editCurrentTab = 'mfg';
+    editMfgPhotos = [];
+    editTechPhotos = [];
+    renderEditModalUI();
+    document.getElementById('editModal').classList.add('active');
+  });
+
+  // 編集タブ切り替え
+  document.addEventListener('click', (e) => {
+    const tab = e.target.closest('.edit-tab');
+    if (!tab) return;
+    
+    document.querySelectorAll('.edit-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    editCurrentTab = tab.getAttribute('data-edit-tab');
+    renderEditModalUI();
+  });
+
+  // 編集モーダルUI描画
+  function renderEditModalUI() {
+    const item = anomalyCache.find(x => x._id === editingId);
+    if (!item) return;
+    
+    const container = document.getElementById('editFormContent');
+    
+    if (editCurrentTab === 'mfg') {
+      container.innerHTML = `
+        <div class="form-group"><label>整理No</label><input type="text" id="edit_serialNo" value="${item.serialNo || ''}"></div>
+        <div class="form-group"><label>発生日</label><input type="date" id="edit_occurrenceDate" value="${item.occurrenceDate || ''}"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group"><label>発生時刻</label><input type="time" id="edit_occurrenceTime" value="${item.occurrenceTime || ''}"></div>
+          <div class="form-group"><label>再開時刻</label><input type="time" id="edit_restartTime" value="${item.restartTime || ''}"></div>
+        </div>
+        <div class="form-group"><label>異常内容</label><textarea id="edit_anomalyContent">${item.anomalyContent || ''}</textarea></div>
+        <div class="form-group"><label>現場対応</label><textarea id="edit_actionTaken">${item.actionTaken || ''}</textarea></div>
+        <div class="form-group"><label>遡り</label><input type="text" id="edit_traceback" value="${item.traceback || ''}"></div>
+        <div class="form-group"><label>LotNo</label><input type="text" id="edit_lotNo" value="${item.lotNo || ''}"></div>
+        <div class="form-group"><label>品質対応</label><textarea id="edit_qualityResponse">${item.qualityResponse || ''}</textarea></div>
+        <div class="form-group">
+          <label>変化点分類</label>
+          <select id="edit_changePointCategory">
+            <option value="">なし</option>
+            <option value="人" ${item.changePointCategory === '人' ? 'selected' : ''}>人</option>
+            <option value="方法" ${item.changePointCategory === '方法' ? 'selected' : ''}>方法</option>
+            <option value="材料" ${item.changePointCategory === '材料' ? 'selected' : ''}>材料</option>
+            <option value="金型" ${item.changePointCategory === '金型' ? 'selected' : ''}>金型</option>
+            <option value="設備" ${item.changePointCategory === '設備' ? 'selected' : ''}>設備</option>
+            <option value="その他" ${item.changePointCategory === 'その他' ? 'selected' : ''}>その他</option>
+          </select>
+        </div>
+        <div class="form-group"><label>変化点内容</label><textarea id="edit_changePointContent">${item.changePointContent || ''}</textarea></div>
+        <div class="form-group">
+          <label>写真追加</label>
+          <div class="photo-upload" onclick="document.getElementById('edit_mfgPhotos').click()">
+            <div style="font-size:1.5rem;">📸</div><p>写真を追加</p>
+            <input type="file" id="edit_mfgPhotos" accept="image/*" multiple>
+          </div>
+          <div id="edit_mfgPhotoPreview" class="photo-preview"></div>
+        </div>
+        ${(item.mfgPhotoUrls && item.mfgPhotoUrls.length) ? `
+          <div class="form-group">
+            <label>既存写真（発信部署）</label>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+              ${item.mfgPhotoUrls.map(url => `<img src="${url}" style="width:100%;border-radius:4px;cursor:pointer;" onclick="window.open('${url}','_blank')">`).join('')}
+            </div>
+          </div>
+        ` : ''}
+      `;
+    } else {
+      container.innerHTML = `
+        <div class="form-group"><label>対応部署_処置者</label><input type="text" id="edit_techHandler" value="${item.techHandler || ''}"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group">
+            <label>命数有無</label>
+            <select id="edit_lifespan">
+              <option value="">選択</option>
+              <option value="有" ${item.lifespan === '有' ? 'selected' : ''}>有</option>
+              <option value="無" ${item.lifespan === '無' ? 'selected' : ''}>無</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>命数到達</label>
+            <select id="edit_lifespanReached">
+              <option value="">選択</option>
+              <option value="至" ${item.lifespanReached === '至' ? 'selected' : ''}>至</option>
+              <option value="未" ${item.lifespanReached === '未' ? 'selected' : ''}>未</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit" value="${item.maintenanceUnit || ''}"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction">${item.rootCauseAction || ''}</textarea></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group">
+            <label>再発/新規</label>
+            <select id="edit_recurrenceType">
+              <option value="">選択</option>
+              <option value="再発" ${item.recurrenceType === '再発' ? 'selected' : ''}>再発</option>
+              <option value="新規" ${item.recurrenceType === '新規' ? 'selected' : ''}>新規</option>
+              <option value="調節" ${item.recurrenceType === '調節' ? 'selected' : ''}>調節</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>暫定</label>
+            <select id="edit_affirmation">
+              <option value="">選択</option>
+              <option value="有" ${item.affirmation === '有' ? 'selected' : ''}>有</option>
+              <option value="無" ${item.affirmation === '無' ? 'selected' : ''}>無</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label>対策状況</label>
+          <select id="edit_measureStatus">
+            <option value="">選択</option>
+            <option value="対策検討中" ${item.measureStatus === '対策検討中' ? 'selected' : ''}>対策検討中</option>
+            <option value="暫定対策中" ${item.measureStatus === '暫定対策中' ? 'selected' : ''}>暫定対策中</option>
+            <option value="対策部品待ち" ${item.measureStatus === '対策部品待ち' ? 'selected' : ''}>対策部品待ち</option>
+            <option value="恒久対策済" ${item.measureStatus === '恒久対策済' ? 'selected' : ''}>恒久対策済</option>
+            <option value="対策効果確認中" ${item.measureStatus === '対策効果確認中' ? 'selected' : ''}>対策効果確認中</option>
+          </select>
+        </div>
+        <div style="background:#e3f2fd;padding:15px;border-radius:6px;margin:16px 0;border:2px solid #1976d2;">
+          <h4 style="color:#1565c0;margin-bottom:12px;">🔄 変化点</h4>
+          <div class="form-group">
+            <label>変化点分類</label>
+            <select id="edit_tech_changePointCategory">
+              <option value="">なし</option>
+              <option value="人" ${item.changePointCategory === '人' ? 'selected' : ''}>人</option>
+              <option value="方法" ${item.changePointCategory === '方法' ? 'selected' : ''}>方法</option>
+              <option value="材料" ${item.changePointCategory === '材料' ? 'selected' : ''}>材料</option>
+              <option value="金型" ${item.changePointCategory === '金型' ? 'selected' : ''}>金型</option>
+              <option value="設備" ${item.changePointCategory === '設備' ? 'selected' : ''}>設備</option>
+              <option value="その他" ${item.changePointCategory === 'その他' ? 'selected' : ''}>その他</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label>変化点内容</label>
+            <textarea id="edit_tech_changePointContent">${item.changePointContent || ''}</textarea>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>写真追加</label>
+          <div class="photo-upload" onclick="document.getElementById('edit_techPhotos').click()">
+            <div style="font-size:1.5rem;">📸</div><p>写真を追加</p>
+            <input type="file" id="edit_techPhotos" accept="image/*" multiple>
+          </div>
+          <div id="edit_techPhotoPreview" class="photo-preview"></div>
+        </div>
+        ${(item.techPhotoUrls && item.techPhotoUrls.length) ? `
+          <div class="form-group">
+            <label>既存写真（対応部署）</label>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+              ${item.techPhotoUrls.map(url => `<img src="${url}" style="width:100%;border-radius:4px;cursor:pointer;" onclick="window.open('${url}','_blank')">`).join('')}
+            </div>
+          </div>
+        ` : ''}
+      `;
+    }
+    
+    bindPhotoInputs();
+  }
+
+  // 編集保存
+  document.getElementById('btnEditSave').addEventListener('click', async () => {
+    if (!editingId) return;
+    
+    const item = anomalyCache.find(x => x._id === editingId);
+    if (!item) return;
+    
+    const btn = document.getElementById('btnEditSave');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    
+    try {
+      const updates = {};
+      
+      if (editCurrentTab === 'mfg') {
+        updates.serialNo = document.getElementById('edit_serialNo')?.value || '';
+        updates.occurrenceDate = document.getElementById('edit_occurrenceDate')?.value || '';
+        updates.occurrenceTime = document.getElementById('edit_occurrenceTime')?.value || '';
+        updates.restartTime = document.getElementById('edit_restartTime')?.value || '';
+        updates.anomalyContent = document.getElementById('edit_anomalyContent')?.value || '';
+        updates.actionTaken = document.getElementById('edit_actionTaken')?.value || '';
+        updates.traceback = document.getElementById('edit_traceback')?.value || '';
+        updates.lotNo = document.getElementById('edit_lotNo')?.value || '';
+        updates.qualityResponse = document.getElementById('edit_qualityResponse')?.value || '';
+        updates.changePointCategory = document.getElementById('edit_changePointCategory')?.value || '';
+        updates.changePointContent = document.getElementById('edit_changePointContent')?.value || '';
+        
+        if (editMfgPhotos.length > 0) {
+          const newUrls = await uploadPhotos(editingId, 'mfg', editMfgPhotos);
+          updates.mfgPhotoUrls = [...(item.mfgPhotoUrls || []), ...newUrls];
+        }
+      } else {
+        updates.techHandler = document.getElementById('edit_techHandler')?.value || '';
+        updates.lifespan = document.getElementById('edit_lifespan')?.value || '';
+        updates.lifespanReached = document.getElementById('edit_lifespanReached')?.value || '';
+        updates.maintenanceUnit = document.getElementById('edit_maintenanceUnit')?.value || '';
+        updates.rootCauseAction = document.getElementById('edit_rootCauseAction')?.value || '';
+        updates.recurrenceType = document.getElementById('edit_recurrenceType')?.value || '';
+        updates.affirmation = document.getElementById('edit_affirmation')?.value || '';
+        updates.measureStatus = document.getElementById('edit_measureStatus')?.value || '';
+        updates.changePointCategory = document.getElementById('edit_tech_changePointCategory')?.value || '';
+        updates.changePointContent = document.getElementById('edit_tech_changePointContent')?.value || '';
+        if (editTechPhotos.length > 0) {
+          const newUrls = await uploadPhotos(editingId, 'tech', editTechPhotos);
+          updates.techPhotoUrls = [...(item.techPhotoUrls || []), ...newUrls];
+        }
+      }
+      
+      await updateDoc(doc(db, 'anomalies', editingId), updates);
+      
+      const idx = anomalyCache.findIndex(x => x._id === editingId);
+      if (idx !== -1) {
+        anomalyCache[idx] = { ...anomalyCache[idx], ...updates };
+        filteredCache = [...anomalyCache];
+        renderHistory();
+      }
+      
+      document.getElementById('editModal').classList.remove('active');
+      editMfgPhotos = [];
+      editTechPhotos = [];
+      alert('保存しました');
+      
+    } catch (error) {
+      alert('保存に失敗しました: ' + error.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '保存';
+    }
+  });
+
+  // 編集キャンセル
+  document.getElementById('btnEditCancel').addEventListener('click', () => {
+    document.getElementById('editModal').classList.remove('active');
+    editMfgPhotos = [];
+    editTechPhotos = [];
+  });
+
+  document.getElementById('editModal').addEventListener('click', (e) => {
+    if (e.target.id === 'editModal') {
+      document.getElementById('editModal').classList.remove('active');
+      editMfgPhotos = [];
+      editTechPhotos = [];
+    }
+  });
 </script>
+ <!-- 編集モーダル -->
+<div id="editModal" class="modal" aria-hidden="true">
+  <div class="modal-content" style="max-width:800px;">
+    <h3 class="modal-title">✏️ 履歴の編集</h3>
+    <div class="edit-tabs">
+      <button class="edit-tab active" data-edit-tab="mfg">発信部署</button>
+      <button class="edit-tab" data-edit-tab="tech">対応部署</button>
+    </div>
+    <div id="editFormContent"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="btnEditSave">保存</button>
+      <button class="btn btn-cancel" id="btnEditCancel">キャンセル</button>
+    </div>
+  </div>
+</div>
  <!-- 転送プレビューモーダル -->
 <div id="sharePreviewModal" class="modal" aria-hidden="true">
   <div class="modal-content" style="max-width:700px;">
