@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>検査NG分析ダッシュボード</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes" />
+  <style>
+    :root{
+      --border:#334155;
+      --muted:#9ca3af;
+      --ink:#e5e7eb;
+      --brand:#38bdf8;
+      --bg:#0f172a;
+      --card:#020617;
+    }
+
+    *{box-sizing:border-box;}
+    html,body{
+      margin:0;
+      padding:0;
+      height:100%;
+      font-family:system-ui,"Noto Sans JP",sans-serif;
+      background:var(--bg);
+      color:var(--ink);
+    }
+    body{display:flex;flex-direction:column;}
+
+    /* ▼▼ ヘッダー（暗色） ▼▼ */
+    header{
+      background:linear-gradient(135deg,#020617,#1e293b);
+      color:#f3f4f6;
+      padding:6px 10px;
+      box-shadow:0 2px 6px rgba(0,0,0,.6);
+      position:sticky;
+      top:0;
+      z-index:10;
+      border-bottom:1px solid #1f2937;
+    }
+    .wrap{max-width:1200px;margin:0 auto;}
+    .header-row{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .title-block h1{
+      margin:0;
+      font-size:15px;
+      font-weight:700;
+      letter-spacing:.03em;
+    }
+    .title-block p{
+      margin:0;
+      font-size:10px;
+      line-height:1.3;
+      color:#cbd5e1;
+    }
+
+    .right-controls{
+      display:flex;
+      flex-direction:column;
+      align-items:flex-end;
+      gap:4px;
+    }
+
+    .period-switch{
+      display:flex;
+      gap:4px;
+      flex-wrap:wrap;
+    }
+
+    .period-btn{
+      border:1px solid #334155;
+      background:#020617;
+      color:#e5e7eb;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:10px;
+      min-height:24px;
+      min-width:56px;
+      cursor:pointer;
+    }
+    .period-btn.active{
+      background:#38bdf8;
+      color:#020617;
+      border-color:#38bdf8;
+      font-weight:700;
+    }
+
+    .base-date-row{
+      display:flex;
+      align-items:center;
+      gap:4px;
+      font-size:10px;
+      color:#cbd5e1;
+    }
+    .base-date-row input[type="date"]{
+      font-size:10px;
+      padding:1px 6px;
+      border-radius:999px;
+      border:1px solid #475569;
+      background:#020617;
+      color:#f9fafb;
+    }
+    .base-date-row input[type="date"]::-webkit-calendar-picker-indicator{
+      filter:invert(1);
+    }
+    /* ▲▲ ヘッダー ▲▲ */
+
+    main{flex:1;padding:12px 8px 20px;}
+    .dashboard{
+      max-width:1200px;
+      margin:0 auto;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+
+    .summary-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+    }
+
+    .summary-text{font-size:13px;color:#e2e8f0;}
+
+    .firebase-status{
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      background:#1e293b;
+      color:#e5e7eb;
+      border:1px solid #334155;
+    }
+    .firebase-status.connected{background:#064e3b;color:#bbf7d0;border-color:#10b981;}
+    .firebase-status.disconnected{background:#7f1d1d;color:#fecaca;border-color:#ef4444;}
+
+    .kpi-text{
+      font-size:14px;
+      font-weight:600;
+      color:#f3f4f6;
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+    }
+    .kpi-text strong{font-size:15px;color:#38bdf8;}
+    .kpi-text .sep{color:#64748b;}
+
+    .kpi-note{
+      font-size:10px;
+      color:#94a3b8;
+      margin-top:-2px;
+    }
+
+    .chart-row{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px;
+      margin-top:4px;
+    }
+
+    .card{
+      background:var(--card);
+      border-radius:12px;
+      border:1px solid var(--border);
+      padding:10px;
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      min-height:220px;
+      box-shadow:0 1px 6px rgba(0,0,0,.7);
+    }
+    .card-title{font-size:13px;font-weight:700;color:#f9fafb;}
+    .card-sub{font-size:11px;color:#a1a1aa;}
+
+    canvas{width:100%;display:block;}
+
+    #empty-msg{text-align:center;font-size:13px;color:#9ca3af;margin-top:6px;}
+
+    @media(max-width:900px){
+      .chart-row{grid-template-columns:1fr;}
+      .right-controls{align-items:flex-start;}
+    }
+    @media(max-width:640px){
+      header{padding:4px 8px;}
+      .title-block h1{font-size:14px;}
+      .title-block p{font-size:9px;}
+      .period-btn{padding:3px 6px;font-size:9px;min-width:48px;}
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="wrap">
+    <div class="header-row">
+      <div class="title-block">
+        <h1>📈 検査NG分析ダッシュボード</h1>
+        <p>品番別 NG構成・多発不良 & 月間トレンドを可視化</p>
+      </div>
+
+      <div class="right-controls">
+        <div class="period-switch">
+          <button class="period-btn active" data-period="today" id="btn-today">今日</button>
+          <button class="period-btn" data-period="yesterday" id="btn-yesterday">前日</button>
+          <button class="period-btn" data-period="week" id="btn-week">直近7営業日</button>
+          <button class="period-btn" data-period="month" id="btn-month">月間</button>
+        </div>
+
+        <div class="base-date-row">
+          <label for="base-date">基準日：</label>
+          <input type="date" id="base-date">
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="dashboard">
+
+    <div class="summary-row">
+      <div class="summary-text" id="summary-text">対象期間：-</div>
+      <span id="firebase-status" class="firebase-status">Firebase接続中...</span>
+    </div>
+
+    <div class="kpi-text">
+      <span>検査個数：<strong id="kpi-total-inspected">-</strong> 個</span>
+      <span class="sep">｜</span>
+      <span>不良個数：<strong id="kpi-total-ng">-</strong> 個</span>
+      <span class="sep">｜</span>
+      <span>不良率：<strong id="kpi-ng-rate">-</strong></span>
+    </div>
+    <div class="kpi-note">
+      ※ 検査個数＝ic累計 ／ 不良個数＝ngMap合計
+    </div>
+
+    <div class="chart-row">
+      <div class="card" style="grid-column:1 / -1;">
+        <div class="card-title">品番別 不良個数 & 不良率 TOP10</div>
+        <div class="card-sub">バー＝不良個数 ／ 線＝不良率</div>
+        <canvas id="chart-product"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-row">
+      <div class="card" id="card-month">
+        <div class="card-title">月間不良トレンド</div>
+        <div class="card-sub">基準月の日別 不良個数</div>
+        <canvas id="chart-month"></canvas>
+      </div>
+
+      <div class="card" id="card-product-detail">
+        <div class="card-title">
+          <span>選択品番の不良内容構成</span>
+          <span id="selected-product-label" class="card-sub">品番をクリックすると表示</span>
+        </div>
+        <canvas id="chart-product-detail"></canvas>
+      </div>
+    </div>
+
+    <div id="empty-msg" style="display:none;">対象期間に該当するデータがありません。</div>
+  </div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // ▼ Chart.js 全体のデフォルト文字設定（見やすさUP）
+  Chart.defaults.devicePixelRatio = window.devicePixelRatio || 1;
+  Chart.defaults.color = '#e5e7eb'; // 文字色を明るく
+  Chart.defaults.font = {
+    family: 'system-ui, "Noto Sans JP", sans-serif',
+    size: 11
+  };
+</script>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+    projectId: "miyamaunitec-fb87a",
+    storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+    messagingSenderId: "495316649507",
+    appId: "1:495316649507:web:fa195645f46e41b1a39396"
+  };
+
+  let db=null,currentPeriod='today',baseDate=new Date();
+  let chartProduct=null,chartMonth=null,chartProductDetail=null;
+  let lastProductMap=null;
+  let ngNameMap=new Map();
+
+  const $status=document.getElementById('firebase-status');
+  const $summary=document.getElementById('summary-text');
+  const $kpiTotalInspected=document.getElementById('kpi-total-inspected');
+  const $kpiTotalNG=document.getElementById('kpi-total-ng');
+  const $kpiNGR=document.getElementById('kpi-ng-rate');
+  const $empty=document.getElementById('empty-msg');
+  const $selectedProductLabel=document.getElementById('selected-product-label');
+
+  function pad(n){return String(n).padStart(2,'0');}
+  function formatDateForPD(d){return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())}`;}
+
+  function getLastNBusinessDaysFromBase(base,n){
+    const days=[],t=new Date(base);t.setHours(0,0,0,0);let cur=new Date(t);
+    while(days.length<n){
+      const dow=cur.getDay();
+      if(dow!==0&&dow!==6)days.push(new Date(cur));
+      cur.setDate(cur.getDate()-1);
+    }
+    return days.reverse();
+  }
+
+  function getAllowedPDs(period){
+    const today=new Date(baseDate);today.setHours(0,0,0,0);
+    if(period==='today'){
+      const d=formatDateForPD(today);
+      return{list:[d],label:`対象期間：${d}`};
+    }
+    if(period==='yesterday'){
+      const y=new Date(today);y.setDate(y.getDate()-1);
+      const d=formatDateForPD(y);
+      return{list:[d],label:`対象期間：${d}`};
+    }
+    if(period==='week'){
+      const ds=getLastNBusinessDaysFromBase(baseDate,7).map(formatDateForPD);
+      return{list:ds,label:`対象期間：${ds[0]} ～ ${ds.at(-1)}（直近7営業日）`};
+    }
+    const y=today.getFullYear(),m=today.getMonth();
+    const first=new Date(y,m,1),last=new Date(y,m+1,0),list=[];
+    for(let d=new Date(first);d<=last;d.setDate(d.getDate()+1)){
+      list.push(formatDateForPD(new Date(d)));
+    }
+    return{list,label:`対象期間：${list[0]} ～ ${list.at(-1)}（${y}年${m+1}月）`};
+  }
+
+  function setActiveButton(period){
+    ['btn-today','btn-yesterday','btn-week','btn-month'].forEach(id=>{
+      const btn=document.getElementById(id);
+      if(btn)btn.classList.toggle('active',btn.dataset.period===period);
+    });
+  }
+
+  const fmtNumber=n=>n?.toLocaleString('ja-JP')??'-';
+  const fmtRate=(ng,t)=>!t?'-':((ng/t)*100).toFixed(2)+' %';
+
+  async function loadNGAnalytics(period){
+    if(!db)return;
+    currentPeriod=period;
+    setActiveButton(period);
+
+    const {list, label}=getAllowedPDs(period);
+    $summary.textContent=label;
+    const allowed=new Set(list);
+
+    const cardMonth=document.getElementById('card-month');
+    if(cardMonth)cardMonth.style.display=(period==='month')?'flex':'none';
+
+    $selectedProductLabel.textContent='品番をクリックすると表示';
+    if(chartProductDetail){chartProductDetail.destroy();chartProductDetail=null;}
+    lastProductMap=null;
+
+    const snap=await db.collection('dailyReports').orderBy('timestamp','desc').limit(800).get();
+    if(snap.empty){
+      showNoData();
+      return;
+    }
+
+    let totalIns=0,totalNG=0;
+    const productMap=new Map();
+    const dailyMap=new Map();
+
+    snap.forEach(doc=>{
+      const d=doc.data(),pd=d.pd||'';
+      if(!allowed.has(pd))return;
+      const on=d.on||'(未設定)',ic=+d.ic||0;
+      totalIns+=ic;
+      const p=productMap.get(on)??{ngTotal:0,inspected:0,codeMap:new Map()};
+      p.inspected+=ic;
+
+      let docNG=0;
+      Object.entries(d.ngMap||{}).forEach(([c,v])=>{
+        const cnt=+v||0;
+        if(cnt<=0)return;
+        docNG+=cnt;
+        p.ngTotal+=cnt;
+        totalNG+=cnt;
+        p.codeMap.set(c,(p.codeMap.get(c)||0)+cnt);
+      });
+      productMap.set(on,p);
+
+      if(period==='month'){
+        const r=dailyMap.get(pd)||{inspected:0,ng:0};
+        r.inspected+=ic;
+        r.ng+=docNG;
+        dailyMap.set(pd,r);
+      }
+    });
+
+    if(!productMap.size){
+      showNoData();
+      return;
+    }
+    $empty.style.display='none';
+
+    $kpiTotalInspected.textContent=fmtNumber(totalIns);
+    $kpiTotalNG.textContent=fmtNumber(totalNG);
+    $kpiNGR.textContent=fmtRate(totalNG,totalIns);
+
+    const arr=[...productMap.entries()]
+      .sort((a,b)=>b[1].ngTotal-a[1].ngTotal)
+      .slice(0,10);
+    lastProductMap=productMap;
+
+    renderCharts(
+      arr.map(e=>e[0]),
+      arr.map(e=>e[1].ngTotal),
+      arr.map(e=>e[1].inspected?e[1].ngTotal/e[1].inspected*100:0)
+    );
+
+    if(period==='month') renderMonthlyTrend(dailyMap);
+    else if(chartMonth){chartMonth.destroy();chartMonth=null;}
+  }
+
+  function showNoData(){
+    if(chartProduct){chartProduct.destroy();chartProduct=null;}
+    if(chartMonth){chartMonth.destroy();chartMonth=null;}
+    if(chartProductDetail){chartProductDetail.destroy();chartProductDetail=null;}
+    $kpiTotalInspected.textContent='-';
+    $kpiTotalNG.textContent='-';
+    $kpiNGR.textContent='-';
+    $empty.style.display='block';
+  }
+
+  function renderCharts(labels,ng,rate){
+    const ctx=document.getElementById('chart-product');
+    if(chartProduct)chartProduct.destroy();
+    chartProduct=new Chart(ctx,{
+      type:'bar',
+      data:{
+        labels,
+        datasets:[
+          {label:'不良個数',data:ng,yAxisID:'y'},
+          {label:'不良率(%)',data:rate,type:'line',yAxisID:'y1'}
+        ]
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{
+            display:true,
+            labels:{
+              color:'#e5e7eb',
+              font:{ size:11 }
+            }
+          }
+        },
+        scales:{
+          x:{
+            ticks:{
+              autoSkip:false,
+              maxRotation:60,
+              minRotation:30,
+              color:'#e5e7eb',
+              font:{ size:10 }
+            },
+            grid:{
+              color:'rgba(148,163,184,0.25)'
+            }
+          },
+          y:{
+            beginAtZero:true,
+            ticks:{
+              color:'#e5e7eb',
+              font:{ size:10 }
+            },
+            grid:{
+              color:'rgba(75,85,99,0.5)'
+            }
+          },
+          y1:{
+            beginAtZero:true,
+            position:'right',
+            ticks:{
+              color:'#e5e7eb',
+              font:{ size:10 }
+            },
+            grid:{
+              drawOnChartArea:false,
+              color:'rgba(75,85,99,0.5)'
+            }
+          }
+        },
+        onClick:(_,els)=>{
+          if(!els.length)return;
+          onProductClicked(labels[els[0].index]);
+        }
+      }
+    });
+  }
+
+  function renderMonthlyTrend(map){
+    const ctx=document.getElementById('chart-month');
+    if(chartMonth)chartMonth.destroy();
+    const ent=[...map.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+    chartMonth=new Chart(ctx,{
+      type:'line',
+      data:{
+        labels:ent.map(([pd])=>pd.slice(5)),
+        datasets:[{
+          label:'不良個数',
+          data:ent.map(e=>e[1].ng),
+          tension:.3
+        }]
+      },
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{
+            display:false
+          }
+        },
+        scales:{
+          x:{
+            ticks:{
+              color:'#e5e7eb',
+              font:{ size:10 }
+            },
+            grid:{
+              color:'rgba(148,163,184,0.25)'
+            }
+          },
+          y:{
+            beginAtZero:true,
+            ticks:{
+              color:'#e5e7eb',
+              font:{ size:10 }
+            },
+            grid:{
+              color:'rgba(75,85,99,0.5)'
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function onProductClicked(label){
+    const info=lastProductMap?.get(label);
+    if(!info)return;
+    $selectedProductLabel.textContent=`対象品番: ${label}`;
+    const ctx=document.getElementById('chart-product-detail');
+    if(chartProductDetail)chartProductDetail.destroy();
+
+    const arr=[...info.codeMap.entries()].sort((a,b)=>b[1]-a[1]).slice(0,20);
+    chartProductDetail=new Chart(ctx,{
+      type:'bar',
+      data:{
+        labels:arr.map(([c])=>ngNameMap.get(c)||c),
+        datasets:[{label:'不良個数',data:arr.map(e=>e[1])}]
+      },
+      options:{
+        responsive:true,
+        indexAxis:'y',
+        plugins:{
+          legend:{display:false}
+        },
+        scales:{
+          x:{
+            beginAtZero:true,
+            ticks:{
+              color:'#e5e7eb',
+              font:{ size:10 }
+            },
+            grid:{
+              color:'rgba(75,85,99,0.5)'
+            }
+          },
+          y:{
+            ticks:{
+              color:'#e5e7eb',
+              font:{ size:10 }
+            },
+            grid:{
+              color:'rgba(148,163,184,0.25)'
+            }
+          }
+        }
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded',async()=>{
+
+    // Firebase 初期化
+    try{
+      firebase.initializeApp(firebaseConfig);
+      db=firebase.firestore();
+      $status.textContent='Firebase接続済み';
+      $status.classList.add('connected');
+    }catch(e){
+      console.error(e);
+      $status.textContent='Firebase接続失敗';
+      $status.classList.add('disconnected');
+      return;
+    }
+
+    // 不良コード → 名称マスタ
+    try{
+      ngNameMap=new Map();
+      const snap=await db.collection('productMaster').get();
+      snap.forEach(doc=>{
+        (doc.data().ngItems||[]).forEach(i=>{
+          if(i?.code && i?.name && !ngNameMap.has(i.code)){
+            ngNameMap.set(i.code,i.name);
+          }
+        });
+      });
+    }catch(e){
+      console.warn('productMaster取得に失敗',e);
+    }
+
+    const base=document.getElementById('base-date');
+    const btnToday=document.getElementById('btn-today');
+    const btnYesterday=document.getElementById('btn-yesterday');
+    const btnWeek=document.getElementById('btn-week');
+    const btnMonth=document.getElementById('btn-month');
+
+    // 最新の dailyReports を基準日にする
+    let initialBaseDate=new Date();
+    try{
+      const latestSnap=await db.collection('dailyReports')
+        .orderBy('timestamp','desc')
+        .limit(1)
+        .get();
+      if(!latestSnap.empty){
+        const latestData=latestSnap.docs[0].data();
+        if(latestData.pd){
+          const [y,m,d]=latestData.pd.split('/').map(Number);
+          initialBaseDate=new Date(y,m-1,d);
+        }else if(latestData.timestamp && latestData.timestamp.toDate){
+          initialBaseDate=latestData.timestamp.toDate();
+        }
+      }
+    }catch(e){
+      console.warn('最新日付の取得に失敗（とりあえず今日を使います）',e);
+    }
+
+    const y=initialBaseDate.getFullYear();
+    const m=pad(initialBaseDate.getMonth()+1);
+    const d=pad(initialBaseDate.getDate());
+    const isoStr=`${y}-${m}-${d}`;
+
+    base.value=isoStr;
+    baseDate=new Date(isoStr);
+
+    base.addEventListener('change',()=>{
+      baseDate=new Date(base.value);
+      loadNGAnalytics(currentPeriod);
+    });
+
+    btnToday.addEventListener('click',()=>loadNGAnalytics('today'));
+    btnYesterday.addEventListener('click',()=>loadNGAnalytics('yesterday'));
+    btnWeek.addEventListener('click',()=>loadNGAnalytics('week'));
+    btnMonth.addEventListener('click',()=>loadNGAnalytics('month'));
+
+    // 最初の表示：最新日付を基準に「今日」分をロード
+    loadNGAnalytics('today');
+  });
+</script>
+</body>
+</html>
