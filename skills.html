@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>検査員スキルマップ（ピボット表）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes" />
+  <style>
+    :root{
+      --border:#e5e7eb;
+      --muted:#6b7280;
+      --ink:#111827;
+      --bg:#f3f4f6;
+      --header-bg:#111827;
+      --header-grad:#2563eb;
+
+      --level-s:#1d4ed8;
+      --level-a:#10b981;
+      --level-b:#f97316;
+      --level-c:#e5e7eb;
+
+      /* 固定列の幅 */
+      --col-name-w:100px;
+      --col-total-w:70px;
+      --col-kind-w:80px;
+      --col-skill-w:60px;
+    }
+    *{box-sizing:border-box;}
+    html,body{
+      margin:0;
+      padding:0;
+      height:100%;
+      font-family:system-ui,"Noto Sans JP",sans-serif;
+      background:var(--bg);
+      color:var(--ink);
+    }
+    body{
+      display:flex;
+      flex-direction:column;
+    }
+
+    header{
+      background:linear-gradient(135deg,var(--header-bg),var(--header-grad));
+      color:#fff;
+      padding:10px 16px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.25);
+      position:sticky;
+      top:0;
+      z-index:10;
+    }
+    .wrap{
+      max-width:1200px;
+      margin:0 auto;
+    }
+    .header-row{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .title-block h1{
+      margin:0;
+      font-size:18px;
+      font-weight:700;
+      letter-spacing:.03em;
+    }
+    .title-block p{
+      margin:2px 0 0;
+      font-size:12px;
+      color:#e5e7eb;
+    }
+    .right-controls{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      align-items:flex-end;
+      font-size:11px;
+      color:#e5e7eb;
+    }
+    .base-date-row{
+      display:flex;
+      align-items:center;
+      gap:4px;
+    }
+    .base-date-row label{
+      font-size:11px;
+    }
+    .base-date-row input[type="date"]{
+      font-size:11px;
+      padding:2px 8px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,0.6);
+      background:rgba(15,23,42,0.4);
+      color:#f9fafb;
+      outline:none;
+    }
+    .base-date-row input[type="date"]::-webkit-calendar-picker-indicator{
+      filter:invert(1);
+    }
+    .period-caption{
+      font-size:11px;
+    }
+
+    main{
+      flex:1;
+      padding:12px 8px 20px;
+    }
+    .dashboard{
+      max-width:1200px;
+      margin:0 auto;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+
+    .summary-row{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .summary-text{
+      font-size:13px;
+      color:var(--muted);
+    }
+    .firebase-status{
+      font-size:11px;
+      padding:4px 8px;
+      border-radius:999px;
+      background:#e5e7eb;
+      color:#374151;
+    }
+    .firebase-status.connected{
+      background:#dcfce7;
+      color:#166534;
+    }
+    .firebase-status.disconnected{
+      background:#fee2e2;
+      color:#991b1b;
+    }
+
+    .legend-row{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      font-size:10px;
+      color:var(--muted);
+      margin-top:2px;
+      margin-bottom:4px;
+    }
+    .legend-chip{
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+    }
+    .legend-dot{
+      width:10px;
+      height:10px;
+      border-radius:50%;
+      background:#e5e7eb;
+    }
+    .legend-dot.lvl-s{background:var(--level-s);}
+    .legend-dot.lvl-a{background:var(--level-a);}
+    .legend-dot.lvl-b{background:var(--level-b);}
+    .legend-dot.lvl-c{background:var(--level-c);}
+
+    .table-wrapper{
+      border-radius:8px;
+      border:1px solid var(--border);
+      background:#fff;
+      overflow:auto;
+      max-height:560px;
+      position:relative;
+    }
+    table.skill-table{
+      width:max-content;
+      min-width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      font-size:11px;
+    }
+
+    /* ヘッダー共通 */
+    .skill-table thead th{
+      position:sticky;
+      top:0;
+      background:#f8fafc;
+      z-index:2;
+      padding:8px 6px;
+      text-align:center;
+      font-weight:600;
+      white-space:nowrap;
+      border-bottom:2px solid var(--border);
+      border-right:1px solid var(--border);
+    }
+
+    /* 固定列ヘッダー */
+    .skill-table thead th.col-name{
+      left:0;
+      z-index:4;
+      width:var(--col-name-w);
+      min-width:var(--col-name-w);
+      max-width:var(--col-name-w);
+      text-align:left;
+      background:#f1f5f9;
+      border-right:2px solid #cbd5e1;
+    }
+    .skill-table thead th.col-total{
+      left:var(--col-name-w);
+      z-index:4;
+      width:var(--col-total-w);
+      min-width:var(--col-total-w);
+      max-width:var(--col-total-w);
+      background:#f1f5f9;
+      border-right:2px solid #cbd5e1;
+    }
+
+    /* 整理No列ヘッダー */
+    .skill-table thead th.col-skill{
+      width:var(--col-skill-w);
+      min-width:var(--col-skill-w);
+      max-width:var(--col-skill-w);
+    }
+
+    /* 種類数列ヘッダー */
+    .skill-table thead th.col-kind{
+      width:var(--col-kind-w);
+      min-width:var(--col-kind-w);
+      background:#f1f5f9;
+      border-left:2px solid #cbd5e1;
+    }
+
+    /* ボディセル共通 */
+    .skill-table tbody td{
+      border-bottom:1px solid var(--border);
+      border-right:1px solid var(--border);
+      padding:6px;
+      vertical-align:middle;
+      text-align:center;
+      background:#fff;
+    }
+
+    /* 固定列（検査員名） */
+    .skill-table tbody td.col-name{
+      position:sticky;
+      left:0;
+      z-index:1;
+      width:var(--col-name-w);
+      min-width:var(--col-name-w);
+      max-width:var(--col-name-w);
+      text-align:left;
+      font-weight:600;
+      background:#fafbfc;
+      border-right:2px solid #cbd5e1;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    /* 固定列（合計件数） */
+    .skill-table tbody td.col-total{
+      position:sticky;
+      left:var(--col-name-w);
+      z-index:1;
+      width:var(--col-total-w);
+      min-width:var(--col-total-w);
+      max-width:var(--col-total-w);
+      background:#fafbfc;
+      border-right:2px solid #cbd5e1;
+      font-weight:600;
+      color:#1e40af;
+    }
+
+    /* 整理No列 */
+    .skill-table tbody td.col-skill{
+      width:var(--col-skill-w);
+      min-width:var(--col-skill-w);
+      max-width:var(--col-skill-w);
+      padding:4px;
+    }
+
+    /* 種類数列 */
+    .skill-table tbody td.col-kind{
+      width:var(--col-kind-w);
+      min-width:var(--col-kind-w);
+      background:#fafbfc;
+      border-left:2px solid #cbd5e1;
+      font-weight:600;
+      color:#047857;
+    }
+
+    /* ホバー */
+    .skill-table tbody tr:hover td{
+      background:#f0f9ff;
+    }
+    .skill-table tbody tr:hover td.col-name,
+    .skill-table tbody tr:hover td.col-total,
+    .skill-table tbody tr:hover td.col-kind{
+      background:#e0f2fe;
+    }
+
+    /* スキルセル */
+    .cell-skill{
+      display:inline-flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      width:48px;
+      height:40px;
+      border-radius:6px;
+      font-size:10px;
+    }
+    .cell-skill .level{
+      font-size:12px;
+      font-weight:700;
+      line-height:1;
+    }
+    .cell-skill .times{
+      font-size:9px;
+      line-height:1;
+      margin-top:2px;
+      opacity:0.9;
+    }
+
+    .lvl-s{
+      background:var(--level-s);
+      color:#fff;
+    }
+    .lvl-a{
+      background:var(--level-a);
+      color:#fff;
+    }
+    .lvl-b{
+      background:var(--level-b);
+      color:#fff;
+    }
+    .lvl-c{
+      background:var(--level-c);
+      color:#374151;
+    }
+
+    #empty-msg{
+      text-align:center;
+      font-size:13px;
+      color:var(--muted);
+      margin-top:8px;
+    }
+
+    @media(max-width:640px){
+      header{padding:8px 10px;}
+      .title-block h1{font-size:16px;}
+      :root{
+        --col-name-w:80px;
+        --col-total-w:60px;
+        --col-kind-w:60px;
+        --col-skill-w:54px;
+      }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="header-row">
+      <div class="title-block">
+        <h1>🧩 検査員スキルマップ（ピボット表）</h1>
+        <p>過去3ヶ月の検査実績から、検査員 × 整理No の検査頻度を一覧化</p>
+      </div>
+      <div class="right-controls">
+        <div class="base-date-row">
+          <label for="base-date">基準日：</label>
+          <input type="date" id="base-date">
+        </div>
+        <div class="period-caption">※ 基準日からさかのぼって3ヶ月の検査実績を集計</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="dashboard">
+    <div class="summary-row">
+      <div class="summary-text" id="summary-text">対象期間：-</div>
+      <span id="firebase-status" class="firebase-status">Firebase接続中...</span>
+    </div>
+
+    <div class="legend-row">
+      <div class="legend-chip"><span class="legend-dot lvl-s"></span><span>S：20回以上</span></div>
+      <div class="legend-chip"><span class="legend-dot lvl-a"></span><span>A：10～19回</span></div>
+      <div class="legend-chip"><span class="legend-dot lvl-b"></span><span>B：5～9回</span></div>
+      <div class="legend-chip"><span class="legend-dot lvl-c"></span><span>C：1～4回</span></div>
+      <div class="legend-chip"><span>※セル内の数字＝検査回数</span></div>
+    </div>
+
+    <div class="table-wrapper">
+      <table class="skill-table" id="skill-table">
+        <thead>
+          <tr id="thead-row"></tr>
+        </thead>
+        <tbody id="inspector-tbody"></tbody>
+      </table>
+    </div>
+
+    <div id="empty-msg" style="display:none;">対象期間に該当するデータがありません。</div>
+  </div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+    projectId: "miyamaunitec-fb87a",
+    storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+    messagingSenderId: "495316649507",
+    appId: "1:495316649507:web:fa195645f46e41b1a39396"
+  };
+
+  const PIVOT_ON_LIMIT = 20;
+
+  let db = null;
+  let inspectorStats = new Map();
+  let onStats = new Map();
+  let pivotOns = [];
+
+  const $status   = document.getElementById('firebase-status');
+  const $summary  = document.getElementById('summary-text');
+  const $empty    = document.getElementById('empty-msg');
+  const $theadRow = document.getElementById('thead-row');
+  const $tbody    = document.getElementById('inspector-tbody');
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+
+  function fmtDate(d){
+    const y = d.getFullYear();
+    const m = pad(d.getMonth() + 1);
+    const da = pad(d.getDate());
+    return `${y}/${m}/${da}`;
+  }
+
+  function parsePdToDate(pd){
+    if(!pd || typeof pd !== 'string') return null;
+    const parts = pd.split('/');
+    if(parts.length !== 3) return null;
+    const y = Number(parts[0]);
+    const m = Number(parts[1]);
+    const d = Number(parts[2]);
+    if(!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
+  }
+
+  function fmtNumber(n){
+    if(n === null || n === undefined || isNaN(n)) return '-';
+    return n.toLocaleString('ja-JP');
+  }
+
+  function classifySkill(times){
+    if(times >= 20) return {level:'S', class:'lvl-s'};
+    if(times >= 10) return {level:'A', class:'lvl-a'};
+    if(times >= 5)  return {level:'B', class:'lvl-b'};
+    if(times >= 1)  return {level:'C', class:'lvl-c'};
+    return {level:'', class:''};
+  }
+
+  async function loadSkillData(){
+    if(!db) return;
+
+    inspectorStats = new Map();
+    onStats = new Map();
+    pivotOns = [];
+
+    const baseInput = document.getElementById('base-date');
+    const baseStr = baseInput && baseInput.value ? baseInput.value : new Date().toISOString().split('T')[0];
+    const baseDate = new Date(baseStr);
+    baseDate.setHours(0,0,0,0);
+
+    const startDate = new Date(baseDate);
+    startDate.setMonth(startDate.getMonth() - 3);
+    startDate.setHours(0,0,0,0);
+
+    const periodLabel = fmtDate(startDate) + ' ～ ' + fmtDate(baseDate);
+    $summary.textContent = '対象期間：' + periodLabel + '（過去3ヶ月）';
+
+    try{
+      const snap = await db.collection('dailyReports')
+        .orderBy('timestamp', 'desc')
+        .limit(1200)
+        .get();
+
+      if(snap.empty){
+        showNoData();
+        return;
+      }
+
+      let hasAny = false;
+
+      snap.forEach(doc=>{
+        const d = doc.data();
+        const pd = d.pd || '';
+        const pdDate = parsePdToDate(pd);
+        if(!pdDate) return;
+        if(pdDate < startDate || pdDate > baseDate) return;
+
+        const on = d.on || '(整理No未設定)';
+        if(!on) return;
+
+        hasAny = true;
+
+        const ic = parseInt(d.ic,10) || 0;
+
+        let inspectorNames = [];
+
+        if(Array.isArray(d.inspectors) && d.inspectors.length > 0){
+          d.inspectors.forEach(ins=>{
+            const name = (ins && ins.name) ? String(ins.name).trim() : '';
+            if(name) inspectorNames.push(name);
+          });
+        }else{
+          const altName =
+            (d["検査員"] && String(d["検査員"]).trim()) ||
+            (d.inspector && String(d.inspector).trim()) ||
+            (d.worker && String(d.worker).trim());
+          if(altName){
+            inspectorNames.push(altName);
+          }
+        }
+
+        if(inspectorNames.length === 0){
+          inspectorNames.push('(検査員 未設定)');
+        }
+
+        inspectorNames.forEach(name=>{
+          if(!inspectorStats.has(name)){
+            inspectorStats.set(name,{
+              totalRecords:0,
+              totalPieces:0,
+              onMap:new Map()
+            });
+          }
+          const st = inspectorStats.get(name);
+          st.totalRecords += 1;
+          st.totalPieces += ic;
+
+          if(!st.onMap.has(on)){
+            st.onMap.set(on,{ times:0, pieces:0 });
+          }
+          const orec = st.onMap.get(on);
+          orec.times += 1;
+          orec.pieces += ic;
+        });
+
+        if(!onStats.has(on)){
+          onStats.set(on,{ totalRecords:0, totalPieces:0 });
+        }
+        const g = onStats.get(on);
+        g.totalRecords += 1;
+        g.totalPieces += ic;
+      });
+
+      if(!hasAny || inspectorStats.size === 0){
+        showNoData();
+        return;
+      }
+
+      $empty.style.display = 'none';
+      renderPivotTable();
+    }catch(err){
+      console.error('スキルデータ読み込みエラー:',err);
+      alert('スキルマップ用データの読み込みに失敗しました。');
+    }
+  }
+
+  function showNoData(){
+    $theadRow.innerHTML = '';
+    $tbody.innerHTML = '';
+    $empty.style.display = 'block';
+  }
+
+  function renderPivotTable(){
+    $theadRow.innerHTML = '';
+    $tbody.innerHTML = '';
+
+    const onEntries = Array.from(onStats.entries())
+      .sort((a,b)=>b[1].totalRecords - a[1].totalRecords)
+      .slice(0, PIVOT_ON_LIMIT);
+
+    pivotOns = onEntries.map(([on])=>on);
+
+    // ヘッダ行
+    const thName = document.createElement('th');
+    thName.textContent = '検査員';
+    thName.className = 'col-name';
+    $theadRow.appendChild(thName);
+
+    const thTotal = document.createElement('th');
+    thTotal.textContent = '合計';
+    thTotal.className = 'col-total';
+    $theadRow.appendChild(thTotal);
+
+    pivotOns.forEach(on=>{
+      const th = document.createElement('th');
+      th.className = 'col-skill';
+      th.textContent = on;
+      $theadRow.appendChild(th);
+    });
+
+    const thKind = document.createElement('th');
+    thKind.textContent = '種類数';
+    thKind.className = 'col-kind';
+    $theadRow.appendChild(thKind);
+
+    // 本体行
+    const inspectors = Array.from(inspectorStats.entries())
+      .sort((a,b)=>{
+        const aOn = a[1].onMap.size;
+        const bOn = b[1].onMap.size;
+        if(bOn !== aOn) return bOn - aOn;
+        return b[1].totalRecords - a[1].totalRecords;
+      });
+
+    inspectors.forEach(([name,info])=>{
+      const tr = document.createElement('tr');
+
+      const tdName = document.createElement('td');
+      tdName.className = 'col-name';
+      tdName.textContent = name;
+      tdName.title = name;
+      tr.appendChild(tdName);
+
+      const tdTotal = document.createElement('td');
+      tdTotal.className = 'col-total';
+      tdTotal.textContent = fmtNumber(info.totalRecords);
+      tr.appendChild(tdTotal);
+
+      pivotOns.forEach(on=>{
+        const td = document.createElement('td');
+        td.className = 'col-skill';
+
+        const stat = info.onMap.get(on);
+        if(stat && stat.times > 0){
+          const skill = classifySkill(stat.times);
+
+          const cell = document.createElement('div');
+          cell.className = 'cell-skill ' + skill.class;
+
+          const lv = document.createElement('div');
+          lv.className = 'level';
+          lv.textContent = skill.level || '';
+          cell.appendChild(lv);
+
+          const t = document.createElement('div');
+          t.className = 'times';
+          t.textContent = stat.times + '回';
+          cell.appendChild(t);
+
+          td.appendChild(cell);
+        }
+
+        tr.appendChild(td);
+      });
+
+      const tdKind = document.createElement('td');
+      tdKind.className = 'col-kind';
+      tdKind.textContent = fmtNumber(info.onMap.size);
+      tr.appendChild(tdKind);
+
+      $tbody.appendChild(tr);
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', async ()=>{
+    try{
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+      $status.textContent = 'Firebase接続済み';
+      $status.classList.remove('disconnected');
+      $status.classList.add('connected');
+    }catch(err){
+      console.error('Firebase初期化エラー:',err);
+      $status.textContent = 'Firebase接続失敗';
+      $status.classList.remove('connected');
+      $status.classList.add('disconnected');
+      return;
+    }
+
+    const baseInput = document.getElementById('base-date');
+    if(baseInput){
+      const todayStr = new Date().toISOString().split('T')[0];
+      baseInput.value = todayStr;
+      baseInput.addEventListener('change', ()=>{
+        loadSkillData();
+      });
+    }
+
+    loadSkillData();
+  });
+</script>
+</body>
+</html>
