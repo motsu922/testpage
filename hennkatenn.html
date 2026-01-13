@@ -1,0 +1,2075 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>変化点管理システム</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+
+    /* 認証画面 */
+    #authGate{
+      position: fixed; inset: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex; align-items: center; justify-content: center; z-index: 2000;
+    }
+    #authCard{
+      background: #fff; padding: 40px; border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.2); width: 100%; max-width: 360px;
+    }
+    #authCard h2{ color:#333; margin-bottom:24px; text-align:center; }
+    #authCard .form-group{ margin-bottom:16px; }
+    #authCard label{ display:block; font-size:.85rem; color:#666; margin-bottom:6px; }
+    #authCard input{
+      width:100%; padding:12px; border:2px solid #e0e0e0;
+      border-radius:8px; font-size:1rem;
+    }
+    #authCard input:focus{ outline:none; border-color:#667eea; }
+    #authCard button{
+      width:100%; padding:14px;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color:#fff; border:none; border-radius:8px;
+      font-size:1rem; font-weight:600; cursor:pointer; margin-top:8px;
+    }
+
+    /* メインメニュー */
+    #mainMenu{ display:none; padding:30px 20px; min-height:100vh; }
+    .menu-container{ max-width:900px; margin:0 auto; }
+    .menu-header{ text-align:center; margin-bottom:30px; color:#fff; }
+    .menu-header h1{ font-size:2rem; margin-bottom:8px; }
+    .menu-header p{ opacity:.9; }
+
+    /* トピックス */
+    .topics-card{
+      background:#fff; border-radius:16px; padding:24px;
+      margin-bottom:24px; box-shadow:0 4px 20px rgba(0,0,0,.15);
+    }
+    .topics-card h2{
+      font-size:1.2rem; color:#333; margin-bottom:16px;
+      display:flex; align-items:center; gap:8px;
+    }
+    .topics-row{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .topics-section{ background:#f8f9ff; border-radius:12px; padding:16px; }
+    .topics-section h3{
+      font-size:.95rem; color:#667eea; margin-bottom:12px;
+      display:flex; align-items:center; gap:6px;
+    }
+    .topics-section.tomorrow h3{ color:#ff9800; }
+    .topics-item{
+      background:#fff; border-radius:8px; padding:12px; margin-bottom:8px;
+      border-left:4px solid #2196f3; cursor:pointer; transition:all .2s;
+    }
+    .topics-item:hover{ transform: translateX(4px); box-shadow:0 2px 8px rgba(0,0,0,.1); }
+    .topics-item:last-child{ margin-bottom:0; }
+    .topics-item .time{ font-size:.75rem; color:#888; margin-bottom:4px; }
+    .topics-item .category{
+      display:inline-block; padding:2px 8px; border-radius:10px;
+      font-size:.7rem; font-weight:600; background:#c8e6c9; color:#2e7d32; margin-right:6px;
+    }
+    .topics-item .content{ font-size:.85rem; color:#333; }
+    .topics-item .lines{ font-size:.75rem; color:#666; margin-top:4px; }
+    .topics-empty{ text-align:center; padding:20px; color:#888; font-size:.9rem; }
+
+    /* メニューカード */
+    .menu-cards{ display:grid; grid-template-columns:repeat(2, 1fr); gap:16px; }
+    .menu-card{
+      background:#fff; border-radius:16px; padding:24px;
+      cursor:pointer; transition:all .3s; box-shadow:0 4px 20px rgba(0,0,0,.1);
+    }
+    .menu-card:hover{ transform: translateY(-5px); box-shadow:0 8px 30px rgba(0,0,0,.2); }
+    .menu-card .icon{ font-size:2.5rem; margin-bottom:12px; }
+    .menu-card h3{ font-size:1.1rem; color:#333; margin-bottom:6px; }
+    .menu-card p{ color:#666; font-size:.85rem; line-height:1.4; }
+
+    /* 共通ヘッダー */
+    .app-header{
+      background: rgba(255,255,255,.95); padding:16px 24px;
+      display:flex; justify-content:space-between; align-items:center;
+      box-shadow:0 2px 10px rgba(0,0,0,.1);
+    }
+    .app-header h1{ font-size:1.2rem; color:#333; display:flex; align-items:center; gap:10px; }
+    .btn-back{
+      padding:8px 16px; background:#f5f5f5; border:none;
+      border-radius:8px; cursor:pointer; font-size:.9rem;
+    }
+    .btn-back:hover{ background:#e0e0e0; }
+    .btn-logout{
+      padding:8px 16px; background:#ef5350; color:#fff; border:none;
+      border-radius:8px; cursor:pointer; font-size:.9rem;
+    }
+    .btn-logout:hover{ background:#e53935; }
+
+    /* 共通スタイル */
+    .screen{ display:none; }
+    .container{ max-width:1200px; margin:0 auto; padding:20px; }
+    .card{ background:#fff; border-radius:16px; padding:24px; box-shadow:0 4px 20px rgba(0,0,0,.15); margin-bottom:20px; }
+    .btn{
+      padding:10px 20px; border:none; border-radius:8px;
+      font-size:1rem; cursor:pointer; font-weight:500; transition:all .2s;
+    }
+    .btn-primary{ background: linear-gradient(135deg, #667eea, #764ba2); color:#fff; }
+    .btn-primary:hover{ transform: translateY(-2px); box-shadow:0 4px 12px rgba(102,126,234,.4); }
+    .btn-secondary{ background:#f5f5f5; color:#333; }
+    .btn-danger{ background:#e53935; color:#fff; }
+    .btn-sm{ padding:6px 12px; font-size:.85rem; }
+
+    /* CSVボタン disabled表現 */
+    .btn-disabled{ opacity:.45; cursor:not-allowed; filter:grayscale(30%); }
+
+    .form-group{ margin-bottom:16px; }
+    .form-group label{ display:block; font-size:.9rem; font-weight:600; color:#333; margin-bottom:6px; }
+    .form-group label .required{ color:#e53935; margin-left:4px; }
+    .form-group input, .form-group select, .form-group textarea{
+      width:100%; padding:10px 12px; border:2px solid #e0e0e0;
+      border-radius:8px; font-size:1rem;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus{
+      outline:none; border-color:#667eea;
+    }
+    .form-group textarea{ min-height:100px; resize:vertical; }
+    .form-group .hint{ font-size:.8rem; color:#888; margin-top:4px; }
+    .form-row{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+
+    .badge{ padding:2px 8px; border-radius:12px; font-size:.7rem; font-weight:600; }
+    .badge-anomaly{ background:#ffcdd2; color:#c62828; }
+    .badge-changepoint{ background:#c8e6c9; color:#2e7d32; }
+    .badge-planned{ background:#bbdefb; color:#1565c0; }
+    .badge-sudden{ background:#ffe0b2; color:#e65100; }
+
+    /* フィルター */
+    .filter-section{ display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; margin-bottom:20px; }
+    .filter-group{ display:flex; flex-direction:column; gap:6px; }
+    .filter-group label{ font-size:.85rem; color:#666; font-weight:500; }
+    .filter-group select, .filter-group input{
+      padding:10px 14px; border:2px solid #e0e0e0; border-radius:8px; font-size:1rem; min-width:150px;
+    }
+
+    /* 統計 */
+    .stats-row{ display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:12px; margin-bottom:20px; }
+    .stat-card{ background:#fff; border-radius:12px; padding:16px; text-align:center; box-shadow:0 2px 10px rgba(0,0,0,.1); }
+    .stat-card .number{ font-size:1.8rem; font-weight:bold; color:#667eea; }
+    .stat-card .label{ font-size:.8rem; color:#666; margin-top:4px; }
+    .stat-card.anomaly .number{ color:#e53935; }
+    .stat-card.sudden .number{ color:#e65100; }
+    .stat-card.planned .number{ color:#2196f3; }
+
+    /* タイムライン */
+    .timeline{ position:relative; padding-left:24px; }
+    .timeline::before{
+      content:''; position:absolute; left:8px; top:0; bottom:0;
+      width:3px; background: linear-gradient(180deg, #667eea, #764ba2); border-radius:3px;
+    }
+    .timeline-item{
+      position:relative; margin-bottom:8px; padding:10px 16px;
+      background:#f8f9ff; border-radius:8px; border-left:4px solid #667eea;
+      cursor:pointer; transition:all .2s;
+    }
+    .timeline-item:hover{ transform: translateX(5px); box-shadow:0 4px 15px rgba(0,0,0,.1); }
+    .timeline-item::before{
+      content:''; position:absolute; left:-20px; top:14px;
+      width:10px; height:10px; background:#667eea;
+      border-radius:50%; border:2px solid #fff;
+    }
+    .timeline-item.anomaly-only{ border-left-color:#e53935; background:#fff5f5; }
+    .timeline-item.anomaly-only::before{ background:#e53935; }
+    .timeline-item.cp-sudden{ border-left-color:#ff9800; background:#fff8e1; }
+    .timeline-item.cp-sudden::before{ background:#ff9800; }
+    .timeline-item.cp-planned{ border-left-color:#2196f3; background:#e3f2fd; }
+    .timeline-item.cp-planned::before{ background:#2196f3; }
+    .timeline-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .timeline-date{ font-size:.8rem; color:#666; min-width:85px; }
+    .timeline-badges{ display:flex; gap:4px; flex-wrap:wrap; }
+    .timeline-summary{ flex:1; font-size:.9rem; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:120px; }
+
+    /* カレンダー */
+    .calendar-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+    .calendar-nav{ display:flex; align-items:center; gap:16px; }
+    .calendar-nav button{ padding:8px 16px; background:#f5f5f5; border:none; border-radius:8px; cursor:pointer; font-size:1rem; }
+    .calendar-nav button:hover{ background:#e0e0e0; }
+    .calendar-nav .month-year{ font-size:1.3rem; font-weight:bold; color:#333; min-width:160px; text-align:center; }
+    .calendar-grid{ display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; }
+    .calendar-day-header{ text-align:center; padding:10px; font-weight:600; color:#666; font-size:.85rem; }
+    .calendar-day{
+      min-height:120px; background:#f8f9ff; border-radius:8px; padding:8px;
+      cursor:pointer; transition:all .2s;
+    }
+    .calendar-day:hover{ background:#e8ebff; }
+    .calendar-day.other-month{ background:#f5f5f5; opacity:.6; }
+    .calendar-day.today{ background:#e3f2fd; border:2px solid #2196f3; }
+    .calendar-day .day-number{ font-size:.85rem; font-weight:600; color:#333; margin-bottom:6px; }
+    .calendar-day.sunday .day-number{ color:#e53935; }
+    .calendar-day.saturday .day-number{ color:#2196f3; }
+    .calendar-event{
+      background:#2196f3; color:#fff; padding:4px 6px; border-radius:4px;
+      font-size:.7rem; margin-bottom:3px; overflow:hidden; cursor:pointer;
+      line-height:1.3;
+    }
+    .calendar-event:hover{ opacity:.9; transform:scale(1.02); }
+    .calendar-event.category-人{ background:#e53935; }
+    .calendar-event.category-方法{ background:#2196f3; }
+    .calendar-event.category-材料{ background:#43a047; }
+    .calendar-event.category-金型{ background:#ff9800; }
+    .calendar-event.category-設備{ background:#9c27b0; }
+    .calendar-event.category-その他{ background:#607d8b; }
+    .calendar-more{ font-size:.7rem; color:#666; text-align:center; }
+
+    /* 管理画面 */
+    .master-tabs{ display:flex; gap:8px; margin-bottom:20px; }
+    .master-tab{
+      padding:10px 20px; background:#f5f5f5; border:none;
+      border-radius:8px 8px 0 0; cursor:pointer; font-size:.95rem;
+    }
+    .master-tab.active{ background:#667eea; color:#fff; }
+    .master-table{ width:100%; border-collapse:collapse; }
+    .master-table th{ background:#667eea; color:#fff; padding:12px; text-align:left; }
+    .master-table td{ padding:12px; border-bottom:1px solid #e0e0e0; }
+    .master-table tr:hover{ background:#f8f9ff; }
+    .master-add{ display:flex; gap:12px; margin-bottom:20px; }
+    .master-add input{ flex:1; }
+
+    /* モーダル */
+    .modal{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:3000; align-items:center; justify-content:center; padding:20px; }
+    .modal.active{ display:flex; }
+    .modal-content{ background:#fff; border-radius:16px; max-width:700px; width:100%; max-height:85vh; overflow-y:auto; }
+    .modal-header{ padding:20px 24px; border-bottom:1px solid #e0e0e0; display:flex; justify-content:space-between; align-items:flex-start; }
+    .modal-header h3{ font-size:1.2rem; color:#333; }
+    .modal-close{ background:none; border:none; font-size:1.5rem; cursor:pointer; color:#999; }
+    .modal-badges{ display:flex; gap:8px; flex-wrap:wrap; padding:16px 24px; background:#f8f9ff; border-bottom:1px solid #e0e0e0; }
+    .modal-badges .badge{ padding:4px 12px; font-size:.8rem; }
+    .modal-body{ padding:24px; }
+    .modal-actions{ display:flex; gap:12px; padding:16px 24px; border-top:1px solid #e0e0e0; }
+    .form-row{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+    @media (max-width:600px){ .form-row{ grid-template-columns:1fr; } }
+    .detail-section{ margin-bottom:20px; }
+    .detail-section-title{ font-size:.85rem; font-weight:600; color:#667eea; margin-bottom:8px; }
+    .detail-section-content{
+      font-size:.95rem; color:#333; line-height:1.6;
+      background:#f8f9fa; padding:12px 16px; border-radius:8px; white-space:pre-wrap;
+    }
+    .detail-grid{ display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
+    .detail-grid-item{ background:#f8f9fa; padding:10px 14px; border-radius:8px; }
+    .detail-grid-item .label{ font-size:.75rem; color:#888; margin-bottom:4px; }
+    .detail-grid-item .value{ font-size:.9rem; color:#333; }
+
+    /* ローディング・空状態 */
+    .loading{ text-align:center; padding:60px 20px; color:#666; }
+    .spinner{ width:40px; height:40px; border:4px solid #e0e0e0; border-top-color:#667eea; border-radius:50%; animation: spin 1s linear infinite; margin:0 auto 16px; }
+    @keyframes spin{ to{ transform: rotate(360deg);} }
+    .empty-state{ text-align:center; padding:40px 20px; color:#666; }
+    .empty-state .icon{ font-size:3rem; margin-bottom:12px; }
+
+    #signOutBtn{
+      position:fixed; top:16px; right:16px;
+      padding:8px 16px; background:rgba(239,83,80,.9); color:#fff; border:none; border-radius:8px;
+      cursor:pointer; font-size:.85rem; z-index:1000; display:none;
+    }
+    #signOutBtn:hover{ background:#e53935; }
+
+    /* 各画面ヘッダー内のログアウトボタン */
+    .header-actions{ display:flex; gap:10px; align-items:center; }
+
+    /* 履歴テーブル */
+    .history-table{ width:100%; border-collapse:collapse; font-size:.9rem; }
+    .history-table th{ background:#667eea; color:#fff; padding:10px; text-align:left; }
+    .history-table td{ padding:10px; border-bottom:1px solid #e0e0e0; }
+    .history-table tr:hover{ background:#f8f9ff; }
+
+    /* ファイルアップロードエリア */
+    .file-upload-area{
+      border:2px dashed #ccc; border-radius:8px; padding:20px;
+      text-align:center; cursor:pointer; transition: all .2s;
+      background:#fafafa;
+    }
+    .file-upload-area:hover{ border-color:#667eea; background:#f5f5ff; }
+
+    @media (max-width: 768px){
+      .menu-cards{ grid-template-columns:1fr; }
+      .topics-row{ grid-template-columns:1fr; }
+      .form-row{ grid-template-columns:1fr; }
+      .filter-section{ flex-direction:column; }
+      .detail-grid{ grid-template-columns:1fr; }
+      .calendar-day{ min-height:70px; padding:4px; }
+      .calendar-event{ font-size:.6rem; padding:1px 4px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 認証画面 -->
+  <div id="authGate">
+    <div id="authCard">
+      <h2>🔐 ログイン</h2>
+      <div class="form-group">
+        <label>メールアドレス</label>
+        <input type="email" id="authEmail" placeholder="user@example.com">
+      </div>
+      <div class="form-group">
+        <label>パスワード</label>
+        <input type="password" id="authPassword" placeholder="••••••••">
+      </div>
+      <button id="authLoginBtn">ログイン</button>
+      <p id="authMsg" style="color:#c62828;margin-top:12px;text-align:center;font-size:.9rem;"></p>
+    </div>
+  </div>
+
+  <button id="signOutBtn">ログアウト</button>
+
+  <!-- メインメニュー -->
+  <div id="mainMenu">
+    <div class="menu-container">
+      <div class="menu-header">
+        <h1>🔄 変化点管理システム</h1>
+      </div>
+
+      <!-- トピックス（plannedのみ） -->
+      <div class="topics-card">
+        <h2>📢 トピックス（計画変化点）</h2>
+        <div class="topics-row">
+          <div class="topics-section today">
+            <h3>📅 今日の計画変化点</h3>
+            <div id="topicsToday"></div>
+          </div>
+          <div class="topics-section tomorrow">
+            <h3>📆 明日の計画変化点</h3>
+            <div id="topicsTomorrow"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- メニューカード -->
+      <div class="menu-cards">
+        <div class="menu-card" data-screen="timeline">
+          <div class="icon">📊</div>
+          <h3>タイムライン</h3>
+          <p>異常＋変化点を時系列で確認</p>
+        </div>
+        <div class="menu-card" data-screen="planned">
+          <div class="icon">📝</div>
+          <h3>計画変化点入力</h3>
+          <p>変化点情報を登録</p>
+        </div>
+        <div class="menu-card" data-screen="calendar">
+          <div class="icon">📆</div>
+          <h3>計画変化点カレンダー</h3>
+          <p>変化点予定を確認</p>
+        </div>
+        <div class="menu-card" data-screen="master">
+          <div class="icon">⚙️</div>
+          <h3>管理</h3>
+          <p>部署・ラインなどのマスタデータ管理</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- タイムライン画面 -->
+  <div id="timelineScreen" class="screen">
+    <div class="app-header">
+      <h1>📊 タイムライン</h1>
+      <div class="header-actions">
+        <button class="btn-back" data-back>← メニュー</button>
+        <button class="btn-logout" data-logout>ログアウト</button>
+      </div>
+    </div>
+    <div class="container">
+      <div class="card">
+        <div class="filter-section">
+          <div class="filter-group">
+            <label>表示モード</label>
+            <select id="filterMode">
+              <option value="serial">整理No別</option>
+              <option value="line">ライン別</option>
+            </select>
+          </div>
+
+          <div class="filter-group" id="serialFilterGroup">
+            <label>整理No</label>
+            <input type="text" id="filterSerial" list="serialList" placeholder="入力...">
+            <datalist id="serialList"></datalist>
+          </div>
+
+          <div class="filter-group" id="lineFilterGroup" style="display:none;">
+            <label>ライン</label>
+            <select id="filterLine"><option value="">選択...</option></select>
+          </div>
+
+          <div class="filter-group">
+            <label>期間（開始）</label>
+            <input type="date" id="filterDateFrom">
+          </div>
+          <div class="filter-group">
+            <label>期間（終了）</label>
+            <input type="date" id="filterDateTo">
+          </div>
+
+          <div class="filter-group">
+            <label>表示タイプ</label>
+            <select id="filterType">
+              <option value="all">すべて</option>
+              <option value="anomaly">異常のみ</option>
+              <option value="sudden">突発変化点のみ</option>
+              <option value="planned">計画変化点のみ</option>
+            </select>
+          </div>
+
+          <!-- ✅ キーワード絞り込み -->
+          <div class="filter-group" style="min-width:260px;">
+            <label>キーワード</label>
+            <input type="text" id="filterKeyword" placeholder="">
+          </div>
+
+          <!-- ✅ 追加：ソート順切り替え -->
+          <div class="filter-group">
+            <label>並び順</label>
+            <select id="sortOrder">
+              <option value="desc" selected>降順（新しい→古い）</option>
+              <option value="asc">昇順（古い→新しい）</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary" id="btnSearch">🔍 検索</button>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card"><div class="number" id="statTotal">0</div><div class="label">総件数</div></div>
+        <div class="stat-card anomaly"><div class="number" id="statAnomaly">0</div><div class="label">異常</div></div>
+        <div class="stat-card sudden"><div class="number" id="statSudden">0</div><div class="label">突発変化点</div></div>
+        <div class="stat-card planned"><div class="number" id="statPlanned">0</div><div class="label">計画変化点</div></div>
+      </div>
+
+      <div class="card">
+        <div id="timelineLoading" class="loading"><div class="spinner"></div><p>データ読み込み中...</p></div>
+        <div id="timelineEmpty" class="empty-state" style="display:none;"><div class="icon">📭</div><p>条件を指定して検索してください</p></div>
+        <div id="timelineView" class="timeline" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 計画変化点入力画面 -->
+  <div id="plannedScreen" class="screen">
+    <div class="app-header">
+      <h1>📝 計画変化点入力</h1>
+      <div class="header-actions">
+        <button class="btn-back" data-back>← メニュー</button>
+        <button class="btn-logout" data-logout>ログアウト</button>
+      </div>
+    </div>
+
+    <div class="container" style="max-width:800px;">
+      <div class="card">
+        <h2 style="margin-bottom:20px;color:#333;">計画変化点の登録（changepoints / type=planned）</h2>
+
+        <form id="plannedForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label>起案部署<span class="required">*</span></label>
+              <select id="planDepartment" required><option value="">選択してください</option></select>
+              <div class="hint">保存先：planneddepartment</div>
+            </div>
+            <div class="form-group">
+              <label>変化点分類<span class="required">*</span></label>
+              <select id="planCategory" required>
+                <option value="">選択してください</option>
+                <option value="人">人</option>
+                <option value="方法">方法</option>
+                <option value="材料">材料</option>
+                <option value="金型">金型</option>
+                <option value="設備">設備</option>
+                <option value="その他">その他</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>変化点発生部署<span class="required">*</span></label>
+            <select id="planDepartmentOccur" required><option value="">選択してください</option></select>
+            <div class="hint">保存先：department</div>
+          </div>
+
+          <div class="form-group">
+            <label>対象ライン名<span class="required">*</span></label>
+            <input type="text" id="planLineName" list="lineList2" required placeholder="例: 94-300 / RL1 など">
+            <datalist id="lineList2"></datalist>
+            <div class="hint">保存先：lineName</div>
+          </div>
+
+          <div class="form-group">
+            <label>対象整理No</label>
+            <input type="text" id="planSerialNo" list="serialList2" placeholder="例: 6769">
+            <datalist id="serialList2"></datalist>
+            <div class="hint">保存先：serialNo</div>
+          </div>
+
+          <div class="form-group">
+            <label>変化点内容<span class="required">*</span></label>
+            <textarea id="planContent" required placeholder="変化点の詳細内容を入力..."></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>変化点発生日<span class="required">*</span></label>
+              <input type="date" id="planDate" required>
+              <div class="hint">保存先：occurrenceDate</div>
+            </div>
+            <div class="form-group">
+              <label>変化点発生時刻</label>
+              <input type="time" id="planTime">
+              <div class="hint">保存先：occurrenceTime</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>変化点対象ロット</label>
+            <input type="text" id="planLot" placeholder="例: A2024-001">
+          </div>
+
+          <!-- 関連資料アップロード -->
+          <div class="form-group">
+            <label>📎 関連資料アップロード（5MBまで）</label>
+            <div class="file-upload-area" id="fileUploadArea">
+              <input type="file" id="planDocumentFile" accept="*/*" style="display:none;">
+              <div>📁 クリックまたはドラッグ&ドロップでファイルを選択</div>
+              <div style="font-size:.8rem;color:#888;margin-top:8px;">対応形式: PDF, 画像, Excel, Word など（最大5MB）</div>
+            </div>
+            <div id="filePreview" style="display:none;"></div>
+            <div id="uploadProgress" style="display:none;margin-top:10px;height:6px;background:#e0e0e0;border-radius:3px;overflow:hidden;">
+              <div id="uploadProgressBar" style="height:100%;background:linear-gradient(135deg, #667eea, #764ba2);width:0%;transition:width .3s;"></div>
+            </div>
+            <div class="hint">保存先：documentUrl（Storageにアップロード）</div>
+          </div>
+
+          <div class="form-group">
+            <label>関連資料（テキスト）</label>
+            <input type="text" id="planDocument" placeholder="資料名やリンク（手動入力）">
+            <div class="hint">保存先：document</div>
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button type="submit" class="btn btn-primary" style="flex:1;min-width:140px;padding:14px;font-size:1.05rem;">
+              📤 登録する
+            </button>
+            <button type="button" id="btnExportLastPlannedCSV" class="btn btn-secondary btn-disabled" style="flex:1;min-width:120px;padding:14px;font-size:1.05rem;">
+              ⬇ CSV出力
+            </button>
+            <button type="button" id="btnExportLastPlannedQR" class="btn btn-secondary btn-disabled" style="flex:1;min-width:120px;padding:14px;font-size:1.05rem;">
+              📱 QR出力
+            </button>
+          </div>
+          <div class="hint" style="margin-top:8px;">
+            ※「CSV出力」「QR出力」は、最後に登録した計画変化点の内容を出力します（登録直後に有効化）
+          </div>
+        </form>
+
+        <div style="margin-top:30px;">
+          <h3 style="font-size:1rem;color:#333;margin-bottom:16px;">📋 最近の計画変化点</h3>
+          <div id="plannedHistory"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- カレンダー画面 -->
+  <div id="calendarScreen" class="screen">
+    <div class="app-header">
+      <h1>📆 計画変化点カレンダー</h1>
+      <div class="header-actions">
+        <button class="btn-back" data-back>← メニュー</button>
+        <button class="btn-logout" data-logout>ログアウト</button>
+      </div>
+    </div>
+    <div class="container">
+      <div class="card">
+        <div class="filter-section">
+          <div class="filter-group">
+            <label>発生部署フィルター</label>
+            <select id="calendarDeptFilter">
+              <option value="">すべての部署</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>分類フィルター</label>
+            <select id="calendarCatFilter">
+              <option value="">すべての分類</option>
+              <option value="人">人</option>
+              <option value="方法">方法</option>
+              <option value="材料">材料</option>
+              <option value="金型">金型</option>
+              <option value="設備">設備</option>
+              <option value="その他">その他</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="calendar-header">
+          <div class="calendar-nav">
+            <button id="calPrev">◀ 前月</button>
+            <div class="month-year" id="calMonthYear"></div>
+            <button id="calNext">次月 ▶</button>
+          </div>
+          <button class="btn btn-secondary" id="calToday">今月</button>
+        </div>
+
+        <div class="calendar-grid" id="calendarGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理画面 -->
+  <div id="masterScreen" class="screen">
+    <div class="app-header">
+      <h1>⚙️ マスタ管理</h1>
+      <div class="header-actions">
+        <button class="btn-back" data-back>← メニュー</button>
+        <button class="btn-logout" data-logout>ログアウト</button>
+      </div>
+    </div>
+    <div class="container" style="max-width:800px;">
+      <div class="card">
+        <div class="master-tabs">
+          <button class="master-tab active" data-tab="department">部署</button>
+          <button class="master-tab" data-tab="line">ライン</button>
+        </div>
+        <div id="masterDepartment" class="master-content">
+          <div class="master-add">
+            <input type="text" id="addDeptName" placeholder="新しい部署名を入力...">
+            <button class="btn btn-primary" id="btnAddDept">追加</button>
+          </div>
+          <table class="master-table">
+            <thead><tr><th>部署名</th><th style="width:120px;">操作</th></tr></thead>
+            <tbody id="deptTableBody"></tbody>
+          </table>
+        </div>
+        <div id="masterLine" class="master-content" style="display:none;">
+          <div class="master-add">
+            <input type="text" id="addLineName" placeholder="新しいライン名を入力...">
+            <button class="btn btn-primary" id="btnAddLine">追加</button>
+          </div>
+          <table class="master-table">
+            <thead><tr><th>ライン名</th><th style="width:120px;">操作</th></tr></thead>
+            <tbody id="lineTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 詳細モーダル -->
+  <div id="detailModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h3 id="detailTitle">詳細情報</h3>
+          <div id="detailDate" style="font-size:.9rem;color:#666;margin-top:4px;"></div>
+        </div>
+        <button class="modal-close" id="detailClose">&times;</button>
+      </div>
+      <div class="modal-badges" id="detailBadges"></div>
+      <div class="modal-body" id="detailBody"></div>
+      <div id="detailActions" class="modal-actions" style="display:none;padding:16px 24px;border-top:1px solid #e0e0e0;gap:12px;">
+        <button class="btn btn-primary" id="btnDetailEdit" style="flex:1;">✏️ 編集</button>
+        <button class="btn" id="btnDetailDelete" style="flex:1;background:#e53935;color:#fff;">🗑️ 削除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 編集モーダル -->
+  <div id="editModal" class="modal">
+    <div class="modal-content" style="max-width:700px;">
+      <div class="modal-header">
+        <h3>✏️ 変化点の編集</h3>
+        <button class="modal-close" id="editClose">&times;</button>
+      </div>
+      <div class="modal-body" id="editFormContainer" style="padding:24px;"></div>
+      <div style="padding:16px 24px;border-top:1px solid #e0e0e0;display:flex;gap:12px;">
+        <button class="btn btn-primary" id="btnEditSave" style="flex:1;">💾 保存</button>
+        <button class="btn btn-secondary" id="btnEditCancel" style="flex:1;">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- QRコードモーダル -->
+  <div id="qrModal" class="modal">
+    <div class="modal-content" style="max-width:400px;text-align:center;">
+      <div class="modal-header">
+        <h3>📱 QRコード</h3>
+        <button class="modal-close" id="qrClose">&times;</button>
+      </div>
+      <div style="padding:30px;display:flex;flex-direction:column;align-items:center;gap:16px;">
+        <div id="qrCanvas" style="background:#fff;padding:10px;border-radius:8px;"></div>
+        <div id="qrUrl" style="font-size:.8rem;color:#666;word-break:break-all;background:#f5f5f5;padding:10px;border-radius:6px;width:100%;"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+          <button class="btn btn-primary" id="btnDownloadQR">💾 QR画像を保存</button>
+          <button class="btn btn-secondary" id="btnCopyUrl">📋 URLをコピー</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QRコード生成ライブラリ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
+    import {
+      getFirestore, collection, doc, getDocs, addDoc, deleteDoc, updateDoc,
+      query, orderBy, onSnapshot, serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+    import {
+      getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
+      setPersistence, browserLocalPersistence
+    } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
+    import {
+      getStorage, ref, uploadBytesResumable, getDownloadURL
+    } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
+      authDomain: "abnreport-fd733.firebaseapp.com",
+      databaseURL: "https://abnreport-fd733-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "abnreport-fd733",
+      storageBucket: "abnreport-fd733.firebasestorage.app",
+      messagingSenderId: "349748947315",
+      appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
+
+    // State
+    let anomalyData = [];       // anomalies
+    let changepointData = [];   // changepoints (planned + sudden)
+    let filteredData = [];
+
+    let masterDepartments = [];
+    let masterLines = [];
+    let deptDocs = [];
+    let lineDocs = [];
+
+    let calendarYear, calendarMonth;
+
+    // CSV export state（最後に登録した計画変化点）
+    let lastRegisteredPlanned = null;
+    let lastDetailHtmlUrl = null;
+    let selectedFile = null;
+
+    // CSV columns (planned changepoint)
+    const PLANNED_CP_CSV_HEADERS = [
+      { key: 'docId',             label: 'DocID' },
+      { key: 'type',              label: '種別' },
+      { key: 'category',          label: '分類' },
+      { key: 'planneddepartment', label: '起案部署' },
+      { key: 'department',        label: '発生部署' },
+      { key: 'lineName',          label: 'ライン名' },
+      { key: 'serialNo',          label: '整理No' },
+      { key: 'occurrenceDate',    label: '発生日' },
+      { key: 'occurrenceTime',    label: '時刻' },
+      { key: 'lot',               label: '対象ロット' },
+      { key: 'document',          label: '関連資料' },
+      { key: 'documentUrl',       label: '資料URL' },
+      { key: 'content',           label: '内容' },
+      { key: 'createdAtLocal',    label: '登録日時(端末)' }
+    ];
+
+    // DOM
+    const gate = document.getElementById('authGate');
+    const mainMenu = document.getElementById('mainMenu');
+    const screens = {
+      timeline: document.getElementById('timelineScreen'),
+      planned: document.getElementById('plannedScreen'),
+      calendar: document.getElementById('calendarScreen'),
+      master: document.getElementById('masterScreen')
+    };
+
+    // Helpers
+    function ymdLocal(dateObj){
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth()+1).padStart(2,'0');
+      const d = String(dateObj.getDate()).padStart(2,'0');
+      return `${y}-${m}-${d}`;
+    }
+    function escapeHtml(text){
+      if (text === null || text === undefined) return '';
+      return String(text)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#039;')
+        .replace(/\n/g,'<br>');
+    }
+    function escapeAttr(text){
+      if (text === null || text === undefined) return '';
+      return String(text).replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // CSV utilities
+    function csvEscape(v){
+      if (v === null || v === undefined) return '';
+      const s = String(v);
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    }
+
+    function downloadCSV(filename, headers, rowObj){
+      const bom = '\uFEFF'; // Excel文字化け対策
+      const headerLine = headers.map(h => csvEscape(h.label)).join(',');
+      const valueLine  = headers.map(h => csvEscape(rowObj[h.key])).join(',');
+      const csv = bom + headerLine + '\n' + valueLine + '\n';
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function safeFilenamePart(s){
+      return String(s || '').replace(/[\\\/:*?"<>|]/g,'_');
+    }
+
+    function setExportButtonEnabled(enabled){
+      console.log('setExportButtonEnabled:', enabled);
+      const btnCSV = document.getElementById('btnExportLastPlannedCSV');
+      const btnQR = document.getElementById('btnExportLastPlannedQR');
+      if (btnCSV) {
+        btnCSV.disabled = !enabled;
+        btnCSV.classList.toggle('btn-disabled', !enabled);
+        console.log('CSVボタン disabled:', btnCSV.disabled);
+      }
+      if (btnQR) {
+        btnQR.disabled = !enabled;
+        btnQR.classList.toggle('btn-disabled', !enabled);
+        console.log('QRボタン disabled:', btnQR.disabled);
+      }
+    }
+
+    // ✅ キーワード正規化
+    function normText(s){
+      return String(s || '').toLowerCase().trim();
+    }
+
+    // ✅ キーワードマッチ判定（異常/変化点の主要項目を横断）
+    function matchesKeyword(item, keyword){
+      const kw = normText(keyword);
+      if (!kw) return true;
+
+      let hay = '';
+      if (item._kind === 'anomaly'){
+        hay = [
+          item.serialNo, item.lineName, item.department, item.handler,
+          item.occurrenceDate, item.occurrenceTime,
+          item.anomalyContent, item.actionTaken, item.rootCauseAction
+        ].join(' ');
+      } else {
+        hay = [
+          item.type, item.category, item.planneddepartment, item.department,
+          item.lineName, item.serialNo,
+          item.occurrenceDate, item.occurrenceTime,
+          item.lot, item.document, item.content,
+          item.relatedAnomalyId
+        ].join(' ');
+      }
+      return normText(hay).includes(kw);
+    }
+
+    // ✅ 昇順/降順 両対応：異常→紐づく変化点を直後に寄せる（並び順を維持）
+    function reorderLinkedTimelineItems(items, order){
+      // cp を relatedAnomalyId で束ねる
+      const cpByRel = new Map();
+      for (const it of items){
+        if (it._kind !== 'changepoint') continue;
+        const rel = (it.relatedAnomalyId || '').trim();
+        if (!rel) continue;
+        if (!cpByRel.has(rel)) cpByRel.set(rel, []);
+        cpByRel.get(rel).push(it);
+      }
+
+      // 束の中の順序も order に合わせる（元のsortDate/sortTimeを使用）
+      for (const arr of cpByRel.values()){
+        arr.sort((a,b) => {
+          const d = (a.sortDate || '').localeCompare(b.sortDate || '');
+          if (d !== 0) return order === 'asc' ? d : -d;
+          const t = (a.sortTime || '').localeCompare(b.sortTime || '');
+          return order === 'asc' ? t : -t;
+        });
+      }
+
+      const used = new Set();
+      const out = [];
+
+      for (const it of items){
+        if (used.has(it._id)) continue;
+
+        if (it._kind === 'anomaly'){
+          out.push(it);
+          used.add(it._id);
+
+          const linked = cpByRel.get(it._id) || [];
+          for (const cp of linked){
+            if (used.has(cp._id)) continue;
+            out.push(cp);
+            used.add(cp._id);
+          }
+        } else {
+          out.push(it);
+          used.add(it._id);
+        }
+      }
+      return out;
+    }
+
+    // Auth
+    document.getElementById('authLoginBtn').addEventListener('click', async () => {
+      const email = document.getElementById('authEmail').value;
+      const password = document.getElementById('authPassword').value;
+      try{
+        await setPersistence(auth, browserLocalPersistence);
+        await signInWithEmailAndPassword(auth, email, password);
+      }catch(e){
+        document.getElementById('authMsg').textContent = 'ログイン失敗: ' + (e.code || e.message);
+      }
+    });
+
+    document.getElementById('signOutBtn').addEventListener('click', () => signOut(auth));
+
+    onAuthStateChanged(auth, (user) => {
+      if (user){
+        gate.style.display = 'none';
+        mainMenu.style.display = 'block';
+        document.getElementById('signOutBtn').style.display = 'inline-block';
+        initApp();
+      } else {
+        gate.style.display = 'flex';
+        mainMenu.style.display = 'none';
+        Object.values(screens).forEach(s => s.style.display = 'none');
+        document.getElementById('signOutBtn').style.display = 'none';
+      }
+    });
+
+    // Screen Navigation
+    function showScreen(screen){
+      mainMenu.style.display = (screen === 'menu') ? 'block' : 'none';
+      Object.entries(screens).forEach(([key, el]) => {
+        el.style.display = (key === screen) ? 'block' : 'none';
+      });
+    }
+
+    document.querySelectorAll('.menu-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const screen = card.dataset.screen;
+        showScreen(screen);
+        if (screen === 'timeline'){
+          document.getElementById('timelineLoading').style.display = 'none';
+          document.getElementById('timelineEmpty').style.display = 'block';
+        } else if (screen === 'calendar'){
+          renderCalendar();
+        } else if (screen === 'master'){
+          renderMasterTables();
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-back]').forEach(btn => {
+      btn.addEventListener('click', () => showScreen('menu'));
+    });
+
+    document.querySelectorAll('[data-logout]').forEach(btn => {
+      btn.addEventListener('click', () => signOut(auth));
+    });
+
+    // Init
+    async function initApp(){
+      const now = new Date();
+      calendarYear = now.getFullYear();
+      calendarMonth = now.getMonth();
+
+      await loadMasters();
+      setupListeners();
+      setupPlannedForm();
+      setupFileUpload();
+      setupQRModal();
+      setupCalendar();
+      setupMasterTabs();
+      setupFilterMode();
+
+      // 初期日付
+      document.getElementById('planDate').value = ymdLocal(new Date());
+
+      // CSV/QRボタン初期は無効
+      setExportButtonEnabled(false);
+
+      // キーワードEnterで検索
+      const kwEl = document.getElementById('filterKeyword');
+      if (kwEl){
+        kwEl.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter'){
+            e.preventDefault();
+            document.getElementById('btnSearch').click();
+          }
+        });
+      }
+    }
+
+    // Masters
+    async function loadMasters(){
+      try{
+        const [deptSnap, lineSnap] = await Promise.all([
+          getDocs(collection(db, 'masters', 'department', 'items')),
+          getDocs(collection(db, 'masters', 'line', 'items'))
+        ]);
+
+        deptDocs = deptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        lineDocs = lineSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        masterDepartments = deptDocs.map(d => d.name).filter(Boolean).sort();
+        masterLines = lineDocs.map(d => d.name).filter(Boolean).sort();
+
+        document.getElementById('filterLine').innerHTML =
+          '<option value="">選択...</option>' +
+          masterLines.map(l => `<option value="${escapeAttr(l)}">${escapeHtml(l)}</option>`).join('');
+
+        document.getElementById('planDepartment').innerHTML =
+          '<option value="">選択してください</option>' +
+          masterDepartments.map(d => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('');
+
+        document.getElementById('planDepartmentOccur').innerHTML =
+          '<option value="">選択してください</option>' +
+          masterDepartments.map(d => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('');
+
+        document.getElementById('calendarDeptFilter').innerHTML =
+          '<option value="">すべての部署</option>' +
+          masterDepartments.map(d => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('');
+
+        document.getElementById('lineList2').innerHTML = masterLines.map(l => `<option value="${escapeAttr(l)}">`).join('');
+
+      }catch(err){
+        console.error('マスタ読み込みエラー:', err);
+      }
+    }
+
+    // Realtime Listeners
+    function setupListeners(){
+      onSnapshot(query(collection(db, 'anomalies'), orderBy('occurrenceDate', 'desc')), (snap) => {
+        anomalyData = snap.docs.map(d => ({ _id: d.id, type: 'anomaly', ...d.data() }));
+        updateSerialList();
+      });
+
+      onSnapshot(query(collection(db, 'changepoints'), orderBy('occurrenceDate', 'desc')), (snap) => {
+        changepointData = snap.docs.map(d => ({ _id: d.id, docType: 'changepoint', ...d.data() }));
+        updateTopics();
+        renderPlannedHistory();
+        if (screens.calendar.style.display === 'block') renderCalendar();
+      });
+    }
+
+    function updateSerialList(){
+      const serialNos = [...new Set(anomalyData.map(d => d.serialNo).filter(Boolean))].sort();
+      const optionsHtml = serialNos.map(no => `<option value="${escapeAttr(no)}">`).join('');
+      document.getElementById('serialList').innerHTML  = optionsHtml;
+      document.getElementById('serialList2').innerHTML = optionsHtml;
+    }
+
+    // Topics（plannedのみ）
+    function updateTopics(){
+      const today = ymdLocal(new Date());
+      const tomorrow = ymdLocal(new Date(Date.now() + 86400000));
+
+      const plannedOnly = changepointData.filter(p => (p.type === 'planned'));
+      const todayItems = plannedOnly.filter(p => p.occurrenceDate === today);
+      const tomorrowItems = plannedOnly.filter(p => p.occurrenceDate === tomorrow);
+
+      const renderItems = (items) => items.map(item => `
+        <div class="topics-item" data-id="${escapeAttr(item._id)}">
+          <div class="time">${escapeHtml(item.occurrenceTime || '時刻未定')}</div>
+          <span class="category">${escapeHtml(item.category || '-')}</span>
+          <span class="content">${escapeHtml((item.content || '').slice(0, 40))}${(item.content || '').length > 40 ? '...' : ''}</span>
+          <div class="lines">
+            🔧 ${escapeHtml(item.lineName || '')}
+            ${item.serialNo ? ' ｜ 🔢 ' + escapeHtml(item.serialNo) : ''}
+            ${item.department ? ' ｜ 🏭 ' + escapeHtml(item.department) : ''}
+          </div>
+        </div>
+      `).join('');
+
+      document.getElementById('topicsToday').innerHTML =
+        todayItems.length ? renderItems(todayItems) : '<div class="topics-empty">今日の計画変化点はありません</div>';
+
+      document.getElementById('topicsTomorrow').innerHTML =
+        tomorrowItems.length ? renderItems(tomorrowItems) : '<div class="topics-empty">明日の計画変化点はありません</div>';
+
+      document.querySelectorAll('.topics-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const item = changepointData.find(p => p._id === el.dataset.id);
+          if (item) showDetail(item);
+        });
+      });
+    }
+
+    // Timeline
+    function setupFilterMode(){
+      document.getElementById('filterMode').addEventListener('change', (e) => {
+        document.getElementById('serialFilterGroup').style.display = (e.target.value === 'serial') ? 'flex' : 'none';
+        document.getElementById('lineFilterGroup').style.display = (e.target.value === 'line') ? 'flex' : 'none';
+      });
+    }
+
+    document.getElementById('btnSearch').addEventListener('click', () => {
+      const mode = document.getElementById('filterMode').value;
+      const serial = document.getElementById('filterSerial').value.trim();
+      const line = document.getElementById('filterLine').value;
+      const dateFrom = document.getElementById('filterDateFrom').value;
+      const dateTo = document.getElementById('filterDateTo').value;
+      const typeFilter = document.getElementById('filterType').value;
+      const keyword = document.getElementById('filterKeyword').value || '';
+
+      // ✅ 追加：ソート順
+      const sortOrder = document.getElementById('sortOrder').value; // 'asc' | 'desc'
+
+      // anomalies + changepoints を統合
+      let allItems = [];
+
+      anomalyData.forEach(item => {
+        allItems.push({
+          ...item,
+          _kind: 'anomaly',
+          sortDate: item.occurrenceDate || '',
+          sortTime: item.occurrenceTime || '',
+        });
+      });
+
+      changepointData.forEach(item => {
+        allItems.push({
+          ...item,
+          _kind: 'changepoint',
+          sortDate: item.occurrenceDate || '',
+          sortTime: item.occurrenceTime || '',
+        });
+      });
+
+      filteredData = allItems.filter(item => {
+        if (mode === 'serial' && serial){
+          if (!String(item.serialNo || '').includes(serial)) return false;
+        }
+
+        if (mode === 'line' && line){
+          if (String(item.lineName || '') !== String(line)) return false;
+        }
+
+        const itemDate = item.sortDate || '';
+        if (dateFrom && itemDate < dateFrom) return false;
+        if (dateTo && itemDate > dateTo) return false;
+
+        if (typeFilter === 'anomaly'){
+          if (item._kind !== 'anomaly') return false;
+        }
+        if (typeFilter === 'sudden'){
+          if (item._kind !== 'changepoint' || item.type !== 'sudden') return false;
+        }
+        if (typeFilter === 'planned'){
+          if (item._kind !== 'changepoint' || item.type !== 'planned') return false;
+        }
+
+        if (!matchesKeyword(item, keyword)) return false;
+        return true;
+      });
+
+      // ✅ 昇順/降順でソート
+      filteredData.sort((a,b) => {
+        const d = (a.sortDate || '').localeCompare(b.sortDate || '');
+        if (d !== 0) return sortOrder === 'asc' ? d : -d;
+
+        const t = (a.sortTime || '').localeCompare(b.sortTime || '');
+        return sortOrder === 'asc' ? t : -t;
+      });
+
+      // ✅ 異常→紐づく変化点を直後に寄せる（順序はsortOrderに従う）
+      filteredData = reorderLinkedTimelineItems(filteredData, sortOrder);
+
+      updateStats();
+      renderTimeline();
+    });
+
+    function updateStats(){
+      document.getElementById('statTotal').textContent = filteredData.length;
+      document.getElementById('statAnomaly').textContent =
+        filteredData.filter(d => d._kind === 'anomaly').length;
+      document.getElementById('statSudden').textContent =
+        filteredData.filter(d => d._kind === 'changepoint' && d.type === 'sudden').length;
+      document.getElementById('statPlanned').textContent =
+        filteredData.filter(d => d._kind === 'changepoint' && d.type === 'planned').length;
+    }
+
+    function renderTimeline(){
+      document.getElementById('timelineLoading').style.display = 'none';
+      if (filteredData.length === 0){
+        document.getElementById('timelineEmpty').style.display = 'block';
+        document.getElementById('timelineView').style.display = 'none';
+        return;
+      }
+      document.getElementById('timelineEmpty').style.display = 'none';
+      document.getElementById('timelineView').style.display = 'block';
+
+      const container = document.getElementById('timelineView');
+
+      container.innerHTML = filteredData.map((item, i) => {
+        let cls = 'timeline-item';
+        let badges = '';
+        let summary = '';
+
+        if (item._kind === 'anomaly'){
+          cls += ' anomaly-only';
+          badges = `<span class="badge badge-anomaly">異常</span>`;
+          summary = (item.anomalyContent || '').replace(/\n/g,' ').slice(0, 55);
+        } else {
+          if (item.type === 'planned'){
+            cls += ' cp-planned';
+            badges =
+              `<span class="badge badge-planned">計画</span>` +
+              `<span class="badge badge-changepoint">${escapeHtml(item.category || '-')}</span>`;
+            summary = '📋 ' + (item.content || '').replace(/\n/g,' ').slice(0, 55);
+          } else {
+            cls += ' cp-sudden';
+            badges =
+              `<span class="badge badge-sudden">突発</span>` +
+              `<span class="badge badge-changepoint">${escapeHtml(item.category || '-')}</span>`;
+            summary = '🔄 ' + (item.content || '').replace(/\n/g,' ').slice(0, 55);
+          }
+        }
+
+        return `
+          <div class="${cls}" data-index="${i}">
+            <div class="timeline-row">
+              <div class="timeline-date">${escapeHtml(item.sortDate || '')}</div>
+              <div class="timeline-badges">${badges}</div>
+              <div class="timeline-summary">${escapeHtml(summary)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.querySelectorAll('.timeline-item').forEach(el => {
+        el.addEventListener('click', () => showDetail(filteredData[parseInt(el.dataset.index, 10)]));
+      });
+    }
+
+    // Calendar（plannedのみ）
+    function setupCalendar(){
+      document.getElementById('calPrev').addEventListener('click', () => {
+        calendarMonth--;
+        if (calendarMonth < 0){ calendarMonth = 11; calendarYear--; }
+        renderCalendar();
+      });
+      document.getElementById('calNext').addEventListener('click', () => {
+        calendarMonth++;
+        if (calendarMonth > 11){ calendarMonth = 0; calendarYear++; }
+        renderCalendar();
+      });
+      document.getElementById('calToday').addEventListener('click', () => {
+        const now = new Date();
+        calendarYear = now.getFullYear();
+        calendarMonth = now.getMonth();
+        renderCalendar();
+      });
+
+      document.getElementById('calendarDeptFilter').addEventListener('change', renderCalendar);
+      document.getElementById('calendarCatFilter').addEventListener('change', renderCalendar);
+    }
+
+    function renderCalendar(){
+      const deptFilter = document.getElementById('calendarDeptFilter').value;
+      const catFilter  = document.getElementById('calendarCatFilter').value;
+
+      document.getElementById('calMonthYear').textContent = `${calendarYear}年${calendarMonth + 1}月`;
+
+      const firstDay = new Date(calendarYear, calendarMonth, 1);
+      const lastDay  = new Date(calendarYear, calendarMonth + 1, 0);
+      const startDay = firstDay.getDay();
+      const daysInMonth = lastDay.getDate();
+
+      const today = ymdLocal(new Date());
+      const grid  = document.getElementById('calendarGrid');
+
+      let html = ['日','月','火','水','木','金','土'].map(d => `<div class="calendar-day-header">${d}</div>`).join('');
+
+      const plannedOnly = changepointData.filter(p => p.type === 'planned').filter(p => {
+        if (deptFilter && String(p.department || '') !== String(deptFilter)) return false;
+        if (catFilter && String(p.category || '') !== String(catFilter)) return false;
+        return true;
+      });
+
+      const prevMonth = new Date(calendarYear, calendarMonth, 0);
+      for (let i = startDay - 1; i >= 0; i--){
+        const day = prevMonth.getDate() - i;
+        html += `<div class="calendar-day other-month"><div class="day-number">${day}</div></div>`;
+      }
+
+      for (let day = 1; day <= daysInMonth; day++){
+        const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const dayOfWeek = new Date(calendarYear, calendarMonth, day).getDay();
+        const isToday = (dateStr === today);
+        const dayClass = isToday ? 'today' : (dayOfWeek === 0 ? 'sunday' : (dayOfWeek === 6 ? 'saturday' : ''));
+
+        const dayEvents = plannedOnly.filter(p => p.occurrenceDate === dateStr);
+
+        let eventsHtml = dayEvents.slice(0,3).map(e => {
+          const info = [e.department, e.lineName, e.serialNo].filter(Boolean).join(' / ');
+          return `<div class="calendar-event category-${escapeAttr(e.category || 'その他')}" data-id="${escapeAttr(e._id)}" title="${escapeAttr(e.content || '')}">
+            <div style="font-weight:600;">${escapeHtml(e.category || '')}</div>
+            <div style="font-size:.65rem;opacity:.9;">${escapeHtml(info || '-')}</div>
+          </div>`;
+        }).join('');
+
+        if (dayEvents.length > 3) eventsHtml += `<div class="calendar-more">他${dayEvents.length - 3}件</div>`;
+
+        html += `
+          <div class="calendar-day ${dayClass}" data-date="${escapeAttr(dateStr)}">
+            <div class="day-number">${day}</div>
+            ${eventsHtml}
+          </div>
+        `;
+      }
+
+      const remaining = (7 - ((startDay + daysInMonth) % 7)) % 7;
+      for (let i = 1; i <= remaining; i++){
+        html += `<div class="calendar-day other-month"><div class="day-number">${i}</div></div>`;
+      }
+
+      grid.innerHTML = html;
+
+      grid.querySelectorAll('.calendar-event').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const item = changepointData.find(p => p._id === el.dataset.id);
+          if (item) showDetail(item);
+        });
+      });
+    }
+
+    // Planned Form
+    function setupPlannedForm(){
+      document.getElementById('btnExportLastPlannedCSV').addEventListener('click', () => {
+        if (!lastRegisteredPlanned){
+          alert('まだCSV出力できる登録データがありません（先に登録してください）');
+          return;
+        }
+        const safeDate = (lastRegisteredPlanned.occurrenceDate || ymdLocal(new Date()));
+        const safeTime = (lastRegisteredPlanned.occurrenceTime || '').replace(':','') || '----';
+        const safeSerial = safeFilenamePart(lastRegisteredPlanned.serialNo || 'no-serial');
+        const filename = `CP_planned_${safeDate}_${safeTime}_${safeSerial}.csv`;
+        downloadCSV(filename, PLANNED_CP_CSV_HEADERS, lastRegisteredPlanned);
+      });
+
+      // QR出力ボタン
+      document.getElementById('btnExportLastPlannedQR').addEventListener('click', async () => {
+        console.log('QRボタンがクリックされました', { lastRegisteredPlanned, lastDetailHtmlUrl });
+        
+        if (!lastRegisteredPlanned){
+          alert('まだQR出力できる登録データがありません（先に登録してください）');
+          return;
+        }
+
+        // 詳細HTMLがまだアップロードされていない場合はアップロード
+        if (!lastDetailHtmlUrl){
+          try {
+            console.log('詳細HTML生成開始...');
+            document.getElementById('btnExportLastPlannedQR').textContent = '⏳ 生成中...';
+            document.getElementById('btnExportLastPlannedQR').disabled = true;
+            lastDetailHtmlUrl = await generateAndUploadDetailHtml(lastRegisteredPlanned);
+            console.log('詳細HTML生成完了:', lastDetailHtmlUrl);
+          } catch(err) {
+            console.error('詳細ページの生成に失敗:', err);
+            alert('詳細ページの生成に失敗しました: ' + (err.message || err));
+            document.getElementById('btnExportLastPlannedQR').textContent = '📱 QR出力';
+            document.getElementById('btnExportLastPlannedQR').disabled = false;
+            return;
+          }
+          document.getElementById('btnExportLastPlannedQR').textContent = '📱 QR出力';
+          document.getElementById('btnExportLastPlannedQR').disabled = false;
+        }
+
+        console.log('QRモーダル表示:', lastDetailHtmlUrl);
+        showQRModal(lastDetailHtmlUrl);
+      });
+
+      document.getElementById('plannedForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const planneddepartment = document.getElementById('planDepartment').value || '';
+        const department = document.getElementById('planDepartmentOccur').value || '';
+        const category = document.getElementById('planCategory').value || '';
+        const lineName = document.getElementById('planLineName').value.trim() || '';
+        const serialNo = document.getElementById('planSerialNo').value.trim() || '';
+        const content  = document.getElementById('planContent').value || '';
+        const occurrenceDate = document.getElementById('planDate').value || '';
+        const occurrenceTime = document.getElementById('planTime').value || '';
+
+        if (!planneddepartment){ alert('起案部署を選択してください'); return; }
+        if (!category){ alert('変化点分類を選択してください'); return; }
+        if (!department){ alert('変化点発生部署を選択してください'); return; }
+        if (!lineName){ alert('対象ライン名を入力してください'); return; }
+        if (!occurrenceDate){ alert('変化点発生日を入力してください'); return; }
+        if (!content.trim()){ alert('変化点内容を入力してください'); return; }
+
+        const data = {
+          type: 'planned',
+          planneddepartment,
+          department,
+          category,
+          lineName,
+          serialNo,
+          content,
+          occurrenceDate,
+          occurrenceTime,
+          lot: document.getElementById('planLot').value || '',
+          document: document.getElementById('planDocument').value || '',
+          documentUrl: '',
+          createdAt: serverTimestamp()
+        };
+
+        try{
+          // まずドキュメントを登録
+          const docRef = await addDoc(collection(db, 'changepoints'), data);
+
+          // ファイルがあればアップロード
+          let documentUrl = '';
+          if (selectedFile){
+            try {
+              documentUrl = await uploadFileToStorage(selectedFile, docRef.id);
+              // Firestoreを更新
+              await updateDoc(doc(db, 'changepoints', docRef.id), { documentUrl });
+            } catch(uploadErr){
+              console.error('ファイルアップロードエラー:', uploadErr);
+              alert('ファイルのアップロードに失敗しましたが、変化点は登録されました');
+            }
+          }
+
+          const now = new Date();
+          lastRegisteredPlanned = {
+            docId: docRef.id,
+            ...data,
+            documentUrl,
+            createdAtLocal: now.toISOString()
+          };
+          lastDetailHtmlUrl = null; // 新しい登録なのでリセット
+          setExportButtonEnabled(true);
+
+          alert('計画変化点を登録しました');
+          document.getElementById('plannedForm').reset();
+          document.getElementById('planDate').value = ymdLocal(new Date());
+
+          // ファイル選択リセット
+          selectedFile = null;
+          document.getElementById('filePreview').style.display = 'none';
+          document.getElementById('filePreview').innerHTML = '';
+
+        }catch(err){
+          alert('登録に失敗しました: ' + (err.message || err));
+        }
+      });
+    }
+
+    function renderPlannedHistory(){
+      const container = document.getElementById('plannedHistory');
+      const plannedOnly = changepointData.filter(p => p.type === 'planned')
+        .sort((a,b) => (String(b.occurrenceDate||'').localeCompare(String(a.occurrenceDate||''))));
+
+      if (!plannedOnly.length){
+        container.innerHTML = '<div class="empty-state"><p>まだ登録がありません</p></div>';
+        return;
+      }
+
+      container.innerHTML = `
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>発生日</th><th>時刻</th><th>分類</th><th>起案部署</th><th>発生部署</th><th>ライン</th><th>整理No</th><th>内容</th><th style="width:100px;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${plannedOnly.slice(0, 20).map(item => `
+              <tr>
+                <td>${escapeHtml(item.occurrenceDate || '')}</td>
+                <td>${escapeHtml(item.occurrenceTime || '')}</td>
+                <td><span class="badge badge-changepoint">${escapeHtml(item.category || '-')}</span></td>
+                <td>${escapeHtml(item.planneddepartment || '')}</td>
+                <td>${escapeHtml(item.department || '')}</td>
+                <td>${escapeHtml(item.lineName || '')}</td>
+                <td>${escapeHtml(item.serialNo || '')}</td>
+                <td>${escapeHtml((item.content || '').slice(0, 30))}${(item.content || '').length > 30 ? '...' : ''}</td>
+                <td>
+                  <button class="btn btn-sm" style="background:#ffc107;color:#000;margin-right:4px;" onclick="openEditFromHistory('${item._id}')">✏️</button>
+                  <button class="btn btn-sm" style="background:#e53935;color:#fff;" onclick="deleteChangepoint('${item._id}')">🗑️</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    // Master Management
+    function setupMasterTabs(){
+      document.querySelectorAll('.master-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.master-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById('masterDepartment').style.display = (tab.dataset.tab === 'department') ? 'block' : 'none';
+          document.getElementById('masterLine').style.display = (tab.dataset.tab === 'line') ? 'block' : 'none';
+        });
+      });
+
+      document.getElementById('btnAddDept').addEventListener('click', async () => {
+        const name = document.getElementById('addDeptName').value.trim();
+        if (!name) return;
+        try{
+          await addDoc(collection(db, 'masters', 'department', 'items'), { name });
+          document.getElementById('addDeptName').value = '';
+          await loadMasters();
+          renderMasterTables();
+        }catch(e){
+          alert('追加に失敗しました');
+        }
+      });
+
+      document.getElementById('btnAddLine').addEventListener('click', async () => {
+        const name = document.getElementById('addLineName').value.trim();
+        if (!name) return;
+        try{
+          await addDoc(collection(db, 'masters', 'line', 'items'), { name });
+          document.getElementById('addLineName').value = '';
+          await loadMasters();
+          renderMasterTables();
+        }catch(e){
+          alert('追加に失敗しました');
+        }
+      });
+    }
+
+    function renderMasterTables(){
+      document.getElementById('deptTableBody').innerHTML = deptDocs.map(d =>
+        `<tr><td>${escapeHtml(d.name || '')}</td><td><button class="btn btn-danger btn-sm" onclick="deleteMaster('department', '${escapeAttr(d.id)}')">削除</button></td></tr>`
+      ).join('');
+
+      document.getElementById('lineTableBody').innerHTML = lineDocs.map(d =>
+        `<tr><td>${escapeHtml(d.name || '')}</td><td><button class="btn btn-danger btn-sm" onclick="deleteMaster('line', '${escapeAttr(d.id)}')">削除</button></td></tr>`
+      ).join('');
+    }
+
+    window.deleteMaster = async function(type, id){
+      if (!confirm('削除しますか？')) return;
+      try{
+        await deleteDoc(doc(db, 'masters', type, 'items', id));
+        await loadMasters();
+        renderMasterTables();
+      }catch(e){
+        alert('削除に失敗しました');
+      }
+    };
+
+    // ファイルアップロード設定
+    function setupFileUpload(){
+      const area = document.getElementById('fileUploadArea');
+      const input = document.getElementById('planDocumentFile');
+      const preview = document.getElementById('filePreview');
+
+      area.addEventListener('click', () => input.click());
+
+      area.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        area.style.borderColor = '#667eea';
+        area.style.background = '#f5f5ff';
+      });
+
+      area.addEventListener('dragleave', () => {
+        area.style.borderColor = '#ccc';
+        area.style.background = '#fafafa';
+      });
+
+      area.addEventListener('drop', (e) => {
+        e.preventDefault();
+        area.style.borderColor = '#ccc';
+        area.style.background = '#fafafa';
+        if (e.dataTransfer.files.length > 0){
+          handleFileSelect(e.dataTransfer.files[0]);
+        }
+      });
+
+      input.addEventListener('change', (e) => {
+        if (e.target.files.length > 0){
+          handleFileSelect(e.target.files[0]);
+        }
+      });
+    }
+
+    function handleFileSelect(file){
+      const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+      if (file.size > MAX_SIZE){
+        alert('ファイルサイズが5MBを超えています');
+        return;
+      }
+
+      selectedFile = file;
+      const preview = document.getElementById('filePreview');
+      preview.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px;background:#e8f5e9;border-radius:8px;">
+          <span style="flex:1;font-size:.9rem;color:#333;word-break:break-all;">📄 ${escapeHtml(file.name)} (${(file.size / 1024).toFixed(1)} KB)</span>
+          <button type="button" style="padding:4px 10px;background:#e53935;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;" id="btnRemoveFile">✕ 削除</button>
+        </div>
+      `;
+      preview.style.display = 'block';
+
+      document.getElementById('btnRemoveFile').addEventListener('click', () => {
+        selectedFile = null;
+        preview.style.display = 'none';
+        preview.innerHTML = '';
+        document.getElementById('planDocumentFile').value = '';
+      });
+    }
+
+    async function uploadFileToStorage(file, docId){
+      const timestamp = Date.now();
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `changepoints/${docId}/${timestamp}_${safeFileName}`;
+      const storageRef = ref(storage, storagePath);
+
+      const progressEl = document.getElementById('uploadProgress');
+      const progressBar = document.getElementById('uploadProgressBar');
+      progressEl.style.display = 'block';
+
+      return new Promise((resolve, reject) => {
+        const uploadTask = uploadBytesResumable(storageRef, file);
+
+        uploadTask.on('state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            progressBar.style.width = progress + '%';
+          },
+          (error) => {
+            progressEl.style.display = 'none';
+            reject(error);
+          },
+          async () => {
+            progressEl.style.display = 'none';
+            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(downloadUrl);
+          }
+        );
+      });
+    }
+
+    // 詳細HTMLを生成してStorageにアップロード
+    async function generateAndUploadDetailHtml(data){
+      const htmlContent = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>計画変化点 - ${escapeHtml(data.occurrenceDate)} ${escapeHtml(data.category)}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+    .card { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,.15); overflow: hidden; }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 24px; text-align: center; }
+    .header h1 { font-size: 1.3rem; margin-bottom: 8px; }
+    .header .date { font-size: 1rem; opacity: .9; }
+    .badges { display: flex; gap: 8px; justify-content: center; padding: 16px; background: #f8f9ff; border-bottom: 1px solid #e0e0e0; }
+    .badge { padding: 6px 14px; border-radius: 20px; font-size: .85rem; font-weight: 600; }
+    .badge-planned { background: #bbdefb; color: #1565c0; }
+    .badge-category { background: #c8e6c9; color: #2e7d32; }
+    .body { padding: 24px; }
+    .section { margin-bottom: 20px; }
+    .section-title { font-size: .85rem; font-weight: 600; color: #667eea; margin-bottom: 8px; }
+    .section-content { font-size: .95rem; color: #333; line-height: 1.6; background: #f8f9fa; padding: 12px 16px; border-radius: 8px; white-space: pre-wrap; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .grid-item { background: #f8f9fa; padding: 12px; border-radius: 8px; }
+    .grid-item .label { font-size: .75rem; color: #888; margin-bottom: 4px; }
+    .grid-item .value { font-size: .9rem; color: #333; }
+    .footer { padding: 16px 24px; background: #f8f9fa; text-align: center; font-size: .8rem; color: #888; }
+    a { color: #667eea; }
+    @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>📋 計画変化点</h1>
+      <div class="date">${escapeHtml(data.occurrenceDate)} ${escapeHtml(data.occurrenceTime || '')}</div>
+    </div>
+    <div class="badges">
+      <span class="badge badge-planned">計画</span>
+      <span class="badge badge-category">${escapeHtml(data.category || '-')}</span>
+    </div>
+    <div class="body">
+      <div class="grid">
+        <div class="grid-item"><div class="label">起案部署</div><div class="value">${escapeHtml(data.planneddepartment || '-')}</div></div>
+        <div class="grid-item"><div class="label">発生部署</div><div class="value">${escapeHtml(data.department || '-')}</div></div>
+        <div class="grid-item"><div class="label">ライン名</div><div class="value">${escapeHtml(data.lineName || '-')}</div></div>
+        <div class="grid-item"><div class="label">整理No</div><div class="value">${escapeHtml(data.serialNo || '-')}</div></div>
+        <div class="grid-item"><div class="label">対象ロット</div><div class="value">${escapeHtml(data.lot || '-')}</div></div>
+        <div class="grid-item"><div class="label">DocID</div><div class="value" style="font-size:.75rem;">${escapeHtml(data.docId || '-')}</div></div>
+      </div>
+      <div class="section">
+        <div class="section-title">📝 変化点内容</div>
+        <div class="section-content">${escapeHtml(data.content || '-')}</div>
+      </div>
+      ${data.document ? `<div class="section"><div class="section-title">📎 関連資料（テキスト）</div><div class="section-content">${escapeHtml(data.document)}</div></div>` : ''}
+      ${data.documentUrl ? `<div class="section"><div class="section-title">📁 添付ファイル</div><div class="section-content"><a href="${escapeHtml(data.documentUrl)}" target="_blank">ファイルを開く</a></div></div>` : ''}
+    </div>
+    <div class="footer">登録日時: ${escapeHtml(data.createdAtLocal || '-')}<br>変化点管理システム</div>
+  </div>
+</body>
+</html>`;
+
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const storagePath = `changepoints/${data.docId}/detail_${Date.now()}.html`;
+      const storageRef = ref(storage, storagePath);
+
+      const uploadTask = uploadBytesResumable(storageRef, blob, { contentType: 'text/html' });
+
+      return new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+          null,
+          (error) => reject(error),
+          async () => {
+            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(downloadUrl);
+          }
+        );
+      });
+    }
+
+    // QRモーダル設定
+    let qrCodeInstance = null;
+
+    function setupQRModal(){
+      document.getElementById('qrClose').addEventListener('click', () => {
+        document.getElementById('qrModal').classList.remove('active');
+      });
+      document.getElementById('qrModal').addEventListener('click', (e) => {
+        if (e.target.id === 'qrModal') document.getElementById('qrModal').classList.remove('active');
+      });
+
+      document.getElementById('btnDownloadQR').addEventListener('click', () => {
+        const qrContainer = document.getElementById('qrCanvas');
+        const canvas = qrContainer.querySelector('canvas');
+        if (canvas) {
+          const link = document.createElement('a');
+          link.download = `QR_${lastRegisteredPlanned?.docId || 'changepoint'}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+        } else {
+          alert('QRコードが生成されていません');
+        }
+      });
+
+      document.getElementById('btnCopyUrl').addEventListener('click', () => {
+        const url = document.getElementById('qrUrl').textContent;
+        navigator.clipboard.writeText(url).then(() => {
+          alert('URLをコピーしました');
+        }).catch(() => {
+          // フォールバック
+          const textarea = document.createElement('textarea');
+          textarea.value = url;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          alert('URLをコピーしました');
+        });
+      });
+    }
+
+    function showQRModal(url){
+      const qrContainer = document.getElementById('qrCanvas');
+      const urlEl = document.getElementById('qrUrl');
+
+      urlEl.textContent = url;
+
+      // 既存のQRコードをクリア
+      qrContainer.innerHTML = '';
+
+      // qrcodejsでQRコードを生成
+      try {
+        qrCodeInstance = new QRCode(qrContainer, {
+          text: url,
+          width: 200,
+          height: 200,
+          colorDark: '#000000',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } catch (error) {
+        console.error('QR生成エラー:', error);
+        qrContainer.innerHTML = '<p style="color:red;">QRコード生成に失敗しました</p>';
+      }
+
+      document.getElementById('qrModal').classList.add('active');
+    }
+
+    // Detail Modal
+    let currentDetailItem = null;
+
+    function showDetail(item){
+      currentDetailItem = item;
+      const isAnomaly = (item._kind === 'anomaly') || (item.type === 'anomaly');
+      const isCP = !isAnomaly;
+      const isPlannedCP = isCP && item.type === 'planned';
+
+      if (isAnomaly){
+        document.getElementById('detailTitle').textContent =
+          `整理No: ${item.serialNo || '-'}　${item.lineName || ''}`;
+        document.getElementById('detailDate').textContent =
+          `${item.occurrenceDate || ''} ${item.occurrenceTime || ''}`;
+      } else {
+        const t = (item.type === 'planned') ? '計画変化点' : '突発変化点';
+        document.getElementById('detailTitle').textContent =
+          `${t}（${item.category || ''}）`;
+        document.getElementById('detailDate').textContent =
+          `${item.occurrenceDate || ''} ${item.occurrenceTime || ''}`;
+      }
+
+      let badges = '';
+      if (isAnomaly){
+        badges += `<span class="badge badge-anomaly">異常</span>`;
+      } else {
+        if (item.type === 'planned'){
+          badges += `<span class="badge badge-planned">計画</span>`;
+        } else {
+          badges += `<span class="badge badge-sudden">突発</span>`;
+        }
+        badges += `<span class="badge badge-changepoint">${escapeHtml(item.category || '-')}</span>`;
+      }
+      document.getElementById('detailBadges').innerHTML = badges;
+
+      let body = '';
+
+      if (isAnomaly){
+        body = `
+          <div class="detail-grid" style="margin-bottom:20px;">
+            <div class="detail-grid-item"><div class="label">整理No</div><div class="value">${escapeHtml(item.serialNo || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">ライン</div><div class="value">${escapeHtml(item.lineName || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">部署</div><div class="value">${escapeHtml(item.department || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">処置者</div><div class="value">${escapeHtml(item.handler || '-')}</div></div>
+          </div>
+        `;
+        if (item.anomalyContent) body += `<div class="detail-section"><div class="detail-section-title">⚠️ 異常内容</div><div class="detail-section-content">${escapeHtml(item.anomalyContent)}</div></div>`;
+        if (item.actionTaken) body += `<div class="detail-section"><div class="detail-section-title">🔧 現場対応</div><div class="detail-section-content">${escapeHtml(item.actionTaken)}</div></div>`;
+        if (item.rootCauseAction) body += `<div class="detail-section"><div class="detail-section-title">📋 処置方法</div><div class="detail-section-content">${escapeHtml(item.rootCauseAction)}</div></div>`;
+      } else {
+        body = `
+          <div class="detail-grid" style="margin-bottom:20px;">
+            <div class="detail-grid-item"><div class="label">種別</div><div class="value">${escapeHtml(item.type || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">分類</div><div class="value">${escapeHtml(item.category || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">発生部署</div><div class="value">${escapeHtml(item.department || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">ライン</div><div class="value">${escapeHtml(item.lineName || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">整理No</div><div class="value">${escapeHtml(item.serialNo || '-')}</div></div>
+            <div class="detail-grid-item"><div class="label">関連異常ID</div><div class="value">${escapeHtml(item.relatedAnomalyId || '-')}</div></div>
+          </div>
+        `;
+
+        if (item.type === 'planned'){
+          body += `
+            <div class="detail-section">
+              <div class="detail-section-title">🏷️ 起案部署</div>
+              <div class="detail-section-content">${escapeHtml(item.planneddepartment || '-')}</div>
+            </div>
+          `;
+        }
+
+        body += `
+          <div class="detail-section">
+            <div class="detail-section-title">📝 変化点内容</div>
+            <div class="detail-section-content">${escapeHtml(item.content || '-')}</div>
+          </div>
+        `;
+
+        if (item.document){
+          body += `
+            <div class="detail-section">
+              <div class="detail-section-title">📎 関連資料（テキスト）</div>
+              <div class="detail-section-content">${escapeHtml(item.document)}</div>
+            </div>
+          `;
+        }
+        if (item.documentUrl){
+          body += `
+            <div class="detail-section">
+              <div class="detail-section-title">📁 添付ファイル</div>
+              <div class="detail-section-content"><a href="${escapeHtml(item.documentUrl)}" target="_blank" style="color:#667eea;">ファイルを開く</a></div>
+            </div>
+          `;
+        }
+      }
+
+      document.getElementById('detailBody').innerHTML = body;
+
+      const actionsEl = document.getElementById('detailActions');
+      actionsEl.style.display = isPlannedCP ? 'flex' : 'none';
+
+      document.getElementById('detailModal').classList.add('active');
+    }
+
+    document.getElementById('detailClose').addEventListener('click', () => {
+      document.getElementById('detailModal').classList.remove('active');
+    });
+    document.getElementById('detailModal').addEventListener('click', (e) => {
+      if (e.target.id === 'detailModal') document.getElementById('detailModal').classList.remove('active');
+    });
+
+    document.getElementById('btnDetailEdit').addEventListener('click', () => {
+      if (!currentDetailItem) return;
+      document.getElementById('detailModal').classList.remove('active');
+      openEditModal(currentDetailItem._id);
+    });
+
+    document.getElementById('btnDetailDelete').addEventListener('click', async () => {
+      if (!currentDetailItem) return;
+      await deleteChangepoint(currentDetailItem._id);
+      document.getElementById('detailModal').classList.remove('active');
+    });
+
+    // 履歴からの編集
+    window.openEditFromHistory = function(id) {
+      openEditModal(id);
+    };
+
+    // 削除機能
+    window.deleteChangepoint = async function(id) {
+      if (!confirm('この変化点を削除しますか？')) return;
+      try {
+        await deleteDoc(doc(db, 'changepoints', id));
+        alert('削除しました');
+      } catch (err) {
+        alert('削除に失敗しました: ' + (err.message || err));
+      }
+    };
+
+    // 編集モーダルを開く
+    function openEditModal(id) {
+      const item = changepointData.find(x => x._id === id);
+      if (!item) return;
+
+      const container = document.getElementById('editFormContainer');
+      container.innerHTML = `
+        <input type="hidden" id="editId" value="${item._id}">
+        <div class="form-row">
+          <div class="form-group">
+            <label>起案部署</label>
+            <select id="editPlannedDept">
+              <option value="">選択</option>
+              ${masterDepartments.map(d => `<option value="${d}" ${item.planneddepartment === d ? 'selected' : ''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>変化点分類</label>
+            <select id="editCategory">
+              <option value="">選択</option>
+              <option value="人" ${item.category === '人' ? 'selected' : ''}>人</option>
+              <option value="方法" ${item.category === '方法' ? 'selected' : ''}>方法</option>
+              <option value="材料" ${item.category === '材料' ? 'selected' : ''}>材料</option>
+              <option value="金型" ${item.category === '金型' ? 'selected' : ''}>金型</option>
+              <option value="設備" ${item.category === '設備' ? 'selected' : ''}>設備</option>
+              <option value="その他" ${item.category === 'その他' ? 'selected' : ''}>その他</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>発生部署</label>
+            <select id="editDepartment">
+              <option value="">選択</option>
+              ${masterDepartments.map(d => `<option value="${d}" ${item.department === d ? 'selected' : ''}>${d}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>ライン名</label>
+            <input type="text" id="editLineName" value="${escapeAttr(item.lineName || '')}" list="editLineList">
+            <datalist id="editLineList">
+              ${masterLines.map(l => `<option value="${l}">`).join('')}
+            </datalist>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>整理No</label>
+          <input type="text" id="editSerialNo" value="${escapeAttr(item.serialNo || '')}">
+        </div>
+        <div class="form-group">
+          <label>変化点内容</label>
+          <textarea id="editContent" style="min-height:120px;">${escapeHtml(item.content || '')}</textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>発生日</label>
+            <input type="date" id="editDate" value="${item.occurrenceDate || ''}">
+          </div>
+          <div class="form-group">
+            <label>発生時刻</label>
+            <input type="time" id="editTime" value="${item.occurrenceTime || ''}">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>対象ロット</label>
+            <input type="text" id="editLot" value="${escapeAttr(item.lot || '')}">
+          </div>
+          <div class="form-group">
+            <label>関連資料</label>
+            <input type="text" id="editDocument" value="${escapeAttr(item.document || '')}">
+          </div>
+        </div>
+      `;
+
+      document.getElementById('editModal').classList.add('active');
+    }
+
+    // 編集保存
+    document.getElementById('btnEditSave').addEventListener('click', async () => {
+      const id = document.getElementById('editId').value;
+      if (!id) return;
+
+      const updates = {
+        planneddepartment: document.getElementById('editPlannedDept').value,
+        category: document.getElementById('editCategory').value,
+        department: document.getElementById('editDepartment').value,
+        lineName: document.getElementById('editLineName').value,
+        serialNo: document.getElementById('editSerialNo').value,
+        content: document.getElementById('editContent').value,
+        occurrenceDate: document.getElementById('editDate').value,
+        occurrenceTime: document.getElementById('editTime').value,
+        lot: document.getElementById('editLot').value,
+        document: document.getElementById('editDocument').value
+      };
+
+      try {
+        await updateDoc(doc(db, 'changepoints', id), updates);
+        alert('保存しました');
+        document.getElementById('editModal').classList.remove('active');
+      } catch (err) {
+        alert('保存に失敗しました: ' + (err.message || err));
+      }
+    });
+
+    // 編集キャンセル
+    document.getElementById('btnEditCancel').addEventListener('click', () => {
+      document.getElementById('editModal').classList.remove('active');
+    });
+    document.getElementById('editClose').addEventListener('click', () => {
+      document.getElementById('editModal').classList.remove('active');
+    });
+    document.getElementById('editModal').addEventListener('click', (e) => {
+      if (e.target.id === 'editModal') document.getElementById('editModal').classList.remove('active');
+    });
+
+  </script>
+</body>
+</html>
