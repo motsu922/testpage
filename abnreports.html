@@ -3282,74 +3282,107 @@ document.addEventListener('click', async (e)=>{
   }
 
   // 編集保存
-  document.getElementById('btnEditSave').addEventListener('click', async () => {
-    if (!editingId) return;
+// 編集保存
+document.getElementById('btnEditSave').addEventListener('click', async () => {
+  if (!editingId) return;
+  
+  const item = anomalyCache.find(x => x._id === editingId);
+  if (!item) return;
+  
+  const btn = document.getElementById('btnEditSave');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+  
+  try {
+    const updates = {};
     
-    const item = anomalyCache.find(x => x._id === editingId);
-    if (!item) return;
-    
-    const btn = document.getElementById('btnEditSave');
-    btn.disabled = true;
-    btn.textContent = '保存中...';
-    
-    try {
-      const updates = {};
+    if (editCurrentTab === 'mfg') {
+      updates.serialNo = document.getElementById('edit_serialNo')?.value || '';
+      updates.occurrenceDate = document.getElementById('edit_occurrenceDate')?.value || '';
+      updates.occurrenceTime = document.getElementById('edit_occurrenceTime')?.value || '';
+      updates.restartTime = document.getElementById('edit_restartTime')?.value || '';
+      updates.anomalyContent = document.getElementById('edit_anomalyContent')?.value || '';
+      updates.actionTaken = document.getElementById('edit_actionTaken')?.value || '';
+      updates.traceback = document.getElementById('edit_traceback')?.value || '';
+      updates.lotNo = document.getElementById('edit_lotNo')?.value || '';
+      updates.qualityResponse = document.getElementById('edit_qualityResponse')?.value || '';
+      updates.changePointCategory = document.getElementById('edit_changePointCategory')?.value || '';
+      updates.changePointContent = document.getElementById('edit_changePointContent')?.value || '';
       
-      if (editCurrentTab === 'mfg') {
-        updates.serialNo = document.getElementById('edit_serialNo')?.value || '';
-        updates.occurrenceDate = document.getElementById('edit_occurrenceDate')?.value || '';
-        updates.occurrenceTime = document.getElementById('edit_occurrenceTime')?.value || '';
-        updates.restartTime = document.getElementById('edit_restartTime')?.value || '';
-        updates.anomalyContent = document.getElementById('edit_anomalyContent')?.value || '';
-        updates.actionTaken = document.getElementById('edit_actionTaken')?.value || '';
-        updates.traceback = document.getElementById('edit_traceback')?.value || '';
-        updates.lotNo = document.getElementById('edit_lotNo')?.value || '';
-        updates.qualityResponse = document.getElementById('edit_qualityResponse')?.value || '';
-        updates.changePointCategory = document.getElementById('edit_changePointCategory')?.value || '';
-        updates.changePointContent = document.getElementById('edit_changePointContent')?.value || '';
-        
-        if (editMfgPhotos.length > 0) {
-          const newUrls = await uploadPhotos(editingId, 'mfg', editMfgPhotos);
-          updates.mfgPhotoUrls = [...(item.mfgPhotoUrls || []), ...newUrls];
-        }
-      } else {
-        updates.techHandler = document.getElementById('edit_techHandler')?.value || '';
-        updates.lifespan = document.getElementById('edit_lifespan')?.value || '';
-        updates.lifespanReached = document.getElementById('edit_lifespanReached')?.value || '';
-        updates.maintenanceUnit = document.getElementById('edit_maintenanceUnit')?.value || '';
-        updates.rootCauseAction = document.getElementById('edit_rootCauseAction')?.value || '';
-        updates.recurrenceType = document.getElementById('edit_recurrenceType')?.value || '';
-        updates.affirmation = document.getElementById('edit_affirmation')?.value || '';
-        updates.measureStatus = document.getElementById('edit_measureStatus')?.value || '';
-        updates.changePointCategory = document.getElementById('edit_tech_changePointCategory')?.value || '';
-        updates.changePointContent = document.getElementById('edit_tech_changePointContent')?.value || '';
-        if (editTechPhotos.length > 0) {
-          const newUrls = await uploadPhotos(editingId, 'tech', editTechPhotos);
-          updates.techPhotoUrls = [...(item.techPhotoUrls || []), ...newUrls];
-        }
+      if (editMfgPhotos.length > 0) {
+        const newUrls = await uploadPhotos(editingId, 'mfg', editMfgPhotos);
+        updates.mfgPhotoUrls = [...(item.mfgPhotoUrls || []), ...newUrls];
       }
+    } else {
+      updates.techHandler = document.getElementById('edit_techHandler')?.value || '';
+      updates.lifespan = document.getElementById('edit_lifespan')?.value || '';
+      updates.lifespanReached = document.getElementById('edit_lifespanReached')?.value || '';
+      updates.maintenanceUnit = document.getElementById('edit_maintenanceUnit')?.value || '';
+      updates.rootCauseAction = document.getElementById('edit_rootCauseAction')?.value || '';
+      updates.recurrenceType = document.getElementById('edit_recurrenceType')?.value || '';
+      updates.affirmation = document.getElementById('edit_affirmation')?.value || '';
+      updates.measureStatus = document.getElementById('edit_measureStatus')?.value || '';
+      updates.changePointCategory = document.getElementById('edit_tech_changePointCategory')?.value || '';
+      updates.changePointContent = document.getElementById('edit_tech_changePointContent')?.value || '';
       
-      await updateDoc(doc(db, 'anomalies', editingId), updates);
-      
-      const idx = anomalyCache.findIndex(x => x._id === editingId);
-      if (idx !== -1) {
-        anomalyCache[idx] = { ...anomalyCache[idx], ...updates };
-        filteredCache = [...anomalyCache];
-        renderHistory();
+      if (editTechPhotos.length > 0) {
+        const newUrls = await uploadPhotos(editingId, 'tech', editTechPhotos);
+        updates.techPhotoUrls = [...(item.techPhotoUrls || []), ...newUrls];
       }
-      
-      document.getElementById('editModal').classList.remove('active');
-      editMfgPhotos = [];
-      editTechPhotos = [];
-      alert('保存しました');
-      
-    } catch (error) {
-      alert('保存に失敗しました: ' + error.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = '保存';
     }
-  });
+    
+    // anomaliesコレクションを更新
+    await updateDoc(doc(db, 'anomalies', editingId), updates);
+    
+    // 変化点がある場合、changepointsコレクションにも記録
+    if (updates.changePointCategory) {
+      const changepointData = {
+        type: 'sudden',
+        category: updates.changePointCategory,
+        content: updates.changePointContent || '',
+        department: item.department || '',
+        lineName: item.lineName || '',
+        serialNo: updates.serialNo || item.serialNo || '',
+        occurrenceDate: updates.occurrenceDate || item.occurrenceDate || '',
+        occurrenceTime: updates.occurrenceTime || item.occurrenceTime || '',
+        relatedAnomalyId: editingId,
+        createdAt: serverTimestamp(),
+        updatedViaEdit: true
+      };
+      
+      const existingCPQuery = query(
+        collection(db, 'changepoints'),
+        where('relatedAnomalyId', '==', editingId)
+      );
+      const existingCPSnap = await getDocs(existingCPQuery);
+      
+      if (existingCPSnap.docs.length > 0) {
+        await updateDoc(doc(db, 'changepoints', existingCPSnap.docs[0].id), changepointData);
+      } else {
+        await addDoc(collection(db, 'changepoints'), changepointData);
+      }
+    }
+    
+    const idx = anomalyCache.findIndex(x => x._id === editingId);
+    if (idx !== -1) {
+      anomalyCache[idx] = { ...anomalyCache[idx], ...updates };
+      filteredCache = [...anomalyCache];
+      renderHistory();
+    }
+    
+    document.getElementById('editModal').classList.remove('active');
+    editMfgPhotos = [];
+    editTechPhotos = [];
+    alert('保存しました');
+    
+  } catch (error) {
+    console.error('Edit save error:', error);
+    alert('保存に失敗しました: ' + error.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '保存';
+  }
+});
 
   // 編集キャンセル
   document.getElementById('btnEditCancel').addEventListener('click', () => {
