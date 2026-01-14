@@ -3330,7 +3330,33 @@ document.getElementById('btnEditSave').addEventListener('click', async () => {
         updates.techPhotoUrls = [...(item.techPhotoUrls || []), ...newUrls];
       }
     }
-    
+    // ===== ここを btnEditSave の try 内、updates を作り終えた直後に追加 =====
+
+// 1) 再発なら対策状況が必須（技術タブ保存時に強制）
+//   - 「今回入力した値」優先、なければ「既存の値」を見る
+const finalRecurrence = ('recurrenceType' in updates) ? (updates.recurrenceType || '') : (item.recurrenceType || '');
+const finalMeasureStatus = ('measureStatus' in updates) ? (updates.measureStatus || '') : (item.measureStatus || '');
+
+// 製造側で「再発」になっているケースも拾うため finalRecurrence を見る
+// ただし “技術が対策状況未入力で登録しようとした場合エラー” なので、技術タブ保存時にブロック
+if (editCurrentTab === 'tech' && finalRecurrence === '再発' && !finalMeasureStatus) {
+  alert('「再発」の場合は「対策状況」を入力してください。（どちらかが対策状況を入力する必要があります）');
+  return; // ← ここで保存中断
+}
+
+// 2) 編集モーダルで「処置内容」または「変化点」が入ったら status を完了に切替（ダウングレードはしない）
+const finalRootCauseAction =
+  ('rootCauseAction' in updates) ? (updates.rootCauseAction || '') : (item.rootCauseAction || '');
+
+const finalChangePointCategory =
+  ('changePointCategory' in updates) ? (updates.changePointCategory || '') : (item.changePointCategory || '');
+
+// どちらかが入っていれば完了化
+if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
+  updates.status = 'complete';
+}
+
+
     // anomaliesコレクションを更新
     await updateDoc(doc(db, 'anomalies', editingId), updates);
     
