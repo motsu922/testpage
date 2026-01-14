@@ -144,7 +144,7 @@
     }
     .log-btn:hover { background: #333; }
 
-    /* 設定 */
+    /* 設定（省略なし：前回のまま） */
     .settings-locked { text-align: center; padding: 40px 20px; }
     .lock-icon { font-size: 64px; margin-bottom: 16px; }
     .lock-text { font-size: 16px; color: #888; margin-bottom: 20px; }
@@ -238,7 +238,6 @@
       background: #0a0a0a;
       color: #fff;
     }
-
     .toggle-switch {
       width: 50px;
       height: 28px;
@@ -332,18 +331,7 @@
     }
     .result-detail p { color: white; font-size: 14px; margin: 4px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; word-break: break-all; }
     .result-detail .label { font-size: 11px; opacity: 0.8; font-family: inherit; }
-    .result-btn {
-      margin-top: 24px;
-      padding: 16px 50px;
-      background: white;
-      border: none;
-      border-radius: 10px;
-      font-size: 18px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .result-overlay.ok .result-btn { color: #006400; }
-    .result-overlay.ng .result-btn { color: #8b0000; }
+
     .ng-locked .result-symbol { animation: shake 0.4s ease infinite; }
     @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
 
@@ -384,7 +372,7 @@
 
   <div class="firebase-status disconnected" id="firebaseStatus">🔌 Firebase未接続</div>
 
-  <!-- 照合（スタート無しで常時待機） -->
+  <!-- 照合（常時待機） -->
   <div class="tab-content active" id="tab-scan">
     <div class="scan-screen" id="scanScreen">
       <div class="scan-box">
@@ -502,12 +490,15 @@
     </div>
   </div>
 
-  <!-- 結果オーバーレイ -->
+  <!-- 結果オーバーレイ（OKは自動で閉じるのでボタン無し） -->
   <div class="result-overlay" id="resultOverlay">
     <div class="result-symbol" id="resultSymbol">○</div>
     <div class="result-text" id="resultText">一致</div>
     <div class="result-detail" id="resultDetail"></div>
-    <button class="result-btn" id="okBtn" onclick="closeAndContinue()">次の照合へ</button>
+
+    <!-- 互換のため残すが常に非表示（押さずに自動遷移） -->
+    <button style="display:none;" id="okBtn" onclick="closeAndContinue()">次の照合へ</button>
+
     <div class="admin-area" id="adminArea" style="display:none;">
       <p>⚠️ 管理者QRで解除してください</p>
       <div class="admin-input-group">
@@ -529,6 +520,9 @@
 
   // タブ状態（フォーカス維持用）
   let currentTab = 'scan';
+
+  // OK自動遷移タイマー（連打対策）
+  let okAutoTimer = null;
 
   // Firebase
   let firebaseApp = null;
@@ -568,14 +562,12 @@
 
   // ========= 常時フォーカス維持 =========
   function setupFocusKeeper(){
-    // タップ/クリックしたらscanInputへ戻す（設定タブ中は除外）
     document.addEventListener('pointerdown', () => {
       if (currentTab !== 'scan') return;
       if (document.getElementById('resultOverlay').classList.contains('show')) return;
       focusScanInputSoon();
     }, { passive: true });
 
-    // 画面復帰時にフォーカス戻す
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         if (currentTab === 'scan' && !document.getElementById('resultOverlay').classList.contains('show')) {
@@ -584,7 +576,6 @@
       }
     });
 
-    // フォーカス外れ対策（一定周期で戻す：軽め）
     setInterval(() => {
       if (currentTab !== 'scan') return;
       if (document.getElementById('resultOverlay').classList.contains('show')) return;
@@ -592,10 +583,8 @@
       const scanInput = document.getElementById('scanInput');
       if (!scanInput) return;
 
-      // 既に入力欄 or 管理者欄にフォーカスなら何もしない
       if (document.activeElement === scanInput || document.activeElement === document.getElementById('adminInput')) return;
 
-      // iOSで勝手に外れるケースがあるので戻す
       focusScanInputSoon();
     }, 700);
   }
@@ -604,9 +593,7 @@
     setTimeout(() => {
       const scanInput = document.getElementById('scanInput');
       if (!scanInput) return;
-      // overlay中は戻さない
       if (document.getElementById('resultOverlay').classList.contains('show')) return;
-      // 設定タブ中は戻さない
       if (currentTab !== 'scan') return;
       scanInput.focus({ preventScroll: true });
     }, 30);
@@ -723,7 +710,6 @@
       }
     });
 
-    // 入力欄がblurしたら戻す（照合タブのみ）
     scanInput.addEventListener('blur', () => {
       if (currentTab !== 'scan') return;
       if (document.getElementById('resultOverlay').classList.contains('show')) return;
@@ -733,6 +719,9 @@
 
   // ========= スキャン処理 =========
   function handleScan(decoded) {
+    // OK表示中に追加入力が来たら無視（誤爆防止）
+    if (document.getElementById('resultOverlay').classList.contains('show')) return;
+
     if (currentStep === 1) {
       value1 = decoded;
       playSound('beep');
@@ -967,7 +956,6 @@
     if (tab === 'scan') {
       document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
       document.getElementById('tab-scan').classList.add('active');
-      // 照合タブに戻ったらフォーカス復帰
       focusScanInputSoon();
     } else {
       document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
@@ -1119,7 +1107,6 @@
     const symbol = document.getElementById('resultSymbol');
     const text = document.getElementById('resultText');
     const detail = document.getElementById('resultDetail');
-    const okBtn = document.getElementById('okBtn');
     const adminArea = document.getElementById('adminArea');
 
     overlay.classList.add('show');
@@ -1127,6 +1114,9 @@
     const ruleText = logEntry.matchedRule
       ? `rule: [${logEntry.matchedRule.minLen}-${logEntry.matchedRule.maxLen}] start=${logEntry.matchedRule.startPos} count=${logEntry.matchedRule.charCount} prefix="${logEntry.matchedRule.prefix}"`
       : 'rule: (none)';
+
+    // もし前のOKタイマーが残ってたら消す
+    if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
 
     if (isOK) {
       overlay.className = 'result-overlay show ok';
@@ -1137,9 +1127,16 @@
         <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
         ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
       `;
-      okBtn.style.display = 'block';
       adminArea.style.display = 'none';
       playSound('ok');
+
+      // ★ここが変更点：0.4秒で自動的に次へ
+      okAutoTimer = setTimeout(() => {
+        overlay.classList.remove('show');
+        startScanning(true);
+        okAutoTimer = null;
+      }, 400);
+
     } else {
       overlay.className = 'result-overlay show ng ng-locked';
       symbol.textContent = '×';
@@ -1150,7 +1147,6 @@
         ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
         <p class="label" style="margin-top:12px;">1回目QRに含まれていません</p>
       `;
-      okBtn.style.display = 'none';
       adminArea.style.display = 'block';
       isNGLocked = true;
       playSound('ng');
@@ -1159,7 +1155,6 @@
   }
 
   // ========= 開始・停止 =========
-  // boot=true の場合は音を鳴らさない
   function startScanning(boot=false) {
     if (isNGLocked) {
       showNGOverlay();
@@ -1177,7 +1172,6 @@
     currentStep = 0;
     value1 = '';
     value2 = '';
-    // 停止しても「次の読み取り開始」にしておく（運用上ラク）
     startScanning(true);
   }
 
@@ -1187,14 +1181,8 @@
     document.getElementById('resultSymbol').textContent = '×';
     document.getElementById('resultText').textContent = 'エラー状態';
     document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
-    document.getElementById('okBtn').style.display = 'none';
     document.getElementById('adminArea').style.display = 'block';
     setTimeout(() => document.getElementById('adminInput').focus(), 100);
-  }
-
-  function closeAndContinue() {
-    document.getElementById('resultOverlay').classList.remove('show');
-    setTimeout(() => startScanning(true), 250);
   }
 
   function updateScanUI() {
