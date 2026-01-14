@@ -54,46 +54,15 @@
     .firebase-status.disconnected { background: #3d2e1b; color: #ff9800; }
     .firebase-status.error { background: #3d1b1b; color: #f44336; }
 
-    /* 待機画面 */
-    .standby-screen {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: calc(100vh - 140px);
-      padding: 20px;
-      background: #0a0a0a;
-    }
-    .start-btn-large {
-      width: 220px;
-      height: 220px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #00c853, #009624);
-      border: none;
-      color: white;
-      font-size: 28px;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 8px 30px rgba(0,200,83,0.4);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-    }
-    .start-btn-large:active { transform: scale(0.95); }
-    .start-btn-large .icon { font-size: 48px; margin-bottom: 8px; }
-
-    /* スキャン画面 */
+    /* スキャン画面（常時表示） */
     .scan-screen {
-      display: none;
+      display: flex;
       flex-direction: column;
       align-items: center;
       min-height: calc(100vh - 100px);
       padding: 20px;
       background: #0a0a0a;
     }
-    .scan-screen.active { display: flex; }
     .scan-box {
       width: 100%;
       max-width: 420px;
@@ -125,6 +94,7 @@
     .scan-input.step2:focus { border-color: #ffb74d; box-shadow: 0 0 0 4px rgba(255,183,77,0.3); }
     .input-hint { font-size: 14px; color: #666; margin-top: 10px; }
     .scanner-icon { font-size: 64px; margin-bottom: 20px; }
+
     .stop-btn {
       margin-top: 20px;
       padding: 14px 40px;
@@ -139,6 +109,8 @@
 
     /* ログ */
     .log-card {
+      width: 100%;
+      max-width: 420px;
       background: #1a1a1a;
       border-radius: 12px;
       padding: 16px;
@@ -235,7 +207,6 @@
       color: #fff;
     }
     .range-input-item input:focus { outline: none; border-color: #4fc3f7; }
-    .range-note { font-size: 11px; color: #666; margin-top: 8px; }
 
     .setting-row {
       display: flex;
@@ -413,15 +384,26 @@
 
   <div class="firebase-status disconnected" id="firebaseStatus">🔌 Firebase未接続</div>
 
-  <!-- 照合 -->
+  <!-- 照合（スタート無しで常時待機） -->
   <div class="tab-content active" id="tab-scan">
-    <div class="standby-screen" id="standbyScreen">
-      <button class="start-btn-large" onclick="startScanning()">
-        <span class="icon">▶️</span>
-        スタート
-      </button>
+    <div class="scan-screen" id="scanScreen">
+      <div class="scan-box">
+        <div class="scanner-icon">📟</div>
+        <div class="scan-step" id="scanStep">STEP 1 / 2</div>
+        <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
 
-      <div class="log-card" style="width:100%; max-width:420px; margin-top:40px;">
+        <div class="scan-input-area">
+          <input type="text" class="scan-input" id="scanInput"
+                 placeholder="QRリーダーで読み取り"
+                 autocomplete="off"
+                 inputmode="latin">
+          <div class="input-hint">QRリーダーでスキャンしてください</div>
+        </div>
+      </div>
+
+      <button class="stop-btn" onclick="stopAndReset()">⏹️ 停止</button>
+
+      <div class="log-card">
         <div class="log-header">
           <div class="log-title">📝 照合履歴</div>
           <div class="log-count" id="logCount">0件</div>
@@ -434,24 +416,6 @@
           <button class="log-btn" onclick="exportLog()">📥 出力</button>
         </div>
       </div>
-    </div>
-
-    <div class="scan-screen" id="scanScreen">
-      <div class="scan-box">
-        <div class="scanner-icon">📟</div>
-        <div class="scan-step" id="scanStep">STEP 1 / 2</div>
-        <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
-
-        <div class="scan-input-area">
-          <input type="text" class="scan-input" id="scanInput"
-                 placeholder="QRリーダーで読み取り"
-                 autocomplete="off" autofocus
-                 inputmode="latin">
-          <div class="input-hint">QRリーダーでスキャンしてください</div>
-        </div>
-      </div>
-
-      <button class="stop-btn" onclick="stopAndReset()">⏹️ 停止</button>
     </div>
   </div>
 
@@ -563,15 +527,15 @@
   let scanLog = [];
   let audioCtx = null;
 
+  // タブ状態（フォーカス維持用）
+  let currentTab = 'scan';
+
   // Firebase
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
 
   // ========= 設定 =========
-  // extractRules: { minLen, maxLen, startPos, charCount, prefix }
-  // ✅ デフォルト：ルール（minLen=1, maxLen=99, startPos=9, charCount=8, prefix空）
-  // ✅ デフォルト：Firebase設定（あなたのfirebaseConfigを反映）
   let settings = {
     adminPassword: 'admin',
     adminQR: 'ADMIN123',
@@ -594,15 +558,67 @@
     loadLog();
     setupInputListeners();
     initFirebase();
+
+    // 起動直後から即スキャン待機（STEP1）
+    startScanning(true);
+
+    // 常時フォーカス維持（照合タブの時だけ）
+    setupFocusKeeper();
   });
+
+  // ========= 常時フォーカス維持 =========
+  function setupFocusKeeper(){
+    // タップ/クリックしたらscanInputへ戻す（設定タブ中は除外）
+    document.addEventListener('pointerdown', () => {
+      if (currentTab !== 'scan') return;
+      if (document.getElementById('resultOverlay').classList.contains('show')) return;
+      focusScanInputSoon();
+    }, { passive: true });
+
+    // 画面復帰時にフォーカス戻す
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (currentTab === 'scan' && !document.getElementById('resultOverlay').classList.contains('show')) {
+          focusScanInputSoon();
+        }
+      }
+    });
+
+    // フォーカス外れ対策（一定周期で戻す：軽め）
+    setInterval(() => {
+      if (currentTab !== 'scan') return;
+      if (document.getElementById('resultOverlay').classList.contains('show')) return;
+
+      const scanInput = document.getElementById('scanInput');
+      if (!scanInput) return;
+
+      // 既に入力欄 or 管理者欄にフォーカスなら何もしない
+      if (document.activeElement === scanInput || document.activeElement === document.getElementById('adminInput')) return;
+
+      // iOSで勝手に外れるケースがあるので戻す
+      focusScanInputSoon();
+    }, 700);
+  }
+
+  function focusScanInputSoon(){
+    setTimeout(() => {
+      const scanInput = document.getElementById('scanInput');
+      if (!scanInput) return;
+      // overlay中は戻さない
+      if (document.getElementById('resultOverlay').classList.contains('show')) return;
+      // 設定タブ中は戻さない
+      if (currentTab !== 'scan') return;
+      scanInput.focus({ preventScroll: true });
+    }, 30);
+  }
 
   // ========= 文字列正規化 =========
   function normalizeQR(str){
     return String(str ?? '')
-      .normalize('NFKC')              // 全角英数/記号→半角寄せ
-      .replace(/\u00A0/g, ' ')       // NBSP→半角スペース
-      .replace(/[\r\n]+/g, ' ')      // 改行→スペース
-      .replace(/\s+/g, ' ')          // 連続空白を1つに
+      .normalize('NFKC')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
@@ -620,7 +636,6 @@
         projectId: settings.firebase.projectId
       };
 
-      // 既存Appがある場合はクリア（compatなので try）
       try { if (firebaseApp) firebaseApp.delete(); } catch(e){}
 
       firebaseApp = firebase.initializeApp(firebaseConfig);
@@ -707,6 +722,13 @@
         }
       }
     });
+
+    // 入力欄がblurしたら戻す（照合タブのみ）
+    scanInput.addEventListener('blur', () => {
+      if (currentTab !== 'scan') return;
+      if (document.getElementById('resultOverlay').classList.contains('show')) return;
+      focusScanInputSoon();
+    });
   }
 
   // ========= スキャン処理 =========
@@ -716,7 +738,7 @@
       playSound('beep');
       currentStep = 2;
       updateScanUI();
-      document.getElementById('scanInput').focus();
+      focusScanInputSoon();
     } else if (currentStep === 2) {
       value2 = decoded;
       playSound('beep');
@@ -729,7 +751,7 @@
       isNGLocked = false;
       playSound('ok');
       document.getElementById('resultOverlay').classList.remove('show');
-      showStandby();
+      startScanning(true);
       alert('✅ エラー解除しました');
     } else {
       playSound('ng');
@@ -756,7 +778,6 @@
       settings.extractRules = [{ minLen: 1, maxLen: 99, startPos: 9, charCount: 8, prefix: '' }];
     }
 
-    // firebaseの最低保証（保存値が壊れててもデフォルトを保持）
     settings.firebase = settings.firebase || {};
     settings.firebase.apiKey = settings.firebase.apiKey || "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY";
     settings.firebase.authDomain = settings.firebase.authDomain || "miyamaunitec-fb87a.firebaseapp.com";
@@ -938,12 +959,16 @@
 
   // ========= タブ切り替え =========
   function switchTab(tab) {
+    currentTab = tab;
+
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
     if (tab === 'scan') {
       document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
       document.getElementById('tab-scan').classList.add('active');
+      // 照合タブに戻ったらフォーカス復帰
+      focusScanInputSoon();
     } else {
       document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
       document.getElementById('tab-settings').classList.add('active');
@@ -1060,16 +1085,12 @@
 
     const logEntry = {
       timestamp: new Date().toISOString(),
-
       qr1_raw: value1,
       qr2_raw: value2,
-
       qr1: v1,
       qr2: v2,
-
       partNumber: partNumber,
       qr2Length: v2.length,
-
       matchedRule: ex.rule ? {
         minLen: ex.rule.minLen,
         maxLen: ex.rule.maxLen,
@@ -1079,7 +1100,6 @@
       } : null,
       extractStart0: ex.start0,
       extractNote: ex.note || '',
-
       result: isOK ? 'OK' : 'NG'
     };
 
@@ -1120,7 +1140,6 @@
       okBtn.style.display = 'block';
       adminArea.style.display = 'none';
       playSound('ok');
-      setTimeout(() => document.getElementById('scanInput')?.focus(), 50);
     } else {
       overlay.className = 'result-overlay show ng ng-locked';
       symbol.textContent = '×';
@@ -1139,16 +1158,43 @@
     }
   }
 
-  function showStandby() {
-    document.getElementById('standbyScreen').style.display = 'flex';
-    document.getElementById('scanScreen').classList.remove('active');
+  // ========= 開始・停止 =========
+  // boot=true の場合は音を鳴らさない
+  function startScanning(boot=false) {
+    if (isNGLocked) {
+      showNGOverlay();
+      return;
+    }
+    value1 = '';
+    value2 = '';
+    currentStep = 1;
+    updateScanUI();
+    if (!boot) playSound('beep');
+    focusScanInputSoon();
   }
 
-  function showScanScreen() {
-    document.getElementById('standbyScreen').style.display = 'none';
-    document.getElementById('scanScreen').classList.add('active');
-    document.getElementById('scanInput').value = '';
-    document.getElementById('scanInput').focus();
+  function stopAndReset() {
+    currentStep = 0;
+    value1 = '';
+    value2 = '';
+    // 停止しても「次の読み取り開始」にしておく（運用上ラク）
+    startScanning(true);
+  }
+
+  function showNGOverlay() {
+    const overlay = document.getElementById('resultOverlay');
+    overlay.className = 'result-overlay show ng ng-locked';
+    document.getElementById('resultSymbol').textContent = '×';
+    document.getElementById('resultText').textContent = 'エラー状態';
+    document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
+    document.getElementById('okBtn').style.display = 'none';
+    document.getElementById('adminArea').style.display = 'block';
+    setTimeout(() => document.getElementById('adminInput').focus(), 100);
+  }
+
+  function closeAndContinue() {
+    document.getElementById('resultOverlay').classList.remove('show');
+    setTimeout(() => startScanning(true), 250);
   }
 
   function updateScanUI() {
@@ -1169,42 +1215,6 @@
       input.className = 'scan-input step2';
       input.placeholder = 'QRリーダーで読み取り';
     }
-  }
-
-  // ========= 開始・停止 =========
-  function startScanning() {
-    if (isNGLocked) {
-      showNGOverlay();
-      return;
-    }
-    value1 = '';
-    value2 = '';
-    currentStep = 1;
-    showScanScreen();
-    updateScanUI();
-  }
-
-  function stopAndReset() {
-    currentStep = 0;
-    value1 = '';
-    value2 = '';
-    showStandby();
-  }
-
-  function showNGOverlay() {
-    const overlay = document.getElementById('resultOverlay');
-    overlay.className = 'result-overlay show ng ng-locked';
-    document.getElementById('resultSymbol').textContent = '×';
-    document.getElementById('resultText').textContent = 'エラー状態';
-    document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
-    document.getElementById('okBtn').style.display = 'none';
-    document.getElementById('adminArea').style.display = 'block';
-    setTimeout(() => document.getElementById('adminInput').focus(), 100);
-  }
-
-  function closeAndContinue() {
-    document.getElementById('resultOverlay').classList.remove('show');
-    setTimeout(() => startScanning(), 250);
   }
 
   // ========= ログ表示 =========
