@@ -2,194 +2,308 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<title>1対N QR照合システム（ライン選択・タブレット対策）</title>
+<title>QR照合（整理No→画像マスタ）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="format-detection" content="telephone=no" />
 <style>
-  :root { --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666; --border:#e5e7eb; --primary:#0b3b75; }
-  * { box-sizing: border-box; }
-  html, body { height:100%; }
-  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; color:var(--fg); margin:0; background:#f7f7f8;
-         -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
-  header { background:#fff; border-bottom:1px solid var(--border); padding:12px 16px; position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-           -webkit-tap-highlight-color: transparent; }
-  h1 { margin:0; font-size:20px;}
-  .sub { color:var(--muted); font-size:13px; }
-  main { max-width: 1100px; margin: 16px auto; padding: 0 16px 40px; }
-  .card { background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; }
-  .bigLabel { font-size:18px; color:#111; margin-bottom:8px; font-weight:700; }
-  .baseWrap { display:grid; grid-template-columns: 1.2fr .8fr; gap:16px; align-items:stretch; }
-  @media (max-width: 900px){ .baseWrap { grid-template-columns: 1fr; } }
-  .baseBox { border:2px dashed #cbd5e1; border-radius:16px; background:#fbfdff; padding:16px; text-align:center; display:flex; flex-direction:column; justify-content:center; }
-  .baseHeading { font-size:18px; color:#0f172a; margin-bottom:6px; }
-  .statusChip { display:inline-block; padding:4px 10px; border-radius:999px; font-size:14px; border:1px solid #cbd5e1; background:#f1f5f9; }
-  .baseValue { font-weight:800; font-size: clamp(70px, 10vw, 140px); color:var(--primary); word-break: break-all; }
-  .placeholder { color:#94a3b8; }
-  .imgBox { border:2px dashed #e5e7eb; border-radius:16px; background:#fff; padding:10px; display:flex; align-items:center; justify-content:center; min-height:220px; }
-  #productImage { max-width:100%; max-height:320px; object-fit:contain; display:none; }
-  .imgHint { color:#9ca3af; font-size:13px; text-align:center; }
-  .resultArea { text-align:center; padding: 12px 10px 0; }
-  .resultMark { font-size:300px; line-height:1; display:none; }
-  .ok { color: var(--ok); }
-  .ng { color: var(--ng); }
-  .lock { display:none; margin-top:10px; color: var(--ng); font-weight:700; }
-  .btn { padding:10px 14px; border-radius:12px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:14px; transition:opacity .15s ease;
-         -webkit-tap-highlight-color: transparent; }
-  .btn.warn { background:#fef3f2; color:#b42318; border-color:#fecdcf; }
-  .btn.big { font-size:18px; padding:16px 22px; border-width:2px; }
-  .btn.big.primary { background:#0b3b75; color:#fff; border-color:#0b3b75; }
-  .btn:disabled { opacity:.5; cursor:not-allowed; }
-  .status { font-size:15px; color:var(--muted); margin-top:12px; }
-  .rightTools { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .small { font-size:12px; color:#6b7280; }
-  footer { text-align:center; color:#9ca3af; font-size:12px; padding: 16px 0; }
+  :root{
+    --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666;
+    --border:#e5e7eb; --primary:#0b3b75; --bg:#f7f7f8;
+    --card:#fff;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+  }
+  header{
+    background:#fff; border-bottom:1px solid var(--border);
+    padding:12px 16px; position:sticky; top:0; z-index:20;
+    display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1{ margin:0; font-size:18px; }
+  .sub{ color:var(--muted); font-size:12px; }
+
+  /* Tabs */
+  .tabs{
+    display:flex; gap:8px; align-items:center;
+    padding:6px; border:1px solid var(--border); border-radius:12px; background:#fff;
+  }
+  .tab{
+    border:1px solid var(--border); background:#fff; color:#111;
+    border-radius:10px; padding:8px 12px; cursor:pointer; font-size:13px;
+  }
+  .tab.active{
+    background:var(--primary); color:#fff; border-color:var(--primary);
+    font-weight:700;
+  }
+
+  .rightTools{ margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .badge{ font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #d1d5db; }
+  .small{ font-size:12px; color:#6b7280; }
+
+  .lineWrap,.bushoWrap{
+    display:flex; gap:8px; align-items:center;
+    border:1px solid var(--border); border-radius:10px; padding:6px 8px; background:#fff;
+  }
+  select{ border:none; outline:none; font-size:14px; background:#fff; }
+  .pill{
+    font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #cbd5e1;
+  }
+  #lineBadge{ background:#eff6ff; color:#0b3b75; }
+  #bushoBadge{ background:#fff7ed; color:#92400e; }
+
+  main{ max-width:1100px; margin:16px auto; padding:0 16px 40px; }
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px; margin-bottom:16px;
+  }
+  .bigLabel{ font-size:18px; font-weight:800; margin-bottom:10px; }
+
+  /* Views */
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* Scan view layout */
+  .baseWrap{ display:grid; grid-template-columns: 1.2fr .8fr; gap:16px; align-items:stretch; }
+  @media (max-width:900px){ .baseWrap{ grid-template-columns:1fr; } }
+  .baseBox{
+    border:2px dashed #cbd5e1; border-radius:16px; background:#fbfdff;
+    padding:16px; text-align:center; display:flex; flex-direction:column; justify-content:center;
+  }
+  .baseHeading{ display:flex; gap:8px; align-items:center; justify-content:center; flex-wrap:wrap; }
+  .statusChip{
+    display:inline-block; padding:4px 10px; border-radius:999px; font-size:13px;
+    border:1px solid #cbd5e1; background:#f1f5f9;
+  }
+  .baseValue{
+    font-weight:900; font-size: clamp(70px, 10vw, 140px);
+    color:var(--primary); word-break:break-all;
+  }
+  .placeholder{ color:#94a3b8; }
+
+  .imgBox{
+    border:2px dashed #e5e7eb; border-radius:16px; background:#fff;
+    padding:10px; display:flex; align-items:center; justify-content:center; min-height:220px;
+  }
+  #productImage{ max-width:100%; max-height:320px; object-fit:contain; display:none; }
+  .imgHint{ color:#9ca3af; font-size:13px; text-align:center; line-height:1.6; }
+
+  .resultArea{ text-align:center; padding: 12px 10px 0; }
+  .resultMark{ font-size:300px; line-height:1; display:none; }
+  .ok{ color:var(--ok); } .ng{ color:var(--ng); }
+  .lock{ display:none; margin-top:10px; color:var(--ng); font-weight:800; }
+  .status{ font-size:15px; color:var(--muted); margin-top:12px; }
+
+  .btn{
+    padding:10px 14px; border-radius:12px; border:1px solid #d1d5db;
+    background:#fff; cursor:pointer; font-size:14px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn.warn{ background:#fef3f2; color:#b42318; border-color:#fecdcf; }
+  .btn.big{ font-size:18px; padding:16px 22px; border-width:2px; }
+  .btn.big.primary{ background:#0b3b75; color:#fff; border-color:#0b3b75; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  /* Master view */
+  .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media (max-width:900px){ .grid2{ grid-template-columns:1fr; } }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field label{ font-size:12px; color:#475569; }
+  .field input[type="text"]{
+    padding:10px 12px; border-radius:10px; border:1px solid #d1d5db;
+    font-size:16px; outline:none;
+  }
+  .field input[type="text"]:focus{
+    border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.15);
+  }
   input[type="file"]{ display:none; }
-  .toolBtn { padding:6px 10px; border-radius:10px; border:1px solid #d1d5db; background:#fff; cursor:pointer; font-size:13px; -webkit-tap-highlight-color: transparent; }
-  .badge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #d1d5db; }
+  .toolBtn{
+    padding:6px 10px; border-radius:10px; border:1px solid #d1d5db;
+    background:#fff; cursor:pointer; font-size:13px; -webkit-tap-highlight-color: transparent;
+  }
+  .note{ font-size:12px; color:#6b7280; line-height:1.6; }
+  .kpi{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .danger{ color:#b42318; font-weight:700; }
 
-  /* ライン選択UI */
-  .lineWrap { display:flex; gap:8px; align-items:center; border:1px solid var(--border); border-radius:10px; padding:6px 8px; background:#fff; }
-  #lineSelect { border:none; outline:none; font-size:14px; min-width:180px; background:#fff; }
-  #lineBadge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #cbd5e1; background:#eff6ff; color:#0b3b75; }
+  /* Hidden scan input */
+  #scanInput{
+    position:absolute; left:-9999px; top:-9999px; width:1px; height:1px;
+    opacity:0; pointer-events:none;
+  }
 
-  /* 部署選択UI */
-  .bushoWrap { display: flex; gap: 8px; align-items: center; border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px; background: #fff;}
-  #bushoSelect { border: none; outline: none; font-size: 14px; min-width: 80px; background: #fff;}
-  #bushoBadge { font-size:12px; padding:3px 8px; border-radius:999px; border:1px solid #cbd5e1; background:#ffe; color:#92400e; }
-
-  /* スキャン用の隠し入力（*絶対にフォーカスしない*） */
-  #scanInput { position:absolute; left:-9999px; top:-9999px; width:1px; height:1px; opacity:0;
-               pointer-events:none; }
+  footer{ text-align:center; color:#9ca3af; font-size:12px; padding:16px 0; }
 </style>
 </head>
 <body>
 <header>
-  <h1>QR照合システム（1対N）</h1>
-  <div class="sub">スキャナはキーボード入力（末尾Enter/Tab/Idle）</div>
+  <div>
+    <h1>QR照合システム（整理No→画像マスタ）</h1>
+    <div class="sub">基準QRの切り出し値＝整理No → Firestoreマスタ → Storage画像表示</div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs" role="tablist" aria-label="mode tabs">
+    <button id="tabScan" class="tab active" role="tab" aria-selected="true">照合モード</button>
+    <button id="tabMaster" class="tab" role="tab" aria-selected="false">画像マスタ登録</button>
+  </div>
+
   <div class="rightTools">
     <div class="bushoWrap">
       <span class="small">部署</span>
       <select id="bushoSelect">
         <option value="">未設定</option>
-        <option>1G</option>
-        <option>3G</option>
-        <option>4G</option>
-        <option>5G</option>
-        <option>6G</option>
-        <option>品質</option>
+        <option>1G</option><option>3G</option><option>4G</option><option>5G</option><option>6G</option><option>品質</option>
       </select>
-      <span id="bushoBadge" title="現在の部署">未設定</span>
+      <span id="bushoBadge" class="pill" title="現在の部署">未設定</span>
     </div>
+
     <div class="lineWrap">
-      <span class="small">生産ライン</span>
+      <span class="small">ライン</span>
       <select id="lineSelect">
         <option value="">未設定</option>
-        <option>53-300</option>
-        <option>57-200</option>
-        <option>65-300</option>
-        <option>71-300</option>
-        <option>72-160</option>
-        <option>83-500</option>
-        <option>89-400</option>
-        <option>90-600</option>
-        <option>94-300</option>
-        <option>RL5</option>
-        <option>TPS03-3.5</option>
-        <option>あきひと</option>
-        <option>キャップ６号機</option>
-        <option>キャップ７号機</option>
-        <option>30-060</option>
-        <option>41-200</option>
-        <option>42-250</option>
-        <option>49-060</option>
-        <option>51-110</option>
-        <option>54-160</option>
-        <option>70-080</option>
-        <option>76-060</option>
-        <option>78-060</option>
-        <option>82-045</option>
-        <option>87-400</option>
-        <option>88-400</option>
-        <option>91-200</option>
-        <option>RL1</option>
-        <option>RL3</option>
-        <option>RL4</option>
-        <option>RMI-1(インサート成型機）</option>
-        <option>TPS01-2.7</option>
-        <option>TPS02-0.75</option>
-        <option>キャップ10号機</option>
-        <option>キャップ８号機</option>
-        <option>キャップ9号機</option>
+        <option>53-300</option><option>57-200</option><option>65-300</option><option>71-300</option><option>72-160</option>
+        <option>83-500</option><option>89-400</option><option>90-600</option><option>94-300</option><option>RL5</option>
+        <option>TPS03-3.5</option><option>あきひと</option><option>キャップ６号機</option><option>キャップ７号機</option>
+        <option>30-060</option><option>41-200</option><option>42-250</option><option>49-060</option><option>51-110</option>
+        <option>54-160</option><option>70-080</option><option>76-060</option><option>78-060</option><option>82-045</option>
+        <option>87-400</option><option>88-400</option><option>91-200</option><option>RL1</option><option>RL3</option><option>RL4</option>
+        <option>RMI-1(インサート成型機）</option><option>TPS01-2.7</option><option>TPS02-0.75</option>
+        <option>キャップ10号機</option><option>キャップ８号機</option><option>キャップ9号機</option>
       </select>
-      <span id="lineBadge" title="現在のライン">未設定</span>
+      <span id="lineBadge" class="pill" title="現在のライン">未設定</span>
     </div>
+
     <span id="firebaseStatus" class="badge" style="color:#9ca3af;">Firebase: 未接続</span>
-    <button id="pickDirBtn" class="toolBtn" tabindex="-1">画像フォルダ</button>
-    <label class="toolBtn" for="folderInput" tabindex="-1">画像一括</label>
-    <input id="folderInput" type="file" webkitdirectory multiple />
+    <span id="storageStatus" class="badge" style="color:#9ca3af;">Storage: 未準備</span>
   </div>
 </header>
 
-<!-- 注意：この入力は OS のオートフィルを避けるため *表示もフォーカスもしません* -->
-<input id="scanInput" type="text"
-  readonly inputmode="none"
-  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
-  aria-hidden="true"
-/>
+<input id="scanInput" type="text" readonly inputmode="none"
+  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-hidden="true" />
 
 <main>
-  <section class="card">
-    <div class="bigLabel">生産中品番</div>
+  <!-- ===================== 照合モード ===================== -->
+  <section id="viewScan" class="view active">
+    <div class="card">
+      <div class="bigLabel">生産中（基準＝整理No）</div>
 
-    <div class="baseWrap">
-      <div class="baseBox">
-        <div class="baseHeading"><span id="prodState" class="statusChip">未開始</span></div>
-        <div id="baseDisplay" class="baseValue placeholder">未設定</div>
+      <div class="baseWrap">
+        <div class="baseBox">
+          <div class="baseHeading">
+            <span id="prodState" class="statusChip">未開始</span>
+            <span id="masterHit" class="statusChip" style="display:none;">画像マスタ：ヒット</span>
+            <span id="masterMiss" class="statusChip" style="display:none;">画像マスタ：未登録</span>
+          </div>
+          <div id="baseDisplay" class="baseValue placeholder">未設定</div>
+        </div>
+
+        <div class="imgBox">
+          <img id="productImage" alt="基準(整理No)の画像" />
+          <div id="imgHint" class="imgHint">
+            基準QRを読み込むと、切り出し値（整理No）で画像マスタを検索して表示します。<br>
+            画像が出ない場合は「画像マスタ登録」タブで登録してください。
+          </div>
+        </div>
       </div>
 
-      <div class="imgBox">
-        <img id="productImage" alt="基準品番の画像" />
-        <div id="imgHint" class="imgHint">画像フォルダを選択すると、基準QRに対応した画像を表示します（ファイル名＝切り出し値）</div>
+      <div class="resultArea">
+        <div id="ok" class="resultMark ok">○</div>
+        <div id="ng" class="resultMark ng">×</div>
+        <div id="lockMsg" class="lock">NG！ 管理者QRを読み込むまでロック中</div>
+      </div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="resetBtn" class="btn big primary" tabindex="-1">製品切替え</button>
+        <button id="saveBtn" class="btn" tabindex="-1">ログ保存（CSV）</button>
+        <button id="exitBtn" class="btn warn" tabindex="-1">システム終了（自動保存）</button>
+      </div>
+
+      <div id="mode" class="status">基準QRを読み込んでください</div>
+      <div class="small">切り出し固定：開始=3、長さ=5（空白除去）</div>
+    </div>
+  </section>
+
+  <!-- ===================== 画像マスタ登録 ===================== -->
+  <section id="viewMaster" class="view">
+    <div class="card">
+      <div class="bigLabel">画像マスタ登録（整理No → 画像）</div>
+
+      <div class="grid2">
+        <div class="field">
+          <label>整理No（切り出し値）</label>
+          <input id="masterSeiriNo" type="text" placeholder="例：ABCDE" inputmode="latin" autocomplete="off" />
+          <div class="note">※この整理Noで <b>imageMasters/{整理No}</b> に保存します。</div>
+        </div>
+
+        <div class="field">
+          <label>画像ファイル</label>
+          <div class="kpi">
+            <label class="toolBtn" for="masterImageFile">画像を選択</label>
+            <input id="masterImageFile" type="file" accept="image/*" />
+            <span id="masterFileName" class="pill">未選択</span>
+            <span id="masterUploadState" class="pill">未登録</span>
+          </div>
+          <div class="note">※Storage は <b>productImages/{整理No}.{拡張子}</b> に保存（同じ整理Noは上書き更新）。</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+        <button id="masterUploadBtn" class="btn">登録（アップロード）</button>
+        <button id="masterFetchBtn" class="btn">この整理Noを検索（プレビュー）</button>
+        <button id="masterClearBtn" class="btn warn">入力クリア</button>
+      </div>
+
+      <div class="note" style="margin-top:10px;">
+        <span class="danger">運用注意：</span>
+        同じ整理Noで拡張子が変わると Storage に古い拡張子の画像が残る場合があります（必要なら削除ロジック追加できます）。
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="bigLabel" style="font-size:16px;">プレビュー</div>
+        <div class="imgBox">
+          <img id="masterPreviewImage" alt="マスタ画像プレビュー" style="max-width:100%; max-height:320px; object-fit:contain; display:none;" />
+          <div id="masterPreviewHint" class="imgHint">ここに検索結果（画像）が表示されます。</div>
+        </div>
       </div>
     </div>
-
-    <div class="resultArea">
-      <div id="ok" class="resultMark ok">○</div>
-      <div id="ng" class="resultMark ng">×</div>
-      <div id="lockMsg" class="lock">NG！ 管理者QRを読み込むまでロック中</div>
-    </div>
-
-    <div>
-      <button id="resetBtn" class="btn big primary" tabindex="-1">製品切替え</button>
-      <button id="saveBtn" class="btn" tabindex="-1">ログ保存（CSV）</button>
-      <button id="exitBtn" class="btn warn" tabindex="-1">システム終了（自動保存）</button>
-    </div>
-
-    <div id="mode" class="status">基準QRを読み込んでください</div>
-    <div class="small">切り出し固定：開始=3、長さ=5（画像検索時は空白を除去）</div>
   </section>
 </main>
 
 <footer>© QR Verify</footer>
 
 <script>
-/* ------------------ 固定設定 ------------------ */
+/* ================== 設定 ================== */
 const CUT_START = 3;
 const CUT_LENGTH = 5;
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
 
-/* ------------------ 状態 ------------------ */
-let baseQR = null;
+const STORAGE_DIR = "productImages";       // Storage: productImages/...
+const MASTER_COLLECTION = "imageMasters";  // Firestore: imageMasters/{seiriNo}
+
+/* ================== 状態 ================== */
+let baseQR = null; // 基準（整理No）
 let isLocked = false;
-let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像ファイル","ライン","部署"]];
-let imageDirHandle = null;
-const imageMap = new Map();
+let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像情報","ライン","部署"]];
+
 let lineName = localStorage.getItem(LINE_KEY) || "";
 let bushoName = localStorage.getItem(BUSHO_KEY) || "";
 
-/* ------------------ 要素参照 ------------------ */
+/* module側から注入される関数 */
+let __getMasterBySeiriNo = null; // async(seiriNo)=>{imagePath,downloadUrl,...}|null
+let __saveMaster = null;         // async(seiriNo,file)=>{imagePath,downloadUrl}
+
+/* ================== DOM ================== */
+const $tabScan = document.getElementById("tabScan");
+const $tabMaster = document.getElementById("tabMaster");
+const $viewScan = document.getElementById("viewScan");
+const $viewMaster = document.getElementById("viewMaster");
+
 const $mode = document.getElementById("mode");
 const $ok = document.getElementById("ok");
 const $ng = document.getElementById("ng");
@@ -199,215 +313,424 @@ const $productImage = document.getElementById("productImage");
 const $imgHint = document.getElementById("imgHint");
 const $prodState = document.getElementById("prodState");
 const $resetBtn = document.getElementById("resetBtn");
+const $masterHit = document.getElementById("masterHit");
+const $masterMiss = document.getElementById("masterMiss");
+
 const $lineSelect = document.getElementById("lineSelect");
 const $lineBadge = document.getElementById("lineBadge");
 const $bushoSelect = document.getElementById("bushoSelect");
 const $bushoBadge = document.getElementById("bushoBadge");
 
-/* ------------------ 初期化：ライン・部署反映 ------------------ */
-window.addEventListener("load", () => {
-  // ライン初期値
-  if (lineName) {
-    Array.from($lineSelect.options).forEach(o => { if (o.value === lineName) o.selected = true; });
-    $lineBadge.textContent = lineName;
-  } else {
-    $lineBadge.textContent = "未設定";
-  }
-  // 部署初期値
-  if (bushoName) {
-    Array.from($bushoSelect.options).forEach(o => { if (o.value === bushoName) o.selected = true; });
-    $bushoBadge.textContent = bushoName;
-  } else {
-    $bushoBadge.textContent = "未設定";
-  }
+/* Master UI */
+const $masterSeiriNo = document.getElementById("masterSeiriNo");
+const $masterImageFile = document.getElementById("masterImageFile");
+const $masterFileName = document.getElementById("masterFileName");
+const $masterUploadState = document.getElementById("masterUploadState");
+const $masterUploadBtn = document.getElementById("masterUploadBtn");
+const $masterFetchBtn = document.getElementById("masterFetchBtn");
+const $masterClearBtn = document.getElementById("masterClearBtn");
+const $masterPreviewImage = document.getElementById("masterPreviewImage");
+const $masterPreviewHint = document.getElementById("masterPreviewHint");
+
+/* ================== タブ切替 ================== */
+function setActiveTab(mode){
+  const isScan = (mode === "scan");
+  $tabScan.classList.toggle("active", isScan);
+  $tabMaster.classList.toggle("active", !isScan);
+  $tabScan.setAttribute("aria-selected", isScan ? "true" : "false");
+  $tabMaster.setAttribute("aria-selected", !isScan ? "true" : "false");
+  $viewScan.classList.toggle("active", isScan);
+  $viewMaster.classList.toggle("active", !isScan);
+}
+$tabScan.addEventListener("click", ()=>setActiveTab("scan"));
+$tabMaster.addEventListener("click", ()=>setActiveTab("master"));
+
+/* ================== 初期：ライン/部署 ================== */
+window.addEventListener("load", ()=>{
+  if (lineName) Array.from($lineSelect.options).forEach(o=>{ if(o.value===lineName) o.selected=true; });
+  if (bushoName) Array.from($bushoSelect.options).forEach(o=>{ if(o.value===bushoName) o.selected=true; });
+  $lineBadge.textContent = lineName || "未設定";
+  $bushoBadge.textContent = bushoName || "未設定";
 });
-$lineSelect.addEventListener("change", () => {
+$lineSelect.addEventListener("change", ()=>{
   lineName = $lineSelect.value;
   localStorage.setItem(LINE_KEY, lineName);
   $lineBadge.textContent = lineName || "未設定";
 });
-$bushoSelect.addEventListener("change", () => {
+$bushoSelect.addEventListener("change", ()=>{
   bushoName = $bushoSelect.value;
   localStorage.setItem(BUSHO_KEY, bushoName);
   $bushoBadge.textContent = bushoName || "未設定";
 });
 
-/* ------------------ ユーティリティ ------------------ */
+/* ================== Utils ================== */
 function nowString(){
-  const d = new Date();
-  const pad = n => String(n).padStart(2,"0");
+  const d=new Date(); const pad=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-function cutQR(qr){ return qr.substr(CUT_START, CUT_LENGTH).replace(/\s+/g,""); }
+function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
+function cutQR(qr){ return normalizeSeiriNo(String(qr||"").substr(CUT_START, CUT_LENGTH)); }
+
 function showOK(){ $ok.style.display="block"; $ng.style.display="none"; setTimeout(()=>{$ok.style.display="none";},1500); }
 function showNGPersistent(){ $ok.style.display="none"; $ng.style.display="block"; }
 function clearMarks(){ $ok.style.display="none"; $ng.style.display="none"; }
+
 function setLock(state){
-  isLocked=state;
-  $lockMsg.style.display=state?"block":"none";
-  $resetBtn.disabled = state; // NGロック中は切替不可
+  isLocked = state;
+  $lockMsg.style.display = state ? "block" : "none";
+  $resetBtn.disabled = state;
   if(!state) clearMarks();
 }
-function updateBaseDisplay(val){ if(val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent=val; } else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent="未設定"; } }
-function setProdStateRunning(){ $prodState.textContent="生産中"; $prodState.style.background="#e6ffed"; $prodState.style.borderColor="#abdfb6"; }
-function setProdStateSetup(){ $prodState.textContent="未開始"; $prodState.style.background="#f1f5f9"; $prodState.style.borderColor="#cbd5e1"; }
+function updateBaseDisplay(val){
+  if(val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent=val; }
+  else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent="未設定"; }
+}
+function setProdStateRunning(){
+  $prodState.textContent="生産中";
+  $prodState.style.background="#e6ffed"; $prodState.style.borderColor="#abdfb6";
+}
+function setProdStateSetup(){
+  $prodState.textContent="未開始";
+  $prodState.style.background="#f1f5f9"; $prodState.style.borderColor="#cbd5e1";
+}
+function setMasterBadge(hit){
+  $masterHit.style.display = hit ? "inline-block" : "none";
+  $masterMiss.style.display = hit ? "none" : "inline-block";
+}
+function showImage(url){
+  if(url){
+    $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none";
+  }
+}
+function showNoImage(html){
+  $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.innerHTML = html || "";
+}
+
+/* CSV */
 function csvEscape(field){ const s=String(field??""); return /[\",\n]/.test(s)?`"${s.replace(/\"/g,'\"\"')}"`:s; }
 function buildCSV(rows){ return rows.map(r=>r.map(csvEscape).join(",")).join("\n"); }
-function downloadCSV(rows, baseName="qr_log"){ const ts=new Date(); const pad=n=>String(n).padStart(2,"0"); const name=`${baseName}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.csv`; const blob=new Blob([buildCSV(rows)],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click(); }
-
-/* ------------------ 画像処理 ------------------ */
-async function pickImageDirectory(){
-  if (!window.showDirectoryPicker){ alert("このブラウザはフォルダ選択APIに未対応です。"); return; }
-  try{ imageDirHandle = await window.showDirectoryPicker({id:"qr-image-dir", mode:"read"}); $imgHint.textContent = "フォルダ選択済み：基準値と同名の画像を表示します"; }catch(e){ /* キャンセル時は何もしない */ }
+function downloadCSV(rows, baseName="qr_log"){
+  const ts=new Date(); const pad=n=>String(n).padStart(2,"0");
+  const name=`${baseName}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.csv`;
+  const blob=new Blob([buildCSV(rows)],{type:"text/csv"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click();
 }
-async function findImageURLByBase(base){
-  if (imageDirHandle){
-    const exts = [".png",".jpg",".jpeg",".webp",".bmp",".gif"];
-    for await (const entry of imageDirHandle.values()){
-      if (entry.kind==="file"){
-        const nameLower = entry.name.toLowerCase();
-        if (exts.some(ext => nameLower === (base.toLowerCase()+ext))){
-          const file = await entry.getFile();
-          return { url: URL.createObjectURL(file), name: entry.name };
-        }
-      }
+
+/* Master preview */
+function showMasterPreview(url){
+  if(url){
+    $masterPreviewImage.src=url;
+    $masterPreviewImage.style.display="block";
+    $masterPreviewHint.style.display="none";
+  }
+}
+function showMasterPreviewHint(text){
+  $masterPreviewImage.style.display="none";
+  $masterPreviewHint.style.display="block";
+  $masterPreviewHint.innerHTML = text || "";
+}
+function setMasterUIBusy(busy){
+  $masterUploadBtn.disabled = busy;
+  $masterFetchBtn.disabled = busy;
+  $masterClearBtn.disabled = busy;
+}
+
+/* ================== マスタ登録イベント ================== */
+$masterImageFile.addEventListener("change", ()=>{
+  const f = $masterImageFile.files && $masterImageFile.files[0];
+  $masterFileName.textContent = f ? f.name : "未選択";
+  $masterUploadState.textContent = "未登録";
+});
+
+$masterClearBtn.addEventListener("click", ()=>{
+  $masterSeiriNo.value="";
+  $masterImageFile.value="";
+  $masterFileName.textContent="未選択";
+  $masterUploadState.textContent="未登録";
+  showMasterPreviewHint("ここに検索結果（画像）が表示されます。");
+});
+
+$masterUploadBtn.addEventListener("click", async ()=>{
+  const seiriNo = normalizeSeiriNo($masterSeiriNo.value);
+  const file = $masterImageFile.files && $masterImageFile.files[0];
+  if(!seiriNo){ alert("整理Noを入力してください。"); return; }
+  if(!file){ alert("画像を選択してください。"); return; }
+  if(!__saveMaster){ alert("Firebase未接続の可能性があります。"); return; }
+
+  setMasterUIBusy(true);
+  $masterUploadState.textContent="登録中...";
+  try{
+    const res = await __saveMaster(seiriNo, file);
+    $masterUploadState.textContent="登録完了";
+    showMasterPreview(res.downloadUrl);
+
+    // （任意）登録後すぐ照合モードへ戻したいなら次行を有効化
+    // setActiveTab("scan");
+
+  }catch(e){
+    console.warn(e);
+    $masterUploadState.textContent="登録失敗";
+    alert("登録に失敗しました（コンソール確認）");
+  }finally{
+    setMasterUIBusy(false);
+  }
+});
+
+$masterFetchBtn.addEventListener("click", async ()=>{
+  const seiriNo = normalizeSeiriNo($masterSeiriNo.value);
+  if(!seiriNo){ alert("整理Noを入力してください。"); return; }
+  if(!__getMasterBySeiriNo){ alert("Firebase未接続の可能性があります。"); return; }
+
+  setMasterUIBusy(true);
+  $masterUploadState.textContent="検索中...";
+  try{
+    const master = await __getMasterBySeiriNo(seiriNo);
+    if(master && master.downloadUrl){
+      $masterUploadState.textContent="ヒット";
+      showMasterPreview(master.downloadUrl);
+    }else{
+      $masterUploadState.textContent="未登録";
+      showMasterPreviewHint(`画像マスタ未登録：<b>${seiriNo}</b><br>「登録（アップロード）」で登録してください。`);
     }
+  }finally{
+    setMasterUIBusy(false);
   }
-  for (const [name,url] of imageMap.entries()){
-    const lower=name.toLowerCase();
-    if (lower.startsWith(base.toLowerCase()+".")) return { url, name };
-  }
-  return null;
-}
-function showImage(url){ if (url){ $productImage.src=url; $productImage.style.display="block"; $imgHint.style.display="none"; } }
+});
 
-/* ------------------ スキャナ入力：documentレベルで受ける（Enter/Tab/Idle） ------------------ */
+/* ================== スキャナ入力（documentで受ける） ================== */
 let buffer = "";
 let idleTimer = null;
 const IDLE_MS = 120;
+
 function flushBuffer(){
-  if (!buffer) return;
+  if(!buffer) return;
   const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
   buffer = "";
-  if (qr.length > 0) processQR(qr);
+  if(qr) processQR(qr);
 }
-document.addEventListener("keydown", (e) => {
-  // すべてのキーで既定動作を抑制して、OSのオートフィル/支払いバーを出さない
+
+document.addEventListener("keydown", (e)=>{
+  // どのタブでも受ける（現場運用想定）
+  // もしマスタ登録中は無効にしたいなら、ここで viewMaster が active の時 return すればOK
   e.preventDefault();
   const k = e.key;
-  if (k === "Enter" || k === "Tab") { flushBuffer(); return; }
-  if (k.length === 1) {
+  if(k==="Enter" || k==="Tab"){ flushBuffer(); return; }
+  if(k.length===1){
     buffer += k;
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => flushBuffer(), IDLE_MS);
-  } else if (k === "Backspace") {
-    buffer = buffer.slice(0, -1);
+    if(idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(()=>flushBuffer(), IDLE_MS);
+  }else if(k==="Backspace"){
+    buffer = buffer.slice(0,-1);
   }
-}, { passive:false });
+},{ passive:false });
 
-/* ------------------ 照合フロー ------------------ */
+/* ================== 照合フロー ================== */
 async function processQR(qrRaw){
-  const now=nowString();
-  const sliced=cutQR(qrRaw);
+  const now = nowString();
+  const sliced = cutQR(qrRaw);
 
-  if (!baseQR){
-    baseQR=sliced;
+  // 1) 基準セット（切り出し値＝整理No）
+  if(!baseQR){
+    baseQR = sliced;
     updateBaseDisplay(baseQR);
     setProdStateRunning();
-    $mode.textContent=`照合モード（基準QR: ${baseQR}）`;
+    $mode.textContent = `照合モード（基準/整理No: ${baseQR}）`;
 
-    let imgName="";
+    // 整理No→マスタ検索→Storage画像表示
+    let imageInfo = "";
     try{
-      const found=await findImageURLByBase(baseQR);
-      if (found){ showImage(found.url); imgName=found.name; }
-      else { $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.textContent=`画像未検出：${baseQR}.*`; }
-    }catch(e){ console.warn(e); }
+      if(__getMasterBySeiriNo){
+        const master = await __getMasterBySeiriNo(baseQR);
+        if(master && master.downloadUrl){
+          showImage(master.downloadUrl);
+          setMasterBadge(true);
+          imageInfo = `storage:${master.imagePath}`;
+        }else{
+          setMasterBadge(false);
+          showNoImage(`画像マスタ未登録：<b>${baseQR}</b><br>「画像マスタ登録」タブで登録してください。`);
+        }
+      }else{
+        setMasterBadge(false);
+        showNoImage("Firebase未接続のため画像マスタ検索ができません。");
+      }
+    }catch(e){
+      console.warn(e);
+      setMasterBadge(false);
+      showNoImage("画像マスタ検索エラー（コンソール確認）");
+    }
 
-    logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imgName, lineName, bushoName]);
+    logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imageInfo, lineName, bushoName]);
     return;
   }
 
-  if (isLocked){
-    if (qrRaw===ADMIN_QR){
+  // 2) ロック中
+  if(isLocked){
+    if(qrRaw===ADMIN_QR){
       setLock(false); showOK();
       $mode.textContent="解除されました。照合を再開します。";
       logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", "", lineName, bushoName]);
-    } else {
-      showNGPersistent(); logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", "", lineName, bushoName]);
+    }else{
+      showNGPersistent();
+      logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", "", lineName, bushoName]);
     }
     return;
   }
 
+  // 3) 判定
   const judgedOK = (sliced===baseQR);
-  if (judgedOK){ showOK(); logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName, bushoName]); }
-  else { showNGPersistent(); setLock(true); $mode.textContent="NG！管理者QRを読み込んでください"; logRow([now, qrRaw, sliced, "NG", "LOCKED", "", lineName, bushoName]); }
+  if(judgedOK){
+    showOK();
+    logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName, bushoName]);
+  }else{
+    showNGPersistent();
+    setLock(true);
+    $mode.textContent="NG！管理者QRを読み込んでください";
+    logRow([now, qrRaw, sliced, "NG", "LOCKED", "", lineName, bushoName]);
+  }
 }
 
-/* ------------------ ボタン ------------------ */
-document.getElementById("resetBtn").addEventListener("click", () => {
-  if (isLocked){
-    $mode.textContent = "NGロック中は切替できません。管理者QRで解除してください。";
+/* ================== ボタン ================== */
+document.getElementById("resetBtn").addEventListener("click", ()=>{
+  if(isLocked){
+    $mode.textContent="NGロック中は切替できません。管理者QRで解除してください。";
     logRow([nowString(), "-", "-", "RESET_DENIED_WHEN_LOCKED", "LOCKED", "", lineName, bushoName]);
     return;
   }
-  baseQR=null; setLock(false); clearMarks(); updateBaseDisplay(null);
+  baseQR=null;
+  setLock(false);
+  clearMarks();
+  updateBaseDisplay(null);
   setProdStateSetup();
-  $productImage.style.display="none"; $imgHint.style.display="block"; $imgHint.textContent="画像フォルダを選択すると表示されます";
+  setMasterBadge(false);
+  $productImage.style.display="none";
+  $imgHint.style.display="block";
+  $imgHint.textContent="基準QRを読み込むと、整理Noで画像マスタを検索して表示します。";
   $mode.textContent="基準QRを読み込んでください";
   logRow([nowString(), "-", "-", "RESET", "UNLOCK", "", lineName, bushoName]);
 });
-document.getElementById("saveBtn").addEventListener("click", () => { downloadCSV(logData); });
-document.getElementById("exitBtn").addEventListener("click", () => { downloadCSV(logData,"qr_log"); window.close(); });
-document.getElementById("pickDirBtn").addEventListener("click", () => { pickImageDirectory(); });
-document.getElementById("folderInput").addEventListener("change", e => {
-  imageMap.clear();
-  const files=Array.from(e.target.files||[]);
-  for (const f of files){ imageMap.set(f.name, URL.createObjectURL(f)); }
-  $imgHint.textContent="画像を読み込み済み：基準値と同名の画像を表示します";
-});
-
+document.getElementById("saveBtn").addEventListener("click", ()=>downloadCSV(logData));
+document.getElementById("exitBtn").addEventListener("click", ()=>{ downloadCSV(logData,"qr_log"); window.close(); });
 </script>
 
-<!-- Firebase SDK（接続ステータス + Firestoreアップロード） -->
+<!-- Firebase SDK -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
-  import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+  import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
 
   const firebaseConfig = {
-    apiKey: "AIzaSyDb62GTdYU_zksCYiQyr9-WERZLFrztJ1U",
-    authDomain: "miyama-seizo.firebaseapp.com",
-    projectId: "miyama-seizo",
-    storageBucket: "miyama-seizo.firebasestorage.app",
-    messagingSenderId: "629270415183"
+    apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+    databaseURL: "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "miyamaunitec-fb87a",
+    storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+    messagingSenderId: "495316649507",
+    appId: "1:495316649507:web:1f98ee3dd851474fa39396",
+    measurementId: "G-1NXD8ZPGNR"
   };
 
   const app = initializeApp(firebaseConfig);
+  try { getAnalytics(app); } catch(e){}
+
   const auth = getAuth(app);
   const db = getFirestore(app);
+  const storage = getStorage(app);
 
   const statusEl = document.getElementById("firebaseStatus");
-  function setStatus(text, color){ statusEl.textContent = `Firebase: ${text}`; statusEl.style.color = color; }
+  const storageEl = document.getElementById("storageStatus");
+  const setStatus = (t,c)=>{ statusEl.textContent=`Firebase: ${t}`; statusEl.style.color=c; };
+  const setStorage = (t,c)=>{ storageEl.textContent=`Storage: ${t}`; storageEl.style.color=c; };
 
-  try { await signInAnonymously(auth); setStatus("接続済み", "#16a34a"); }
-  catch(e){ console.warn("匿名認証に失敗:", e); setStatus("未接続（認証エラー）", "#dc2626"); }
+  try{
+    await signInAnonymously(auth);
+    setStatus("接続済み","#16a34a");
+    setStorage("準備OK","#16a34a");
+  }catch(e){
+    console.warn("匿名認証失敗:", e);
+    setStatus("未接続（認証エラー）","#dc2626");
+    setStorage("未準備（認証エラー）","#dc2626");
+  }
 
-  // Firestore へログを保存（CSV互換 + 集計用の明示フィールド + ライン + 部署）
+  // 画像マスタ取得：imageMasters/{seiriNo}
+  window.__getMasterBySeiriNo = async (seiriNo) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) return null;
+
+    const snap = await getDoc(doc(db, MASTER_COLLECTION, key));
+    if(!snap.exists()) return null;
+
+    const data = snap.data() || {};
+    if(!data.imagePath) return null;
+
+    try{
+      const downloadUrl = await getDownloadURL(ref(storage, data.imagePath));
+      return { ...data, downloadUrl };
+    }catch(e){
+      console.warn("getDownloadURL failed:", e);
+      return { ...data, downloadUrl: null };
+    }
+  };
+
+  // 画像マスタ保存：Storageへアップロード→imageMasters/{seiriNo} 上書き
+  window.__saveMaster = async (seiriNo, file) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) throw new Error("seiriNo required");
+    if(!file) throw new Error("file required");
+
+    const origName = String(file.name || "image");
+    const extMatch = origName.toLowerCase().match(/\.([a-z0-9]+)$/);
+    const ext = extMatch ? extMatch[1] : "jpg";
+
+    // Storageパス（整理No固定名）
+    const imagePath = `${STORAGE_DIR}/${key}.${ext}`;
+    const storageRef = ref(storage, imagePath);
+
+    await uploadBytes(storageRef, file, { contentType: file.type || "application/octet-stream" });
+    const downloadUrl = await getDownloadURL(storageRef);
+
+    const payload = {
+      seiriNo: key,
+      imagePath,
+      originalFileName: origName,
+      contentType: file.type || null,
+      updatedAt: serverTimestamp(),
+      updatedByUid: (auth.currentUser && auth.currentUser.uid) || null
+    };
+    await setDoc(doc(db, MASTER_COLLECTION, key), payload, { merge:true });
+
+    return { imagePath, downloadUrl };
+  };
+
+  // 非module側へ反映
+  // eslint-disable-next-line no-undef
+  __getMasterBySeiriNo = window.__getMasterBySeiriNo;
+  // eslint-disable-next-line no-undef
+  __saveMaster = window.__saveMaster;
+
+  // Firestoreログ保存
   window.logRow = async function(row){
-    try {
+    try{
       logData.push(row);
-      const [ts, raw, sliced, judge, lockState, imageFile, line, busho] = row;
+      const [ts, raw, sliced, judge, lockState, imageInfo, line, busho] = row;
+
       await addDoc(collection(db, "qrLogs"), {
-        ts, raw, sliced, judge, lockState, imageFile, line, busho,
+        ts, raw, sliced, judge, lockState,
+        imageInfo: imageInfo || null,
+        line, busho,
         readAt: serverTimestamp(),
         uid: (auth.currentUser && auth.currentUser.uid) || null,
         pageUrl: location.href,
         userAgent: navigator.userAgent,
-        qrData: raw, readAtText: ts, result: judge
+        // 互換
+        qrData: raw,
+        readAtText: ts,
+        result: judge
       });
-    } catch(e){
-      console.warn("Firestore書き込み失敗:", e);
-      setStatus("エラー発生（保存失敗）", "#dc2626");
+    }catch(e){
+      console.warn("Firestore write fail:", e);
+      setStatus("エラー（保存失敗）","#dc2626");
     }
   };
 </script>
