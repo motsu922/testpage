@@ -141,25 +141,58 @@
   const dateFrom = document.getElementById("dateFrom");
   const dateTo = document.getElementById("dateTo");
 
-  const app = initializeApp({
-    apiKey: "AIzaSyDb62GTdYU_zksCYiQyr9-WERZLFrztJ1U",
-    authDomain: "miyama-seizo.firebaseapp.com",
-    projectId: "miyama-seizo",
-  });
+  // ========= Firebase 設定（miyamaunitec-fb87a へ切替） =========
+  const firebaseConfig = {
+    apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+    databaseURL: "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "miyamaunitec-fb87a",
+    storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+    messagingSenderId: "495316649507",
+    appId: "1:495316649507:web:1f98ee3dd851474fa39396",
+    measurementId: "G-1NXD8ZPGNR"
+  };
+
+  const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
 
-  function setFbStatus(t, c){ fbStatus.textContent = "Firebase: " + t; fbStatus.style.color = c; }
-  try{ await signInAnonymously(auth); setFbStatus("接続済み", "#16a34a"); }catch(e){ console.warn(e); setFbStatus("未接続", "#d1242f"); }
+  function setFbStatus(t, ok){
+    fbStatus.textContent = "Firebase: " + t;
+    fbStatus.style.color = ok ? "#16a34a" : "#d1242f";
+  }
+  function showErr(msg){
+    errEl.style.display = "block";
+    errEl.textContent = msg;
+  }
+  function clearErr(){
+    errEl.style.display = "none";
+    errEl.textContent = "";
+  }
+
+  // 接続（匿名認証）
+  try{
+    await signInAnonymously(auth);
+    setFbStatus("接続済み", true);
+  }catch(e){
+    console.warn(e);
+    setFbStatus("未接続", false);
+    showErr(`Authエラー: ${e.code || ""} ${e.message || e}`);
+  }
 
   const PER_PAGE = 2000;
   const MAX_PAGES = 10;
 
   let currentPage = 1;
-  let pageCursors = [null]; // pageCursors[i] = lastDoc of page i (i starting at 0 for page1 preceding cursor)
-  let currentDocs = [];     // docs of current page (raw, unfiltered)
+  let pageCursors = [null];
+  let currentDocs = [];
 
-  function pill(j){ const s=document.createElement("span"); s.className="pill "+(j==="OK"?"ok":j==="NG"?"ng":"warn"); s.textContent=j; return s; }
+  function pill(j){
+    const s=document.createElement("span");
+    s.className="pill "+(j==="OK"?"ok":j==="NG"?"ng":"warn");
+    s.textContent=j || "";
+    return s;
+  }
   function clearTable(){ tbody.innerHTML=""; }
 
   function parseClientDate(tsStr){
@@ -191,7 +224,7 @@
   }
 
   function applyFilters(){
-    errEl.style.display="none";
+    clearErr();
     const fLine = lineSel.value.trim();
     const fSliced = slicedSel.value.trim();
     const fJudge = judgeSel.value.trim();
@@ -204,8 +237,10 @@
     const filtered = currentDocs.filter(r => {
       if (fLine && r.line !== fLine) return false;
       if (fSliced && r.sliced !== fSliced) return false;
+
       const judge = r.judge || r.result || "";
       if (fJudge && judge !== fJudge) return false;
+
       const lockState = r.lockState || "";
       if (fLock && lockState !== fLock) return false;
 
@@ -227,7 +262,7 @@
       tr.innerHTML=`
         <td class="nowrap">${d.ts||""}</td>
         <td>${d.line||""}</td>
-        <td>${d.raw||d.qrData||""}</td>
+        <td>${(d.raw||d.qrData||"")}</td>
         <td class="nowrap">${d.sliced||""}</td>
         <td class="nowrap"></td>
         <td class="nowrap">${d.lockState||""}</td>
@@ -235,20 +270,19 @@
       tr.children[4].appendChild(pill(d.judge||d.result||""));
       tbody.appendChild(tr);
     }
-    document.getElementById("count").textContent = `表示件数：${rows.length}（このページ全体：${currentDocs.length}）`;
+    countEl.textContent = `表示件数：${rows.length}（このページ全体：${currentDocs.length}）`;
   }
 
   async function fetchPage(pageNum){
-    errEl.style.display="none";
+    clearErr();
     clearTable();
-    document.getElementById("count").textContent = "読み込み中…";
+    countEl.textContent = "読み込み中…";
     pageInfo.textContent = `ページ ${pageNum} / ${MAX_PAGES}`;
 
     try{
       const col = collection(db, "qrLogs");
       let qRef = query(col, orderBy("readAt","desc"), limit(PER_PAGE));
 
-      // startAfterは「前のページの最終ドキュメント」を使う
       const cursor = pageCursors[pageNum-1] || null;
       if (cursor) qRef = query(qRef, startAfter(cursor));
 
@@ -256,23 +290,18 @@
       currentDocs = [];
       snap.forEach(doc => currentDocs.push({ id: doc.id, ...doc.data() }));
 
-      // 次ページに進むためのカーソルを保存（このページの最後のDoc）
       const lastDoc = snap.docs[snap.docs.length-1] || null;
-      pageCursors[pageNum] = lastDoc; // pageNumの終端
+      pageCursors[pageNum] = lastDoc;
 
-      // UI制御
       btnPrev.disabled = (pageNum === 1);
-      // 次ページは「lastDocが存在 かつ pageNum < MAX_PAGES」なら有効
       btnNext.disabled = !(lastDoc && pageNum < MAX_PAGES);
 
-      // セレクタ候補はこのページのデータから生成
       populateSelectors(currentDocs);
       applyFilters();
     }catch(e){
       console.warn(e);
-      errEl.style.display="block";
-      errEl.textContent = "読み込みに失敗しました。インデックス（readAt desc）が必要な場合は作成してください。";
-      document.getElementById("count").textContent = "";
+      showErr(`Firestoreエラー: ${e.code || ""} ${e.message || e}`);
+      countEl.textContent = "";
     }
   }
 
@@ -290,7 +319,6 @@
   });
   btnNext.addEventListener("click", async () => {
     if (currentPage >= MAX_PAGES) return;
-    // 次ページ用カーソルが用意されていない場合でも、fetchPage内でpageCursors[currentPage]を更新済み
     currentPage += 1;
     await fetchPage(currentPage);
   });
@@ -302,17 +330,27 @@
       rows.push(tds);
     });
     const csv = rows.map(r => r.map(f => {
-      const s = String(f ?? ""); 
+      const s = String(f ?? "");
       return /[\",\n]/.test(s) ? `"${s.replace(/\"/g,'\"\"')}"` : s;
     }).join(",")).join("\n");
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+
+    const blob = new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `qrLogs_p${currentPage}_filtered.csv`; a.click();
     URL.revokeObjectURL(url);
   });
 
-  // 初回ロード（1ページ目）
+  // 初期日付（今日）
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth()+1).padStart(2,'0');
+  const d = String(today.getDate()).padStart(2,'0');
+  const todayStr = `${y}-${m}-${d}`;
+  dateFrom.value = todayStr;
+  dateTo.value = todayStr;
+
+  // 初回ロード
   fetchPage(currentPage);
 </script>
 
