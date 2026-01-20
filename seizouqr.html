@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<title>QR照合</title>
+<title>QR照合（整理No→画像マスタ）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="format-detection" content="telephone=no" />
 <style>
@@ -336,13 +336,14 @@
 <body class="bg-NOT_STARTED">
 <header>
   <div>
-    <h1>QR照合システム</h1>
+    <h1>QR照合システム（整理No→画像マスタ）</h1>
     <div class="sub">基準QRの切り出し値＝整理No → Firestoreマスタ → Storage画像表示</div>
   </div>
 
   <div class="tabs" role="tablist" aria-label="mode tabs">
     <button id="tabScan" class="tab active" role="tab" aria-selected="true">照合モード</button>
     <button id="tabMaster" class="tab" role="tab" aria-selected="false">画像マスタ登録</button>
+    <button id="tabQtyMaster" class="tab" role="tab" aria-selected="false">個数マスタ設定</button>
   </div>
 
   <div class="rightTools">
@@ -515,6 +516,73 @@
           <div id="masterPreviewHint" class="imgHint">ここに検索結果（画像）が表示されます。</div>
         </div>
       </div>
+
+      <!-- 登録済み画像マスタ一覧 -->
+      <div class="card" style="margin-top:14px;">
+        <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+          <div class="bigLabel" style="font-size:16px; margin:0;">登録済み画像マスタ</div>
+          <button id="masterRefreshBtn" class="btn" style="padding:6px 12px; font-size:13px;">🔄 更新</button>
+        </div>
+        <div id="masterListHint" class="imgHint" style="margin:10px 0;">読み込み中...</div>
+        <div id="masterListGrid" style="display:none; margin-top:10px;">
+          <div id="masterListContainer" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; max-height:600px; overflow-y:auto; padding:4px;"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 個数マスタ設定 ===================== -->
+  <section id="viewQtyMaster" class="view">
+    <div class="card">
+      <div class="bigLabel">個数マスタ設定（品番別QR1回あたり個数）</div>
+      
+      <div class="grid2">
+        <div class="field">
+          <label>整理No（品番）</label>
+          <input id="qtyMasterSeiriNo" type="text" placeholder="例：ABCDE" inputmode="latin" autocomplete="off" />
+          <div class="note">※QRコードから切り出される整理No（品番）を入力してください。</div>
+        </div>
+
+        <div class="field">
+          <label>QR1回あたりの個数</label>
+          <input id="qtyMasterQuantity" type="number" min="1" step="1" value="1" placeholder="1" />
+          <div class="note">※QRを1回スキャンした時にカウントする個数（デフォルト：1個）</div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+        <button id="qtyMasterSaveBtn" class="btn">登録</button>
+        <button id="qtyMasterFetchBtn" class="btn">この品番を検索</button>
+        <button id="qtyMasterDeleteBtn" class="btn warn">削除</button>
+        <button id="qtyMasterClearBtn" class="btn">入力クリア</button>
+      </div>
+
+      <div class="note" style="margin-top:10px;">
+        <b>登録先：</b> Firestore <code>qrMaster/{整理No}</code> に quantity フィールドとして保存されます。<br>
+        <b>動作：</b> 登録されていない品番は自動的に「1個」としてカウントされます。
+      </div>
+
+      <!-- 登録済み一覧 -->
+      <div class="card" style="margin-top:14px;">
+        <div style="display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+          <div class="bigLabel" style="font-size:16px; margin:0;">登録済み個数マスタ</div>
+          <button id="qtyMasterRefreshBtn" class="btn" style="padding:6px 12px; font-size:13px;">🔄 更新</button>
+        </div>
+        <div id="qtyMasterListHint" class="imgHint" style="margin:10px 0;">読み込み中...</div>
+        <div id="qtyMasterListTable" style="display:none; margin-top:10px; max-height:400px; overflow-y:auto;">
+          <table style="width:100%; border-collapse:collapse;">
+            <thead style="position:sticky; top:0; background:#f8fafc; border-bottom:2px solid #cbd5e1;">
+              <tr>
+                <th style="padding:8px; text-align:left; font-size:13px; font-weight:900;">整理No（品番）</th>
+                <th style="padding:8px; text-align:center; font-size:13px; font-weight:900;">個数</th>
+                <th style="padding:8px; text-align:center; font-size:13px; font-weight:900;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="qtyMasterListBody">
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </section>
 </main>
@@ -580,8 +648,10 @@ let __firestoreStatusLog = null; // prodStatusLogs
 /* ================== DOM ================== */
 const $tabScan = document.getElementById("tabScan");
 const $tabMaster = document.getElementById("tabMaster");
+const $tabQtyMaster = document.getElementById("tabQtyMaster");
 const $viewScan = document.getElementById("viewScan");
 const $viewMaster = document.getElementById("viewMaster");
+const $viewQtyMaster = document.getElementById("viewQtyMaster");
 
 const $mode = document.getElementById("mode");
 const $ok = document.getElementById("ok");
@@ -629,19 +699,50 @@ const $masterFetchBtn = document.getElementById("masterFetchBtn");
 const $masterClearBtn = document.getElementById("masterClearBtn");
 const $masterPreviewImage = document.getElementById("masterPreviewImage");
 const $masterPreviewHint = document.getElementById("masterPreviewHint");
+const $masterRefreshBtn = document.getElementById("masterRefreshBtn");
+const $masterListHint = document.getElementById("masterListHint");
+const $masterListGrid = document.getElementById("masterListGrid");
+const $masterListContainer = document.getElementById("masterListContainer");
+
+/* Qty Master UI */
+const $qtyMasterSeiriNo = document.getElementById("qtyMasterSeiriNo");
+const $qtyMasterQuantity = document.getElementById("qtyMasterQuantity");
+const $qtyMasterSaveBtn = document.getElementById("qtyMasterSaveBtn");
+const $qtyMasterFetchBtn = document.getElementById("qtyMasterFetchBtn");
+const $qtyMasterDeleteBtn = document.getElementById("qtyMasterDeleteBtn");
+const $qtyMasterClearBtn = document.getElementById("qtyMasterClearBtn");
+const $qtyMasterRefreshBtn = document.getElementById("qtyMasterRefreshBtn");
+const $qtyMasterListHint = document.getElementById("qtyMasterListHint");
+const $qtyMasterListTable = document.getElementById("qtyMasterListTable");
+const $qtyMasterListBody = document.getElementById("qtyMasterListBody");
 
 /* ================== タブ切替 ================== */
 function setActiveTab(mode){
   const isScan = (mode === "scan");
+  const isMaster = (mode === "master");
+  const isQtyMaster = (mode === "qtyMaster");
+  
   $tabScan.classList.toggle("active", isScan);
-  $tabMaster.classList.toggle("active", !isScan);
+  $tabMaster.classList.toggle("active", isMaster);
+  $tabQtyMaster.classList.toggle("active", isQtyMaster);
+  
   $tabScan.setAttribute("aria-selected", isScan ? "true" : "false");
-  $tabMaster.setAttribute("aria-selected", !isScan ? "true" : "false");
+  $tabMaster.setAttribute("aria-selected", isMaster ? "true" : "false");
+  $tabQtyMaster.setAttribute("aria-selected", isQtyMaster ? "true" : "false");
+  
   $viewScan.classList.toggle("active", isScan);
-  $viewMaster.classList.toggle("active", !isScan);
+  $viewMaster.classList.toggle("active", isMaster);
+  $viewQtyMaster.classList.toggle("active", isQtyMaster);
 }
 $tabScan.addEventListener("click", ()=>setActiveTab("scan"));
-$tabMaster.addEventListener("click", ()=>setActiveTab("master"));
+$tabMaster.addEventListener("click", ()=>{
+  setActiveTab("master");
+  loadImageMasterList();
+});
+$tabQtyMaster.addEventListener("click", ()=>{
+  setActiveTab("qtyMaster");
+  loadQtyMasterList();
+});
 
 /* ================== Utils ================== */
 function nowString(){
@@ -1280,6 +1381,216 @@ ${last.join(' / ')}`);
 
 document.getElementById("saveBtn").addEventListener("click", ()=>downloadCSV(logData));
 document.getElementById("exitBtn").addEventListener("click", ()=>{ downloadCSV(logData,"qr_log"); window.close(); });
+
+/* ================== 画像マスタ一覧機能 ================== */
+// 更新ボタン
+$masterRefreshBtn.addEventListener("click", ()=>loadImageMasterList());
+
+// 画像マスタ一覧読み込み
+async function loadImageMasterList(){
+  $masterListHint.style.display = "block";
+  $masterListHint.textContent = "読み込み中...";
+  $masterListGrid.style.display = "none";
+  
+  try{
+    const list = await window.__listImageMaster();
+    
+    if(!list || list.length === 0){
+      $masterListHint.textContent = "登録されている画像マスタはありません。";
+      return;
+    }
+    
+    $masterListHint.style.display = "none";
+    $masterListGrid.style.display = "block";
+    
+    $masterListContainer.innerHTML = "";
+    
+    list.forEach(item=>{
+      const card = document.createElement("div");
+      card.style.cssText = "border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fff; cursor:pointer; transition:all 0.2s;";
+      card.addEventListener("mouseenter", ()=>{ card.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)"; card.style.borderColor = "#0b3b75"; });
+      card.addEventListener("mouseleave", ()=>{ card.style.boxShadow = "none"; card.style.borderColor = "#e5e7eb"; });
+      
+      // 画像部分
+      const imgContainer = document.createElement("div");
+      imgContainer.style.cssText = "width:100%; height:150px; background:#f8fafc; border-radius:8px; overflow:hidden; display:flex; align-items:center; justify-content:center; margin-bottom:8px;";
+      
+      if(item.downloadUrl){
+        const img = document.createElement("img");
+        img.src = item.downloadUrl;
+        img.alt = item.seiriNo;
+        img.style.cssText = "max-width:100%; max-height:100%; object-fit:contain;";
+        imgContainer.appendChild(img);
+      }else{
+        const placeholder = document.createElement("div");
+        placeholder.textContent = "画像なし";
+        placeholder.style.cssText = "color:#9ca3af; font-size:13px;";
+        imgContainer.appendChild(placeholder);
+      }
+      
+      // 整理No
+      const seiriNoLabel = document.createElement("div");
+      seiriNoLabel.textContent = item.seiriNo;
+      seiriNoLabel.style.cssText = "font-size:14px; font-weight:900; text-align:center; margin-bottom:4px; word-break:break-all;";
+      
+      // ファイル名
+      const fileNameLabel = document.createElement("div");
+      fileNameLabel.textContent = item.originalFileName || "ファイル名不明";
+      fileNameLabel.style.cssText = "font-size:11px; color:#64748b; text-align:center; word-break:break-all;";
+      
+      // クリックで編集
+      card.addEventListener("click", ()=>{
+        $masterSeiriNo.value = item.seiriNo;
+        if(item.downloadUrl){
+          $masterPreviewImage.src = item.downloadUrl;
+          $masterPreviewImage.style.display = "block";
+          $masterPreviewHint.style.display = "none";
+        }
+        window.scrollTo({top:0, behavior:"smooth"});
+      });
+      
+      card.appendChild(imgContainer);
+      card.appendChild(seiriNoLabel);
+      card.appendChild(fileNameLabel);
+      $masterListContainer.appendChild(card);
+    });
+  }catch(e){
+    console.error(e);
+    $masterListHint.textContent = `エラー: ${e.message}`;
+  }
+}
+
+/* ================== 個数マスタ機能 ================== */
+// 個数マスタ保存
+$qtyMasterSaveBtn.addEventListener("click", async ()=>{
+  const seiriNo = $qtyMasterSeiriNo.value.trim();
+  const quantity = parseInt($qtyMasterQuantity.value, 10);
+  
+  if(!seiriNo){ alert("整理No（品番）を入力してください。"); return; }
+  if(!quantity || quantity < 1){ alert("個数は1以上の数値を入力してください。"); return; }
+  
+  if(!confirm(`品番「${seiriNo}」にQR1回あたり「${quantity}個」を登録しますか？`)) return;
+  
+  try{
+    await window.__saveQtyMaster(seiriNo, quantity);
+    alert(`登録完了：${seiriNo} → ${quantity}個`);
+    loadQtyMasterList();
+  }catch(e){
+    console.error(e);
+    alert(`登録エラー: ${e.message}`);
+  }
+});
+
+// 個数マスタ検索
+$qtyMasterFetchBtn.addEventListener("click", async ()=>{
+  const seiriNo = $qtyMasterSeiriNo.value.trim();
+  if(!seiriNo){ alert("整理No（品番）を入力してください。"); return; }
+  
+  try{
+    const qty = await window.__getQtyBySeiriNo(seiriNo);
+    if(qty !== null){
+      $qtyMasterQuantity.value = qty;
+      alert(`品番「${seiriNo}」は ${qty}個/QR で登録されています。`);
+    }else{
+      $qtyMasterQuantity.value = 1;
+      alert(`品番「${seiriNo}」はまだ登録されていません。\n（デフォルト: 1個/QR）`);
+    }
+  }catch(e){
+    console.error(e);
+    alert(`検索エラー: ${e.message}`);
+  }
+});
+
+// 個数マスタ削除
+$qtyMasterDeleteBtn.addEventListener("click", async ()=>{
+  const seiriNo = $qtyMasterSeiriNo.value.trim();
+  if(!seiriNo){ alert("整理No（品番）を入力してください。"); return; }
+  
+  if(!confirm(`品番「${seiriNo}」の個数設定を削除しますか？\n（削除後は自動的に1個/QRになります）`)) return;
+  
+  try{
+    await window.__deleteQtyMaster(seiriNo);
+    alert(`削除完了：${seiriNo}`);
+    $qtyMasterSeiriNo.value = "";
+    $qtyMasterQuantity.value = 1;
+    loadQtyMasterList();
+  }catch(e){
+    console.error(e);
+    alert(`削除エラー: ${e.message}`);
+  }
+});
+
+// 入力クリア
+$qtyMasterClearBtn.addEventListener("click", ()=>{
+  $qtyMasterSeiriNo.value = "";
+  $qtyMasterQuantity.value = 1;
+});
+
+// 一覧更新
+$qtyMasterRefreshBtn.addEventListener("click", ()=>loadQtyMasterList());
+
+// 個数マスタ一覧読み込み
+async function loadQtyMasterList(){
+  $qtyMasterListHint.style.display = "block";
+  $qtyMasterListHint.textContent = "読み込み中...";
+  $qtyMasterListTable.style.display = "none";
+  
+  try{
+    const list = await window.__listQtyMaster();
+    
+    if(!list || list.length === 0){
+      $qtyMasterListHint.textContent = "登録されている個数マスタはありません。";
+      return;
+    }
+    
+    $qtyMasterListHint.style.display = "none";
+    $qtyMasterListTable.style.display = "block";
+    
+    $qtyMasterListBody.innerHTML = "";
+    list.forEach(item=>{
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid #e5e7eb";
+      
+      const tdSeiriNo = document.createElement("td");
+      tdSeiriNo.style.padding = "8px";
+      tdSeiriNo.style.fontSize = "14px";
+      tdSeiriNo.textContent = item.seiriNo;
+      
+      const tdQty = document.createElement("td");
+      tdQty.style.padding = "8px";
+      tdQty.style.textAlign = "center";
+      tdQty.style.fontSize = "16px";
+      tdQty.style.fontWeight = "900";
+      tdQty.textContent = item.quantity;
+      
+      const tdAction = document.createElement("td");
+      tdAction.style.padding = "8px";
+      tdAction.style.textAlign = "center";
+      
+      const editBtn = document.createElement("button");
+      editBtn.textContent = "編集";
+      editBtn.className = "btn";
+      editBtn.style.padding = "4px 10px";
+      editBtn.style.fontSize = "12px";
+      editBtn.addEventListener("click", ()=>{
+        $qtyMasterSeiriNo.value = item.seiriNo;
+        $qtyMasterQuantity.value = item.quantity;
+        window.scrollTo({top:0, behavior:"smooth"});
+      });
+      
+      tdAction.appendChild(editBtn);
+      
+      tr.appendChild(tdSeiriNo);
+      tr.appendChild(tdQty);
+      tr.appendChild(tdAction);
+      $qtyMasterListBody.appendChild(tr);
+    });
+  }catch(e){
+    console.error(e);
+    $qtyMasterListHint.textContent = `エラー: ${e.message}`;
+  }
+}
+
 </script>
 
 <!-- Firebase SDK -->
@@ -1288,7 +1599,7 @@ document.getElementById("exitBtn").addEventListener("click", ()=>{ downloadCSV(l
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc, collection, addDoc, serverTimestamp, deleteDoc,
+    getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, serverTimestamp, deleteDoc,
     query, where, orderBy, limit, onSnapshot
   } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
   import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
@@ -1352,6 +1663,54 @@ document.getElementById("exitBtn").addEventListener("click", ()=>{ downloadCSV(l
     await deleteDoc(doc(db, "qrLogs", id));
   };
 
+  // ★ 個数マスタ保存：qrMaster/{seiriNo} に quantity を保存
+  window.__saveQtyMaster = async (seiriNo, quantity) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) throw new Error("seiriNo required");
+    const qty = parseInt(quantity, 10);
+    if(!qty || qty < 1) throw new Error("quantity must be >= 1");
+    
+    await setDoc(doc(db, QR_MASTER_COLLECTION, key), {
+      seiriNo: key,
+      quantity: qty,
+      updatedAt: serverTimestamp(),
+      updatedByUid: (auth.currentUser && auth.currentUser.uid) || null
+    }, { merge: true });
+  };
+
+  // ★ 個数マスタ削除：qrMaster/{seiriNo} を削除
+  window.__deleteQtyMaster = async (seiriNo) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) throw new Error("seiriNo required");
+    await deleteDoc(doc(db, QR_MASTER_COLLECTION, key));
+  };
+
+  // ★ 個数マスタ一覧取得：qrMaster コレクション全件取得
+  window.__listQtyMaster = async () => {
+    try{
+      const colRef = collection(db, QR_MASTER_COLLECTION);
+      const querySnap = await getDocs(colRef);
+      
+      const list = [];
+      querySnap.forEach(docSnap=>{
+        const data = docSnap.data() || {};
+        if(data.quantity){
+          list.push({
+            seiriNo: docSnap.id,
+            quantity: data.quantity
+          });
+        }
+      });
+      
+      // 整理No順にソート
+      list.sort((a,b)=>a.seiriNo.localeCompare(b.seiriNo));
+      return list;
+    }catch(e){
+      console.warn("listQtyMaster error:", e);
+      return [];
+    }
+  };
+
   // 画像マスタ取得：imageMasters/{seiriNo}
   window.__getMasterBySeiriNo = async (seiriNo) => {
     const key = String(seiriNo||"").trim();
@@ -1399,6 +1758,43 @@ document.getElementById("exitBtn").addEventListener("click", ()=>{ downloadCSV(l
     await setDoc(doc(db, MASTER_COLLECTION, key), payload, { merge:true });
 
     return { imagePath, downloadUrl };
+  };
+
+  // ★ 画像マスタ一覧取得：imageMasters コレクション全件取得
+  window.__listImageMaster = async () => {
+    try{
+      const colRef = collection(db, MASTER_COLLECTION);
+      const querySnap = await getDocs(colRef);
+      
+      const list = [];
+      for(const docSnap of querySnap.docs){
+        const data = docSnap.data() || {};
+        let downloadUrl = null;
+        
+        // 画像URLを取得
+        if(data.imagePath){
+          try{
+            downloadUrl = await getDownloadURL(ref(storage, data.imagePath));
+          }catch(e){
+            console.warn(`getDownloadURL failed for ${docSnap.id}:`, e);
+          }
+        }
+        
+        list.push({
+          seiriNo: docSnap.id,
+          imagePath: data.imagePath || null,
+          originalFileName: data.originalFileName || null,
+          downloadUrl: downloadUrl
+        });
+      }
+      
+      // 整理No順にソート
+      list.sort((a,b)=>a.seiriNo.localeCompare(b.seiriNo));
+      return list;
+    }catch(e){
+      console.warn("listImageMaster error:", e);
+      return [];
+    }
   };
 
   // ★ 起動時復元用：lineStatus/{line} を読む
