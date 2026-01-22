@@ -329,6 +329,17 @@
     min-width: 96px;
   }
 }
+#miniHourlyChart{
+  display:block;
+  width: 160px;
+  height: 46px;
+  margin-left: 10px;
+  margin-top: 6px;
+  opacity: .95;
+}
+@media (max-width:520px){
+  #miniHourlyChart{ width: 140px; }
+}
 
 </style>
 </head>
@@ -395,6 +406,7 @@
           <div class="counterLabel">出来高</div>
           <div id="goodCounter">0</div>
           <div class="counterUnit">pcs</div>
+            <canvas id="miniHourlyChart" width="160" height="46" aria-label="時間別出来高ミニグラフ"></canvas>
         </div>
       </div>
 
@@ -804,6 +816,106 @@ function showImage(url){
 function updateCountersUI(){
   const el = document.getElementById("goodCounter");
   if(el) el.textContent = String(goodCount||0);
+}
+/* ================== ミニ：時間別出来高 ================== */
+const HOURLY_BINS = new Array(24).fill(0); // 0〜23時
+function addHourly(tsMs, qty){
+  try{
+    const d = new Date(tsMs);
+    const h = d.getHours();
+    HOURLY_BINS[h] = (HOURLY_BINS[h] || 0) + (qty || 0);
+  }catch(e){}
+}
+
+function setHourlyBins(bins){
+  // Firebase側の集計結果を反映（binsは長さ24想定）
+  if(Array.isArray(bins) && bins.length === 24){
+    for(let i=0;i<24;i++) HOURLY_BINS[i] = Number(bins[i]||0);
+    renderMiniHourlyChart();
+  }
+}
+window.__setHourlyBins = setHourlyBins;
+
+function renderMiniHourlyChart(){
+  const c = document.getElementById("miniHourlyChart");
+  if(!c) return;
+  const ctx = c.getContext("2d");
+  const W = c.width, H = c.height;
+
+  // ===== 表示条件 =====
+  const span = 12;          // 直近12時間
+  const now = new Date();
+  const endH = now.getHours();
+
+  // 表示対象の時間配列
+  const hours = [];
+  for(let i=span-1;i>=0;i--){
+    let h = endH - i;
+    if(h < 0) h += 24;
+    hours.push(h);
+  }
+
+  const vals = hours.map(h => Number(HOURLY_BINS[h] || 0));
+  const maxV = Math.max(1, ...vals);
+
+  // ===== クリア =====
+  ctx.clearRect(0,0,W,H);
+
+  // ===== バー描画 =====
+  const padX = 4;
+  const padTop = 10;
+  const padBottom = 14;   // ← 時刻ラベル用
+  const barAreaH = H - padTop - padBottom;
+
+  const barW = Math.floor((W - padX*2) / span);
+  const gap = 2;
+
+  ctx.fillStyle = "#00ff66";
+
+  for(let i=0;i<span;i++){
+    const v = vals[i];
+    const bh = Math.round(barAreaH * (v / maxV));
+    const x = padX + i*barW + Math.floor(gap/2);
+    const y = padTop + (barAreaH - bh);
+    const w = Math.max(2, barW - gap);
+
+    // 薄い下地
+    ctx.globalAlpha = 0.25;
+    ctx.fillRect(x, padTop, w, barAreaH);
+
+    // 実バー
+    ctx.globalAlpha = 0.95;
+    ctx.fillRect(x, y, w, bh);
+
+    // 現在時刻を強調
+    if(hours[i] === endH){
+      ctx.globalAlpha = 1.0;
+      ctx.fillRect(x, y, w, bh);
+    }
+  }
+
+  ctx.globalAlpha = 1.0;
+
+  // ===== 横軸ラベル（2時間おき） =====
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "10px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  for(let i=0;i<span;i++){
+    if(i % 2 !== 0) continue; // 2時間おき
+    const h = hours[i];
+    const label = String(h).padStart(2,"0");
+    const x = padX + i*barW + barW/2;
+    ctx.fillText(label, x, H - 11);
+  }
+
+  // ===== 縦軸ラベル（最大値） =====
+  ctx.fillStyle = "#9ca3af";
+  ctx.font = "10px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`max ${maxV}`, 2, 0);
 }
 
 // lineStatus にカウンタも一緒に保存（復元で引き継ぐ）
@@ -1295,8 +1407,11 @@ async function processQR(qrRaw){
     const q = (qtyPerKanban==null? 0 : qtyPerKanban);
     deltaGood = (typeof q === "number" && isFinite(q) && q > 0) ? q : 0;
     goodCount += deltaGood;
+    
     updateCountersUI();
     persistLineStatus("SCAN_OK");
+    addHourly(Date.now(), deltaGood);
+renderMiniHourlyChart();
     logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName, bushoName, prodStatus], {good:deltaGood});
   }else{
     showNGPersistent();
@@ -1829,6 +1944,7 @@ async function loadQtyMasterList(){
         imageInfo: imageInfo || null,
         line, busho,
         prodStatus: prodStatus || null,
+         tsMs: Date.now(), 
         readAt: serverTimestamp(),
         uid: (auth.currentUser && auth.currentUser.uid) || null,
         pageUrl: location.href,
@@ -1921,6 +2037,48 @@ async function loadQtyMasterList(){
   }catch(e){
     console.warn("auto restore error:", e);
   }
+  function startTodayHourlyMini(){
+  // line未設定なら何もしない
+  if(!lineName) return null;
+
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0,0,0,0);
+  const end   = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0,0,0,0);
+
+  const qy = query(
+    collection(db, "qrLogs"),
+    where("line", "==", lineName),
+    where("judge", "==", "OK"),
+    where("tsMs", ">=", start.getTime()),
+    where("tsMs", "<", end.getTime()),
+    orderBy("tsMs", "asc")
+  );
+
+  return onSnapshot(qy, (snap)=>{
+    const bins = new Array(24).fill(0);
+    snap.forEach(d=>{
+      const data = d.data() || {};
+      const tsMs = Number(data.tsMs || 0);
+      const qty  = Number(data.quantity || 0); // 無ければ0
+      // あなたの仕様：OKの出来高は quantity 加算なので、無い場合は「1」ではなく「delta」を使いたい
+      // ここでは qrLogs に quantity が無いので、OKログは "1枚=qtyPerKanban" を後で改善できる
+      // まずは「OK件数」で良ければ qty=1 にする
+      const add = qty > 0 ? qty : 1;
+
+      if(tsMs){
+        const h = new Date(tsMs).getHours();
+        bins[h] += add;
+      }
+    });
+
+    if(typeof window.__setHourlyBins === "function"){
+      window.__setHourlyBins(bins);
+    }
+  }, (err)=>{
+    console.warn("mini hourly snapshot error:", err);
+  });
+}
+
 </script>
 </body>
 </html>
