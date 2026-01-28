@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -491,6 +492,74 @@
   color: #333;
   line-height: 1.5;
 }
+
+/* ===== アンドン起動ボタン（異常履歴→アンドン） ===== */
+.label-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.andon-launch-btn{
+  padding:6px 10px;
+  font-size:.85rem;
+  border-radius:8px;
+  white-space:nowrap;
+}
+
+/* ===== 画像編集（書き込み） ===== */
+.photo-item{ position:relative; }
+.photo-item .edit-btn{
+  position:absolute; right:34px; top:6px;
+  width:28px; height:28px;
+  border:0; border-radius:999px;
+  background:rgba(17,24,39,.92);
+  color:#fff; font-weight:700;
+  cursor:pointer;
+  box-shadow:0 4px 12px rgba(0,0,0,.18);
+}
+.photo-item .edit-btn:hover{ filter:brightness(1.05); }
+
+.annotate-toolbar{
+  display:flex; flex-direction:column; gap:10px;
+  padding:10px 12px;
+  background:#f8fafc;
+  border:1px solid #e5e7eb;
+  border-radius:10px;
+  margin:10px 0 12px;
+}
+.annotate-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.annotate-label{ font-size:.85rem; color:#334155; font-weight:700; }
+.annotate-chip{
+  border:1px solid #cbd5e1; background:#fff;
+  padding:6px 10px; border-radius:999px;
+  cursor:pointer; font-weight:700; font-size:.85rem;
+}
+.annotate-chip.active{
+  border-color:#111827;
+  box-shadow:0 0 0 3px rgba(17,24,39,.12);
+}
+.annotate-spacer{ flex:1; }
+.annotate-val{ font-size:.85rem; color:#0f172a; min-width:24px; text-align:right; }
+
+.annotate-canvas-wrap{
+  width:100%;
+  max-height:68vh;
+  overflow:auto;
+  background:#0b1220;
+  border-radius:12px;
+  border:1px solid #0f172a;
+  padding:10px;
+}
+#annotateCanvas{
+  display:block;
+  background:#fff;
+  border-radius:10px;
+  max-width:100%;
+  height:auto;
+}
+.annotate-hint{ margin:10px 2px 0; color:#64748b; font-size:.85rem; }
+
 </style>
 </head>
 <body>
@@ -625,7 +694,10 @@
          
 <!-- 品質対応 -->
 <div class="form-group">
-  <label>品質対応</label>
+  <div class="label-row">
+    <label>品質対応</label>
+    <button type="button" class="btn btn-secondary andon-launch-btn" id="btnLaunchAndon">🚨 アンドン起動（テスト中につき使用不可）</button>
+  </div>
   <textarea id="qualityResponse" placeholder="品質判定履歴・備考など"></textarea>
 </div>
 
@@ -1039,6 +1111,14 @@
 
 let shareTargetData = null; // プレビューで使用するデータ保持
 
+
+// 履歴カードから修理報告書を開く（repair_report.html を同階層に配置）
+window.openRepairFromHistory = function(anomalyId){
+  if (!anomalyId) return;
+  const url = `repair_report.html?anomalyId=${encodeURIComponent(anomalyId)}`;
+  window.open(url, '_blank');
+};
+
 window.openSharePreview = function(id){
   const item = anomalyCache.find(x => x._id === id);
   if (!item) return;
@@ -1105,6 +1185,16 @@ document.getElementById('shareSendMail')?.addEventListener('click', ()=>{
     `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(shareTargetData.text)}`;
 
   window.location.href = mailto;
+});
+
+/* 修理報告書アプリへ */
+document.getElementById('shareOpenRepair')?.addEventListener('click', ()=>{
+  if (!shareTargetData) return;
+  const anomalyId = shareTargetData?.item?._id;
+  if (!anomalyId) return;
+  // 修理報告書アプリ（同階層に repair_report.html を配置）
+  const url = `repair_report.html?anomalyId=${encodeURIComponent(anomalyId)}`;
+  window.open(url, '_blank');
 });
 
  
@@ -1217,6 +1307,80 @@ document.getElementById('btnAutoFillChangePointTech')?.addEventListener('click',
     }
   });
   signOutBtn.addEventListener('click', ()=> signOut(auth));
+// 起動直後に anomalyId を確定（ログイン前でもOK）
+
+/* ===== URLクエリ取得ユーティリティ ===== */
+function getQueryParam(name){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    return params.get(name);
+  }catch(e){
+    return null;
+  }
+}
+
+
+const state = { anomalyId: null };
+function setStatus(message, level="info"){
+  // level: info | warn | error
+  // このアプリ元々ステータス表示UIが無い場合でも落ちないようにするためのガード。
+  console.log(`[STATUS:${level}]`, message);
+}
+
+
+function initBoot(){
+  const subTitle = document.getElementById('subTitle');
+  const id = getQueryParam("anomalyId");
+  state.anomalyId = id;
+  if (!id){
+    if (subTitle) subTitle.textContent = "エラー：URLに anomalyId がありません（?anomalyId=xxxx）";
+    setStatus("anomalyIdなし", "warn");
+    return false;
+  }
+  if (subTitle) subTitle.textContent = `anomalyId: ${state.anomalyId}`;
+  return true;
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initBoot();
+
+  // ===== モニター/他アプリから「特定案件を開く」要求（focusAnomalyId） =====
+  (function(){
+    try{
+      const params = new URLSearchParams(location.search);
+      const focusId = params.get('focusAnomalyId') || localStorage.getItem('focus_anomaly_id');
+      if (!focusId) return;
+
+      let tries = 0;
+      const timer = setInterval(() => {
+        tries++;
+        const sel = document.getElementById('selectSerialNo');
+        if (!sel) return;
+        // options が入ってから選択
+        const hasOpt = Array.from(sel.options || []).some(o => o.value === focusId);
+        if (!hasOpt) {
+          if (tries > 60) clearInterval(timer); // 約30秒で諦め
+          return;
+        }
+        sel.value = focusId;
+        sel.dispatchEvent(new Event('change', { bubbles:true }));
+        const box = document.getElementById('selectedDataDisplay');
+        if (box) box.scrollIntoView({ behavior:'smooth', block:'start' });
+
+        // 一度開いたらクリア（連打防止）
+        try{ localStorage.removeItem('focus_anomaly_id'); }catch(e){}
+        clearInterval(timer);
+      }, 500);
+    }catch(e){}
+  })();
+
+
+  // すでにログイン済み（セッション維持）なら即ロードを試みる
+  // ※ onAuthStateChanged でも最終的にロードされるので二重実行防止は loadAll 側がガード
+  if (auth.currentUser && state.anomalyId){
+    loadAll();
+  }
+});
 
 onAuthStateChanged(auth, (user)=>{
   if (user){
@@ -1278,9 +1442,59 @@ let editTechPhotos = [];
   }
 
   // 整理Noの正規化
-  function normalizeSerial(val){
-    return String(val||'').trim().replace(/[\s\u3000]/g,'').toLowerCase();
+function normalizeSerial(val){
+  return String(val || '')
+    .trim()
+    .replace(/[\s\u3000]/g, '')
+    .toLowerCase();
+}
+
+function getPastChangePointsBySerial(currentSerial){
+  const key = normalizeSerial(currentSerial);
+
+  return anomalyCache.filter(item => {
+    return (
+      normalizeSerial(item.serialNo) === key &&
+      (item.changePointCategory || item.changePointContent)
+    );
+  });
+}
+function renderPastChangePoints(list, boxId, contentId) {
+  const box = document.getElementById(boxId);
+  const content = document.getElementById(contentId);
+
+  if (!box || !content) return;
+
+  if (!list || list.length === 0) {
+    content.innerHTML = '<div style="color:#666;">該当する変化点はありません</div>';
+    box.classList.add('active');
+    return;
   }
+
+  // 日付が新しい順
+  const sorted = [...list].sort((a, b) => {
+    const da = a.occurrenceDate || '';
+    const db = b.occurrenceDate || '';
+    return db.localeCompare(da);
+  });
+
+  content.innerHTML = sorted.map(item => `
+    <div class="past-changepoint-item">
+      <div class="past-cp-date">
+        ${item.occurrenceDate || '日付不明'}
+        <span class="past-cp-category">
+          ${item.changePointCategory || '未分類'}
+        </span>
+      </div>
+      <div class="past-cp-content">
+        ${item.changePointContent || '（内容なし）'}
+      </div>
+    </div>
+  `).join('');
+
+  box.classList.add('active');
+}
+
 
   // 全データをキャッシュに取得する関数
   let allDataCache = null;
@@ -1324,7 +1538,15 @@ let editTechPhotos = [];
       hasMoreData = snap.docs.length === PAGE_SIZE;
       
       filteredCache = [...anomalyCache];
+      // まず表示（体感速度優先）
       renderHistory();
+      // repairReports の存在を補完（anomalies側にrepairReportIdが無くても提出済みならボタンを出す）
+      hydrateRepairReportFlags(anomalyCache).then((changed)=>{
+        if (changed){
+          filteredCache = [...anomalyCache];
+          renderHistory();
+        }
+      });
       renderTechTargetSelect();
       updateSerialNoList();
       
@@ -1360,12 +1582,64 @@ let editTechPhotos = [];
       hasMoreData = snap.docs.length === PAGE_SIZE;
       
       filteredCache = [...anomalyCache];
+      // まず表示
       renderHistory();
+      // 追加読み込み分も補完
+      hydrateRepairReportFlags(anomalyCache).then((changed)=>{
+        if (changed){
+          filteredCache = [...anomalyCache];
+          renderHistory();
+        }
+      });
       
     } catch (error) {
       console.error('Error loading more data:', error);
     } finally {
       isLoadingMore = false;
+    }
+  }
+
+  // ===== 修理報告書（提出済み）存在チェック補完 =====
+  // anomalies 側に repairReportId が入っていない過去データでも、repairReports/{anomalyId} が存在し status==='submitted' なら
+  // 画面上は repairReportId を補完してボタンを表示する。
+  // ※大量データでも固まりにくいように低めの並列で処理
+  async function hydrateRepairReportFlags(items){
+    try{
+      const targets = (items||[]).filter(it => it && it._id && !it.repairReportId);
+      if (!targets.length) return false;
+
+      const CONCURRENCY = 10;
+      let changed = false;
+      for (let i=0; i<targets.length; i+=CONCURRENCY){
+        const chunk = targets.slice(i, i+CONCURRENCY);
+        const snaps = await Promise.all(chunk.map(async (it)=>{
+          try{
+            const rs = await getDoc(doc(db,'repairReports', it._id));
+            return { it, rs };
+          }catch(e){
+            return { it, rs: null };
+          }
+        }));
+
+        snaps.forEach(({it, rs})=>{
+          if (!rs || !rs.exists()) return;
+          const data = rs.data() || {};
+          // ボタン表示ルール
+          // 1) status==='submitted' は提出済み
+          // 2) 旧データ等で status が存在しない場合は「提出済み扱い」で表示（現場で“存在してるのに出ない”を防ぐ）
+          const hasStatusField = Object.prototype.hasOwnProperty.call(data, 'status');
+          const shouldShow = (data.status === 'submitted') || (!hasStatusField);
+          if (shouldShow){
+            it.repairReportId = it._id; // 既存UI条件を満たす
+            it.repairReportStatus = data.status || 'submitted';
+            changed = true;
+          }
+        });
+      }
+      return changed;
+    }catch(e){
+      console.warn('hydrateRepairReportFlags failed:', e);
+      return false;
     }
   }
 
@@ -1393,21 +1667,36 @@ let editTechPhotos = [];
   }
 
   // フィルター適用
-  function applyFilter(){
-    const dept = document.getElementById('filterDepartment').value;
-    const serialNo = document.getElementById('filterSerialNo').value.trim();
-    const line = document.getElementById('filterLine').value;
-    const dateFrom = document.getElementById('filterDateFrom').value;
-    const dateTo = document.getElementById('filterDateTo').value;
-    const changePoint = document.getElementById('filterChangePoint').value;
-    
-    filteredCache = anomalyCache.filter(item => {
+// フィルター適用（Firestore全体＝DB全体を対象に検索）
+async function applyFilter(){
+  const dept = document.getElementById('filterDepartment').value;
+  const serialNo = document.getElementById('filterSerialNo').value.trim();
+  const line = document.getElementById('filterLine').value;
+  const dateFrom = document.getElementById('filterDateFrom').value;
+  const dateTo = document.getElementById('filterDateTo').value;
+  const changePoint = document.getElementById('filterChangePoint').value;
+
+  const btn = document.getElementById('btnApplyFilter');
+  const countEl = document.getElementById('filterResultCount');
+
+  try{
+    // UI: 検索中表示
+    btn.disabled = true;
+    const prevText = btn.textContent;
+    btn.textContent = '検索中...';
+    countEl.style.display = 'block';
+    countEl.innerHTML = '検索中...（DB全体）';
+
+    // ★DB全体を取得（キャッシュあり）
+    const base = await fetchAllData(); // :contentReference[oaicite:3]{index=3}
+
+    filteredCache = base.filter(item => {
       if (dept && item.department !== dept) return false;
       if (serialNo && !normalizeSerial(item.serialNo).includes(normalizeSerial(serialNo))) return false;
       if (line && item.lineName !== line) return false;
       if (dateFrom && item.occurrenceDate < dateFrom) return false;
       if (dateTo && item.occurrenceDate > dateTo) return false;
-      
+
       // 変化点フィルター
       if (changePoint) {
         if (changePoint === 'hasChangePoint') {
@@ -1416,17 +1705,31 @@ let editTechPhotos = [];
           if (item.changePointCategory !== changePoint) return false;
         }
       }
-      
       return true;
     });
-    
+
+    // （任意）repairReportId の補完もかけたいなら有効化
+    // await hydrateRepairReportFlags(filteredCache);
+
     filterShownCount = FILTER_PAGE_SIZE;
     renderHistory();
-    
-    const countEl = document.getElementById('filterResultCount');
+
     countEl.style.display = 'block';
     countEl.innerHTML = `<strong>${filteredCache.length}</strong> 件の履歴が見つかりました`;
+
+    // UI: 元に戻す
+    btn.textContent = prevText;
+    btn.disabled = false;
+
+  } catch (e){
+    console.error('applyFilter failed:', e);
+    countEl.style.display = 'block';
+    countEl.innerHTML = `検索に失敗しました: ${e.message}`;
+    btn.disabled = false;
+    btn.textContent = '検索';
   }
+}
+
 
   function checkFilterActive(){
     const dept = document.getElementById('filterDepartment').value;
@@ -1641,6 +1944,7 @@ let editTechPhotos = [];
             ` : ''}
             <div class="action-btns">
               <button class="btn-small" onclick="openSharePreview('${item._id}')">📤 転送</button>
+              ${item.repairReportId ? `<button class="btn-small" onclick="openRepairFromHistory('${item._id}')">🧾 修理報告書</button>` : ''}
               <button class="btn-small btn-edit" data-edit="${item._id}">✏️ 編集</button>
               <button class="btn-small btn-delete" data-del="${item._id}">🗑️ 削除</button>
             </div>
@@ -1747,6 +2051,8 @@ let editTechPhotos = [];
                     <td>${photoCount ? `<button class="btn-small" style="background:#2196f3;color:#fff;" data-photos="${it._id}">📷 ${photoCount}</button>` : '-'}</td>
                     <td><span class="card-status ${cls}">${st}</span></td>
                     <td class="action-btns">
+                      <button class="btn-small" onclick="openSharePreview('${it._id}')">転送</button>
+                      ${it.repairReportId ? `<button class="btn-small" onclick="openRepairFromHistory('${it._id}')">修理報告書</button>` : ''}
                       <button class="btn-small btn-edit" data-edit="${it._id}">編集</button>
                       <button class="btn-small btn-delete" data-del="${it._id}">削除</button>
                     </td>
@@ -1841,7 +2147,317 @@ let editTechPhotos = [];
     await loadInitialData();
     await updateDepartmentList();
     setNowDateTo('occurrenceDate');
+    initAndonLaunchButton();
+    initAndonCompletionBridge();
+    checkAndonPrefillData();
+
   }
+
+function checkAndonPrefillData() {
+  const prefillDataStr = localStorage.getItem('anomaly_prefill_data');
+  
+  if (!prefillDataStr) return;
+  
+  try {
+    const prefillData = JSON.parse(prefillDataStr);
+    
+    // タイムスタンプチェック（5分以内のデータのみ有効）
+    const now = Date.now();
+    if (now - prefillData.timestamp > 5 * 60 * 1000) {
+      localStorage.removeItem('anomaly_prefill_data');
+      return;
+    }
+    
+    // アンドンからの連携データであることを確認
+    if (!prefillData.fromAndon) return;
+    
+    // データを使用したらすぐに削除（重複入力防止）
+    localStorage.removeItem('anomaly_prefill_data');
+    
+    
+// フォームに自動入力
+    applyAndonPrefillData(prefillData);
+    
+    // 通知表示
+    showAndonLinkNotification(prefillData);
+    
+  } catch (error) {
+    console.error('Error processing andon prefill data:', error);
+    localStorage.removeItem('anomaly_prefill_data');
+  }
+
+
+}
+
+// ===== 異常履歴 → アンドン起動（入力内容を引き継ぐ） =====
+function initAndonLaunchButton(){
+  const btn = document.getElementById('btnLaunchAndon');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    const department = (document.getElementById('department')?.value || '').trim();
+    const lineName   = (document.getElementById('lineName')?.value || '').trim();
+    const serialNo   = (document.getElementById('serialNo')?.value || '').trim();
+    const handler    = (document.getElementById('handler')?.value || '').trim();
+
+    if (!department) { alert('発信部署を選択してください（アンドン起動前）'); document.getElementById('department')?.focus(); return; }
+    if (!lineName)   { alert('ライン名を選択してください（アンドン起動前）'); document.getElementById('lineName')?.focus(); return; }
+    if (!handler)    { alert('処置者（発信者名）を選択してください（アンドン起動前）'); document.getElementById('handler')?.focus(); return; }
+
+    const anomalyContent  = (document.getElementById('anomalyContent')?.value || '').trim();
+    const actionTaken     = (document.getElementById('actionTaken')?.value || '').trim();
+    const traceback       = (document.getElementById('traceback')?.value || '').trim();
+    const qualityResponse = (document.getElementById('qualityResponse')?.value || '').trim();
+
+    const lines = [];
+    if (serialNo) lines.push(`整理No: ${serialNo}`);
+    if (anomalyContent) lines.push(`異常内容: ${anomalyContent}`);
+    if (actionTaken) lines.push(`現場対応: ${actionTaken}`);
+    if (traceback) lines.push(`遡り: ${traceback}`);
+    if (qualityResponse) lines.push(`品質対応メモ: ${qualityResponse}`);
+
+    // 起動トークン（往復連携の紐付け用）
+    const launchId = `L${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    sessionStorage.setItem('andon_launch_id', launchId);
+
+    const payload = {
+      fromAnomaly: true,
+      timestamp: Date.now(),
+      launchId,
+      department,
+      lineName,
+      serialNo,
+      callerName: handler,
+      message: lines.join('\n')
+    };
+
+    try{
+      localStorage.setItem('andon_prefill_data', JSON.stringify(payload));
+    }catch(e){
+      console.warn('Failed to set andon_prefill_data', e);
+    }
+
+    // アンドンアプリ起動（別タブ推奨）
+    window.open('./quality_andon.html?from=abnormality', '_blank');
+  });
+}
+
+
+
+
+/* ===== アンドン完了 → 異常履歴へ逆流（localStorage経由） ===== */
+function applyAndonCompletionToForm(comp){
+  // マッチ条件：launchId優先。無ければ部署/ライン/整理Noでゆるく照合。
+  const launchId = sessionStorage.getItem('andon_launch_id') || '';
+  const curDept  = (document.getElementById('department')?.value || '').trim();
+  const curLine  = (document.getElementById('lineName')?.value || '').trim();
+  const curSN    = (document.getElementById('serialNo')?.value || '').trim();
+
+  const matchesLaunch = !!(comp.launchId && launchId && comp.launchId === launchId);
+  const matchesLoose  = !!(comp.department && comp.lineName && comp.serialNo &&
+                           comp.department === curDept &&
+                           comp.lineName === curLine &&
+                           (comp.serialNo || '') === (curSN || ''));
+
+  if (!matchesLaunch && !matchesLoose) return false;
+
+  const ta = document.getElementById('qualityResponse');
+  if (!ta) return false;
+
+  const dt = comp.completedAt ? new Date(comp.completedAt) : new Date();
+  const stamp = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
+
+  const block = [
+    '',
+    `【アンドン完了】${stamp}`,
+    `対応者: ${comp.completedBy || ''}`,
+    `対応内容: ${comp.completedContent || '（なし）'}`,
+    comp.caseId ? `案件ID: ${comp.caseId}` : ''
+  ].filter(Boolean).join('\n');
+
+  // 追記（既存の末尾に）
+  const prev = (ta.value || '').trimEnd();
+  ta.value = prev ? (prev + '\n' + block.trimStart()) : block.trimStart();
+
+  // 「対応区分」を完了寄りに寄せたい場合（存在すれば）
+  const techReq = document.getElementById('techRequest');
+  if (techReq) {
+    // 完結 が選べるなら完結へ
+    const has = Array.from(techReq.options || []).some(o => o.value === '完結');
+    if (has) techReq.value = '完結';
+  }
+
+  ta.dispatchEvent(new Event('input', { bubbles:true }));
+  return true;
+}
+
+function consumeAndonCompletionIfAny(){
+  const raw = localStorage.getItem('andon_completion_data');
+  if (!raw) return;
+  try{
+    const comp = JSON.parse(raw);
+    // 5分以内のみ有効
+    if (!comp || !comp.timestamp || (Date.now() - comp.timestamp) > 5*60*1000) {
+      localStorage.removeItem('andon_completion_data');
+      return;
+    }
+    const applied = applyAndonCompletionToForm(comp);
+    if (applied) {
+      localStorage.removeItem('andon_completion_data');
+      alert('アンドン完了内容を「品質対応」欄へ反映しました。');
+    }
+  }catch(e){
+    console.warn('andon_completion_data parse error', e);
+    localStorage.removeItem('andon_completion_data');
+  }
+}
+
+function initAndonCompletionBridge(){
+  // 別タブからの localStorage 更新を拾う（同一オリジン前提）
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'andon_completion_data') {
+      consumeAndonCompletionIfAny();
+    }
+  });
+  // フォーカス復帰時にも拾う（storageイベントが飛ばない環境対策）
+  window.addEventListener('focus', () => {
+    consumeAndonCompletionIfAny();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) consumeAndonCompletionIfAny();
+  });
+}
+
+
+
+// フォームに自動入力
+function applyAndonPrefillData(data) {
+  // 発信部署タブに切り替え
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector('.tab[data-tab="manufacturing"]').classList.add('active');
+  document.getElementById('manufacturing').classList.add('active');
+  
+  // 部署を選択
+  const deptSelect = document.getElementById('department');
+  if (deptSelect && data.department) {
+    deptSelect.value = data.department;
+    // 部署変更イベントを発火してライン名を更新
+    deptSelect.dispatchEvent(new Event('change'));
+    
+    // ライン名が更新されるまで少し待ってから設定
+    setTimeout(() => {
+      if (data.lineName) {
+        const lineSelect = document.getElementById('lineName');
+        if (lineSelect) lineSelect.value = data.lineName;
+      }
+    }, 300);
+  }
+  
+  // 整理No
+  if (data.serialNo) {
+    document.getElementById('serialNo').value = data.serialNo;
+  }
+  
+  // 処置者（発信者名）
+  if (data.handler) {
+    const handlerSelect = document.getElementById('handler');
+    if (handlerSelect) {
+      // 処置者が選択肢にあるか確認
+      const handlerOption = Array.from(handlerSelect.options).find(
+        opt => opt.value === data.handler
+      );
+      if (handlerOption) {
+        handlerSelect.value = data.handler;
+      }
+    }
+  }
+  
+  // 異常内容
+  if (data.anomalyContent) {
+    document.getElementById('anomalyContent').value = data.anomalyContent;
+  }
+  
+  // 発生日（今日）
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  document.getElementById('occurrenceDate').value = dateStr;
+  
+  // 対応区分を「要請」に設定（品質対応が必要）
+  const techRequest = document.getElementById('techRequest');
+  if (techRequest) {
+    techRequest.value = '要請';
+  }
+  
+  // 優先度に応じた視覚的フィードバック
+  if (data.priority === 'urgent') {
+    // 緊急の場合は背景色を変更
+    const form = document.getElementById('manufacturingForm');
+    if (form) {
+      form.style.background = 'linear-gradient(to bottom, #ffebee 0%, #fff 100%)';
+      setTimeout(() => {
+        form.style.background = '';
+      }, 3000);
+    }
+  }
+}
+
+// 通知バナー表示
+function showAndonLinkNotification(data) {
+  const priorityLabel = data.priority === 'urgent' ? '🚨 緊急' : '⚠️ 通常';
+  const priorityColor = data.priority === 'urgent' ? '#ef5350' : '#ffa726';
+  
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: ${priorityColor};
+    color: #fff;
+    padding: 16px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    z-index: 9999;
+    font-weight: bold;
+    font-size: 1.1rem;
+    animation: slideDown 0.3s ease-out;
+    max-width: 90%;
+    text-align: center;
+  `;
+  
+  notification.innerHTML = `
+    ${priorityLabel} 品質アンドンから連携されました<br>
+    <span style="font-size:0.9rem;font-weight:normal;">整理No: ${data.serialNo} / 部署: ${data.department}</span>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // 5秒後に自動で消す
+  setTimeout(() => {
+    notification.style.animation = 'slideUp 0.3s ease-out';
+    setTimeout(() => {
+      notification.remove();
+    }, 300);
+  }, 5000);
+  
+  // アニメーション定義
+  if (!document.getElementById('andon-notification-styles')) {
+    const style = document.createElement('style');
+    style.id = 'andon-notification-styles';
+    style.textContent = `
+      @keyframes slideDown {
+        from { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+        to { transform: translateX(-50%) translateY(0); opacity: 1; }
+      }
+      @keyframes slideUp {
+        from { transform: translateX(-50%) translateY(0); opacity: 1; }
+        to { transform: translateX(-50%) translateY(-100px); opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 // 案件選択時の処理
 document.getElementById('selectSerialNo').addEventListener('change', async ()=>{
@@ -1949,8 +2565,15 @@ async function showPastChangePoints(serialNo, boxId, contentId, showMoreBtnId) {
 
   const itemSerial = normalizeSerial(String(rawSerial));
 
-  return itemSerial.includes(normalizedSearch) ||
-         normalizedSearch.includes(itemSerial);
+// ★完全一致（正規化後）だけ許可
+if (Array.isArray(rawSerial)) {
+  // 旧データで targetSerials が配列のケース救済
+  return rawSerial
+    .map(s => normalizeSerial(String(s)))
+    .some(s => s === normalizedSearch);
+}
+return itemSerial === normalizedSearch;
+
 })
       .sort((a, b) => (b.occurrenceDate || '').localeCompare(a.occurrenceDate || ''));
     
@@ -2000,26 +2623,32 @@ async function showPastChangePoints(serialNo, boxId, contentId, showMoreBtnId) {
 }
 
 // 過去の変化点ボタン（発信部署）
-document.getElementById('btnShowPastChangePoints').addEventListener('click', () => {
-  const serialNo = document.getElementById('serialNo').value.trim();
-  if (!serialNo) {
-    alert('整理Noを入力してください');
-    return;
-  }
-  showPastChangePoints(serialNo, 'mfgPastChangePointsBox', 'mfgPastChangePointsContent', 'mfgShowMoreChangePoints');
+document.getElementById('btnShowPastChangePoints')
+  .addEventListener('click', () => {
+
+    const serial = document.getElementById('serialNo').value;
+    if (!serial) {
+      alert('整理Noを入力してください');
+      return;
+    }
+
+    const past = getPastChangePointsBySerial(serial);
+    renderPastChangePoints(
+      past,
+      'mfgPastChangePointsBox',
+      'mfgPastChangePointsContent'
+    );
 });
+
 
 // 過去の変化点ボタン（技術部門）
 document.getElementById('btnShowPastChangePointsTech').addEventListener('click', () => {
   const id = document.getElementById('selectSerialNo').value;
-  if (!id) {
-    alert('案件を選択してください');
-    return;
-  }
   const d = anomalyCache.find(it => it._id === id);
-  if (!d) return;
   showPastChangePoints(d.serialNo, 'techPastChangePointsBox', 'techPastChangePointsContent', 'techShowMoreChangePoints');
 });
+
+
 
   let showingAllCases = false;
   let allSimilarCases = [];
@@ -2130,13 +2759,20 @@ document.getElementById('btnShowPastChangePointsTech').addEventListener('click',
   document.querySelectorAll('button[data-now]').forEach(b=> b.addEventListener('click', ()=> setNowTimeTo(b.getAttribute('data-now')) ));
 
   function displayPhotos(previewId, arr){
-    const wrap = document.getElementById(previewId); wrap.innerHTML='';
-    arr.forEach((src,idx)=>{
-      const div=document.createElement('div'); div.className='photo-item';
-      div.innerHTML = `<img src="${src}"><button class="remove-btn" data-photo="${previewId}" data-index="${idx}">×</button>`;
-      wrap.appendChild(div);
-    });
-  }
+  const wrap = document.getElementById(previewId);
+  if (!wrap) return;
+  wrap.innerHTML='';
+  arr.forEach((src,idx)=>{
+    const div=document.createElement('div');
+    div.className='photo-item';
+    div.innerHTML = `
+      <img src="${src}">
+      <button class="edit-btn" type="button" title="画像に書き込み" data-photo-edit="${previewId}" data-index="${idx}">✎</button>
+      <button class="remove-btn" type="button" title="削除" data-photo="${previewId}" data-index="${idx}">×</button>
+    `;
+    wrap.appendChild(div);
+  });
+}
 
 function handlePhotoUpload(inputId, previewId, arrRef){
   const input = document.getElementById(inputId);
@@ -2163,11 +2799,26 @@ function handlePhotoUpload(inputId, previewId, arrRef){
 }
 
   document.addEventListener('click',(e)=>{
-    const rm=e.target.closest('.remove-btn[data-photo]'); if(!rm) return;
-    const id=rm.getAttribute('data-photo'); const idx=Number(rm.getAttribute('data-index'));
-    if (id==='mfgPhotoPreview'){ mfgPhotos.splice(idx,1); displayPhotos(id, mfgPhotos.map(x=>x.preview)); }
-    if (id==='techPhotoPreview'){ techPhotos.splice(idx,1); displayPhotos(id, techPhotos.map(x=>x.preview)); }
-  });
+  const rm=e.target.closest('.remove-btn[data-photo]'); if(!rm) return;
+  const id=rm.getAttribute('data-photo'); const idx=Number(rm.getAttribute('data-index'));
+
+  if (id==='mfgPhotoPreview'){
+    mfgPhotos.splice(idx,1);
+    displayPhotos(id, mfgPhotos.map(x=>x.preview));
+  }
+  if (id==='techPhotoPreview'){
+    techPhotos.splice(idx,1);
+    displayPhotos(id, techPhotos.map(x=>x.preview));
+  }
+  if (id==='edit_mfgPhotoPreview'){
+    editMfgPhotos.splice(idx,1);
+    displayPhotos(id, editMfgPhotos.map(x=>x.preview));
+  }
+  if (id==='edit_techPhotoPreview'){
+    editTechPhotos.splice(idx,1);
+    displayPhotos(id, editTechPhotos.map(x=>x.preview));
+  }
+});
 
 function bindPhotoInputs(){
   handlePhotoUpload('mfgPhotos','mfgPhotoPreview', mfgPhotos);
@@ -2175,6 +2826,227 @@ function bindPhotoInputs(){
   handlePhotoUpload('edit_mfgPhotos','edit_mfgPhotoPreview', editMfgPhotos);
   handlePhotoUpload('edit_techPhotos','edit_techPhotoPreview', editTechPhotos);
 }
+
+// ===== 画像編集（書き込み）: フキダシ無し =====
+let _annotateTarget = null; // {previewId, index}
+let _annotateBaseImg = null;
+let _annotateHistory = []; // dataURL stack for undo
+let _annotateDrawing = false;
+let _annotateLast = null;
+let _annotatePenColor = '#d1242f';
+
+function _arrRefFromPreviewId(previewId){
+  // ここでプレビューID→配列参照を解決（未保存アップロード対象のみ）
+  if (previewId === 'mfgPhotoPreview') return mfgPhotos;
+  if (previewId === 'techPhotoPreview') return techPhotos;
+  if (previewId === 'edit_mfgPhotoPreview') return editMfgPhotos;
+  if (previewId === 'edit_techPhotoPreview') return editTechPhotos;
+  return null;
+}
+
+function _openAnnotator(previewId, index){
+  const arrRef = _arrRefFromPreviewId(previewId);
+  if (!arrRef) return;
+  const item = arrRef[index];
+  if (!item) return;
+
+  // item.preview がない（保存済URLのみ）ケースは対象外
+  const src = item.preview || item.url || null;
+  if (!src) { alert('編集できる画像が見つかりません'); return; }
+
+  _annotateTarget = { previewId, index };
+  _annotateHistory = [];
+  _annotateLast = null;
+
+  const modal = document.getElementById('annotateModal');
+  const canvas = document.getElementById('annotateCanvas');
+  const ctx = canvas.getContext('2d');
+
+  _annotateBaseImg = new Image();
+  _annotateBaseImg.crossOrigin = 'anonymous';
+  _annotateBaseImg.onload = ()=>{
+    // 画面内で扱いやすいサイズに（拡大はしない）
+    const maxW = 1400;
+    const scale = Math.min(1, maxW / _annotateBaseImg.naturalWidth);
+    canvas.width = Math.round(_annotateBaseImg.naturalWidth * scale);
+    canvas.height = Math.round(_annotateBaseImg.naturalHeight * scale);
+
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(_annotateBaseImg, 0,0, canvas.width, canvas.height);
+
+    // 初期状態をundo用に保存
+    _annotateHistory.push(canvas.toDataURL('image/png'));
+  };
+  _annotateBaseImg.src = src;
+
+  // UI初期化
+  document.getElementById('annotateSizeVal').textContent = document.getElementById('annotateSize').value;
+  modal.classList.add('active');
+}
+
+function _closeAnnotator(){
+  document.getElementById('annotateModal').classList.remove('active');
+  _annotateTarget = null;
+  _annotateBaseImg = null;
+  _annotateHistory = [];
+  _annotateDrawing = false;
+  _annotateLast = null;
+}
+
+function _canvasPointFromEvent(canvas, e){
+  const rect = canvas.getBoundingClientRect();
+  const clientX = (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX;
+  const clientY = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+  // CSSスケール対応
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+function _annotateStrokeStart(e){
+  const canvas = document.getElementById('annotateCanvas');
+  const ctx = canvas.getContext('2d');
+  _annotateDrawing = true;
+  _annotateLast = _canvasPointFromEvent(canvas, e);
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = _annotatePenColor;
+  ctx.lineWidth = Number(document.getElementById('annotateSize').value || 6);
+}
+
+function _annotateStrokeMove(e){
+  if (!_annotateDrawing) return;
+  e.preventDefault();
+  const canvas = document.getElementById('annotateCanvas');
+  const ctx = canvas.getContext('2d');
+  const p = _canvasPointFromEvent(canvas, e);
+
+  ctx.beginPath();
+  ctx.moveTo(_annotateLast.x, _annotateLast.y);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+
+  _annotateLast = p;
+}
+
+function _annotateStrokeEnd(){
+  if (!_annotateDrawing) return;
+  _annotateDrawing = false;
+
+  const canvas = document.getElementById('annotateCanvas');
+  // 変更があれば履歴に積む（連続ストローク単位）
+  const url = canvas.toDataURL('image/png');
+  const last = _annotateHistory[_annotateHistory.length-1];
+  if (url !== last){
+    _annotateHistory.push(url);
+    // メモリ暴走防止（最大30手）
+    if (_annotateHistory.length > 30) _annotateHistory.shift();
+  }
+}
+
+// editボタン（サムネ上の✎）
+document.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-photo-edit]');
+  if (!btn) return;
+  const previewId = btn.getAttribute('data-photo-edit');
+  const index = Number(btn.getAttribute('data-index'));
+  _openAnnotator(previewId, index);
+});
+
+// 色チップ
+document.addEventListener('click', (e)=>{
+  const chip = e.target.closest('.annotate-chip[data-pen-color]');
+  if (!chip) return;
+  document.querySelectorAll('.annotate-chip').forEach(x=>x.classList.remove('active'));
+  chip.classList.add('active');
+  _annotatePenColor = chip.getAttribute('data-pen-color') || '#d1242f';
+});
+
+// 太さ
+document.getElementById('annotateSize')?.addEventListener('input', (e)=>{
+  document.getElementById('annotateSizeVal').textContent = e.target.value;
+});
+
+// Undo / Clear / Cancel / Apply
+document.getElementById('btnAnnotateUndo')?.addEventListener('click', ()=>{
+  const canvas = document.getElementById('annotateCanvas');
+  const ctx = canvas.getContext('2d');
+  if (_annotateHistory.length <= 1) return;
+
+  _annotateHistory.pop();
+  const prev = _annotateHistory[_annotateHistory.length-1];
+  const img = new Image();
+  img.onload = ()=>{
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img, 0,0, canvas.width, canvas.height);
+  };
+  img.src = prev;
+});
+
+document.getElementById('btnAnnotateClear')?.addEventListener('click', ()=>{
+  const canvas = document.getElementById('annotateCanvas');
+  const ctx = canvas.getContext('2d');
+  if (!_annotateBaseImg) return;
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(_annotateBaseImg, 0,0, canvas.width, canvas.height);
+  _annotateHistory = [canvas.toDataURL('image/png')];
+});
+
+document.getElementById('btnAnnotateCancel')?.addEventListener('click', _closeAnnotator);
+
+document.getElementById('annotateModal')?.addEventListener('click', (e)=>{
+  if (e.target.id === 'annotateModal') _closeAnnotator();
+});
+
+document.getElementById('btnAnnotateApply')?.addEventListener('click', async ()=>{
+  if (!_annotateTarget) return;
+  const {previewId, index} = _annotateTarget;
+  const arrRef = _arrRefFromPreviewId(previewId);
+  if (!arrRef) return;
+
+  const canvas = document.getElementById('annotateCanvas');
+  const dataUrl = canvas.toDataURL('image/png');
+
+  // dataURL -> Blob -> File（アップロード対象を差し替え）
+  const blob = await (await fetch(dataUrl)).blob();
+  const old = arrRef[index] || {};
+  const name = old.name || 'annotated.png';
+  const file = new File([blob], name.replace(/\.(jpg|jpeg|png)$/i,'') + '.png', {type:'image/png'});
+
+  arrRef[index] = { ...(old||{}), file, preview: dataUrl, name: old.name || file.name };
+
+  // 再描画
+  const previews = arrRef.map(x=>x.preview).filter(Boolean);
+  displayPhotos(previewId, previews);
+
+  _closeAnnotator();
+});
+
+// Canvas pointer events
+(function bindAnnotateCanvas(){
+  const canvas = document.getElementById('annotateCanvas');
+  if (!canvas) return;
+
+  // pointer events (pen/mouse/touch)
+  canvas.addEventListener('pointerdown', (e)=>{ e.preventDefault(); _annotateStrokeStart(e); });
+  canvas.addEventListener('pointermove', _annotateStrokeMove);
+  window.addEventListener('pointerup', _annotateStrokeEnd);
+
+  // touch (iOS/古い端末向け補助)
+  canvas.addEventListener('touchstart', (e)=>{ _annotateStrokeStart(e); }, {passive:false});
+  canvas.addEventListener('touchmove', _annotateStrokeMove, {passive:false});
+  window.addEventListener('touchend', _annotateStrokeEnd);
+})();
+
+
 
   function updateDepartmentSelect(selectId, departments){
     const sel=document.getElementById(selectId); if(!sel) return;
@@ -2321,7 +3193,7 @@ const base = {
   previousCheck: '',
   lifespanReached: '',
   affirmation: '',
-  mfgPhotoUrls: [],
+  mfgPhotoUrls: window.andonLinkedPhotoUrls || [],
   techPhotoUrls: [],
   // 変化点データ
   changePointCategory: changePointCategory,
@@ -3450,10 +4322,45 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
     <div style="display:flex; gap:10px;">
       <button class="btn btn-primary" id="shareSendLine" style="flex:1;">LINEで送信</button>
       <button class="btn btn-secondary" id="shareSendMail" style="flex:1;">メールで送信</button>
+      <button class="btn" id="shareOpenRepair" style="flex:1; border:1px solid #0b3b75; color:#0b3b75; background:#fff; font-weight:800;">🧾 修理報告書へ</button>
     </div>
     <button class="btn btn-cancel" id="sharePreviewClose" style="margin-top:12px;">閉じる</button>
   </div>
 </div>
+
+<!-- ========== 画像編集（書き込み）モーダル：フキダシ無し ========= -->
+<div id="annotateModal" class="modal" aria-hidden="true">
+  <div class="modal-content" style="max-width:980px;">
+    <h3 class="modal-title">🖊️ 画像編集（書き込み）</h3>
+
+    <div class="annotate-toolbar">
+      <div class="annotate-row">
+        <label class="annotate-label">ペン</label>
+        <button type="button" class="annotate-chip active" data-pen-color="#d1242f">赤</button>
+        <button type="button" class="annotate-chip" data-pen-color="#111827">黒</button>
+        <span class="annotate-spacer"></span>
+        <label class="annotate-label">太さ</label>
+        <input id="annotateSize" type="range" min="2" max="18" step="1" value="6" style="width:180px;">
+        <span id="annotateSizeVal" class="annotate-val">6</span>
+      </div>
+
+      <div class="annotate-row">
+        <button type="button" class="btn btn-cancel" id="btnAnnotateUndo">元に戻す</button>
+        <button type="button" class="btn btn-cancel" id="btnAnnotateClear">全消し</button>
+        <span class="annotate-spacer"></span>
+        <button type="button" class="btn btn-cancel" id="btnAnnotateCancel">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="btnAnnotateApply">反映</button>
+      </div>
+    </div>
+
+    <div class="annotate-canvas-wrap">
+      <canvas id="annotateCanvas"></canvas>
+    </div>
+
+    <p class="annotate-hint">※ この編集は「これからアップロードする写真（未保存）」に対して適用されます（既に保存済みURLの上書きはしません）。</p>
+  </div>
+</div>
+<!-- ========== /画像編集 ========= -->
 
 </body>
 </html>
