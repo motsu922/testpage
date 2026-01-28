@@ -2834,6 +2834,120 @@ let _annotateHistory = []; // dataURL stack for undo
 let _annotateDrawing = false;
 let _annotateLast = null;
 let _annotatePenColor = '#d1242f';
+let _annotateCaption = ""; // 画像に埋め込むコメント（UI入力欄は無し・ボタンで設定）
+
+function _setAnnotateCaption(text){
+  _annotateCaption = String(text || '').trim();
+  const badge = document.getElementById('annotateCaptionBadge');
+  const span = document.getElementById('annotateCaptionText');
+  if (!badge || !span) return;
+  if (_annotateCaption){
+    span.textContent = _annotateCaption.length > 40 ? (_annotateCaption.slice(0,40) + '…') : _annotateCaption;
+    badge.style.display = 'inline';
+  } else {
+    span.textContent = '';
+    badge.style.display = 'none';
+  }
+}
+
+function _wrapLines(ctx, text, maxWidth){
+  const src = String(text||'').split(/\n/);
+  const out = [];
+  for (const line of src){
+    // 日本語（スペース無し）でも確実に折り返せるように「文字単位」で測定
+    let buf = '';
+    for (const ch of Array.from(line)){
+      const test = buf + ch;
+      if (ctx.measureText(test).width > maxWidth && buf){
+        out.push(buf);
+        buf = ch;
+      } else {
+        buf = test;
+      }
+    }
+    if (buf || line === '') out.push(buf); // 空行も保持
+  }
+  return out.length ? out : [''];
+}
+
+
+// コメントを下部白帯に描画したキャンバスを返す（コメント空なら元canvas）
+function _buildCaptionedCanvas(srcCanvas, caption){
+  const cap = String(caption||'').trim();
+  if (!cap) return srcCanvas;
+
+  const pad = 18;
+  // まずは大きめから、行数と幅に収まるまで縮小
+  let fontSize = 20;
+  const maxLines = 4;
+
+  const tmp = document.createElement('canvas');
+  tmp.width = srcCanvas.width;
+  tmp.height = srcCanvas.height;
+  const tctx = tmp.getContext('2d');
+  tctx.font = `700 ${fontSize}px system-ui,-apple-system,"Noto Sans JP",sans-serif`;
+
+  const maxW = srcCanvas.width - pad*2;
+
+  function fitLines(){
+    tctx.font = `700 ${fontSize}px system-ui,-apple-system,"Noto Sans JP",sans-serif`;
+    let lines = _wrapLines(tctx, cap, maxW);
+
+    // 長すぎる場合は最大行数に収めて末尾に…
+    if (lines.length > maxLines){
+      lines = lines.slice(0, maxLines);
+      // 最終行を…付きにして幅に収める
+      let last = lines[lines.length-1];
+      const ell = '…';
+      while (last && tctx.measureText(last + ell).width > maxW){
+        last = last.slice(0, -1);
+      }
+      lines[lines.length-1] = (last || '').trimEnd() + ell;
+    }
+    return lines;
+  }
+
+  let lines = fitLines();
+  while (fontSize > 12 && lines.length >= maxLines && lines.some(l => tctx.measureText(l).width > maxW)){
+    fontSize -= 2;
+    lines = fitLines();
+  }
+
+  const lineH = Math.round(fontSize * 1.35);
+  const extraH = pad + lines.length * lineH + pad;
+
+  const out = document.createElement('canvas');
+  out.width = srcCanvas.width;
+  out.height = srcCanvas.height + extraH;
+
+  const octx = out.getContext('2d');
+  // 上：元画像（書き込み含む）
+  octx.drawImage(srcCanvas, 0, 0);
+
+  // 下：白帯
+  octx.fillStyle = 'rgba(255,255,255,0.96)';
+  octx.fillRect(0, srcCanvas.height, out.width, extraH);
+
+  // 区切り線
+  octx.strokeStyle = 'rgba(0,0,0,0.18)';
+  octx.lineWidth = 2;
+  octx.beginPath();
+  octx.moveTo(0, srcCanvas.height);
+  octx.lineTo(out.width, srcCanvas.height);
+  octx.stroke();
+
+  // テキスト
+  octx.fillStyle = '#111827';
+  octx.font = `700 ${fontSize}px system-ui,-apple-system,"Noto Sans JP",sans-serif`;
+  octx.textBaseline = 'top';
+  let y = srcCanvas.height + pad;
+  for (const l of lines){
+    octx.fillText(l, pad, y);
+    y += lineH;
+  }
+  return out;
+}
+
 
 function _arrRefFromPreviewId(previewId){
   // ここでプレビューID→配列参照を解決（未保存アップロード対象のみ）
@@ -2857,6 +2971,7 @@ function _openAnnotator(previewId, index){
   _annotateTarget = { previewId, index };
   _annotateHistory = [];
   _annotateLast = null;
+  _setAnnotateCaption('');
 
   const modal = document.getElementById('annotateModal');
   const canvas = document.getElementById('annotateCanvas');
@@ -2892,6 +3007,7 @@ function _closeAnnotator(){
   _annotateHistory = [];
   _annotateDrawing = false;
   _annotateLast = null;
+  _setAnnotateCaption('');
 }
 
 function _canvasPointFromEvent(canvas, e){
@@ -2972,6 +3088,15 @@ document.getElementById('annotateSize')?.addEventListener('input', (e)=>{
   document.getElementById('annotateSizeVal').textContent = e.target.value;
 });
 
+
+// Caption（コメント埋め込み）
+document.getElementById('btnAnnotateCaption')?.addEventListener('click', ()=>{
+  const preset = _annotateCaption || '';
+  const txt = window.prompt('画像に埋め込むコメントを入力してください（空で解除）', preset);
+  if (txt === null) return; // キャンセル
+  _setAnnotateCaption(txt);
+});
+
 // Undo / Clear / Cancel / Apply
 document.getElementById('btnAnnotateUndo')?.addEventListener('click', ()=>{
   const canvas = document.getElementById('annotateCanvas');
@@ -3013,7 +3138,10 @@ document.getElementById('btnAnnotateApply')?.addEventListener('click', async ()=
   if (!arrRef) return;
 
   const canvas = document.getElementById('annotateCanvas');
-  const dataUrl = canvas.toDataURL('image/png');
+
+// コメント（ボタンで設定）を画像に埋め込み
+const exportCanvas = _buildCaptionedCanvas(canvas, _annotateCaption);
+const dataUrl = exportCanvas.toDataURL('image/png');
 
   // dataURL -> Blob -> File（アップロード対象を差し替え）
   const blob = await (await fetch(dataUrl)).blob();
@@ -4338,6 +4466,8 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
         <label class="annotate-label">ペン</label>
         <button type="button" class="annotate-chip active" data-pen-color="#d1242f">赤</button>
         <button type="button" class="annotate-chip" data-pen-color="#111827">黒</button>
+        <button type="button" class="annotate-chip" id="btnAnnotateCaption" title="コメントを画像に埋め込み">コメント</button>
+        <span id="annotateCaptionBadge" style="font-size:.85rem;color:#334155;display:none;">📝 <span id="annotateCaptionText"></span></span>
         <span class="annotate-spacer"></span>
         <label class="annotate-label">太さ</label>
         <input id="annotateSize" type="range" min="2" max="18" step="1" value="6" style="width:180px;">
