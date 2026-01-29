@@ -214,6 +214,33 @@
   .btn.big.primary{ background:#0b3b75; color:#fff; border-color:#0b3b75; }
   .btn:disabled{ opacity:.5; cursor:not-allowed; }
 
+  /* ===== 緊急解除（目立たせない・長押し） ===== */
+  .emergencyGhost{
+    position:absolute;
+    right: 18px;
+    bottom: 18px;
+    padding:10px 12px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,.35);
+    background: rgba(0,0,0,.25);
+    color:#fff;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.08em;
+    opacity:.18;                 /* うっすら */
+    cursor: pointer;
+    user-select:none;
+    -webkit-tap-highlight-color: transparent;
+    display:none;                /* ロック時のみ表示 */
+  }
+  .emergencyGhost:hover{ opacity:.35; }
+  .emergencyGhost:active{ opacity:.55; transform: scale(.98); }
+  .emergencyGhost.holding{
+    opacity:.70;
+    background: rgba(0,0,0,.55);
+    border-color: rgba(255,255,255,.6);
+  }
+
   /* 状態切替ボタン */
   .stateBar{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
   .stateBtn{
@@ -433,6 +460,7 @@
         <div id="ok" class="resultMark ok">○</div>
         <div id="ng" class="resultMark ng">×</div>
         <div id="lockMsg" class="lock">NG！ 管理者QRを読み込むまでロック中</div>
+        <button id="emergencyUnlockBtn" class="emergencyGhost" type="button">緊急解除（長押し）</button>
       </div>
 
       <!-- 状態切替 -->
@@ -604,6 +632,7 @@
 /* ================== 設定 ================== */
 const CUT_START = 2;
 const CUT_LENGTH = 5;
+const MIN_QR_LENGTH = 33; // ★ 33文字未満は誤読として破棄（現場スキャナ対策）
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
@@ -647,14 +676,8 @@ const PROD_STATUS = {
 let prodStatus = PROD_STATUS.NOT_STARTED;
 
 /* module側から注入される関数 */
-let __getMasterBySeiriNo = null; // async(seiriNo)=>{imagePath,downloadUrl,...}|null
-let __saveMaster = null;         // async(seiriNo,file)=>{imagePath,downloadUrl}
-let __loadLineStatus = null;     // async(line)=>{...}|null  ★追加（起動時復元用）
-let __getQtyBySeiriNo = null;   // async(seiriNo)=>number|null  ★追加（1枚あたり個数）
 
 /* Firestore書込み（module側が準備できたら注入） */
-let __firestoreLogRow = null;    // qrLogs
-let __firestoreStatusLog = null; // prodStatusLogs
 
 /* ================== DOM ================== */
 const $tabScan = document.getElementById("tabScan");
@@ -668,6 +691,7 @@ const $mode = document.getElementById("mode");
 const $ok = document.getElementById("ok");
 const $ng = document.getElementById("ng");
 const $lockMsg = document.getElementById("lockMsg");
+const $emergencyUnlockBtn = document.getElementById("emergencyUnlockBtn");
 const $baseDisplay = document.getElementById("baseDisplay");
 const $productImage = document.getElementById("productImage");
 const $imgHint = document.getElementById("imgHint");
@@ -792,13 +816,77 @@ function setLock(state){
   if (state) {
     resultArea.classList.add('show');
     $lockMsg.style.display = "block";
+    if($emergencyUnlockBtn) $emergencyUnlockBtn.style.display = "block";
   } else {
     resultArea.classList.remove('show');
     $lockMsg.style.display = "none";
+    if($emergencyUnlockBtn) $emergencyUnlockBtn.style.display = "none";
+    if($emergencyUnlockBtn) $emergencyUnlockBtn.classList.remove("holding");
   }
   $resetBtn.disabled = state;
   if(!state) clearMarks();
 }
+
+// ===== 緊急解除（長押し） =====
+(function initEmergencyUnlock(){
+  const HOLD_MS = 1200; // 長押し判定（ms）
+  let t = null;
+
+  if(!$emergencyUnlockBtn) return;
+
+  const clearHold = ()=>{
+    if(t){ clearTimeout(t); t = null; }
+    $emergencyUnlockBtn.classList.remove("holding");
+  };
+
+  const startHold = ()=>{
+    if(!isLocked) return; // ロック中のみ有効
+    clearHold();
+    $emergencyUnlockBtn.classList.add("holding");
+    t = setTimeout(()=>{
+      t = null;
+      $emergencyUnlockBtn.classList.remove("holding");
+      if(!isLocked) return;
+
+      const ok = confirm(
+        "【緊急解除】\n" +
+        "QRが読めない場合のみ使用してください。\n" +
+        "本当に解除しますか？"
+      );
+      if(!ok) return;
+
+      setLock(false);
+      showOK();
+      $mode.textContent = "緊急解除されました。照合を再開してください。";
+
+      logRow([nowString(), "-", "-", "EMERGENCY_UNLOCK_LONGPRESS", "UNLOCK", "manual", lineName, bushoName, prodStatus], {good:0});
+
+      // lineStatusにも反映
+      if(lineName && typeof window.__writeLineStatus === "function"){
+        window.__writeLineStatus(lineName, {
+          state: statusKeyFromText(prodStatus),
+          stateText: prodStatus,
+          reason: "EMERGENCY_UNLOCK_LONGPRESS",
+          product: baseQR || null,
+          updatedAt: new Date().toISOString(),
+          busho: bushoName || null,
+          lockState: "UNLOCK"
+        }).catch(()=>{});
+      }
+    }, HOLD_MS);
+  };
+
+  // Pointer優先（タッチ/マウス両対応）
+  $emergencyUnlockBtn.addEventListener("pointerdown", (e)=>{ e.preventDefault(); startHold(); }, {passive:false});
+  $emergencyUnlockBtn.addEventListener("pointerup",   (e)=>{ e.preventDefault(); clearHold(); }, {passive:false});
+  $emergencyUnlockBtn.addEventListener("pointercancel", clearHold);
+  $emergencyUnlockBtn.addEventListener("pointerleave",  clearHold);
+
+  // iOS Safari保険
+  $emergencyUnlockBtn.addEventListener("touchstart", (e)=>{ e.preventDefault(); startHold(); }, {passive:false});
+  $emergencyUnlockBtn.addEventListener("touchend",   (e)=>{ e.preventDefault(); clearHold(); }, {passive:false});
+})();
+
 function updateBaseDisplay(val){
   if(val){ $baseDisplay.classList.remove("placeholder"); $baseDisplay.textContent=val; }
   else { $baseDisplay.classList.add("placeholder"); $baseDisplay.textContent="未設定"; }
@@ -960,8 +1048,8 @@ function logRow(row, delta={good:0}){
   });
 
   const idx = logData.length - 1;
-  if(typeof __firestoreLogRow === "function"){
-    Promise.resolve(__firestoreLogRow(row))
+  if(typeof window.__firestoreLogRow === "function"){
+    Promise.resolve(window.__firestoreLogRow(row))
       .then((docId)=>{ if(docId) qrLogDocIds[idx] = docId; })
       .catch(()=>{});
   }
@@ -1012,9 +1100,9 @@ function setProdStatus(next, reason="MANUAL"){
 
   logRow([nowString(), "-", "-", `STATUS:${reason}`, isLocked?"LOCKED":"UNLOCK", `${prev}→${next}`, lineName, bushoName, prodStatus]);
 
-  if(typeof __firestoreStatusLog === "function"){
+  if(typeof window.__firestoreStatusLog === "function"){
     const tsMs = Date.now();
-    __firestoreStatusLog({
+    window.__firestoreStatusLog({
       tsText: nowString(),
       tsMs,
       prevStatus: prev,
@@ -1127,7 +1215,7 @@ $masterUploadBtn.addEventListener("click", async ()=>{
   setMasterUIBusy(true);
   $masterUploadState.textContent="登録中...";
   try{
-    const res = await __saveMaster(seiriNo, file);
+    const res = await window.__saveMaster(seiriNo, file);
     $masterUploadState.textContent="登録完了";
     showMasterPreview(res.downloadUrl);
   }catch(e){
@@ -1146,7 +1234,7 @@ $masterFetchBtn.addEventListener("click", async ()=>{
   setMasterUIBusy(true);
   $masterUploadState.textContent="検索中...";
   try{
-    const master = await __getMasterBySeiriNo(seiriNo);
+    const master = await window.__getMasterBySeiriNo(seiriNo);
     if(master && master.downloadUrl){
       $masterUploadState.textContent="ヒット";
       showMasterPreview(master.downloadUrl);
@@ -1207,8 +1295,8 @@ async function applyRestoredState(state){
   // 5) 画像表示（baseQRがあるときだけ）
   if(baseQR){
     try{
-      if(__getMasterBySeiriNo){
-        const master = await __getMasterBySeiriNo(baseQR);
+      if(window.__getMasterBySeiriNo){
+        const master = await window.__getMasterBySeiriNo(baseQR);
         if(master && master.downloadUrl){
           showImage(master.downloadUrl);
           setMasterBadge(true);
@@ -1240,7 +1328,7 @@ async function restoreFromFirebase(){
 
   __restoring = true;
   try{
-    const st = await __loadLineStatus(lineName);
+    const st = await window.__loadLineStatus(lineName);
     if(st){
       await applyRestoredState(st);
     }else{
@@ -1313,6 +1401,14 @@ document.addEventListener("keydown", (e)=>{
 
 /* ================== 照合フロー ================== */
 async function processQR(qrRaw){
+  // ★ 短すぎるQRは誤読として即破棄（判定・ロックに入れない）
+  if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
+    buffer = ""; // 念のため完全クリア
+    if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    $mode.textContent = "⚠ QRが正しく読み取れていません。もう一度読み込んでください。";
+    logRow([nowString(), String(qrRaw||""), "-", "QR_TOO_SHORT", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
+    return;
+  }
   const now = nowString();
   const sliced = cutQR(qrRaw);
   // ★ QRが読まれたら「生産中」へ戻す（ただしNGロック中は戻さない）
@@ -1328,8 +1424,8 @@ async function processQR(qrRaw){
 
     // ★ 1枚あたり個数（qrMaster.quantity）を取得 → 出来高カウンタに使用
     try{
-      if(__getQtyBySeiriNo){
-        const q = await __getQtyBySeiriNo(baseQR);
+      if(window.__getQtyBySeiriNo){
+        const q = await window.__getQtyBySeiriNo(baseQR);
         qtyPerKanban = (typeof q === 'number' && isFinite(q) && q > 0) ? q : null;
       }else{
         qtyPerKanban = null;
@@ -1349,8 +1445,8 @@ async function processQR(qrRaw){
     // 整理No→マスタ検索→Storage画像表示
     let imageInfo = "";
     try{
-      if(__getMasterBySeiriNo){
-        const master = await __getMasterBySeiriNo(baseQR);
+      if(window.__getMasterBySeiriNo){
+        const master = await window.__getMasterBySeiriNo(baseQR);
         if(master && master.downloadUrl){
           showImage(master.downloadUrl);
           setMasterBadge(true);
@@ -1605,7 +1701,7 @@ $qtyMasterFetchBtn.addEventListener("click", async ()=>{
   if(!seiriNo){ alert("整理No（品番）を入力してください。"); return; }
   
   try{
-    const qty = await window.__getQtyBySeiriNo(seiriNo);
+    const qty = await window.window.__getQtyBySeiriNo(seiriNo);
     if(qty !== null){
       $qtyMasterQuantity.value = qty;
       alert(`品番「${seiriNo}」は ${qty}個/QR で登録されています。`);
@@ -1935,7 +2031,7 @@ async function loadQtyMasterList(){
 
   // qrLogs 保存
   // eslint-disable-next-line no-undef
-  __firestoreLogRow = async function(row){
+  window.__firestoreLogRow = async function(row){
     try{
       const [ts, raw, sliced, judge, lockState, imageInfo, line, busho, prodStatus] = row;
 
@@ -1965,7 +2061,7 @@ async function loadQtyMasterList(){
 
   // prodStatusLogs（時系列）
   // eslint-disable-next-line no-undef
-  __firestoreStatusLog = async function(payload){
+  window.__firestoreStatusLog = async function(payload){
     try{
       await addDoc(collection(db, STATUS_LOG_COLLECTION), {
         ...payload,
