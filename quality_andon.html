@@ -1,688 +1,1299 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>品質異常アンドン（シンプル版）</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>品質呼び出しモニター</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', 'Hiragino Sans', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
 
+    /* 横に間延び防止：最大幅＋中央寄せ */
+.page{
+  max-width: none;
+  width: 100%;
+  margin: 0;
+}
+
+
+
+    .header {
+      background: rgba(255, 255, 255, 0.95);
+      padding: 20px 30px;
+      border-radius: 15px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .header h1 {
+      font-size: 2rem;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .header-actions{
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .sound-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #fff3e0;
+      padding: 12px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      user-select: none;
+      border: 1px solid rgba(0,0,0,.06);
+    }
+    .sound-toggle input {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+
+    .btn{
+      border: none;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: .15s;
+      box-shadow: 0 3px 10px rgba(0,0,0,.12);
+      white-space: nowrap;
+    }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn:active{ transform: translateY(0); }
+    .btn-secondary{ background: #eceff1; color:#263238; }
+    .btn-secondary:hover{ background:#e3e7ea; }
+    .btn-logout{ background:#ef5350; color:#fff; }
+    .btn-logout:hover{ background:#e53935; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: rgba(255, 255, 255, 0.95);
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      transition: transform 0.2s;
+    }
+    .stat-card:hover { transform: translateY(-5px); }
+    .stat-label {
+      font-size: 1.2rem;
+      font-weight: bold;
+      margin-bottom: 15px;
+      color: #666;
+    }
+    .stat-value {
+      font-size: 3.5rem;
+      font-weight: bold;
+      color: #333;
+    }
+    .stat-card.urgent .stat-value { color: #ef5350; }
+    .stat-card.normal .stat-value { color: #ffa726; }
+    .stat-card.inprogress .stat-value { color: #42a5f5; }
+    .stat-card.completed .stat-value { color: #66bb6a; }
+
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      flex: 1;
+      min-width: 120px;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.8);
+      color: #333;
+    }
+    .filter-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      transform: translateY(-2px);
+    }
+
+    /* ✅ 最大3列グリッド（レスポンシブで2→1列） */
+.cases-container{
+  display: grid;
+  gap: 15px;
+
+  /* ✅ 横幅を使い切る：最小幅320pxを基準に、入るだけ列を増やす */
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  align-items: stretch;
+}
+
+    @media (max-width: 980px){
+      .cases-container{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px){
+      .cases-container{ grid-template-columns: 1fr; }
+    }
+
+    .case-card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      cursor: pointer;
+      transition: transform 0.2s;
+      position: relative;
+      overflow: hidden;
+
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .case-card:hover { transform: translateY(-3px); }
+    .case-card.completed {
+      opacity: 0.65;
+      filter: saturate(.9);
+    }
+
+    .priority-bar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 6px;
+    }
+    .priority-bar.urgent { background: #ef5350; }
+    .priority-bar.normal { background: #ffa726; }
+
+    .case-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 15px;
+      gap: 12px;
+    }
+    .case-title {
+      font-size: 1.2rem;
+      font-weight: 900;
+      color: #333;
+      line-height: 1.2;
+    }
+    .case-time {
+      color: #666;
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    .case-info {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    .info-item {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+    }
+    .info-label {
+      font-weight: 900;
+      color: #555;
+      white-space: nowrap;
+    }
+    .info-value {
+      color: #333;
+      word-break: break-word;
+    }
+
+    .message-box {
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      white-space: pre-wrap;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+    .status-badge.pending { background: #ffebee; color: #c62828; }
+    .status-badge.inprogress { background: #e3f2fd; color: #1565c0; }
+    .status-badge.completed { background: #e8f5e9; color: #2e7d32; }
+
+    /* ✅ 対応中 担当者 強調表示 + 頭文字バッジ */
+    .responder-highlight{
+      margin: 6px 0 14px;
+      padding: 12px 14px;
+      background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+      border-left: 6px solid #1e88e5;
+      border-radius: 10px;
+      font-size: 1.25rem;
+      font-weight: 1000;
+      color: #0d47a1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .initial-badge{
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 1000;
+      font-size: 1.05rem;
+      letter-spacing: .5px;
+      color: #ffffff;
+      background: radial-gradient(circle at 30% 30%, #6a5cff, #2a1b8f);
+      box-shadow: 0 6px 14px rgba(13,71,161,.25);
+      flex: 0 0 auto;
+      user-select: none;
+    }
+    .responder-name{
+      line-height: 1.15;
+      min-width: 0;
+    }
+    .responder-name .sub{
+      display:block;
+      margin-top: 2px;
+      font-size: .92rem;
+      font-weight: 900;
+      color: rgba(13,71,161,.85);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: auto; /* ✅ ボタンを下に寄せる */
+    }
+    .actions .btn {
+      flex: 1;
+      min-width: 110px;
+      padding: 12px;
+      border-radius: 10px;
+      font-weight: 900;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      box-shadow: none;
+    }
+    .btn-inprogress { background: #42a5f5; color: #fff; }
+    .btn-inprogress:hover { background: #1e88e5; }
+    .btn-complete { background: #66bb6a; color: #fff; }
+    .btn-complete:hover { background: #43a047; }
+    .btn-open-anomaly { background: #7e57c2; color: #fff; }
+    .btn-open-anomaly:hover { background: #5e35b1; }
+
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 60px 20px;
+      color: rgba(255, 255, 255, 0.95);
+      font-size: 1.2rem;
+    }
+
+    /* モーダル */
+    .modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 16px;
+    }
+    .modal.active { display: flex; }
+    .modal-content {
+      background: #fff;
+      padding: 24px;
+      border-radius: 15px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 85vh;
+      overflow: auto;
+    }
+    .modal-content h3 {
+      margin-bottom: 15px;
+      color: #333;
+      font-size: 1.4rem;
+      font-weight: 1000;
+    }
+    .modal-content textarea {
+      width: 100%;
+      min-height: 110px;
+      padding: 12px;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      resize: vertical;
+      font-family: inherit;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .modal-actions .btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow:none;
+    }
+    .btn-cancel { background: #e0e0e0; }
+    .btn-save { background: #667eea; color: #fff; }
+
+    /* QCメンバー管理 */
+    .panel{
+      background:#f8f9fa;
+      border:1px solid rgba(0,0,0,.06);
+      border-radius: 12px;
+      padding: 14px;
+      margin: 12px 0;
+    }
+    .row{
+      display:flex;
+      gap:10px;
+      flex-wrap: wrap;
+    }
+    .row > *{
+      flex: 1;
+      min-width: 160px;
+    }
+    .input, .select{
+      width:100%;
+      padding: 12px;
+      border:2px solid #ddd;
+      border-radius: 10px;
+      font-size: 1rem;
+    }
+    .list{
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .item{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px;
+      background:#fff;
+      border-radius: 12px;
+      border-left: 4px solid #667eea;
+    }
+    .item small{ color:#666; }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      background:#eef2ff;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight:1000;
+      color:#3949ab;
+      font-size: .85rem;
+      white-space: nowrap;
+    }
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      white-space: nowrap;
+      user-select:none;
+      font-weight: 900;
+    }
+
+    @media (max-width: 768px) {
   body{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
+    padding: clamp(10px, 1.8vw, 22px);
   }
-
-  .header{
-    background: rgba(255,255,255,.95);
-    padding: 16px 20px;
-    box-shadow: 0 2px 10px rgba(0,0,0,.1);
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-  }
-  .header-title{
-    font-size: 1.4rem;
-    font-weight: 800;
-    color:#667eea;
-    display:flex;
-    align-items:center;
-    gap:10px;
-  }
-  .user-info{
-    display:flex;
-    align-items:center;
-    gap:12px;
-    font-size:.9rem;
-    color:#666;
-  }
-
-  .container{ max-width: 1100px; margin: 0 auto; padding: 20px; }
-
-  .tabs{
-    display:flex; gap:8px; margin-bottom:20px;
-  }
-  .tab{
-    flex:1;
-    padding: 14px;
-    background: rgba(255,255,255,.9);
-    border:none;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 800;
-    cursor:pointer;
-    transition: .2s;
-    color:#666;
-  }
-  .tab.active{
-    background:#fff;
-    color:#667eea;
-    box-shadow: 0 4px 12px rgba(102,126,234,.25);
-  }
-
-  .tab-content{
-    display:none;
-    background:#fff;
-    border-radius: 12px;
-    padding: 24px;
-    box-shadow: 0 4px 20px rgba(0,0,0,.15);
-  }
-  .tab-content.active{ display:block; }
-
-  .call-buttons{
-    display:grid;
-    grid-template-columns: 1fr 1fr;
-    gap:20px;
-    margin-bottom: 22px;
-  }
-  .call-btn{
-    padding: 38px 18px;
-    border:none;
-    border-radius: 12px;
-    font-size: 1.25rem;
-    font-weight: 900;
-    cursor:pointer;
-    transition: .2s;
-    color:#fff;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    gap:10px;
-    box-shadow: 0 4px 15px rgba(0,0,0,.18);
-  }
-  .call-btn:hover{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.25); }
-  .call-btn:active{ transform: translateY(0); }
-
-  .btn-urgent{ background: linear-gradient(135deg, #ef5350 0%, #d32f2f 100%); }
-  .btn-normal{ background: linear-gradient(135deg, #ffa726 0%, #f57c00 100%); }
-
-  .call-icon{ font-size: 2.8rem; }
-
-  .form-group{ margin-bottom: 16px; }
-  .form-group label{
-    display:block;
-    margin-bottom: 8px;
-    font-weight: 800;
-    color:#333;
-    font-size: .95rem;
-  }
-  .form-group input, .form-group select, .form-group textarea{
-    width:100%;
-    padding: 12px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    font-size: 1rem;
-  }
-  .form-group input:focus, .form-group select:focus, .form-group textarea:focus{
-    outline:none;
-    border-color:#667eea;
-  }
-  .form-group textarea{ min-height: 100px; resize: vertical; }
-
-  .template-buttons{
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    margin-top:10px;
-  }
-  .template-btn{
-    padding: 8px 14px;
-    background:#e3f2fd;
-    border: 2px solid #2196f3;
-    border-radius: 20px;
-    font-size: .85rem;
-    cursor:pointer;
-    transition:.15s;
-    color:#1976d2;
-    font-weight: 700;
-    user-select:none;
-  }
-  .template-btn:hover{ background:#2196f3; color:#fff; transform: translateY(-1px); }
-
-  .btn{
-    padding: 10px 16px;
-    border:none;
-    border-radius: 8px;
-    font-size:.95rem;
-    font-weight: 800;
-    cursor:pointer;
-    transition:.2s;
-  }
-  .btn-primary{ background:#667eea; color:#fff; }
-  .btn-primary:hover{ background:#5568d3; }
-  .btn-danger{ background:#ef5350; color:#fff; }
-  .btn-danger:hover{ background:#e53935; }
-
-  #authGate{
-    position:fixed;
-    inset:0;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    z-index: 2000;
-  }
-  #authCard{
-    background:#fff;
-    max-width: 420px;
-    width: 92%;
-    padding: 32px;
-    border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0,0,0,.3);
-  }
-  #authCard h2{
-    margin-bottom: 22px;
-    text-align:center;
-    color:#667eea;
-  }
-  .sign-out-btn{
-    background:#ef5350;
-    color:#fff;
-    border:none;
-    border-radius: 8px;
-    padding: 8px 14px;
-    cursor:pointer;
-    font-size:.9rem;
-    font-weight: 800;
-  }
-  .sign-out-btn:hover{ background:#e53935; }
-
-  .panel{
-    background:#f8f9fa;
-    padding: 18px;
-    border-radius: 12px;
-    margin-bottom: 18px;
-  }
-  .row{
-    display:flex;
-    gap:10px;
-    flex-wrap:wrap;
-  }
-  .row > *{ flex: 1; min-width: 220px; }
-
-  .list{
-    display:grid;
-    gap:10px;
-    margin-top: 10px;
-  }
-  .list-item{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:10px;
-    padding: 12px 14px;
-    background:#fff;
-    border-radius: 10px;
-    border-left: 4px solid #667eea;
-  }
-
-  @media (max-width: 768px){
-    .call-buttons{ grid-template-columns: 1fr; }
-    .call-btn{ padding: 30px 16px; font-size: 1.1rem; }
-    .call-icon{ font-size: 2.4rem; }
-  }
-</style>
+}
+  </style>
 </head>
 
 <body>
-  <!-- 認証ゲート -->
-  <div id="authGate">
-    <div id="authCard">
-      <h2>🔐 ログイン</h2>
-      <div class="form-group">
-        <label>メールアドレス</label>
-        <input type="email" id="authEmail" placeholder="user@example.com" />
-      </div>
-      <div class="form-group">
-        <label>パスワード</label>
-        <input type="password" id="authPassword" placeholder="••••••••" />
-      </div>
-      <button class="btn btn-primary" style="width:100%;" id="authLoginBtn">ログイン</button>
-      <p id="authMsg" style="color:#c62828;margin-top:12px;"></p>
-    </div>
-  </div>
-
-  <!-- メイン -->
-  <div id="appRoot" style="display:none;">
+  <div class="page">
     <div class="header">
-      <div class="header-title">
-        <span>🚨</span><span>品質異常アンドン</span>
-      </div>
-      <div class="user-info">
-        <span id="userEmail"></span>
-        <button class="sign-out-btn" id="signOutBtn">サインアウト</button>
+      <h1>📢 品質呼び出しモニター</h1>
+
+      <div class="header-actions">
+        <label class="sound-toggle" title="ONにすると音声が鳴ります（初回は音の解錠が必要です）">
+          <input type="checkbox" id="soundNotification">
+          <span>🔊 音声通知</span>
+        </label>
+
+        <button class="btn btn-secondary" id="qcMembersBtn">👥 QCメンバー</button>
+        <button class="btn btn-logout" id="logoutBtn">ログアウト</button>
       </div>
     </div>
 
-    <div class="container">
-      <!-- タブ（シンプル） -->
-      <div class="tabs">
-        <button class="tab active" data-tab="call">📞 呼び出し</button>
-        <button class="tab" data-tab="settings">⚙️ 設定</button>
+    <div class="stats-grid">
+      <div class="stat-card urgent">
+        <div class="stat-label">緊急・未対応</div>
+        <div class="stat-value" id="statUrgentPending">0</div>
       </div>
+      <div class="stat-card normal">
+        <div class="stat-label">通常・未対応</div>
+        <div class="stat-value" id="statNormalPending">0</div>
+      </div>
+      <div class="stat-card inprogress">
+        <div class="stat-label">対応中</div>
+        <div class="stat-value" id="statInProgress">0</div>
+      </div>
+      <div class="stat-card completed">
+        <div class="stat-label">本日完了</div>
+        <div class="stat-value" id="statCompletedToday">0</div>
+      </div>
+    </div>
 
-      <!-- 呼び出し -->
-      <div id="call" class="tab-content active">
-        <h2 style="margin-bottom:18px;color:#667eea;">品質担当者を呼び出す</h2>
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">すべて</button>
+      <button class="filter-btn" data-filter="pending">未対応</button>
+      <button class="filter-btn" data-filter="inprogress">対応中</button>
+      <button class="filter-btn" data-filter="completed">完了</button>
+    </div>
 
-        <div class="call-buttons">
-          <button class="call-btn btn-urgent" id="btnCallUrgent">
-            <div class="call-icon">🚨</div>
-            <div>緊急呼び出し</div>
-            <div style="font-size:.85rem;font-weight:normal;opacity:.9;">即対応が必要</div>
-          </button>
-          <button class="call-btn btn-normal" id="btnCallNormal">
-            <div class="call-icon">⚠️</div>
-            <div>通常呼び出し</div>
-            <div style="font-size:.85rem;font-weight:normal;opacity:.9;">時間に余裕あり</div>
-          </button>
-        </div>
+    <div id="casesContainer" class="cases-container"></div>
 
-        <div class="form-group">
-          <label>発信部署 *</label>
-          <select id="callDepartment" required>
+    <!-- 対応（開始/完了）モーダル -->
+    <div id="completeModal" class="modal">
+      <div class="modal-content">
+        <h3 id="completeModalTitle">対応完了</h3>
+
+        <div style="margin-bottom:15px;">
+          <label style="display:block;font-weight:1000;margin-bottom:8px;">担当者 *</label>
+          <select id="completeBySelect" class="select">
             <option value="">選択してください</option>
           </select>
-        </div>
-
-        <div class="form-group">
-          <label>ライン名</label>
-          <select id="callLine">
-            <option value="">部署を先に選択してください</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>整理No</label>
-          <input type="text" id="callSerialNo" placeholder="例: 6769" />
-        </div>
-
-        <div class="form-group">
-          <label>発信者名 *</label>
-          <input type="text" id="callName" placeholder="例: 山田太郎" required />
-        </div>
-
-        <div class="form-group">
-          <label>メッセージ（任意）</label>
-          <textarea id="callMessage" placeholder="異常の詳細や状況を入力してください..."></textarea>
-          <div class="template-buttons" id="templateButtons"></div>
-        </div>
-
-        <div class="form-group">
-          <label style="display:flex;align-items:center;gap:10px;font-weight:800;">
-            <input type="checkbox" id="linkToAnomaly" style="width:auto;" />
-            異常履歴アプリと連携する（呼び出し後に異常履歴アプリを開く）
-          </label>
-          <div style="color:#666;font-size:.85rem;margin-top:6px;">
-            ※ 本シンプル版では「対応完了→異常履歴自動作成」は行いません（呼び出し発行＋必要なら履歴アプリ起動のみ）
-          </div>
-        </div>
-      </div>
-
-      <!-- 設定 -->
-      <div id="settings" class="tab-content">
-        <h2 style="margin-bottom:18px;color:#667eea;">設定</h2>
-
-        <div class="panel">
-          <h3 style="color:#667eea;margin-bottom:12px;">部署マスタ</h3>
-          <div class="row">
-            <input type="text" id="newDepartment" placeholder="新しい部署名" />
-            <button class="btn btn-primary" id="btnAddDept" style="flex:0 0 140px;">追加</button>
-          </div>
-          <div id="departmentList" class="list"></div>
-        </div>
-
-        <div class="panel">
-          <h3 style="color:#667eea;margin-bottom:12px;">メッセージテンプレート</h3>
-          <div class="row">
-            <input type="text" id="newTemplate" placeholder="新しいテンプレート" />
-            <button class="btn btn-primary" id="btnAddTemplate" style="flex:0 0 140px;">追加</button>
-          </div>
-          <div id="templateList" class="list"></div>
-          <div style="color:#666;font-size:.85rem;margin-top:10px;">
-            ※ 呼び出し画面のテンプレボタンに反映されます
+          <div style="margin-top:8px;color:#666;font-size:.85rem;">
+            ※ 候補は <b>qc_members</b>（enabled=true）から読み込みます
           </div>
         </div>
 
-        <div class="panel">
-          <h3 style="color:#667eea;margin-bottom:12px;">通知について</h3>
-          <div style="color:#444;line-height:1.6;">
-            メール通知は <strong>Firestore（呼び出し追加）→ Cloud Functions → Power Automate（社内Outlook送信）</strong> で行う想定です。<br />
-            このシンプル版では、アプリ内に宛先入力欄は置きません（宛先は別途 `andon_recipients` コレクションで管理する運用が安全です）。
-          </div>
+        <div>
+          <label style="display:block;font-weight:1000;margin-bottom:8px;">対応内容（任意）</label>
+          <textarea id="completeMessage" placeholder="実施した対応内容を入力してください."></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-save" id="confirmComplete">保存</button>
+          <button class="btn btn-cancel" id="cancelComplete">キャンセル</button>
         </div>
       </div>
     </div>
+
+    <!-- QCメンバー管理モーダル -->
+    <div id="qcMembersModal" class="modal">
+      <div class="modal-content">
+        <h3>👥 QCメンバー管理</h3>
+
+        <div class="panel">
+          <div style="font-weight:1000;color:#3949ab;margin-bottom:10px;">新規追加</div>
+          <div class="row">
+            <input id="qcNewName" class="input" placeholder="氏名（例：杉本）">
+            <input id="qcNewEmail" class="input" placeholder="メール（例：xxx@miyama...）">
+          </div>
+          <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="btn btn-secondary" id="qcCloseBtn" style="flex:1;">閉じる</button>
+            <button class="btn btn-save" id="qcAddBtn" style="flex:1;">追加</button>
+          </div>
+          <div style="margin-top:10px;color:#666;font-size:.85rem;">
+            ※ enabled=true のメンバーだけが「担当者選択」に出ます
+          </div>
+        </div>
+
+        <div class="panel">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+            <div style="font-weight:1000;color:#3949ab;">メンバー一覧</div>
+            <span class="pill">件数: <span id="qcCount">0</span></span>
+          </div>
+          <div id="qcList" class="list"></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-  import {
-    getAuth, signInWithEmailAndPassword, onAuthStateChanged,
-    setPersistence, browserLocalPersistence, signOut
-  } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
-  import {
-    getFirestore, collection, addDoc, getDocs, query, where, doc, deleteDoc,
-    serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
+    import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
+    import {
+      getFirestore,
+      collection, onSnapshot, query, orderBy,
+      addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc
+    } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
 
-  // Firebase設定（元ファイルと同じ）
-  const firebaseConfig = {
-    apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
-    authDomain: "abnreport-fd733.firebaseapp.com",
-    databaseURL: "https://abnreport-fd733-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "abnreport-fd733",
-    storageBucket: "abnreport-fd733.firebasestorage.app",
-    messagingSenderId: "349748947315",
-    appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
-  };
+    const firebaseConfig = {
+      apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
+      authDomain: "abnreport-fd733.firebaseapp.com",
+      projectId: "abnreport-fd733",
+      storageBucket: "abnreport-fd733.firebasestorage.app",
+      messagingSenderId: "349748947315",
+      appId: "1:349748947315:web:010cb671d2a95bcf1f7d06"
+    };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const auth = getAuth(app);
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
 
-  let currentUser = null;
-  let departmentsCache = [];
-  let templatesCache = [];
-  let lastLaunchContext = null;
+    // 異常履歴アプリURL（同階層）
+    const ANOMALY_APP_URL = './abnreports.html';
 
-  // ローカルストレージキー（発信部署と名前はキャッシュ）
-  const LS_KEYS = {
-    DEPARTMENT: "andon_department",
-    LINE: "andon_line",
-    SERIAL_NO: "andon_serialno",
-    NAME: "andon_name"
-  };
+    let casesCache = [];
+    let currentCompleteCase = null;
+    let modalMode = 'complete'; // 'inprogress' or 'complete'
 
-  // ===== 認証 =====
-  document.getElementById("authLoginBtn").addEventListener("click", async () => {
-    const email = document.getElementById("authEmail").value.trim();
-    const pw = document.getElementById("authPassword").value;
-    try{
-      await setPersistence(auth, browserLocalPersistence);
-      await signInWithEmailAndPassword(auth, email, pw);
-    }catch(e){
-      document.getElementById("authMsg").textContent = "ログイン失敗: " + (e.code || e.message);
-    }
-  });
+    // ===== sound =====
+    let soundEnabled = localStorage.getItem('sound_enabled') === 'true';
+    const soundCheckbox = document.getElementById('soundNotification');
+    soundCheckbox.checked = soundEnabled;
 
-  document.getElementById("signOutBtn").addEventListener("click", () => signOut(auth));
+    // 新規検知用
+    let previousCaseIds = new Set();
 
-  onAuthStateChanged(auth, (user) => {
-    if(user){
-      currentUser = user;
-      document.getElementById("authGate").style.display = "none";
-      document.getElementById("appRoot").style.display = "block";
-      document.getElementById("userEmail").textContent = user.email;
-      bootAfterLogin();
-    }else{
-      currentUser = null;
-      document.getElementById("appRoot").style.display = "none";
-      document.getElementById("authGate").style.display = "flex";
-    }
-  });
+    // 緊急アラーム制御
+    let urgentAlarmTimer = null;
+    let hasUrgentPending = false;
+    let prevHasUrgentPending = false;
+    const URGENT_ALARM_INTERVAL_MS = 8000; // 8秒ごと（好みで変更OK）
 
-  async function bootAfterLogin(){
-    await loadDepartments();
-    await loadTemplates();
-    restoreFormData();
-  }
+    // Audio
+    let audioCtx = null;
 
-  // ===== タブ切替 =====
-  document.querySelectorAll(".tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
-      tab.classList.add("active");
-      document.getElementById(tab.getAttribute("data-tab")).classList.add("active");
-    });
-  });
+    async function unlockAudio() {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return false;
+      try {
+        audioCtx = audioCtx || new AudioCtx();
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
 
-  // ===== 呼び出し =====
-  document.getElementById("btnCallUrgent").addEventListener("click", () => createCall("urgent"));
-  document.getElementById("btnCallNormal").addEventListener("click", () => createCall("normal"));
-
-  async function createCall(priority){
-    const department = document.getElementById("callDepartment").value;
-    const lineName = document.getElementById("callLine").value;
-    const serialNo = document.getElementById("callSerialNo").value.trim();
-    const name = document.getElementById("callName").value.trim();
-    const message = document.getElementById("callMessage").value.trim();
-    const linkToAnomaly = document.getElementById("linkToAnomaly").checked;
-
-    if(!department || !name){
-      alert("部署と発信者名を入力してください");
-      return;
+        // 無音バッファで解錠
+        const buffer = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        source.start(0);
+        return true;
+      } catch (e) {
+        console.warn(e);
+        return false;
+      }
     }
 
-    const priorityLabel = (priority === "urgent") ? "緊急" : "通常";
-    if(!confirm(`${priorityLabel}呼び出しを送信しますか？`)) return;
+    // ✅ 2種類チャイム（通常 / 緊急）
+    function playChime(type = 'normal') {
+      if (!soundEnabled) return;
+      if (!audioCtx) return;
 
-    try{
-      const caseData = {
-        priority,
-        department,
-        lineName: lineName || "",
-        serialNo: serialNo || "",
-        callerName: name,
-        message,
-        status: "pending",
-        linkToAnomaly,
-        launchId: (lastLaunchContext && lastLaunchContext.launchId) ? lastLaunchContext.launchId : "",
-        createdAt: serverTimestamp(),
-        createdBy: currentUser?.email || ""
-      };
+      const ctx = audioCtx;
+      const t0 = ctx.currentTime;
 
-      const docRef = await addDoc(collection(db, "quality_cases"), caseData);
+      const master = ctx.createGain();
+      master.connect(ctx.destination);
 
-      // 入力キャッシュ
-      localStorage.setItem(LS_KEYS.DEPARTMENT, department);
-      localStorage.setItem(LS_KEYS.LINE, lineName || "");
-      localStorage.setItem(LS_KEYS.SERIAL_NO, serialNo || "");
-      localStorage.setItem(LS_KEYS.NAME, name);
+      const peak = (type === 'urgent') ? 0.34 : 0.28;
+      master.gain.setValueAtTime(0.0001, t0);
+      master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
+      master.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
 
-      // ここは Functions/PowerAutomate 側で通知する想定（アプリ内では何もしない）
-      // sendNotification(caseData);
+      const filter = ctx.createBiquadFilter();
+      filter.type = "highpass";
+      filter.frequency.setValueAtTime(type === 'urgent' ? 320 : 380, t0);
+      filter.connect(master);
 
-      if(linkToAnomaly){
-        const fullCaseData = { ...caseData, _id: docRef.id };
-        const shouldOpen = confirm(
-          `${priorityLabel}呼び出しを送信しました。\n\n異常履歴アプリを起動して詳細を入力しますか？`
-        );
-        if(shouldOpen){
-          launchAnomalyApp(fullCaseData);
-          clearCallForm(true);
+      function note(freq, start, dur, oscType="sine", vel=1.0) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+
+        osc.type = oscType;
+        osc.frequency.setValueAtTime(freq, t0 + start);
+
+        g.gain.setValueAtTime(0.0001, t0 + start);
+        g.gain.exponentialRampToValueAtTime(0.24 * vel, t0 + start + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+
+        osc.connect(g);
+        g.connect(filter);
+
+        osc.start(t0 + start);
+        osc.stop(t0 + start + dur);
+      }
+
+      if (type === 'normal') {
+        // 通常：キラッ（上昇チャイム）
+        note(1046.5, 0.00, 0.28, "sine", 0.95); // C6
+        note(1318.5, 0.14, 0.28, "sine", 0.90); // E6
+        note(1568.0, 0.28, 0.30, "sine", 0.85); // G6
+        note(2093.0, 0.46, 0.52, "sine", 0.80); // C7
+        note(523.25, 0.00, 0.95, "triangle", 0.20); // 余韻
+      } else {
+        // 緊急：注意喚起（2回チャイム）
+        note(880.0,  0.00, 0.18, "square", 0.70);   // A5
+        note(1174.7, 0.06, 0.22, "sawtooth", 0.75); // D6
+        note(1568.0, 0.16, 0.35, "sine", 0.85);     // G6
+
+        note(880.0,  0.62, 0.18, "square", 0.78);
+        note(1318.5, 0.68, 0.22, "sawtooth", 0.82); // E6
+        note(1760.0, 0.78, 0.45, "sine", 0.95);     // A6
+
+        note(440.0,  0.00, 1.20, "triangle", 0.18); // 支え
+      }
+    }
+
+    function stopUrgentAlarm(){
+      if (urgentAlarmTimer) {
+        clearInterval(urgentAlarmTimer);
+        urgentAlarmTimer = null;
+      }
+    }
+
+    function startUrgentAlarm(){
+      if (urgentAlarmTimer) return;
+      playChime('urgent');
+      urgentAlarmTimer = setInterval(() => {
+        if (!soundEnabled || !hasUrgentPending) {
+          stopUrgentAlarm();
           return;
         }
+        playChime('urgent');
+      }, URGENT_ALARM_INTERVAL_MS);
+    }
+
+    function updateUrgentAlarmState(){
+      if (!soundEnabled) { stopUrgentAlarm(); return; }
+      if (!audioCtx) return;
+      if (hasUrgentPending) startUrgentAlarm();
+      else stopUrgentAlarm();
+    }
+
+    soundCheckbox.addEventListener('change', async (e) => {
+      soundEnabled = e.target.checked;
+      localStorage.setItem('sound_enabled', soundEnabled);
+
+      if (soundEnabled) {
+        const ok = await unlockAudio();
+        if (!ok) {
+          alert('この端末/ブラウザでは音声再生がブロックされました。別ブラウザか設定をご確認ください。');
+          return;
+        }
+        updateUrgentAlarmState();
+        if (!hasUrgentPending) playChime('normal'); // ON確認
+      } else {
+        stopUrgentAlarm();
       }
-
-      clearCallForm(false);
-      alert(`${priorityLabel}呼び出しを送信しました。`);
-
-    }catch(err){
-      console.error(err);
-      alert("呼び出しの送信に失敗しました: " + (err?.message || err));
-    }
-  }
-
-  function clearCallForm(keepLinkCheck){
-    document.getElementById("callMessage").value = "";
-    if(!keepLinkCheck){
-      document.getElementById("linkToAnomaly").checked = false;
-    }
-  }
-
-  function launchAnomalyApp(caseData){
-    // 異常履歴アプリ側が読む想定（既存仕様踏襲）
-    const anomalyPreFillData = {
-      fromAndon: true,
-      andonCaseId: caseData._id,
-      department: caseData.department,
-      lineName: caseData.lineName || "",
-      serialNo: caseData.serialNo || `QA-${caseData._id.slice(-6)}`,
-      handler: caseData.callerName,
-      anomalyContent: caseData.message || "",
-      priority: caseData.priority,
-      timestamp: Date.now()
-    };
-    localStorage.setItem("anomaly_prefill_data", JSON.stringify(anomalyPreFillData));
-
-    const anomalyAppUrl = "./abnreports.html";
-    window.open(anomalyAppUrl, "_blank");
-  }
-
-  // ===== マスタ（部署/ライン） =====
-  async function loadDepartments(){
-    const snap = await getDocs(collection(db, "masters", "department", "items"));
-    departmentsCache = snap.docs.map(d => d.data().name).filter(Boolean).sort();
-
-    const select = document.getElementById("callDepartment");
-    select.innerHTML = '<option value="">選択してください</option>';
-    departmentsCache.forEach(dept => {
-      select.innerHTML += `<option value="${escapeHtml(dept)}">${escapeHtml(dept)}</option>`;
     });
 
-    renderDepartmentList();
-  }
+    // ===== QC members =====
+    let qcMembers = []; // {id,name,email,enabled,updatedAt}
 
-  async function loadLinesForDepartment(department){
-    const lineSelect = document.getElementById("callLine");
-    if(!department){
-      lineSelect.innerHTML = '<option value="">部署を先に選択してください</option>';
-      return;
+    function openQcMembersModal(){
+      document.getElementById('qcMembersModal').classList.add('active');
     }
-    try{
-      const q = query(collection(db, "masters", "line", "items"), where("department", "==", department));
-      const snap = await getDocs(q);
-      const lines = snap.docs.map(d => d.data().name).filter(Boolean).sort();
-
-      lineSelect.innerHTML = '<option value="">選択してください</option>';
-      lines.forEach(line => {
-        lineSelect.innerHTML += `<option value="${escapeHtml(line)}">${escapeHtml(line)}</option>`;
-      });
-
-      const cachedLine = localStorage.getItem(LS_KEYS.LINE);
-      if(cachedLine && lines.includes(cachedLine)){
-        lineSelect.value = cachedLine;
-      }
-    }catch(e){
-      console.error(e);
-      lineSelect.innerHTML = '<option value="">読み込みエラー</option>';
-    }
-  }
-
-  document.getElementById("callDepartment").addEventListener("change", (e) => {
-    loadLinesForDepartment(e.target.value);
-    localStorage.setItem(LS_KEYS.DEPARTMENT, e.target.value || "");
-  });
-
-  function renderDepartmentList(){
-    const list = document.getElementById("departmentList");
-    if(departmentsCache.length === 0){
-      list.innerHTML = '<div style="color:#999;text-align:center;">部署が登録されていません</div>';
-      return;
-    }
-    list.innerHTML = departmentsCache.map(dept => `
-      <div class="list-item">
-        <div style="font-weight:800;color:#333;">${escapeHtml(dept)}</div>
-      </div>
-    `).join("");
-  }
-
-  document.getElementById("btnAddDept").addEventListener("click", async () => {
-    const name = document.getElementById("newDepartment").value.trim();
-    if(!name){ alert("部署名を入力してください"); return; }
-    await addDoc(collection(db, "masters", "department", "items"), { name });
-    document.getElementById("newDepartment").value = "";
-    await loadDepartments();
-  });
-
-  // ===== テンプレ =====
-  async function loadTemplates(){
-    const snap = await getDocs(collection(db, "andon_templates"));
-    templatesCache = snap.docs.map(d => ({ _id: d.id, ...d.data() }))
-      .filter(x => x.text && String(x.text).trim() !== "");
-
-    renderTemplateButtons();
-    renderTemplateList();
-  }
-
-  function renderTemplateButtons(){
-    const container = document.getElementById("templateButtons");
-    container.innerHTML = templatesCache.map(t => `
-      <span class="template-btn" data-template="${escapeAttr(t.text)}">${escapeHtml(t.text)}</span>
-    `).join("");
-  }
-
-  function renderTemplateList(){
-    const list = document.getElementById("templateList");
-    if(templatesCache.length === 0){
-      list.innerHTML = '<div style="color:#999;text-align:center;">テンプレートが登録されていません</div>';
-      return;
-    }
-    list.innerHTML = templatesCache.map(t => `
-      <div class="list-item">
-        <div style="flex:1;font-weight:700;color:#333;">${escapeHtml(t.text)}</div>
-        <button class="btn btn-danger" data-del-template="${t._id}">削除</button>
-      </div>
-    `).join("");
-  }
-
-  document.addEventListener("click", (e) => {
-    const tpl = e.target.closest(".template-btn");
-    if(tpl){
-      const text = tpl.getAttribute("data-template") || "";
-      const ta = document.getElementById("callMessage");
-      ta.value = ta.value ? (ta.value + "\n" + text) : text;
+    function closeQcMembersModal(){
+      document.getElementById('qcMembersModal').classList.remove('active');
     }
 
-    const del = e.target.closest('button[data-del-template]');
-    if(del){
-      const id = del.getAttribute("data-del-template");
-      if(confirm("このテンプレートを削除しますか？")){
-        deleteDoc(doc(db, "andon_templates", id)).then(loadTemplates);
-      }
-    }
-  });
+    document.getElementById('qcMembersBtn').addEventListener('click', (e)=>{
+      e.preventDefault();
+      openQcMembersModal();
+    });
+    document.getElementById('qcCloseBtn').addEventListener('click', closeQcMembersModal);
 
-  document.getElementById("btnAddTemplate").addEventListener("click", async () => {
-    const text = document.getElementById("newTemplate").value.trim();
-    if(!text){ alert("テンプレートを入力してください"); return; }
-    await addDoc(collection(db, "andon_templates"), { text });
-    document.getElementById("newTemplate").value = "";
-    await loadTemplates();
-  });
-
-  // ===== キャッシュ復元 =====
-  function restoreFormData(){
-    const dept = localStorage.getItem(LS_KEYS.DEPARTMENT);
-    const line = localStorage.getItem(LS_KEYS.LINE);
-    const serialNo = localStorage.getItem(LS_KEYS.SERIAL_NO);
-    const name = localStorage.getItem(LS_KEYS.NAME);
-
-    if(dept){
-      document.getElementById("callDepartment").value = dept;
-      loadLinesForDepartment(dept).then(() => {
-        if(line) document.getElementById("callLine").value = line;
+    function setupQcMembersListener(){
+      const q = query(collection(db,'qc_members'), orderBy('name','asc'));
+      onSnapshot(q, (snap)=>{
+        qcMembers = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+        renderQcMembers();
+        renderResponderSelect();
       });
     }
-    if(serialNo) document.getElementById("callSerialNo").value = serialNo;
-    if(name) document.getElementById("callName").value = name;
+
+    function renderQcMembers(){
+      const list = document.getElementById('qcList');
+      const count = document.getElementById('qcCount');
+      count.textContent = String(qcMembers.length);
+
+      if(qcMembers.length === 0){
+        list.innerHTML = `<div style="color:#777;text-align:center;padding:14px;">メンバーがいません</div>`;
+        return;
+      }
+
+      list.innerHTML = qcMembers.map(m=>{
+        const name = escapeHtml(m.name || '');
+        const email = escapeHtml(m.email || '');
+        const enabled = !!m.enabled;
+        return `
+          <div class="item">
+            <div style="min-width:0;">
+              <div style="font-weight:1000;color:#263238;">${name}</div>
+              <small>${email}</small>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <label class="toggle">
+                <input type="checkbox" data-qc-toggle="${m.id}" ${enabled ? 'checked':''}>
+                <span>有効</span>
+              </label>
+              <button class="btn btn-secondary" data-qc-del="${m.id}" style="padding:10px 12px;">削除</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    document.getElementById('qcAddBtn').addEventListener('click', async ()=>{
+      const name = document.getElementById('qcNewName').value.trim();
+      const email = document.getElementById('qcNewEmail').value.trim();
+
+      if(!name){
+        alert('氏名を入力してください');
+        return;
+      }
+      if(email && !email.includes('@')){
+        alert('メールが不正です（空でもOK）');
+        return;
+      }
+
+      try{
+        await addDoc(collection(db,'qc_members'),{
+          name,
+          email: email || '',
+          enabled: true,
+          updatedAt: serverTimestamp()
+        });
+        document.getElementById('qcNewName').value = '';
+        document.getElementById('qcNewEmail').value = '';
+      }catch(e){
+        console.error(e);
+        alert('追加に失敗しました: ' + (e.message || e));
+      }
+    });
+
+    document.addEventListener('change', async (e)=>{
+      const el = e.target;
+      const id = el?.getAttribute?.('data-qc-toggle');
+      if(!id) return;
+
+      try{
+        await updateDoc(doc(db,'qc_members',id),{
+          enabled: !!el.checked,
+          updatedAt: serverTimestamp()
+        });
+      }catch(err){
+        console.error(err);
+        alert('更新に失敗しました');
+      }
+    });
+
+    document.addEventListener('click', async (e)=>{
+      const delBtn = e.target.closest('[data-qc-del]');
+      if(!delBtn) return;
+
+      const id = delBtn.getAttribute('data-qc-del');
+      const m = qcMembers.find(x=>x.id===id);
+      if(!id) return;
+
+      const name = m?.name || '';
+      if(!confirm(`削除しますか？\n${name}`)) return;
+
+      try{
+        await deleteDoc(doc(db,'qc_members',id));
+      }catch(err){
+        console.error(err);
+        alert('削除に失敗しました');
+      }
+    });
+
+    document.getElementById('qcMembersModal').addEventListener('click', (e)=>{
+      if(e.target.id === 'qcMembersModal') closeQcMembersModal();
+    });
+
+    function renderResponderSelect(){
+      const sel = document.getElementById('completeBySelect');
+      if(!sel) return;
+
+      const prev = sel.value || '';
+      const responders = qcMembers
+        .filter(m=>!!m.enabled)
+        .map(m=>String(m.name||'').trim())
+        .filter(Boolean);
+
+      sel.innerHTML = [
+        `<option value="">選択してください</option>`,
+        ...responders.map(n=>`<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`)
+      ].join('');
+
+      if(prev && responders.includes(prev)) sel.value = prev;
+    }
+
+    // ===== ログアウト =====
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      if (confirm('ログアウトしますか？')) {
+        stopUrgentAlarm();
+        await signOut(auth);
+        window.location.href = './quality_andon.html';
+      }
+    });
+
+    // ===== 認証チェック =====
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setupQcMembersListener();
+        setupRealtimeListener();
+      } else {
+        alert('ログインが必要です');
+        window.location.href = './quality_andon.html';
+      }
+    });
+
+    // ===== リアルタイム監視（quality_cases） =====
+    let currentFilter = 'all';
+
+    function setupRealtimeListener() {
+      const q = query(collection(db, 'quality_cases'), orderBy('createdAt', 'desc'));
+
+      onSnapshot(q, (snapshot) => {
+        const newCases = [];
+        const newlyDetectedNormalPending = [];
+
+        snapshot.forEach(docSnap => {
+          const data = { _id: docSnap.id, ...docSnap.data() };
+          newCases.push(data);
+
+          // 新規検知（pendingのみ）
+          if ((data.status || 'pending') === 'pending' && !previousCaseIds.has(docSnap.id)) {
+            if ((data.priority || 'normal') !== 'urgent') {
+              newlyDetectedNormalPending.push(docSnap.id);
+            }
+          }
+          previousCaseIds.add(docSnap.id);
+        });
+
+        casesCache = newCases;
+        renderCases();
+        updateStats();
+
+        // 緊急pendingの有無（対応開始=inprogressになるまで鳴る）
+        prevHasUrgentPending = hasUrgentPending;
+        hasUrgentPending = casesCache.some(c => (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending');
+
+        // 通常の新規pending：緊急が無い時だけ通常チャイム
+        if (soundEnabled && audioCtx && newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
+          playChime('normal');
+        }
+
+        // 緊急pendingの開始/停止
+        if (soundEnabled && audioCtx) {
+          if (!prevHasUrgentPending && hasUrgentPending) startUrgentAlarm();
+          if (prevHasUrgentPending && !hasUrgentPending) stopUrgentAlarm();
+        }
+      });
+    }
+
+    // ===== 案件表示 =====
+    function renderCases() {
+      const container = document.getElementById('casesContainer');
+
+      // 表示順：未対応 → 対応中 → 完了
+      const statusOrder = { pending: 1, inprogress: 2, completed: 3 };
+
+      let list = casesCache.slice();
+      list.sort((a,b)=>{
+        const oa = statusOrder[a.status] ?? 9;
+        const ob = statusOrder[b.status] ?? 9;
+        if (oa !== ob) return oa - ob;
+        const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const tb = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return tb - ta;
+      });
+
+      if(currentFilter !== 'all'){
+        list = list.filter(c => (c.status || 'pending') === currentFilter);
+      }
+
+      if (list.length === 0) {
+        container.innerHTML = '<div class="empty-state">現在、該当する呼び出しはありません</div>';
+        return;
+      }
+
+      container.innerHTML = list.map(c => renderCallCard(c)).join('');
+
+      list.forEach(c => {
+        const card = document.querySelector(`[data-id="${c._id}"]`);
+        if (!card) return;
+
+        const inprogressBtn = card.querySelector('.btn-inprogress');
+        const completeBtn = card.querySelector('.btn-complete');
+        const openBtn = card.querySelector('.btn-open-anomaly');
+
+        if (inprogressBtn) {
+          inprogressBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showCompleteModal(c, 'inprogress');
+          });
+        }
+
+        if (completeBtn) {
+          completeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showCompleteModal(c, 'complete');
+          });
+        }
+
+        if (openBtn) {
+          openBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openAnomalyAppFromCase(c);
+          });
+        }
+
+        card.addEventListener('click', () => openAnomalyAppFromCase(c));
+      });
+    }
+
+    function renderCallCard(c){
+      const priority = c.priority || 'normal';
+      const status = c.status || 'pending';
+
+      const createdAt = c.createdAt?.toDate ? c.createdAt.toDate() : null;
+      const timeStr = createdAt ? formatDateTime(createdAt) : '---';
+
+      const statusLabel = status === 'pending' ? '未対応' : (status === 'inprogress' ? '対応中' : '完了');
+
+      const message = (c.message || '').trim();
+      const showMessage = message ? `<div class="message-box">${escapeHtml(message)}</div>` : '';
+
+      // ✅ 対応中の担当者を「頭文字バッジ」で強調
+      const responderHighlight =
+        (status === 'inprogress' && c.respondedBy)
+          ? `
+            <div class="responder-highlight">
+              <span class="initial-badge" title="${escapeAttr(c.respondedBy)}">${escapeHtml(makeInitials(c.respondedBy))}</span>
+              <div class="responder-name">
+                対応中：${escapeHtml(c.respondedBy)}
+             
+              </div>
+            </div>
+          `
+          : '';
+
+      return `
+        <div class="case-card ${status === 'completed' ? 'completed':''}" data-id="${c._id}">
+          <div class="priority-bar ${priority}"></div>
+
+          <div class="case-header">
+            <div class="case-title">
+              ${priority === 'urgent' ? '🚨 緊急' : '⚠️ 通常'}
+              / ${escapeHtml(c.department || '---')}
+            </div>
+            <div class="case-time">${escapeHtml(timeStr)}</div>
+          </div>
+
+          <div class="status-badge ${status}">
+            ${escapeHtml(statusLabel)}
+          </div>
+
+          ${responderHighlight}
+
+          <div class="case-info">
+            <div class="info-item"><div class="info-label">ライン:</div><div class="info-value">${escapeHtml(c.lineName || '---')}</div></div>
+            <div class="info-item"><div class="info-label">整理No:</div><div class="info-value">${escapeHtml(c.serialNo || '---')}</div></div>
+            <div class="info-item"><div class="info-label">発信者:</div><div class="info-value">${escapeHtml(c.callerName || '---')}</div></div>
+          </div>
+
+          ${showMessage}
+
+          <div class="actions">
+            ${status !== 'completed'
+              ? `<button class="btn btn-inprogress">対応開始</button>`
+              : `<button class="btn btn-inprogress" disabled style="opacity:.5;cursor:not-allowed;">対応開始</button>`}
+            ${status !== 'completed'
+              ? `<button class="btn btn-complete">完了</button>`
+              : `<button class="btn btn-complete" disabled style="opacity:.5;cursor:not-allowed;">完了</button>`}
+            <button class="btn btn-open-anomaly">異常履歴を開く</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function openAnomalyAppFromCase(c){
+      const anomalyPreFillData = {
+        fromAndon: true,
+        andonCaseId: c._id,
+        department: c.department || '',
+        lineName: c.lineName || '',
+        serialNo: c.serialNo || `QA-${String(c._id).slice(-6)}`,
+        handler: c.callerName || '',
+        anomalyContent: c.message || '',
+        priority: c.priority || 'normal',
+        timestamp: Date.now()
+      };
+
+      try{
+        localStorage.setItem('anomaly_prefill_data', JSON.stringify(anomalyPreFillData));
+      }catch(e){}
+
+      window.open(ANOMALY_APP_URL, '_blank');
+    }
+
+    // ===== 対応モーダル（開始/完了） =====
+function showCompleteModal(caseData, mode){
+  currentCompleteCase = caseData || {};
+
+  // mode が無い場合の既定値
+  const effectiveMode = (mode === 'completed' || mode === 'complete') ? 'completed' : 'inprogress';
+  modalMode = (effectiveMode === 'inprogress') ? 'inprogress' : 'complete';
+
+  // タイトル
+  const titleEl = document.getElementById('completeModalTitle');
+  if (titleEl) titleEl.textContent = (effectiveMode === 'inprogress') ? '対応開始' : '対応完了';
+
+  // 確定ボタン（confirmComplete / btnCompleteConfirm どちらでもOK）
+  const btn =
+    document.getElementById('confirmComplete') ||
+    document.getElementById('btnCompleteConfirm');
+  if (btn) btn.textContent = (effectiveMode === 'inprogress') ? '開始する' : '完了する';
+
+  // 対応者（select版 / input版 どちらでも拾う）
+  const byEl =
+    document.getElementById('completeBySelect') ||
+    document.getElementById('completeBy') ||
+    document.getElementById('completeByInput');
+
+  if (byEl) {
+    // caseData側の候補も複数を見て入れる
+    byEl.value = (caseData.assignedTo || caseData.completedBy || caseData.handler || '') || '';
+  } else {
+    console.warn('[showCompleteModal] 対応者入力欄が見つかりません（completeBySelect / completeBy / completeByInput）');
   }
 
-  // ===== util =====
-  function escapeHtml(s){
-    return String(s)
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#039;");
+  // 対応内容（textarea版 / input版 どちらでも拾う）
+  const msgEl =
+    document.getElementById('completeMessage') ||
+    document.getElementById('completeMessageInput') ||
+    document.getElementById('completeMessageText');
+
+  if (msgEl) {
+    msgEl.value = (caseData.completedMessage || '') || '';
+  } else {
+    console.warn('[showCompleteModal] 対応内容入力欄が見つかりません（completeMessage / completeMessageInput / completeMessageText）');
   }
-  function escapeAttr(s){
-    // attribute向け（改行なども潰す）
-    return escapeHtml(String(s)).replaceAll("\n"," ").replaceAll("\r"," ");
+
+  // モーダル表示
+  const modal = document.getElementById('completeModal');
+  if (modal){ modal.style.display = 'flex'; modal.classList.add('active'); }
+  else console.warn('[showCompleteModal] completeModal が見つかりません');
+// ===== モーダルを確実に閉じる（display/class両対応） =====
+function closeCompleteModal(){
+  const modal = document.getElementById('completeModal');
+  if(!modal) return;
+  modal.classList.remove('active');
+  modal.style.display = 'none';
+  currentCompleteCase = null;
+}
+
+// キャンセルで閉じる
+document.getElementById('cancelComplete')?.addEventListener('click', () => {
+  closeCompleteModal();
+});
+
+// 背景クリックで閉じる
+document.getElementById('completeModal')?.addEventListener('click', (e) => {
+  if(e.target && e.target.id === 'completeModal'){
+    closeCompleteModal();
   }
-</script>
+});
+
+
+}
+
+
+    document.getElementById('confirmComplete').addEventListener('click', async () => {
+      const by = (document.getElementById('completeBySelect')?.value || '').trim();
+      const content = (document.getElementById('completeMessage')?.value || '').trim();
+
+      // ✅ 使い勝手改善：開始モードでも完了内容が入っていれば「完了」として扱う
+      const effectiveMode = (modalMode === 'inprogress' && content.trim()) ? 'completed' : modalMode;
+
+      if (!currentCompleteCase) return;
+
+      if (!by) {
+        alert('担当者を選択してください');
+        return;
+      }
+
+      try {
+        if(effectiveMode === 'inprogress'){
+          await updateDoc(doc(db, 'quality_cases', currentCompleteCase._id), {
+            status: 'inprogress',
+            respondedBy: by,
+            respondedAt: serverTimestamp()
+          });
+        }else{
+          await updateDoc(doc(db, 'quality_cases', currentCompleteCase._id), {
+            status: 'completed',
+            completedBy: by,
+            completedContent: content,
+            completedAt: serverTimestamp()
+          });
+
+          // 異常履歴アプリ側への逆流（同一端末向け）
+          try {
+            const completionPayload = {
+              timestamp: Date.now(),
+              caseId: currentCompleteCase._id,
+              tempLinkId: currentCompleteCase.tempLinkId || '',
+              launchId: currentCompleteCase.launchId || '',
+              department: currentCompleteCase.department || '',
+              lineName: currentCompleteCase.lineName || '',
+              serialNo: currentCompleteCase.serialNo || '',
+              completedBy: by,
+              completedContent: content,
+              completedAt: new Date().toISOString()
+            };
+            localStorage.setItem('andon_completion_data', JSON.stringify(completionPayload));
+          } catch (e) {}
+          // ===== DB(anomalies) の qualityResponse を更新（quality_cases と同じID運用） =====
+          try{
+            const anomalyId = currentCompleteCase._id; // ★同ID運用：quality_cases のID = anomalies のID
+            const aRef = doc(db, 'anomalies', anomalyId);
+            const snap = await getDoc(aRef);
+            const prev = (snap.exists() ? (snap.data().qualityResponse || '') : '');
+
+            const stampJp = new Date().toLocaleString('ja-JP');
+            const addText =
+              `【アンドン完了】${stampJp}\n` +
+              `対応者: ${by}\n` +
+              `対応内容: ${content || '（なし）'}\n` +
+              `案件ID: ${anomalyId}\n`;
+
+            const next = [String(prev || '').trim(), addText.trim()].filter(Boolean).join('\n\n');
+
+            await setDoc(aRef, {
+              qualityResponse: next,
+              updatedAt: serverTimestamp(),
+              lastAndonComplete: {
+                by,
+                content: content || '',
+                caseId: anomalyId,
+                at: serverTimestamp()
+              }
+            }, { merge: true });
+          }catch(e){
+            console.warn('failed to sync anomalies.qualityResponse', e);
+            alert('異常履歴（anomalies）のqualityResponse更新に失敗しました。\nコンソールを確認してください。');
+          }
+        }
+
+        closeCompleteModal();
+      } catch (error) {
+        console.error('Error:', error);
+        alert((effectiveMode === 'inprogress' ? '対応開始' : '対応完了') + 'に失敗しました');
+      }
+    });
+
+    // ===== 統計 =====
+    function updateStats() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const urgentPending = casesCache.filter(c => (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending').length;
+      const normalPending = casesCache.filter(c => (c.priority || 'normal') === 'normal' && (c.status || 'pending') === 'pending').length;
+      const inProgress = casesCache.filter(c => (c.status || 'pending') === 'inprogress').length;
+
+      const completedToday = casesCache.filter(c => {
+        if ((c.status || 'pending') !== 'completed' || !c.completedAt) return false;
+        const completedDate = c.completedAt.toDate();
+        return completedDate >= today;
+      }).length;
+
+      document.getElementById('statUrgentPending').textContent = urgentPending;
+      document.getElementById('statNormalPending').textContent = normalPending;
+      document.getElementById('statInProgress').textContent = inProgress;
+      document.getElementById('statCompletedToday').textContent = completedToday;
+    }
+
+    // ===== フィルター =====
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentFilter = btn.getAttribute('data-filter');
+        renderCases();
+      });
+    });
+
+    // ===== util =====
+    function formatDateTime(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const h = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      return `${y}/${m}/${d} ${h}:${min}`;
+    }
+
+    // ✅ QCメンバーの頭文字（日本語は先頭1文字、英字は最大2文字）
+    function makeInitials(name){
+      const s = String(name || '').trim();
+      if (!s) return '?';
+
+      // 英字が含まれる場合：単語の先頭を最大2つ
+      const hasLatin = /[A-Za-z]/.test(s);
+      if (hasLatin) {
+        const parts = s.replace(/\s+/g,' ').split(' ').filter(Boolean);
+        const a = (parts[0] || '').charAt(0).toUpperCase();
+        const b = (parts[1] || '').charAt(0).toUpperCase();
+        const ab = (a + b).trim();
+        return ab || a || '?';
+      }
+
+      // 日本語など：先頭1文字（必要なら2文字にしてもOK）
+      return s.charAt(0);
+    }
+
+    function escapeHtml(s){
+      return String(s ?? '')
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'","&#039;");
+    }
+    function escapeAttr(s){
+      return escapeHtml(String(s ?? '')).replaceAll('\n',' ').replaceAll('\r',' ');
+    }
+  </script>
 </body>
 </html>
