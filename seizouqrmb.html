@@ -1,0 +1,1809 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>QR照合（スマホ版）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="format-detection" content="telephone=no" />
+<style>
+  :root{
+    --ok:#1a7f37; --ng:#d1242f; --fg:#222; --muted:#666;
+    --border:#e5e7eb; --primary:#0b3b75; --bg:#f7f7f8;
+    --card:#fff;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+
+  body{
+    color:var(--fg);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+    -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+    transition: background-color .35s ease;
+    background:var(--bg);
+    overflow-x: hidden;
+  }
+
+  /* ========== ヘッダー（最小限） ========== */
+  header{
+    background:#fff; border-bottom:1px solid var(--border);
+    padding:10px 12px; position:sticky; top:0; z-index:100;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1{ font-size:16px; margin-bottom:4px; }
+  .statusLine{
+    display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+    font-size:11px; color:var(--muted);
+  }
+  .statusLine .badge{
+    padding:2px 6px; border-radius:4px; 
+    background:#f1f5f9; border:1px solid #cbd5e1;
+  }
+
+  /* ========== メインコンテナ ========== */
+  main{ 
+    padding:12px; 
+    padding-bottom:100px; /* フローティングボタン分 */
+  }
+
+  /* ========== カード（整理No + 画像） ========== */
+  .displayCard{
+    background:var(--card); 
+    border-radius:20px;
+    margin-bottom:16px;
+    overflow:hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  }
+
+  /* 整理No表示（超巨大） */
+  .seiriNoDisplay{
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color:#fff;
+    text-align:center;
+    padding:24px 16px;
+  }
+  .seiriNoLabel{
+    font-size:14px;
+    font-weight:700;
+    opacity:0.9;
+    margin-bottom:8px;
+    letter-spacing:0.1em;
+  }
+  .seiriNoValue{
+    font-size:64px;
+    font-weight:900;
+    line-height:1.1;
+    letter-spacing:0.05em;
+    word-break:break-all;
+  }
+  .seiriNoValue.placeholder{
+    font-size:28px;
+    opacity:0.7;
+  }
+
+  /* 製品画像（大きく表示） */
+  .imageArea{
+    background:#f8fafc;
+    padding:20px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:300px;
+  }
+  #productImage{
+    max-width:100%;
+    max-height:400px;
+    object-fit:contain;
+    display:none;
+    border-radius:12px;
+  }
+  .imgHint{
+    color:#9ca3af;
+    font-size:13px;
+    text-align:center;
+    line-height:1.6;
+    padding:0 20px;
+  }
+
+  /* ========== ステータスバー（簡易版） ========== */
+  .statusBar{
+    background:#fff;
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:16px;
+    border:2px solid #e5e7eb;
+    transition: all .35s ease;
+  }
+  .statusBar.status--RUNNING{ 
+    background:linear-gradient(90deg,#bbf7d0,#f0fdf4); 
+    border-color:#4ade80; 
+  }
+  .statusBar.status--TRY{ 
+    background:linear-gradient(90deg,#bfdbfe,#eff6ff); 
+    border-color:#60a5fa; 
+  }
+  .statusBar.status--ABNORMAL_STOP{ 
+    background:linear-gradient(90deg,#fecaca,#fef2f2); 
+    border-color:#f87171; 
+  }
+  .statusBar.status--PLAN_STOP{ 
+    background:linear-gradient(90deg,#fed7aa,#fff7ed); 
+    border-color:#fb923c; 
+  }
+  .statusBar.status--MATERIAL_CHANGE{ 
+    background:linear-gradient(90deg,#e9d5ff,#faf5ff); 
+    border-color:#c084fc; 
+  }
+  .statusBar.status--SETUP_CHANGE{ 
+    background:linear-gradient(90deg,#fde68a,#fefce8); 
+    border-color:#facc15; 
+  }
+  .statusBar.status--NOT_STARTED{ 
+    background:#f1f5f9; 
+    border-color:#cbd5e1; 
+  }
+
+  .statusMain{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+  }
+  .statusText{
+    font-size:20px;
+    font-weight:900;
+  }
+  .counterBox{
+    background:#000;
+    border-radius:12px;
+    padding:8px 12px;
+    box-shadow: inset 0 0 8px rgba(0,0,0,.8);
+  }
+  .counterLabel{
+    font-size:10px;
+    color:#9ca3af;
+    text-align:center;
+    margin-bottom:2px;
+  }
+  #goodCounter{
+    font-family: "DS-Digital","Digital-7","Orbitron", ui-monospace, monospace;
+    font-size:32px;
+    font-weight:700;
+    color:#00ff66;
+    text-align:center;
+    letter-spacing:0.08em;
+    text-shadow: 0 0 4px rgba(0,255,102,.9), 0 0 12px rgba(0,255,102,.6);
+  }
+
+  /* ========== 進捗メーター ========== */
+  .progressSection{
+    background:#fff;
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:16px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.1);
+  }
+  .progressHeader{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:12px;
+  }
+  .progressTitle{
+    font-size:15px;
+    font-weight:900;
+  }
+  .progressNumbers{
+    display:flex;
+    gap:8px;
+    align-items:baseline;
+    font-size:14px;
+  }
+  .progressCurrent{
+    font-size:24px;
+    font-weight:900;
+    color:#0b3b75;
+  }
+  .progressTarget{
+    color:#64748b;
+  }
+  .progressBarContainer{
+    width:100%;
+    height:40px;
+    background:#f1f5f9;
+    border-radius:20px;
+    overflow:hidden;
+    position:relative;
+    border:2px solid #e5e7eb;
+  }
+  .progressBar{
+    height:100%;
+    background:linear-gradient(90deg, #4ade80, #22c55e);
+    transition:width 0.5s ease;
+    border-radius:18px;
+    position:relative;
+    box-shadow:inset 0 2px 4px rgba(255,255,255,0.3);
+  }
+  .progressBar.over100{
+    background:linear-gradient(90deg, #fbbf24, #f59e0b);
+  }
+  .progressBar.complete{
+    background:linear-gradient(90deg, #60a5fa, #3b82f6);
+  }
+  .progressPercent{
+    position:absolute;
+    top:50%;
+    left:50%;
+    transform:translate(-50%, -50%);
+    font-size:18px;
+    font-weight:900;
+    color:#fff;
+    text-shadow:0 1px 2px rgba(0,0,0,0.3);
+    z-index:10;
+  }
+  .progressStatus{
+    text-align:center;
+    margin-top:8px;
+    font-size:13px;
+    font-weight:700;
+  }
+  .progressStatus.normal{
+    color:#16a34a;
+  }
+  .progressStatus.complete{
+    color:#2563eb;
+  }
+  .progressStatus.over{
+    color:#ea580c;
+  }
+
+  /* ========== 計画数入力モーダル ========== */
+  .planModal{
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.7);
+    z-index:10000;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    backdrop-filter:blur(4px);
+  }
+  .planModal.show{
+    display:flex;
+  }
+  .planModalContent{
+    background:#fff;
+    border-radius:20px;
+    width:90%;
+    max-width:400px;
+    max-height:90vh;
+    overflow-y:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,0.3);
+  }
+  .planModalHeader{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:20px;
+    border-bottom:2px solid #e5e7eb;
+  }
+  .planModalHeader h2{
+    font-size:18px;
+    margin:0;
+  }
+  .planModalClose{
+    width:36px;
+    height:36px;
+    border-radius:50%;
+    border:none;
+    background:#f1f5f9;
+    font-size:24px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:all 0.2s ease;
+  }
+  .planModalClose:active{
+    background:#e2e8f0;
+    transform:scale(0.95);
+  }
+  .planModalBody{
+    padding:20px;
+  }
+  .planCurrentProduct{
+    background:#f8fafc;
+    border-radius:12px;
+    padding:12px;
+    margin-bottom:20px;
+    border:1px solid #e5e7eb;
+  }
+  .planLabel{
+    font-size:12px;
+    color:#64748b;
+    font-weight:700;
+    margin-bottom:6px;
+  }
+  .planProductName{
+    font-size:20px;
+    font-weight:900;
+    color:#0b3b75;
+  }
+  .planInputArea{
+    margin-bottom:20px;
+  }
+  .planInputField{
+    width:100%;
+    padding:16px;
+    border:2px solid #cbd5e1;
+    border-radius:12px;
+    font-size:32px;
+    font-weight:900;
+    text-align:center;
+    color:#0b3b75;
+    background:#fff;
+    font-family:ui-monospace, monospace;
+  }
+  
+  /* テンキー */
+  .numpad{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:10px;
+    margin-bottom:20px;
+  }
+  .numpadBtn{
+    padding:20px;
+    border:2px solid #cbd5e1;
+    border-radius:12px;
+    background:#fff;
+    font-size:24px;
+    font-weight:900;
+    cursor:pointer;
+    transition:all 0.2s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .numpadBtn:active{
+    background:#f1f5f9;
+    transform:scale(0.95);
+  }
+  .numpadClear{
+    background:#fef3f2;
+    color:#b42318;
+    border-color:#fecdcf;
+  }
+  .numpadDel{
+    background:#eff6ff;
+    color:#0b3b75;
+    border-color:#bfdbfe;
+  }
+  .planSaveBtn{
+    width:100%;
+    padding:16px;
+    border:none;
+    border-radius:12px;
+    background:linear-gradient(135deg, #22c55e, #16a34a);
+    color:#fff;
+    font-size:18px;
+    font-weight:900;
+    cursor:pointer;
+    transition:all 0.2s ease;
+  }
+  .planSaveBtn:active{
+    transform:scale(0.98);
+  }
+
+  /* ========== 照合結果オーバーレイ ========== */
+  .resultArea{
+    position:fixed; 
+    top:0; left:0; 
+    width:100%; height:100%;
+    background:rgba(255,255,255,0.95);
+    z-index:9999;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    backdrop-filter:blur(8px);
+  }
+  .resultArea.show{ display:flex; }
+  
+  .resultMark{
+    font-size:200px;
+    line-height:1;
+    display:none;
+    font-weight:900;
+    animation: popIn 0.3s cubic-bezier(0.68,-0.55,0.265,1.55);
+    text-shadow:0 8px 16px rgba(0,0,0,0.2);
+  }
+  @keyframes popIn{
+    0%{ transform:scale(0.3); opacity:0; }
+    50%{ transform:scale(1.1); }
+    100%{ transform:scale(1); opacity:1; }
+  }
+  .ok{ color:var(--ok); }
+  .ng{ color:var(--ng); }
+  
+  .lock{
+    display:none;
+    font-size:24px;
+    color:#fff;
+    background:var(--ng);
+    font-weight:900;
+    padding:20px 30px;
+    border-radius:16px;
+    line-height:1.4;
+    box-shadow:0 12px 24px rgba(0,0,0,0.3);
+  }
+
+  /* 緊急解除ボタン */
+  .emergencyGhost{
+    position:absolute;
+    right:16px; bottom:16px;
+    padding:8px 12px;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,.35);
+    background:rgba(0,0,0,.25);
+    color:#fff;
+    font-size:11px;
+    font-weight:800;
+    opacity:.18;
+    cursor:pointer;
+    display:none;
+  }
+  .emergencyGhost.holding{
+    opacity:.70;
+    background:rgba(0,0,0,.55);
+  }
+
+  /* ========== フローティングボタン（展開式） ========== */
+  .floatingBtns{
+    position:fixed;
+    bottom:20px;
+    right:20px;
+    z-index:200;
+  }
+
+  /* メインボタン */
+  .mainFloatBtn{
+    width:60px;
+    height:60px;
+    border-radius:50%;
+    background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color:#fff;
+    border:none;
+    font-size:28px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    cursor:pointer;
+    transition:all 0.3s ease;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .mainFloatBtn:active{
+    transform:scale(0.95);
+  }
+  .mainFloatBtn.open{
+    background:linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+  }
+
+  /* サブボタン群 */
+  .subBtns{
+    position:absolute;
+    bottom:70px;
+    right:0;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    opacity:0;
+    pointer-events:none;
+    transform:translateY(20px);
+    transition:all 0.3s ease;
+  }
+  .subBtns.show{
+    opacity:1;
+    pointer-events:auto;
+    transform:translateY(0);
+  }
+
+  .subBtn{
+    padding:12px 20px;
+    border-radius:24px;
+    border:none;
+    background:#fff;
+    box-shadow:0 2px 8px rgba(0,0,0,0.15);
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+    transition:all 0.2s ease;
+  }
+  .subBtn:active{
+    transform:scale(0.95);
+  }
+  .subBtn.primary{
+    background:#0b3b75;
+    color:#fff;
+  }
+  .subBtn.warn{
+    background:#fef3f2;
+    color:#b42318;
+    border:1px solid #fecdcf;
+  }
+
+  /* ========== 状態切替ボタン（展開式） ========== */
+  .statePanel{
+    background:#fff;
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:16px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.1);
+  }
+  .statePanelHeader{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .statePanelTitle{
+    font-size:15px;
+    font-weight:900;
+  }
+  .stateToggle{
+    font-size:20px;
+    transition:transform 0.3s ease;
+  }
+  .stateToggle.open{
+    transform:rotate(180deg);
+  }
+  
+  .stateButtons{
+    display:none;
+    flex-direction:column;
+    gap:8px;
+    margin-top:12px;
+  }
+  .stateButtons.show{
+    display:flex;
+  }
+  
+  .stateBtn{
+    padding:12px;
+    border-radius:12px;
+    border:2px solid #e5e7eb;
+    background:#fff;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    transition:all 0.2s ease;
+  }
+  .stateBtn.active{
+    border-color:#0b3b75;
+    background:#eff6ff;
+    box-shadow:0 0 0 3px rgba(11,59,117,.12);
+  }
+  .stateBtn:active{
+    transform:scale(0.98);
+  }
+
+  /* ========== 設定パネル（展開式） ========== */
+  .settingsPanel{
+    background:#fff;
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:16px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.1);
+  }
+  .settingsPanelHeader{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .settingsPanelTitle{
+    font-size:15px;
+    font-weight:900;
+  }
+  .settingsToggle{
+    font-size:20px;
+    transition:transform 0.3s ease;
+  }
+  .settingsToggle.open{
+    transform:rotate(180deg);
+  }
+  
+  .settingsContent{
+    display:none;
+    margin-top:12px;
+  }
+  .settingsContent.show{
+    display:block;
+  }
+
+  .settingRow{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    margin-bottom:12px;
+  }
+  .settingLabel{
+    font-size:12px;
+    color:#475569;
+    font-weight:700;
+  }
+  select{
+    padding:10px 12px;
+    border-radius:10px;
+    border:1px solid #d1d5db;
+    font-size:14px;
+    background:#fff;
+  }
+
+  /* ========== 操作ボタン（固定表示） ========== */
+  .actionButtons{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    margin-bottom:16px;
+  }
+  .actionBtn{
+    padding:16px 12px;
+    border:2px solid #cbd5e1;
+    border-radius:16px;
+    background:#fff;
+    cursor:pointer;
+    transition:all 0.2s ease;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .actionBtn.primary{
+    background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color:#667eea;
+    color:#fff;
+  }
+  .actionBtn.secondary{
+    background:linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    border-color:#22c55e;
+    color:#fff;
+  }
+  .actionBtn:active{
+    transform:scale(0.97);
+  }
+  .actionBtnIcon{
+    font-size:28px;
+  }
+  .actionBtnText{
+    font-size:14px;
+    font-weight:900;
+  }
+
+  /* ========== 背景色（ステータス別） ========== */
+  body.bg-NOT_STARTED{ background:#e5e7eb; }
+  body.bg-RUNNING{ background:#86efac; }
+  body.bg-TRY{ background:#93c5fd; }
+  body.bg-ABNORMAL_STOP{ background:#fca5a5; }
+  body.bg-PLAN_STOP{ background:#fdba74; }
+  body.bg-MATERIAL_CHANGE{ background:#d8b4fe; }
+  body.bg-SETUP_CHANGE{ background:#fde047; }
+
+  /* ========== 非表示入力 ========== */
+  #scanInput{
+    position:absolute;
+    left:-9999px;
+    top:-9999px;
+    width:1px;
+    height:1px;
+    opacity:0;
+    pointer-events:none;
+  }
+</style>
+</head>
+
+<body class="bg-NOT_STARTED">
+<header>
+  <h1>📱 QR照合システム</h1>
+  <div class="statusLine">
+    <span id="firebaseStatus" class="badge">Firebase: 未接続</span>
+    <span id="lineBadge" class="badge">ライン: 未設定</span>
+    <span id="bushoBadge" class="badge">部署: 未設定</span>
+  </div>
+</header>
+
+<input id="scanInput" type="text" readonly inputmode="none"
+  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-hidden="true" />
+
+<main>
+  <!-- 整理No + 製品画像カード -->
+  <div class="displayCard">
+    <div class="seiriNoDisplay">
+      <div class="seiriNoLabel">整理No</div>
+      <div id="baseDisplay" class="seiriNoValue placeholder">未設定</div>
+    </div>
+    <div class="imageArea">
+      <img id="productImage" alt="製品画像" />
+      <div id="imgHint" class="imgHint">
+        基準QRを読み込むと、整理Noで画像マスタを検索して表示します。
+      </div>
+    </div>
+  </div>
+
+  <!-- ステータス + 出来高 -->
+  <div id="statusBar" class="statusBar status--NOT_STARTED">
+    <div class="statusMain">
+      <div id="prodStateBig" class="statusText">未開始</div>
+      <div class="counterBox">
+        <div class="counterLabel">出来高</div>
+        <div id="goodCounter">0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 操作ボタン -->
+  <div class="actionButtons">
+    <button class="actionBtn primary" id="resetBtnFixed">
+      <span class="actionBtnIcon">🔄</span>
+      <span class="actionBtnText">製品切替え</span>
+    </button>
+    <button class="actionBtn secondary" id="planBtnFixed">
+      <span class="actionBtnIcon">📋</span>
+      <span class="actionBtnText">計画数設定</span>
+    </button>
+  </div>
+
+  <!-- 進捗メーター -->
+  <div class="progressSection" id="progressSection" style="display:none;">
+    <div class="progressHeader">
+      <div class="progressTitle">📊 生産進捗</div>
+      <div class="progressNumbers">
+        <span class="progressCurrent" id="progressCurrent">0</span>
+        <span class="progressTarget">/ <span id="progressTarget">0</span></span>
+      </div>
+    </div>
+    <div class="progressBarContainer">
+      <div class="progressBar" id="progressBar" style="width:0%;">
+        <span class="progressPercent" id="progressPercent">0%</span>
+      </div>
+    </div>
+    <div class="progressStatus normal" id="progressStatus">計画数を設定してください</div>
+  </div>
+
+  <!-- 状態切替パネル（展開式） -->
+  <div class="statePanel">
+    <div class="statePanelHeader" id="statePanelToggle">
+      <div class="statePanelTitle">生産状態</div>
+      <div class="stateToggle">▼</div>
+    </div>
+    <div class="stateButtons" id="stateButtons">
+      <button id="btnBackRunning" class="stateBtn">生産中に戻す</button>
+      <button id="btnTry" class="stateBtn">トライ中</button>
+      <button id="btnAbnormalStop" class="stateBtn">異常停止中</button>
+      <button id="btnPlanStop" class="stateBtn">計画停止中</button>
+      <button id="btnMaterialChange" class="stateBtn">材料替え中</button>
+    </div>
+  </div>
+
+  <!-- 設定パネル（展開式） -->
+  <div class="settingsPanel">
+    <div class="settingsPanelHeader" id="settingsPanelToggle">
+      <div class="settingsPanelTitle">⚙️ 設定</div>
+      <div class="settingsToggle">▼</div>
+    </div>
+    <div class="settingsContent" id="settingsContent">
+      <div class="settingRow">
+        <label class="settingLabel">ライン</label>
+        <select id="lineSelect">
+          <option value="">未設定</option>
+          <option>53-300</option><option>57-200</option><option>65-300</option>
+          <option>71-300</option><option>72-160</option><option>83-500</option>
+          <option>89-400</option><option>90-600</option><option>94-300</option>
+          <option>RL5</option><option>TPS03-3.5</option><option>あきひと</option>
+          <option>キャップ６号機</option><option>キャップ７号機</option>
+          <option>30-060</option><option>41-200</option><option>42-250</option>
+          <option>49-060</option><option>51-110</option><option>54-160</option>
+          <option>70-080</option><option>76-060</option><option>78-060</option>
+          <option>82-045</option><option>87-400</option><option>88-400</option>
+          <option>91-200</option><option>RL1</option><option>RL3</option>
+          <option>RL4</option><option>RMI-1(インサート成型機）</option>
+          <option>TPS01-2.7</option><option>TPS02-0.75</option>
+          <option>キャップ10号機</option><option>キャップ８号機</option>
+          <option>キャップ9号機</option>
+        </select>
+      </div>
+      <div class="settingRow">
+        <label class="settingLabel">部署</label>
+        <select id="bushoSelect">
+          <option value="">未設定</option>
+          <option>1G</option><option>3G</option><option>4G</option>
+          <option>5G</option><option>6G</option><option>品質</option>
+        </select>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- 照合結果オーバーレイ -->
+<div class="resultArea">
+  <div id="ok" class="resultMark ok">○</div>
+  <div id="ng" class="resultMark ng">×</div>
+  <div id="lockMsg" class="lock">NG！ 管理者QRを読み込むまでロック中</div>
+  <button id="emergencyUnlockBtn" class="emergencyGhost">緊急解除（長押し）</button>
+</div>
+
+<!-- フローティングボタン -->
+<div class="floatingBtns">
+  <div class="subBtns" id="subBtns">
+    <button class="subBtn warn" id="deleteLastBtn">🗑️ 直前ログ削除</button>
+    <button class="subBtn" id="saveBtn">💾 CSV保存</button>
+  </div>
+  <button class="mainFloatBtn" id="mainFloatBtn">
+    <span id="mainBtnIcon">☰</span>
+  </button>
+</div>
+
+<!-- 計画数入力モーダル -->
+<div class="planModal" id="planModal">
+  <div class="planModalContent">
+    <div class="planModalHeader">
+      <h2>📋 生産計画数設定</h2>
+      <button class="planModalClose" id="planModalClose">×</button>
+    </div>
+    <div class="planModalBody">
+      <div class="planCurrentProduct">
+        <div class="planLabel">現在の製品（整理No）</div>
+        <div class="planProductName" id="planProductName">未設定</div>
+      </div>
+      
+      <div class="planInputArea">
+        <div class="planLabel">計画数（個）</div>
+        <input type="text" id="planInput" class="planInputField" readonly value="0" />
+      </div>
+      
+      <!-- テンキー -->
+      <div class="numpad">
+        <button class="numpadBtn" data-num="7">7</button>
+        <button class="numpadBtn" data-num="8">8</button>
+        <button class="numpadBtn" data-num="9">9</button>
+        <button class="numpadBtn" data-num="4">4</button>
+        <button class="numpadBtn" data-num="5">5</button>
+        <button class="numpadBtn" data-num="6">6</button>
+        <button class="numpadBtn" data-num="1">1</button>
+        <button class="numpadBtn" data-num="2">2</button>
+        <button class="numpadBtn" data-num="3">3</button>
+        <button class="numpadBtn numpadClear" data-action="clear">C</button>
+        <button class="numpadBtn" data-num="0">0</button>
+        <button class="numpadBtn numpadDel" data-action="del">⌫</button>
+      </div>
+      
+      <button class="planSaveBtn" id="planSaveBtn">✓ 設定する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================== 設定 ================== */
+const CUT_START = 2;
+const CUT_LENGTH = 5;
+const MIN_QR_LENGTH = 33;
+const ADMIN_QR = "ADMIN123";
+const LINE_KEY = "qr_line_name";
+const BUSHO_KEY = "qr_busho_name";
+const STORAGE_DIR = "productImages";
+const MASTER_COLLECTION = "imageMasters";
+const STATUS_LOG_COLLECTION = "prodStatusLogs";
+
+/* ================== 状態 ================== */
+let baseQR = null;
+let isLocked = false;
+let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像情報","ライン","部署","生産ステータス"]];
+let goodCount = 0;
+let qtyPerKanban = null;
+let planQuantity = 0; // 計画数
+const qrLogDocIds = [];
+const counterDeltas = [{good:0}];
+let lineName = localStorage.getItem(LINE_KEY) || "";
+let bushoName = localStorage.getItem(BUSHO_KEY) || "";
+
+const PROD_STATUS = {
+  NOT_STARTED: "未開始",
+  RUNNING: "生産中",
+  TRY: "トライ中",
+  ABNORMAL_STOP: "異常停止中",
+  PLAN_STOP: "計画停止中",
+  MATERIAL_CHANGE: "材料替え中",
+  SETUP_CHANGE: "段替え中"
+};
+let prodStatus = PROD_STATUS.NOT_STARTED;
+let __restoring = false;
+
+/* ================== DOM ================== */
+const $ok = document.getElementById("ok");
+const $ng = document.getElementById("ng");
+const $lockMsg = document.getElementById("lockMsg");
+const $emergencyUnlockBtn = document.getElementById("emergencyUnlockBtn");
+const $baseDisplay = document.getElementById("baseDisplay");
+const $productImage = document.getElementById("productImage");
+const $imgHint = document.getElementById("imgHint");
+const $resetBtn = document.getElementById("resetBtnFixed");
+const $deleteLastBtn = document.getElementById("deleteLastBtn");
+const $saveBtn = document.getElementById("saveBtn");
+const $lineSelect = document.getElementById("lineSelect");
+const $lineBadge = document.getElementById("lineBadge");
+const $bushoSelect = document.getElementById("bushoSelect");
+const $bushoBadge = document.getElementById("bushoBadge");
+const $statusBar = document.getElementById("statusBar");
+const $prodStateBig = document.getElementById("prodStateBig");
+const $goodCounter = document.getElementById("goodCounter");
+const $btnBackRunning = document.getElementById("btnBackRunning");
+const $btnTry = document.getElementById("btnTry");
+const $btnAbnormalStop = document.getElementById("btnAbnormalStop");
+const $btnPlanStop = document.getElementById("btnPlanStop");
+const $btnMaterialChange = document.getElementById("btnMaterialChange");
+
+/* 計画数関連 */
+const $planBtn = document.getElementById("planBtnFixed");
+const $planModal = document.getElementById("planModal");
+const $planModalClose = document.getElementById("planModalClose");
+const $planProductName = document.getElementById("planProductName");
+const $planInput = document.getElementById("planInput");
+const $planSaveBtn = document.getElementById("planSaveBtn");
+const $progressSection = document.getElementById("progressSection");
+const $progressCurrent = document.getElementById("progressCurrent");
+const $progressTarget = document.getElementById("progressTarget");
+const $progressBar = document.getElementById("progressBar");
+const $progressPercent = document.getElementById("progressPercent");
+const $progressStatus = document.getElementById("progressStatus");
+
+/* ================== Utils ================== */
+function nowString(){
+  const d=new Date(); const pad=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
+function cutQR(qr){ return normalizeSeiriNo(String(qr||"").substr(CUT_START, CUT_LENGTH)); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+
+function showOK(){
+  const resultArea = document.querySelector('.resultArea');
+  resultArea.classList.add('show');
+  $ok.style.display="block";
+  $ng.style.display="none";
+  setTimeout(()=>{
+    $ok.style.display="none";
+    resultArea.classList.remove('show');
+  }, 1500);
+}
+function showNGPersistent(){
+  const resultArea = document.querySelector('.resultArea');
+  resultArea.classList.add('show');
+  $ok.style.display="none";
+  $ng.style.display="block";
+}
+function clearMarks(){
+  const resultArea = document.querySelector('.resultArea');
+  resultArea.classList.remove('show');
+  $ok.style.display="none";
+  $ng.style.display="none";
+}
+
+function setLock(state){
+  isLocked = state;
+  const resultArea = document.querySelector('.resultArea');
+  if (state) {
+    resultArea.classList.add('show');
+    $lockMsg.style.display = "block";
+    $emergencyUnlockBtn.style.display = "block";
+  } else {
+    resultArea.classList.remove('show');
+    $lockMsg.style.display = "none";
+    $emergencyUnlockBtn.style.display = "none";
+    $emergencyUnlockBtn.classList.remove("holding");
+  }
+  $resetBtn.disabled = state;
+  if(!state) clearMarks();
+}
+
+/* 緊急解除（長押し） */
+(function initEmergencyUnlock(){
+  const HOLD_MS = 1200;
+  let t = null;
+  const clearHold = ()=>{
+    if(t){ clearTimeout(t); t = null; }
+    $emergencyUnlockBtn.classList.remove("holding");
+  };
+  const startHold = ()=>{
+    if(!isLocked) return;
+    clearHold();
+    $emergencyUnlockBtn.classList.add("holding");
+    t = setTimeout(()=>{
+      t = null;
+      $emergencyUnlockBtn.classList.remove("holding");
+      if(!isLocked) return;
+      const ok = confirm("【緊急解除】\nQRが読めない場合のみ使用してください。\n本当に解除しますか？");
+      if(!ok) return;
+      setLock(false);
+      showOK();
+      logRow([nowString(), "-", "-", "EMERGENCY_UNLOCK_LONGPRESS", "UNLOCK", "manual", lineName, bushoName, prodStatus], {good:0});
+      if(lineName && typeof window.__writeLineStatus === "function"){
+        window.__writeLineStatus(lineName, {
+          state: statusKeyFromText(prodStatus),
+          stateText: prodStatus,
+          reason: "EMERGENCY_UNLOCK_LONGPRESS",
+          product: baseQR || null,
+          updatedAt: new Date().toISOString(),
+          busho: bushoName || null,
+          lockState: "UNLOCK"
+        }).catch(()=>{});
+      }
+    }, HOLD_MS);
+  };
+  $emergencyUnlockBtn.addEventListener("pointerdown", (e)=>{ e.preventDefault(); startHold(); }, {passive:false});
+  $emergencyUnlockBtn.addEventListener("pointerup",   (e)=>{ e.preventDefault(); clearHold(); }, {passive:false});
+  $emergencyUnlockBtn.addEventListener("pointercancel", clearHold);
+  $emergencyUnlockBtn.addEventListener("touchstart", (e)=>{ e.preventDefault(); startHold(); }, {passive:false});
+  $emergencyUnlockBtn.addEventListener("touchend",   (e)=>{ e.preventDefault(); clearHold(); }, {passive:false});
+})();
+
+function updateBaseDisplay(val){
+  if(val){ 
+    $baseDisplay.classList.remove("placeholder"); 
+    $baseDisplay.textContent=val; 
+  } else { 
+    $baseDisplay.classList.add("placeholder"); 
+    $baseDisplay.textContent="未設定"; 
+  }
+}
+
+function showImage(url){
+  if(url){
+    $productImage.src=url; 
+    $productImage.style.display="block"; 
+    $imgHint.style.display="none";
+  }
+}
+function showNoImage(html){
+  $productImage.style.display="none"; 
+  $imgHint.style.display="block"; 
+  $imgHint.innerHTML = html || "";
+}
+
+function updateCountersUI(){
+  $goodCounter.textContent = String(goodCount||0);
+  updateProgressMeter();
+}
+
+/* 進捗メーター更新 */
+function updateProgressMeter(){
+  if(!planQuantity || planQuantity <= 0){
+    $progressSection.style.display = 'none';
+    return;
+  }
+  
+  $progressSection.style.display = 'block';
+  $progressCurrent.textContent = String(goodCount || 0);
+  $progressTarget.textContent = String(planQuantity);
+  
+  const percent = Math.min(100, Math.round((goodCount / planQuantity) * 100));
+  const actualPercent = Math.round((goodCount / planQuantity) * 100);
+  
+  $progressBar.style.width = percent + '%';
+  $progressPercent.textContent = actualPercent + '%';
+  
+  // 状態に応じてスタイル変更
+  $progressBar.classList.remove('normal', 'complete', 'over100');
+  $progressStatus.classList.remove('normal', 'complete', 'over');
+  
+  if(goodCount >= planQuantity){
+    $progressBar.classList.add('complete');
+    $progressStatus.classList.add('complete');
+    $progressStatus.textContent = '✓ 計画達成！';
+    
+    if(goodCount > planQuantity){
+      $progressBar.classList.remove('complete');
+      $progressBar.classList.add('over100');
+      $progressStatus.classList.remove('complete');
+      $progressStatus.classList.add('over');
+      $progressStatus.textContent = `⚠ 計画超過 (+${goodCount - planQuantity}個)`;
+    }
+  }else{
+    $progressStatus.classList.add('normal');
+    const remaining = planQuantity - goodCount;
+    $progressStatus.textContent = `残り ${remaining} 個`;
+  }
+}
+
+/* CSV */
+function csvEscape(field){ const s=String(field??""); return /[\",\n]/.test(s)?`"${s.replace(/\"/g,'\"\"')}"`:s; }
+function buildCSV(rows){ return rows.map(r=>r.map(csvEscape).join(",")).join("\n"); }
+function downloadCSV(rows, baseName="qr_log"){
+  const ts=new Date(); const pad=n=>String(n).padStart(2,"0");
+  const name=`${baseName}_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.csv`;
+  const blob=new Blob([buildCSV(rows)],{type:"text/csv"});
+  const a=document.createElement("a"); 
+  a.href=URL.createObjectURL(blob); 
+  a.download=name; 
+  a.click();
+}
+
+function logRow(row, delta={good:0}){
+  logData.push(row);
+  counterDeltas.push({
+    good: (delta && typeof delta.good === 'number' && isFinite(delta.good)) ? delta.good : 0
+  });
+  const idx = logData.length - 1;
+  if(typeof window.__firestoreLogRow === "function"){
+    Promise.resolve(window.__firestoreLogRow(row))
+      .then((docId)=>{ if(docId) qrLogDocIds[idx] = docId; })
+      .catch(()=>{});
+  }
+}
+
+function statusKeyFromText(text){
+  if(text === PROD_STATUS.RUNNING) return "RUNNING";
+  if(text === PROD_STATUS.TRY) return "TRY";
+  if(text === PROD_STATUS.ABNORMAL_STOP) return "ABNORMAL_STOP";
+  if(text === PROD_STATUS.PLAN_STOP) return "PLAN_STOP";
+  if(text === PROD_STATUS.MATERIAL_CHANGE) return "MATERIAL_CHANGE";
+  if(text === PROD_STATUS.SETUP_CHANGE) return "SETUP_CHANGE";
+  return "NOT_STARTED";
+}
+
+function renderProdStatus(){
+  const key = statusKeyFromText(prodStatus);
+  $prodStateBig.textContent = prodStatus;
+  $statusBar.className = `statusBar status--${key}`;
+  document.body.classList.remove(
+    "bg-NOT_STARTED","bg-RUNNING","bg-TRY","bg-ABNORMAL_STOP","bg-PLAN_STOP","bg-MATERIAL_CHANGE","bg-SETUP_CHANGE"
+  );
+  document.body.classList.add(`bg-${key}`);
+  
+  const setActive = (btn, on)=>btn.classList.toggle("active", !!on);
+  setActive($btnBackRunning, prodStatus === PROD_STATUS.RUNNING);
+  setActive($btnTry, prodStatus === PROD_STATUS.TRY);
+  setActive($btnAbnormalStop, prodStatus === PROD_STATUS.ABNORMAL_STOP);
+  setActive($btnPlanStop, prodStatus === PROD_STATUS.PLAN_STOP);
+  setActive($btnMaterialChange, prodStatus === PROD_STATUS.MATERIAL_CHANGE);
+}
+
+async function persistLineStatus(reason){
+  if(!lineName || typeof window.__writeLineStatus !== "function") return;
+  try{
+    await window.__writeLineStatus(lineName, {
+      state: statusKeyFromText(prodStatus),
+      stateText: prodStatus,
+      reason: reason || "COUNTER_UPDATE",
+      product: baseQR || null,
+      updatedAt: new Date().toISOString(),
+      busho: bushoName || null,
+      lockState: isLocked ? "LOCKED" : "UNLOCK",
+      goodCount: goodCount || 0,
+      qtyPerKanban: (qtyPerKanban==null? null : qtyPerKanban),
+      planQuantity: planQuantity || 0
+    });
+  }catch(e){
+    console.warn("persistLineStatus error:", e);
+  }
+}
+
+function setProdStatus(next, reason="MANUAL"){
+  if(!next || next === prodStatus) return;
+  const prev = prodStatus;
+  prodStatus = next;
+  renderProdStatus();
+  logRow([nowString(), "-", "-", `STATUS:${reason}`, isLocked?"LOCKED":"UNLOCK", `${prev}→${next}`, lineName, bushoName, prodStatus]);
+  
+  if(typeof window.__firestoreStatusLog === "function"){
+    const tsMs = Date.now();
+    window.__firestoreStatusLog({
+      tsText: nowString(),
+      tsMs,
+      prevStatus: prev,
+      nextStatus: next,
+      reason,
+      line: lineName || null,
+      busho: bushoName || null,
+      baseQR: baseQR || null,
+      lockState: isLocked ? "LOCKED" : "UNLOCK",
+      pageUrl: location.href,
+      userAgent: navigator.userAgent
+    }).catch(()=>{});
+  }
+  
+  if(lineName && typeof window.__writeLineStatus === "function"){
+    window.__writeLineStatus(lineName, {
+      state: statusKeyFromText(next),
+      stateText: next,
+      reason: reason,
+      product: baseQR || null,
+      updatedAt: new Date().toISOString(),
+      busho: bushoName || null,
+      lockState: isLocked ? "LOCKED" : "UNLOCK"
+    }).catch(err => console.warn("ライン状態書き込みエラー:", err));
+  }
+}
+
+/* ========== 状態ボタン ========== */
+$btnBackRunning.addEventListener("click", ()=>{
+  setProdStatus(PROD_STATUS.RUNNING, "BACK_TO_RUNNING_BTN");
+  clearMarks();
+});
+$btnTry.addEventListener("click", ()=>setProdStatus(PROD_STATUS.TRY, "TRY_BTN"));
+$btnAbnormalStop.addEventListener("click", ()=>setProdStatus(PROD_STATUS.ABNORMAL_STOP, "ABNORMAL_STOP_BTN"));
+$btnPlanStop.addEventListener("click", ()=>setProdStatus(PROD_STATUS.PLAN_STOP, "PLAN_STOP_BTN"));
+$btnMaterialChange.addEventListener("click", ()=>setProdStatus(PROD_STATUS.MATERIAL_CHANGE, "MATERIAL_CHANGE_BTN"));
+
+/* ========== 起動時復元 ========== */
+async function applyRestoredState(state){
+  const restoredProdText = state && state.stateText ? String(state.stateText) : null;
+  const restoredBase = state && state.product ? String(state.product) : null;
+  const restoredLock = state && state.lockState ? String(state.lockState) : "UNLOCK";
+  
+  goodCount = (state && typeof state.goodCount === "number") ? state.goodCount : 0;
+  qtyPerKanban = (state && (typeof state.qtyPerKanban === "number")) ? state.qtyPerKanban : null;
+  planQuantity = (state && typeof state.planQuantity === "number") ? state.planQuantity : 0;
+  updateCountersUI();
+  
+  baseQR = restoredBase || null;
+  updateBaseDisplay(baseQR);
+  
+  if(restoredProdText && Object.values(PROD_STATUS).includes(restoredProdText)){
+    prodStatus = restoredProdText;
+  }else{
+    prodStatus = baseQR ? PROD_STATUS.RUNNING : PROD_STATUS.NOT_STARTED;
+  }
+  renderProdStatus();
+  
+  setLock(restoredLock === "LOCKED");
+  
+  if(baseQR){
+    if(isLocked){
+      showNGPersistent();
+    }else{
+      clearMarks();
+    }
+  }else{
+    clearMarks();
+  }
+  
+  if(baseQR){
+    try{
+      if(window.__getMasterBySeiriNo){
+        const master = await window.__getMasterBySeiriNo(baseQR);
+        if(master && master.downloadUrl){
+          showImage(master.downloadUrl);
+        }else{
+          showNoImage(`画像マスタ未登録：<b>${esc(baseQR)}</b>`);
+        }
+      }else{
+        showNoImage("Firebase未接続のため画像マスタ検索ができません。");
+      }
+    }catch(e){
+      console.warn(e);
+      showNoImage("画像マスタ検索エラー");
+    }
+  }else{
+    $productImage.style.display="none";
+    $imgHint.style.display="block";
+    $imgHint.textContent="基準QRを読み込むと、整理Noで画像マスタを検索して表示します。";
+  }
+}
+
+async function restoreFromFirebase(){
+  if(__restoring) return;
+  if(!lineName) return;
+  if(typeof __loadLineStatus !== "function") return;
+  
+  __restoring = true;
+  try{
+    const st = await window.__loadLineStatus(lineName);
+    if(st){
+      await applyRestoredState(st);
+    }else{
+      prodStatus = PROD_STATUS.NOT_STARTED;
+      baseQR = null;
+      goodCount = 0;
+      qtyPerKanban = null;
+      updateCountersUI();
+      setLock(false);
+      renderProdStatus();
+      updateBaseDisplay(null);
+      clearMarks();
+    }
+  }catch(e){
+    console.warn("restoreFromFirebase failed:", e);
+  }finally{
+    __restoring = false;
+  }
+}
+window.__restoreFromFirebase = restoreFromFirebase;
+
+/* ========== 初期設定 ========== */
+window.addEventListener("load", ()=>{
+  if (lineName) Array.from($lineSelect.options).forEach(o=>{ if(o.value===lineName) o.selected=true; });
+  if (bushoName) Array.from($bushoSelect.options).forEach(o=>{ if(o.value===bushoName) o.selected=true; });
+  $lineBadge.textContent = lineName || "未設定";
+  $bushoBadge.textContent = bushoName || "未設定";
+  renderProdStatus();
+});
+
+$lineSelect.addEventListener("change", ()=>{
+  lineName = $lineSelect.value;
+  localStorage.setItem(LINE_KEY, lineName);
+  $lineBadge.textContent = lineName || "未設定";
+  restoreFromFirebase();
+});
+
+$bushoSelect.addEventListener("change", ()=>{
+  bushoName = $bushoSelect.value;
+  localStorage.setItem(BUSHO_KEY, bushoName);
+  $bushoBadge.textContent = bushoName || "未設定";
+});
+
+/* ========== スキャナ入力 ========== */
+let buffer = "";
+let idleTimer = null;
+const IDLE_MS = 120;
+
+function flushBuffer(){
+  if(!buffer) return;
+  const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
+  buffer = "";
+  if(qr) processQR(qr);
+}
+
+document.addEventListener("keydown", (e)=>{
+  e.preventDefault();
+  const k = e.key;
+  if(k==="Enter" || k==="Tab"){ flushBuffer(); return; }
+  if(k.length===1){
+    buffer += k;
+    if(idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(()=>flushBuffer(), IDLE_MS);
+  }else if(k==="Backspace"){
+    buffer = buffer.slice(0,-1);
+  }
+},{ passive:false });
+
+/* ========== 照合処理 ========== */
+async function processQR(qrRaw){
+  if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
+    buffer = "";
+    if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    logRow([nowString(), String(qrRaw||""), "-", "QR_TOO_SHORT", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
+    return;
+  }
+  
+  const now = nowString();
+  const sliced = cutQR(qrRaw);
+  
+  if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
+    setProdStatus(PROD_STATUS.RUNNING, "FORCE_RUNNING_BY_SCAN");
+  }
+  
+  if(!baseQR){
+    baseQR = sliced;
+    updateBaseDisplay(baseQR);
+    
+    try{
+      if(window.__getQtyBySeiriNo){
+        const q = await window.__getQtyBySeiriNo(baseQR);
+        qtyPerKanban = (typeof q === 'number' && isFinite(q) && q > 0) ? q : null;
+      }else{
+        qtyPerKanban = null;
+      }
+    }catch(e){
+      console.warn('LOAD_QTY failed:', e);
+      qtyPerKanban = null;
+    }
+    
+    updateCountersUI();
+    persistLineStatus('BASE_QR_SET');
+    setProdStatus(PROD_STATUS.RUNNING, "BASE_QR_SET");
+    
+    let imageInfo = "";
+    try{
+      if(window.__getMasterBySeiriNo){
+        const master = await window.__getMasterBySeiriNo(baseQR);
+        if(master && master.downloadUrl){
+          showImage(master.downloadUrl);
+          imageInfo = `storage:${master.imagePath}`;
+        }else{
+          showNoImage(`画像マスタ未登録：<b>${esc(baseQR)}</b>`);
+        }
+      }else{
+        showNoImage("Firebase未接続のため画像マスタ検索ができません。");
+      }
+    }catch(e){
+      console.warn(e);
+      showNoImage("画像マスタ検索エラー");
+    }
+    
+    logRow([now, qrRaw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imageInfo, lineName, bushoName, prodStatus], {good:0});
+    return;
+  }
+  
+  if(isLocked){
+    if(qrRaw===ADMIN_QR){
+      setLock(false); 
+      showOK();
+      logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
+      
+      if(lineName && typeof window.__writeLineStatus === "function"){
+        window.__writeLineStatus(lineName, {
+          state: statusKeyFromText(prodStatus),
+          stateText: prodStatus,
+          reason: "UNLOCK_BY_ADMIN",
+          product: baseQR || null,
+          updatedAt: new Date().toISOString(),
+          busho: bushoName || null,
+          lockState: "UNLOCK"
+        }).catch(()=>{});
+      }
+    }else{
+      showNGPersistent();
+      logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
+    }
+    return;
+  }
+  
+  const judgedOK = (sliced===baseQR);
+  let deltaGood = 0;
+  
+  if(judgedOK){
+    showOK();
+    const q = (qtyPerKanban==null? 0 : qtyPerKanban);
+    deltaGood = (typeof q === "number" && isFinite(q) && q > 0) ? q : 0;
+    goodCount += deltaGood;
+    updateCountersUI();
+    persistLineStatus("SCAN_OK");
+    logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName, bushoName, prodStatus], {good:deltaGood});
+  }else{
+    showNGPersistent();
+    setLock(true);
+    updateCountersUI();
+    persistLineStatus("SCAN_NG");
+    logRow([now, qrRaw, sliced, "NG", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
+    
+    if(lineName && typeof window.__writeLineStatus === "function"){
+      window.__writeLineStatus(lineName, {
+        state: statusKeyFromText(prodStatus),
+        stateText: prodStatus,
+        reason: "NG_LOCK",
+        product: baseQR || null,
+        updatedAt: new Date().toISOString(),
+        busho: bushoName || null,
+        lockState: "LOCKED"
+      }).catch(()=>{});
+    }
+  }
+}
+
+/* ========== ボタンイベント ========== */
+$resetBtn.addEventListener("click", ()=>{
+  if(isLocked){
+    alert("NGロック中は切替できません。管理者QRで解除してください。");
+    logRow([nowString(), "-", "-", "RESET_DENIED_WHEN_LOCKED", "LOCKED", "", lineName, bushoName, prodStatus]);
+    return;
+  }
+  
+  setProdStatus(PROD_STATUS.SETUP_CHANGE, "RESET_BTN");
+  baseQR=null;
+  goodCount = 0;
+  qtyPerKanban = null;
+  planQuantity = 0;
+  updateCountersUI();
+  persistLineStatus("RESET");
+  setLock(false);
+  clearMarks();
+  updateBaseDisplay(null);
+  $productImage.style.display="none";
+  $imgHint.style.display="block";
+  $imgHint.textContent="基準QRを読み込むと、整理Noで画像マスタを検索して表示します。";
+  logRow([nowString(), "-", "-", "RESET", "UNLOCK", "", lineName, bushoName, prodStatus]);
+});
+
+$deleteLastBtn.addEventListener("click", async ()=>{
+  if(logData.length <= 1){ alert("削除できるログがありません。"); return; }
+  const last = logData[logData.length-1];
+  const ok = confirm(`直前のログを削除しますか？\n\n${last.join(' / ')}`);
+  if(!ok) return;
+  
+  const idx = logData.length - 1;
+  const docId = qrLogDocIds[idx];
+  const delta = counterDeltas[idx] || {good:0};
+  
+  logData.pop();
+  qrLogDocIds.pop();
+  counterDeltas.pop();
+  
+  if(docId && typeof window.__deleteQrLogDoc === "function"){
+    try{ await window.__deleteQrLogDoc(docId); }
+    catch(e){ console.warn("delete qrLogs failed:", e); }
+  }
+  
+  goodCount = Math.max(0, (goodCount||0) - (delta.good||0));
+  updateCountersUI();
+  persistLineStatus("DELETE_LAST");
+  alert("直前ログを削除しました（カウンタも巻き戻しました）。");
+  
+  // メニューを閉じる
+  document.getElementById('subBtns').classList.remove('show');
+  document.getElementById('mainFloatBtn').classList.remove('open');
+  document.getElementById('mainBtnIcon').textContent = '☰';
+});
+
+$saveBtn.addEventListener("click", ()=>{
+  downloadCSV(logData);
+  // メニューを閉じる
+  document.getElementById('subBtns').classList.remove('show');
+  document.getElementById('mainFloatBtn').classList.remove('open');
+  document.getElementById('mainBtnIcon').textContent = '☰';
+});
+
+/* ========== フローティングボタン展開 ========== */
+document.getElementById('mainFloatBtn').addEventListener('click', ()=>{
+  const subBtns = document.getElementById('subBtns');
+  const mainBtn = document.getElementById('mainFloatBtn');
+  const icon = document.getElementById('mainBtnIcon');
+  
+  if(subBtns.classList.contains('show')){
+    subBtns.classList.remove('show');
+    mainBtn.classList.remove('open');
+    icon.textContent = '☰';
+  }else{
+    subBtns.classList.add('show');
+    mainBtn.classList.add('open');
+    icon.textContent = '×';
+  }
+});
+
+/* ========== パネル展開 ========== */
+document.getElementById('statePanelToggle').addEventListener('click', ()=>{
+  const buttons = document.getElementById('stateButtons');
+  const toggle = document.querySelector('.stateToggle');
+  
+  if(buttons.classList.contains('show')){
+    buttons.classList.remove('show');
+    toggle.classList.remove('open');
+  }else{
+    buttons.classList.add('show');
+    toggle.classList.add('open');
+  }
+});
+
+document.getElementById('settingsPanelToggle').addEventListener('click', ()=>{
+  const content = document.getElementById('settingsContent');
+  const toggle = document.querySelector('.settingsToggle');
+  
+  if(content.classList.contains('show')){
+    content.classList.remove('show');
+    toggle.classList.remove('open');
+  }else{
+    content.classList.add('show');
+    toggle.classList.add('open');
+  }
+});
+
+/* ========== 計画数モーダル ========== */
+$planBtn.addEventListener('click', ()=>{
+  if(!baseQR){
+    alert('先に基準QR（整理No）を読み込んでください。');
+    return;
+  }
+  
+  $planProductName.textContent = baseQR;
+  $planInput.value = String(planQuantity || 0);
+  $planModal.classList.add('show');
+  
+  // メニューを閉じる
+  document.getElementById('subBtns').classList.remove('show');
+  document.getElementById('mainFloatBtn').classList.remove('open');
+  document.getElementById('mainBtnIcon').textContent = '☰';
+});
+
+$planModalClose.addEventListener('click', ()=>{
+  $planModal.classList.remove('show');
+});
+
+// モーダル背景クリックで閉じる
+$planModal.addEventListener('click', (e)=>{
+  if(e.target === $planModal){
+    $planModal.classList.remove('show');
+  }
+});
+
+/* テンキー入力 */
+document.querySelectorAll('.numpadBtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const num = btn.getAttribute('data-num');
+    const action = btn.getAttribute('data-action');
+    
+    if(action === 'clear'){
+      $planInput.value = '0';
+    }else if(action === 'del'){
+      const current = $planInput.value;
+      if(current.length > 1){
+        $planInput.value = current.slice(0, -1);
+      }else{
+        $planInput.value = '0';
+      }
+    }else if(num !== null){
+      const current = $planInput.value;
+      if(current === '0'){
+        $planInput.value = num;
+      }else{
+        // 最大8桁まで
+        if(current.length < 8){
+          $planInput.value = current + num;
+        }
+      }
+    }
+  });
+});
+
+/* 計画数保存 */
+$planSaveBtn.addEventListener('click', ()=>{
+  const value = parseInt($planInput.value, 10);
+  
+  if(!value || value <= 0){
+    alert('1以上の数値を入力してください。');
+    return;
+  }
+  
+  planQuantity = value;
+  updateCountersUI();
+  persistLineStatus('PLAN_SET');
+  
+  $planModal.classList.remove('show');
+  alert(`計画数を ${planQuantity} 個に設定しました。`);
+});
+</script>
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, getDocs, setDoc, collection, addDoc, serverTimestamp, deleteDoc
+  } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+  import { getStorage, ref, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+    databaseURL: "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "miyamaunitec-fb87a",
+    storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+    messagingSenderId: "495316649507",
+    appId: "1:495316649507:web:1f98ee3dd851474fa39396",
+    measurementId: "G-1NXD8ZPGNR"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+
+  const QR_MASTER_COLLECTION = "qrMaster";
+  const statusEl = document.getElementById("firebaseStatus");
+  const setStatus = (t,c)=>{ statusEl.textContent=`Firebase: ${t}`; statusEl.style.color=c; };
+
+  try{
+    await signInAnonymously(auth);
+    setStatus("接続済み","#16a34a");
+  }catch(e){
+    console.warn("匿名認証失敗:", e);
+    setStatus("未接続","#dc2626");
+  }
+
+  window.__getQtyBySeiriNo = async (seiriNo) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) return null;
+    try{
+      const snap = await getDoc(doc(db, QR_MASTER_COLLECTION, key));
+      if(!snap.exists()) return null;
+      const data = snap.data() || {};
+      const q = Number(data.quantity);
+      return (isFinite(q) && q > 0) ? q : 1;
+    }catch(e){
+      console.warn("getQty error:", e);
+      return null;
+    }
+  };
+
+  window.__deleteQrLogDoc = async (docId) => {
+    const id = String(docId||"").trim();
+    if(!id) return;
+    await deleteDoc(doc(db, "qrLogs", id));
+  };
+
+  window.__getMasterBySeiriNo = async (seiriNo) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) return null;
+    const snap = await getDoc(doc(db, "imageMasters", key));
+    if(!snap.exists()) return null;
+    const data = snap.data() || {};
+    if(!data.imagePath) return null;
+    try{
+      const downloadUrl = await getDownloadURL(ref(storage, data.imagePath));
+      return { ...data, downloadUrl };
+    }catch(e){
+      console.warn("getDownloadURL failed:", e);
+      return { ...data, downloadUrl: null };
+    }
+  };
+
+  window.__loadLineStatus = async (line) => {
+    const key = String(line||"").trim();
+    if(!key) return null;
+    const snap = await getDoc(doc(db, "lineStatus", key));
+    return snap.exists() ? (snap.data() || null) : null;
+  };
+
+  window.__firestoreLogRow = async function(row){
+    try{
+      const [ts, raw, sliced, judge, lockState, imageInfo, line, busho, prodStatus] = row;
+      const docRef = await addDoc(collection(db, "qrLogs"), {
+        ts, raw, sliced, judge, lockState,
+        imageInfo: imageInfo || null,
+        line, busho,
+        prodStatus: prodStatus || null,
+        tsMs: Date.now(), 
+        readAt: serverTimestamp(),
+        uid: (auth.currentUser && auth.currentUser.uid) || null,
+        pageUrl: location.href,
+        userAgent: navigator.userAgent,
+        qrData: raw,
+        readAtText: ts,
+        result: judge
+      });
+      return docRef.id;
+    }catch(e){
+      console.warn("Firestore write fail(qrLogs):", e);
+      setStatus("エラー","#dc2626");
+      return null;
+    }
+  };
+
+  window.__firestoreStatusLog = async function(payload){
+    try{
+      await addDoc(collection(db, "prodStatusLogs"), {
+        ...payload,
+        createdAt: serverTimestamp(),
+        uid: (auth.currentUser && auth.currentUser.uid) || null
+      });
+    }catch(e){
+      console.warn("Firestore write fail(prodStatusLogs):", e);
+      setStatus("エラー","#dc2626");
+    }
+  };
+
+  window.__writeLineStatus = async function(line, statusData){
+    try{
+      const docRef = doc(db, "lineStatus", line);
+      await setDoc(docRef, {
+        line: line,
+        ...statusData,
+        timestamp: serverTimestamp()
+      }, { merge: true });
+    }catch(e){
+      console.warn("Firestore write fail(lineStatus):", e);
+    }
+  };
+
+  try{
+    if(typeof window.__restoreFromFirebase === "function"){
+      window.__restoreFromFirebase();
+    }
+  }catch(e){
+    console.warn("auto restore error:", e);
+  }
+</script>
+</body>
+</html>
