@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>画像マスタ登録（整理No → 画像）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="format-detection" content="telephone=no" />
+<style>
+  :root{
+    --fg:#111827; --muted:#6b7280;
+    --border:#e5e7eb; --bg:#f7f7f8; --card:#fff;
+    --primary:#0b3b75; --danger:#b42318; --ok:#16a34a;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+  }
+  header{
+    position:sticky; top:0; z-index:10;
+    background:#fff; border-bottom:1px solid var(--border);
+    padding:12px 16px;
+    display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+  }
+  h1{ margin:0; font-size:16px; }
+  .badge{
+    font-size:12px; padding:4px 10px; border-radius:999px;
+    border:1px solid #d1d5db; color:var(--muted); background:#fff;
+  }
+  main{ max-width:1100px; margin:16px auto; padding:0 16px 36px; }
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px;
+    margin-bottom:16px;
+  }
+  .title{ font-size:18px; font-weight:900; margin:0 0 10px; }
+  .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media (max-width:900px){ .grid2{ grid-template-columns:1fr; } }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  label{ font-size:12px; color:#475569; font-weight:800; }
+  input[type="text"]{
+    padding:12px 12px; border-radius:10px; border:1px solid #d1d5db;
+    font-size:16px; outline:none; background:#fff;
+  }
+  input[type="text"]:focus{
+    border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.15);
+  }
+  input[type="file"]{ display:none; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .btn{
+    padding:10px 14px; border-radius:12px; border:1px solid #d1d5db;
+    background:#fff; cursor:pointer; font-size:14px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn.primary{ background:var(--primary); border-color:var(--primary); color:#fff; font-weight:900; }
+  .btn.warn{ background:#fef3f2; border-color:#fecdcf; color:var(--danger); font-weight:900; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .pill{
+    font-size:12px; padding:4px 10px; border-radius:999px;
+    border:1px solid #cbd5e1; background:#fff; color:#334155;
+  }
+  .note{ font-size:12px; color:var(--muted); line-height:1.6; }
+  .danger{ color:var(--danger); font-weight:900; }
+  .ok{ color:var(--ok); font-weight:900; }
+  .imgBox{
+    border:2px dashed #e5e7eb; border-radius:16px; background:#fff;
+    padding:10px; display:flex; align-items:center; justify-content:center; min-height:220px;
+  }
+  .imgBox img{ max-width:100%; max-height:340px; object-fit:contain; display:none; }
+  .imgHint{ color:#9ca3af; font-size:13px; text-align:center; line-height:1.6; }
+  .listHeader{
+    display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap;
+  }
+  .listGrid{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));
+    gap:12px; max-height:620px; overflow:auto; padding:4px;
+  }
+  .item{
+    border:1px solid #e5e7eb; border-radius:12px; padding:10px; background:#fff;
+    cursor:pointer; transition:.15s ease;
+  }
+  .item:hover{ border-color: var(--primary); box-shadow:0 6px 14px rgba(0,0,0,.08); }
+  .thumb{
+    width:100%; height:150px; background:#f8fafc; border-radius:10px; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; margin-bottom:8px;
+  }
+  .thumb img{ max-width:100%; max-height:100%; object-fit:contain; }
+  .seiri{ font-size:14px; font-weight:1000; text-align:center; word-break:break-all; }
+  .fname{ font-size:11px; color:#64748b; text-align:center; word-break:break-all; margin-top:4px; }
+  footer{ text-align:center; color:#9ca3af; font-size:12px; padding:16px 0; }
+</style>
+</head>
+
+<body>
+<header>
+  <h1>画像マスタ登録（整理No → 画像）</h1>
+  <span id="firebaseStatus" class="badge">Firebase: 未接続</span>
+  <span id="storageStatus" class="badge">Storage: 未準備</span>
+</header>
+
+<main>
+  <section class="card">
+    <h2 class="title">登録 / 更新</h2>
+
+    <div class="grid2">
+      <div class="field">
+        <label>整理No（切り出し値）</label>
+        <input id="seiriNo" type="text" placeholder="例：ABCDE" inputmode="latin" autocomplete="off" />
+        <div class="note">保存先：Firestore <b>imageMasters/{整理No}</b></div>
+      </div>
+
+      <div class="field">
+        <label>画像ファイル</label>
+        <div class="row">
+          <label class="btn" for="imageFile">画像を選択</label>
+          <input id="imageFile" type="file" accept="image/*" />
+          <span id="fileName" class="pill">未選択</span>
+          <span id="opState" class="pill">待機</span>
+        </div>
+        <div class="note">保存先：Storage <b>productImages/{整理No}.{拡張子}</b>（同じ整理Noは上書き）</div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <button id="btnUpload" class="btn primary">登録（アップロード）</button>
+      <button id="btnFetch" class="btn">この整理Noを検索（プレビュー）</button>
+      <button id="btnDelete" class="btn warn">削除（Firestore + Storage）</button>
+      <button id="btnClear" class="btn">入力クリア</button>
+    </div>
+
+    <div class="note" style="margin-top:10px;">
+      <span class="danger">運用注意：</span>
+      画像更新で拡張子が変わっても、旧画像が残らないように <b>自動で古いStorageファイルを削除</b>します（既存imagePathを参照）。
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="title" style="font-size:16px;">プレビュー</h2>
+    <div class="imgBox">
+      <img id="previewImg" alt="画像プレビュー" />
+      <div id="previewHint" class="imgHint">ここに検索結果（画像）が表示されます。</div>
+    </div>
+    <div id="previewMeta" class="note" style="margin-top:10px;"></div>
+  </section>
+
+  <section class="card">
+    <div class="listHeader">
+      <h2 class="title" style="font-size:16px; margin:0;">登録済み画像マスタ一覧</h2>
+      <div class="row">
+        <button id="btnRefresh" class="btn">🔄 更新</button>
+        <span id="listCount" class="badge">0件</span>
+      </div>
+    </div>
+
+    <div id="listHint" class="imgHint" style="margin:12px 0;">読み込み中...</div>
+    <div id="listWrap" style="display:none;">
+      <div id="listGrid" class="listGrid"></div>
+    </div>
+  </section>
+</main>
+
+<footer>© Image Master</footer>
+
+<script>
+/* ===== 設定（あなたの元コードに合わせる） ===== */
+const STORAGE_DIR = "productImages";       // Storage: productImages/...
+const MASTER_COLLECTION = "imageMasters";  // Firestore: imageMasters/{seiriNo}
+
+/* ===== DOM ===== */
+const $firebaseStatus = document.getElementById("firebaseStatus");
+const $storageStatus  = document.getElementById("storageStatus");
+
+const $seiriNo = document.getElementById("seiriNo");
+const $imageFile = document.getElementById("imageFile");
+const $fileName = document.getElementById("fileName");
+const $opState = document.getElementById("opState");
+
+const $btnUpload = document.getElementById("btnUpload");
+const $btnFetch  = document.getElementById("btnFetch");
+const $btnDelete = document.getElementById("btnDelete");
+const $btnClear  = document.getElementById("btnClear");
+
+const $previewImg  = document.getElementById("previewImg");
+const $previewHint = document.getElementById("previewHint");
+const $previewMeta = document.getElementById("previewMeta");
+
+const $btnRefresh = document.getElementById("btnRefresh");
+const $listHint   = document.getElementById("listHint");
+const $listWrap   = document.getElementById("listWrap");
+const $listGrid   = document.getElementById("listGrid");
+const $listCount  = document.getElementById("listCount");
+
+/* ===== Utils ===== */
+function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+function setStatus(ok){
+  if(ok){
+    $firebaseStatus.textContent="Firebase: 接続済み";
+    $firebaseStatus.style.color="#16a34a";
+    $storageStatus.textContent="Storage: 準備OK";
+    $storageStatus.style.color="#16a34a";
+  }else{
+    $firebaseStatus.textContent="Firebase: 未接続";
+    $firebaseStatus.style.color="#9ca3af";
+    $storageStatus.textContent="Storage: 未準備";
+    $storageStatus.style.color="#9ca3af";
+  }
+}
+function setBusy(b){
+  $btnUpload.disabled = b;
+  $btnFetch.disabled  = b;
+  $btnDelete.disabled = b;
+  $btnClear.disabled  = b;
+  $btnRefresh.disabled= b;
+  $imageFile.disabled = b;
+  $seiriNo.disabled   = b;
+}
+function showPreview(url, metaHtml=""){
+  if(url){
+    $previewImg.src = url;
+    $previewImg.style.display="block";
+    $previewHint.style.display="none";
+  }else{
+    $previewImg.style.display="none";
+    $previewHint.style.display="block";
+  }
+  $previewMeta.innerHTML = metaHtml || "";
+}
+function setOpState(text, tone="muted"){
+  $opState.textContent = text;
+  $opState.style.color = (tone==="ok") ? "#16a34a" : (tone==="ng") ? "#b42318" : "#334155";
+  $opState.style.borderColor = (tone==="ok") ? "#86efac" : (tone==="ng") ? "#fecdcf" : "#cbd5e1";
+  $opState.style.background = (tone==="ok") ? "#f0fdf4" : (tone==="ng") ? "#fef3f2" : "#fff";
+}
+
+/* ===== イベント ===== */
+$imageFile.addEventListener("change", ()=>{
+  const f = $imageFile.files && $imageFile.files[0];
+  $fileName.textContent = f ? f.name : "未選択";
+  setOpState("待機");
+});
+
+$btnClear.addEventListener("click", ()=>{
+  $seiriNo.value="";
+  $imageFile.value="";
+  $fileName.textContent="未選択";
+  setOpState("待機");
+  showPreview(null, "");
+});
+
+$btnUpload.addEventListener("click", async ()=>{
+  const seiri = normalizeSeiriNo($seiriNo.value);
+  const file  = $imageFile.files && $imageFile.files[0];
+  if(!seiri){ alert("整理Noを入力してください。"); return; }
+  if(!file){ alert("画像を選択してください。"); return; }
+  if(typeof window.__saveMaster !== "function"){ alert("Firebase未接続の可能性があります。"); return; }
+
+  setBusy(true);
+  setOpState("登録中...");
+  try{
+    const res = await window.__saveMaster(seiri, file);
+    setOpState("登録完了", "ok");
+    showPreview(res.downloadUrl, `保存先：<b>${esc(res.imagePath)}</b> / <span class="ok">OK</span>`);
+    await loadList();
+    alert("登録しました。");
+  }catch(e){
+    console.error(e);
+    setOpState("登録失敗", "ng");
+    alert("登録に失敗しました（コンソール確認）");
+  }finally{
+    setBusy(false);
+  }
+});
+
+$btnFetch.addEventListener("click", async ()=>{
+  const seiri = normalizeSeiriNo($seiriNo.value);
+  if(!seiri){ alert("整理Noを入力してください。"); return; }
+  if(typeof window.__getMasterBySeiriNo !== "function"){ alert("Firebase未接続の可能性があります。"); return; }
+
+  setBusy(true);
+  setOpState("検索中...");
+  try{
+    const m = await window.__getMasterBySeiriNo(seiri);
+    if(m && m.downloadUrl){
+      setOpState("ヒット", "ok");
+      showPreview(m.downloadUrl, `保存先：<b>${esc(m.imagePath||"-")}</b> / 元ファイル：<b>${esc(m.originalFileName||"-")}</b>`);
+    }else{
+      setOpState("未登録", "ng");
+      showPreview(null, `画像マスタ未登録：<b>${esc(seiri)}</b>`);
+    }
+  }catch(e){
+    console.error(e);
+    setOpState("検索失敗", "ng");
+    showPreview(null, `エラー：<b>${esc(e.message||String(e))}</b>`);
+  }finally{
+    setBusy(false);
+  }
+});
+
+$btnDelete.addEventListener("click", async ()=>{
+  const seiri = normalizeSeiriNo($seiriNo.value);
+  if(!seiri){ alert("整理Noを入力してください。"); return; }
+  if(typeof window.__deleteMaster !== "function"){ alert("Firebase未接続の可能性があります。"); return; }
+
+  const ok = confirm(`整理No「${seiri}」の画像マスタを削除します。\n（Firestore + Storage）\n本当によろしいですか？`);
+  if(!ok) return;
+
+  setBusy(true);
+  setOpState("削除中...");
+  try{
+    await window.__deleteMaster(seiri);
+    setOpState("削除完了", "ok");
+    showPreview(null, "");
+    await loadList();
+    alert("削除しました。");
+  }catch(e){
+    console.error(e);
+    setOpState("削除失敗", "ng");
+    alert("削除に失敗しました（コンソール確認）");
+  }finally{
+    setBusy(false);
+  }
+});
+
+$btnRefresh.addEventListener("click", ()=>loadList());
+
+/* ===== 一覧表示 ===== */
+async function loadList(){
+  $listHint.style.display="block";
+  $listHint.textContent="読み込み中...";
+  $listWrap.style.display="none";
+  $listGrid.innerHTML="";
+  $listCount.textContent="0件";
+
+  if(typeof window.__listImageMaster !== "function"){
+    $listHint.textContent="Firebase未接続のため一覧を取得できません。";
+    return;
+  }
+
+  try{
+    const list = await window.__listImageMaster();
+    const n = (list && list.length) ? list.length : 0;
+    $listCount.textContent = `${n}件`;
+
+    if(!n){
+      $listHint.textContent="登録されている画像マスタはありません。";
+      return;
+    }
+
+    $listHint.style.display="none";
+    $listWrap.style.display="block";
+
+    for(const item of list){
+      const card = document.createElement("div");
+      card.className="item";
+
+      const thumb = document.createElement("div");
+      thumb.className="thumb";
+
+      if(item.downloadUrl){
+        const img = document.createElement("img");
+        img.src = item.downloadUrl;
+        img.alt = item.seiriNo;
+        thumb.appendChild(img);
+      }else{
+        const ph = document.createElement("div");
+        ph.textContent="画像なし";
+        ph.style.cssText="color:#9ca3af; font-size:13px;";
+        thumb.appendChild(ph);
+      }
+
+      const seiri = document.createElement("div");
+      seiri.className="seiri";
+      seiri.textContent = item.seiriNo;
+
+      const fn = document.createElement("div");
+      fn.className="fname";
+      fn.textContent = item.originalFileName || "ファイル名不明";
+
+      card.addEventListener("click", async ()=>{
+        $seiriNo.value = item.seiriNo;
+        setOpState("待機");
+        if(item.downloadUrl){
+          showPreview(item.downloadUrl, `保存先：<b>${esc(item.imagePath||"-")}</b> / 元ファイル：<b>${esc(item.originalFileName||"-")}</b>`);
+        }else{
+          showPreview(null, `保存先：<b>${esc(item.imagePath||"-")}</b>`);
+        }
+        window.scrollTo({top:0, behavior:"smooth"});
+      });
+
+      card.appendChild(thumb);
+      card.appendChild(seiri);
+      card.appendChild(fn);
+      $listGrid.appendChild(card);
+    }
+  }catch(e){
+    console.error(e);
+    $listHint.textContent = `エラー: ${e.message}`;
+  }
+}
+
+/* 起動時 */
+window.addEventListener("load", ()=>{
+  setStatus(false);
+  loadList();
+});
+</script>
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, getDocs, setDoc, deleteDoc, collection, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+  import {
+    getStorage, ref, uploadBytes, getDownloadURL, deleteObject
+  } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+    databaseURL: "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "miyamaunitec-fb87a",
+    storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+    messagingSenderId: "495316649507",
+    appId: "1:495316649507:web:1f98ee3dd851474fa39396",
+    measurementId: "G-1NXD8ZPGNR"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  try { getAnalytics(app); } catch(e){}
+
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+
+  const statusEl = document.getElementById("firebaseStatus");
+  const storageEl = document.getElementById("storageStatus");
+  const setStatus = (t,c)=>{ statusEl.textContent=`Firebase: ${t}`; statusEl.style.color=c; };
+  const setStorage = (t,c)=>{ storageEl.textContent=`Storage: ${t}`; storageEl.style.color=c; };
+
+  try{
+    await signInAnonymously(auth);
+    setStatus("接続済み","#16a34a");
+    setStorage("準備OK","#16a34a");
+  }catch(e){
+    console.warn("匿名認証失敗:", e);
+    setStatus("未接続（認証エラー）","#dc2626");
+    setStorage("未準備（認証エラー）","#dc2626");
+  }
+
+  // ===== 画像マスタ取得：imageMasters/{seiriNo} =====
+  window.__getMasterBySeiriNo = async (seiriNo) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) return null;
+
+    const snap = await getDoc(doc(db, MASTER_COLLECTION, key));
+    if(!snap.exists()) return null;
+
+    const data = snap.data() || {};
+    if(!data.imagePath) return { ...data, downloadUrl: null };
+
+    try{
+      const downloadUrl = await getDownloadURL(ref(storage, data.imagePath));
+      return { ...data, downloadUrl };
+    }catch(e){
+      console.warn("getDownloadURL failed:", e);
+      return { ...data, downloadUrl: null };
+    }
+  };
+
+  // ===== 画像マスタ保存：Storageへアップロード → imageMasters/{seiriNo} 上書き =====
+  // 旧拡張子残り対策：既存imagePathを取得し、パスが変わるなら古いファイルを削除
+  window.__saveMaster = async (seiriNo, file) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) throw new Error("seiriNo required");
+    if(!file) throw new Error("file required");
+
+    const origName = String(file.name || "image");
+    const extMatch = origName.toLowerCase().match(/\.([a-z0-9]+)$/);
+    const ext = extMatch ? extMatch[1] : "jpg";
+
+    const newPath = `${STORAGE_DIR}/${key}.${ext}`;
+
+    // 既存を確認（旧パスがあれば削除候補）
+    let oldPath = null;
+    try{
+      const oldSnap = await getDoc(doc(db, MASTER_COLLECTION, key));
+      if(oldSnap.exists()){
+        const old = oldSnap.data() || {};
+        if(old.imagePath) oldPath = String(old.imagePath);
+      }
+    }catch(e){
+      // 取得失敗してもアップロードは続行
+      console.warn("read old master failed:", e);
+    }
+
+    // 新規アップロード
+    const storageRef = ref(storage, newPath);
+    await uploadBytes(storageRef, file, { contentType: file.type || "application/octet-stream" });
+    const downloadUrl = await getDownloadURL(storageRef);
+
+    // Firestore更新
+    const payload = {
+      seiriNo: key,
+      imagePath: newPath,
+      originalFileName: origName,
+      contentType: file.type || null,
+      updatedAt: serverTimestamp(),
+      updatedByUid: (auth.currentUser && auth.currentUser.uid) || null
+    };
+    await setDoc(doc(db, MASTER_COLLECTION, key), payload, { merge:true });
+
+    // 旧ファイル削除（パスが違う場合のみ）
+    if(oldPath && oldPath !== newPath){
+      try{
+        await deleteObject(ref(storage, oldPath));
+      }catch(e){
+        console.warn("delete old storage file failed:", e);
+      }
+    }
+
+    return { imagePath: newPath, downloadUrl };
+  };
+
+  // ===== 画像マスタ削除：Firestore + Storage =====
+  window.__deleteMaster = async (seiriNo) => {
+    const key = String(seiriNo||"").trim();
+    if(!key) throw new Error("seiriNo required");
+
+    // FirestoreからimagePath取得
+    let path = null;
+    const snap = await getDoc(doc(db, MASTER_COLLECTION, key));
+    if(snap.exists()){
+      const data = snap.data() || {};
+      if(data.imagePath) path = String(data.imagePath);
+    }
+
+    // Storage削除（存在しなくてもOK扱い）
+    if(path){
+      try{ await deleteObject(ref(storage, path)); }
+      catch(e){ console.warn("delete storage failed:", e); }
+    }
+
+    // Firestore削除
+    await deleteDoc(doc(db, MASTER_COLLECTION, key));
+  };
+
+  // ===== 画像マスタ一覧取得：imageMasters 全件 =====
+  window.__listImageMaster = async () => {
+    try{
+      const colRef = collection(db, MASTER_COLLECTION);
+      const snap = await getDocs(colRef);
+
+      const list = [];
+      for(const d of snap.docs){
+        const data = d.data() || {};
+        let downloadUrl = null;
+
+        if(data.imagePath){
+          try{ downloadUrl = await getDownloadURL(ref(storage, data.imagePath)); }
+          catch(e){ console.warn(`getDownloadURL failed for ${d.id}:`, e); }
+        }
+
+        list.push({
+          seiriNo: d.id,
+          imagePath: data.imagePath || null,
+          originalFileName: data.originalFileName || null,
+          downloadUrl
+        });
+      }
+
+      list.sort((a,b)=>a.seiriNo.localeCompare(b.seiriNo));
+      return list;
+    }catch(e){
+      console.warn("listImageMaster error:", e);
+      return [];
+    }
+  };
+
+  // 起動直後：一覧更新（非module側のloadListを叩く）
+  try{
+    const fn = window.loadList || null;
+    // loadListはスコープ外なので、ボタンを擬似クリックして更新
+    document.getElementById("btnRefresh").click();
+  }catch(e){
+    console.warn(e);
+  }
+</script>
+</body>
+</html>
