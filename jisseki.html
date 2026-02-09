@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -527,109 +526,25 @@
     padding:8px 12px;
   }
   
-  /* 週間推移モーダル */
-  .weeklyModal{
-    display:none;
-    position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    background:rgba(0,0,0,0.85);
-    backdrop-filter:blur(8px);
-    z-index:2000;
-    align-items:center;
-    justify-content:center;
-    padding:20px;
-  }
-  .weeklyModal.show{
-    display:flex;
-  }
-  .weeklyModalContent{
-    background:var(--card);
-    border-radius:20px;
-    width:95%;
-    max-width:1200px;
-    max-height:90vh;
-    overflow-y:auto;
-    border:2px solid var(--border);
-    box-shadow:0 20px 60px rgba(0,0,0,0.5);
-  }
-  .weeklyModalHeader{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    padding:24px;
-    border-bottom:2px solid var(--border);
-    position:sticky;
-    top:0;
-    background:var(--card);
-    z-index:10;
-  }
-  .weeklyModalTitle{
-    font-size:24px;
-    font-weight:900;
-    display:flex;
-    align-items:center;
-    gap:12px;
-  }
   .weeklyModalLineName{
     color:#667eea;
   }
-  .weeklyModalClose{
-    width:44px;
-    height:44px;
-    border-radius:50%;
-    border:none;
-    background:#334155;
-    color:#fff;
-    font-size:28px;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    transition:all 0.2s ease;
-  }
-  .weeklyModalClose:hover{
-    background:#475569;
-    transform:scale(1.1);
-  }
   .weeklyModalBody{
     padding:24px;
-  }
-  .weeklyChartContainer{
-    position:relative;
-    height:500px;
-    width:100%;
-    margin-bottom:24px;
-  }
-  .weeklyStats{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
-    gap:16px;
-    margin-top:24px;
-  }
-  .weeklyStat{
-    background:#0f172a;
-    border-radius:12px;
-    padding:16px;
-    border:1px solid var(--border);
-  }
-  .weeklyStatLabel{
-    font-size:12px;
-    color:var(--muted);
-    margin-bottom:8px;
-    font-weight:700;
-  }
-  .weeklyStatValue{
-    font-size:32px;
-    font-weight:900;
-    color:#667eea;
   }
   .weeklyStatUnit{
     font-size:14px;
     color:var(--muted);
     margin-left:4px;
+  }
+
+  button.danger{
+    background:#ef4444;
+    border-color:#ef4444;
+    color:#fff;
+  }
+  button.danger:hover{
+    background:#dc2626;
   }
 </style>
 </head>
@@ -788,21 +703,13 @@
       </div>
     </div>
     
+    <div class="settingSection">
+      <label class="settingLabel">出来高リセット</label>
+      <div class="settingDesc">全ラインの出来高を手動でリセットします（通常は毎朝8時に自動リセット）</div>
+      <button id="btnManualReset" class="danger" style="width:100%;">🔄 出来高を手動リセット</button>
+    </div>
+    
     <button id="saveSettings" class="primary" style="width:100%;">💾 設定を保存</button>
-  </div>
-</div>
-
-<!-- 週間推移モーダル -->
-<div class="weeklyModal" id="weeklyModal">
-  <div class="weeklyModalContent">
-    <div class="weeklyModalHeader">
-      <div class="weeklyModalTitle" id="weeklyModalTitle">📊 週間出来高推移</div>
-      <button class="weeklyModalClose" id="weeklyModalClose">×</button>
-    </div>
-    <div class="weeklyChartContainer">
-      <canvas id="weeklyChart"></canvas>
-    </div>
-    <div class="weeklyStats" id="weeklyStats"></div>
   </div>
 </div>
 
@@ -812,7 +719,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
   import {
-    getFirestore, collection, onSnapshot, query, where, orderBy, getDocs, doc, getDoc, setDoc, limit
+    getFirestore, collection, onSnapshot, query, where, orderBy, getDocs, doc, getDoc, setDoc, updateDoc, limit
   } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -838,6 +745,7 @@
   const $settingsModal = document.getElementById("settingsModal");
   const $closeSettings = document.getElementById("closeSettings");
   const $saveSettings = document.getElementById("saveSettings");
+  const $btnManualReset = document.getElementById("btnManualReset");
   
   // 週間推移モーダル
   const $weeklyModal = document.getElementById("weeklyModal");
@@ -862,6 +770,7 @@
   let allLineData = [];
   let lineCharts = {}; // { [line]: Chart }
   let qrMasterCache = {}; // { [seiriNo]: quantity }
+  let lastResetDate = null; // 最後にリセットした日付
 
   // 設定（デフォルト値）
   let settings = {
@@ -937,6 +846,82 @@
       return `${Math.floor(hours / 24)}日前`;
     }catch(e){
       return "-";
+    }
+  }
+
+  // 日次リセット判定（毎朝8時）
+  async function checkDailyReset(){
+    const now = new Date();
+    const currentHour = now.getHours();
+    const today = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+    
+    // 8時以降で、まだその日にリセットしていない場合
+    if(currentHour >= 8 && lastResetDate !== today){
+      console.log('朝8時の自動リセットを実行します');
+      await resetAllGoodCounts();
+      lastResetDate = today;
+      
+      // リセット日付を保存
+      try{
+        const resetDocRef = doc(db, "settings", "dailyReset");
+        await setDoc(resetDocRef, { 
+          lastResetDate: today,
+          lastResetTime: now
+        });
+      }catch(e){
+        console.warn('リセット日付保存エラー:', e);
+      }
+    }
+  }
+
+  // 全ラインの出来高をリセット
+  async function resetAllGoodCounts(){
+    try{
+      const lineStatusRef = collection(db, "lineStatus");
+      const snapshot = await getDocs(lineStatusRef);
+      
+      const promises = [];
+      snapshot.forEach(docSnap => {
+        const docRef = doc(db, "lineStatus", docSnap.id);
+        promises.push(updateDoc(docRef, { goodCount: 0 }));
+      });
+      
+      await Promise.all(promises);
+      console.log('✅ 全ラインの出来高をリセットしました');
+      return true;
+    }catch(e){
+      console.error('❌ 出来高リセットエラー:', e);
+      return false;
+    }
+  }
+
+  // 手動リセットボタン
+  $btnManualReset.addEventListener('click', async () => {
+    if(!confirm('全ラインの出来高を0にリセットします。よろしいですか?')){
+      return;
+    }
+    
+    const success = await resetAllGoodCounts();
+    if(success){
+      alert('✅ 出来高をリセットしました');
+      const now = new Date();
+      lastResetDate = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
+    }else{
+      alert('❌ リセットに失敗しました');
+    }
+  });
+
+  // リセット日付を読み込み
+  async function loadLastResetDate(){
+    try{
+      const resetDocRef = doc(db, "settings", "dailyReset");
+      const snap = await getDoc(resetDocRef);
+      if(snap.exists()){
+        lastResetDate = snap.data().lastResetDate || null;
+        console.log('最終リセット日:', lastResetDate);
+      }
+    }catch(e){
+      console.warn('リセット日付読み込みエラー:', e);
     }
   }
 
@@ -1661,9 +1646,14 @@
     $loading.textContent = "エラーが発生しました";
   });
 
+  // 定期的に日次リセットをチェック（1分ごと）
+  setInterval(checkDailyReset, 60000);
+
   // 初期化
   await loadSettings();
   await loadQrMaster(); // QRマスタ読み込み
+  await loadLastResetDate(); // 最終リセット日読み込み
+  await checkDailyReset(); // 初回リセットチェック
 
   console.log('ダッシュボード初期化完了');
 </script>
