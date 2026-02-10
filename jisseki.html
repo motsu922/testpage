@@ -537,15 +537,6 @@
     color:var(--muted);
     margin-left:4px;
   }
-
-  button.danger{
-    background:#ef4444;
-    border-color:#ef4444;
-    color:#fff;
-  }
-  button.danger:hover{
-    background:#dc2626;
-  }
 </style>
 </head>
 
@@ -703,12 +694,6 @@
       </div>
     </div>
     
-    <div class="settingSection">
-      <label class="settingLabel">出来高リセット</label>
-      <div class="settingDesc">全ラインの出来高を手動でリセットします（通常は毎朝8時に自動リセット）</div>
-      <button id="btnManualReset" class="danger" style="width:100%;">🔄 出来高を手動リセット</button>
-    </div>
-    
     <button id="saveSettings" class="primary" style="width:100%;">💾 設定を保存</button>
   </div>
 </div>
@@ -719,7 +704,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
   import {
-    getFirestore, collection, onSnapshot, query, where, orderBy, getDocs, doc, getDoc, setDoc, updateDoc, limit
+    getFirestore, collection, onSnapshot, query, where, orderBy, getDocs, doc, getDoc, setDoc, limit
   } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -745,7 +730,6 @@
   const $settingsModal = document.getElementById("settingsModal");
   const $closeSettings = document.getElementById("closeSettings");
   const $saveSettings = document.getElementById("saveSettings");
-  const $btnManualReset = document.getElementById("btnManualReset");
   
   // 週間推移モーダル
   const $weeklyModal = document.getElementById("weeklyModal");
@@ -770,7 +754,7 @@
   let allLineData = [];
   let lineCharts = {}; // { [line]: Chart }
   let qrMasterCache = {}; // { [seiriNo]: quantity }
-  let lastResetDate = null; // 最後にリセットした日付
+  let todayGoodCounts = {}; // { [line]: count } - 本日8時以降の出来高をキャッシュ
 
   // 設定（デフォルト値）
   let settings = {
@@ -780,6 +764,19 @@
     breaks: [{ start:"12:00", end:"13:00" }],
     workingDays: [1,2,3,4,5]
   };
+
+  // 本日8時の基準時刻を取得
+  function getTodayResetTime(){
+    const now = new Date();
+    const resetTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0);
+    
+    // 現在時刻が8時より前なら、前日の8時を基準にする
+    if(now.getHours() < 8){
+      resetTime.setDate(resetTime.getDate() - 1);
+    }
+    
+    return resetTime;
+  }
 
   // QRマスタ読み込み
   async function loadQrMaster(){
@@ -805,6 +802,40 @@
     const key = String(seiriNo || '').trim();
     if(!key) return 1;
     return qrMasterCache[key] || 1; // デフォルト1個
+  }
+
+  // 本日8時以降の出来高を計算
+  async function calculateTodayGoodCount(line){
+    const resetTime = getTodayResetTime();
+    const now = new Date();
+    
+    try{
+      const logsRef = collection(db, "qrLogs");
+      const q = query(
+        logsRef,
+        where("readAt", ">=", resetTime),
+        where("readAt", "<=", now),
+        orderBy("readAt", "asc"),
+        limit(5000)
+      );
+      
+      const snapshot = await getDocs(q);
+      let count = 0;
+      
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if(data.line === line && (data.judge || data.result || '') === 'OK'){
+          const seiriNo = data.sliced || '';
+          const qty = getQtyBySeiriNo(seiriNo);
+          count += qty;
+        }
+      });
+      
+      return count;
+    }catch(e){
+      console.error(`本日出来高計算エラー (${line}):`, e);
+      return 0;
+    }
   }
 
   // ステータステキスト
@@ -849,93 +880,20 @@
     }
   }
 
-  // 日次リセット判定（毎朝8時）
-  async function checkDailyReset(){
-    const now = new Date();
-    const currentHour = now.getHours();
-    const today = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
-    
-    // 8時以降で、まだその日にリセットしていない場合
-    if(currentHour >= 8 && lastResetDate !== today){
-      console.log('朝8時の自動リセットを実行します');
-      await resetAllGoodCounts();
-      lastResetDate = today;
-      
-      // リセット日付を保存
-      try{
-        const resetDocRef = doc(db, "settings", "dailyReset");
-        await setDoc(resetDocRef, { 
-          lastResetDate: today,
-          lastResetTime: now
-        });
-      }catch(e){
-        console.warn('リセット日付保存エラー:', e);
-      }
-    }
-  }
-
-  // 全ラインの出来高をリセット
-  async function resetAllGoodCounts(){
-    try{
-      const lineStatusRef = collection(db, "lineStatus");
-      const snapshot = await getDocs(lineStatusRef);
-      
-      const promises = [];
-      snapshot.forEach(docSnap => {
-        const docRef = doc(db, "lineStatus", docSnap.id);
-        promises.push(updateDoc(docRef, { goodCount: 0 }));
-      });
-      
-      await Promise.all(promises);
-      console.log('✅ 全ラインの出来高をリセットしました');
-      return true;
-    }catch(e){
-      console.error('❌ 出来高リセットエラー:', e);
-      return false;
-    }
-  }
-
-  // 手動リセットボタン
-  $btnManualReset.addEventListener('click', async () => {
-    if(!confirm('全ラインの出来高を0にリセットします。よろしいですか?')){
-      return;
-    }
-    
-    const success = await resetAllGoodCounts();
-    if(success){
-      alert('✅ 出来高をリセットしました');
-      const now = new Date();
-      lastResetDate = `${now.getFullYear()}-${now.getMonth()+1}-${now.getDate()}`;
-    }else{
-      alert('❌ リセットに失敗しました');
-    }
-  });
-
-  // リセット日付を読み込み
-  async function loadLastResetDate(){
-    try{
-      const resetDocRef = doc(db, "settings", "dailyReset");
-      const snap = await getDoc(resetDocRef);
-      if(snap.exists()){
-        lastResetDate = snap.data().lastResetDate || null;
-        console.log('最終リセット日:', lastResetDate);
-      }
-    }catch(e){
-      console.warn('リセット日付読み込みエラー:', e);
-    }
-  }
-
   // カード生成
-  function createLineCard(data){
+  async function createLineCard(data){
     const status = data.state || "NOT_STARTED";
     const stateText = data.stateText || statusText[status] || "未開始";
     const product = data.product || "";
     const busho = data.busho || "未設定";
-    const goodCount = data.goodCount || 0;
     const planQuantity = data.planQuantity || 0;
     const lockState = data.lockState || "UNLOCK";
     const updatedAt = data.updatedAt || "";
     const line = data.line || "不明";
+
+    // 本日8時以降の出来高を計算
+    const goodCount = await calculateTodayGoodCount(line);
+    todayGoodCounts[line] = goodCount;
 
     let achievementRate = 0;
     if(planQuantity > 0){
@@ -1060,16 +1018,15 @@
       return activeLinesCache;
     }
     
-    const today = new Date();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-    const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+    const resetTime = getTodayResetTime();
+    const currentTime = new Date();
     
     try{
       const logsRef = collection(db, "qrLogs");
       const q = query(
         logsRef,
-        where("readAt", ">=", todayStart),
-        where("readAt", "<=", todayEnd),
+        where("readAt", ">=", resetTime),
+        where("readAt", "<=", currentTime),
         orderBy("readAt", "asc"),
         limit(5000)
       );
@@ -1095,14 +1052,15 @@
     }
   }
 
-  // 週間推移表示
+  // 週間推移表示（各日8時～翌日8時でカウント）
   async function showWeeklyChart(lineName, productName){
     $weeklyModalLineName.textContent = lineName;
     $weeklyModal.classList.add('show');
     
-    // 過去7日間の日付を生成
+    // 過去7日間の日付を生成（各日8時基準）
     const dates = [];
     const dailyData = {}; // { date: { seiriNo: qty } }
+    
     for(let i = 6; i >= 0; i--){
       const d = new Date();
       d.setDate(d.getDate() - i);
@@ -1115,10 +1073,9 @@
       // 過去7日間のデータ取得
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
-      weekAgo.setHours(0, 0, 0, 0);
+      weekAgo.setHours(8, 0, 0, 0);
       
       const now = new Date();
-      now.setHours(23, 59, 59, 999);
       
       const logsRef = collection(db, "qrLogs");
       const q = query(
@@ -1147,9 +1104,17 @@
         }
       });
       
-      // 日別・整理No別に集計
+      // 日別・整理No別に集計（8時～翌日8時の範囲）
       logs.forEach(log => {
-        const dateStr = `${log.time.getMonth()+1}/${log.time.getDate()}`;
+        const logDate = new Date(log.time);
+        let targetDate = new Date(logDate);
+        
+        // 8時より前なら前日扱い
+        if(logDate.getHours() < 8){
+          targetDate.setDate(targetDate.getDate() - 1);
+        }
+        
+        const dateStr = `${targetDate.getMonth()+1}/${targetDate.getDate()}`;
         if(dailyData[dateStr] !== undefined){
           if(!dailyData[dateStr][log.seiriNo]){
             dailyData[dateStr][log.seiriNo] = 0;
@@ -1326,11 +1291,10 @@
     }
   });
 
-  // 出来高推移グラフ更新
+  // 出来高推移グラフ更新（本日8時以降のデータで集計）
   async function updateOutputCharts(lineDataArray){
+    const resetTime = getTodayResetTime();
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
     for(const lineData of lineDataArray){
       const line = lineData.line || '不明';
@@ -1339,12 +1303,12 @@
       if(!canvas) continue;
 
       try{
-        // qrLogsから本日のデータを取得
+        // qrLogsから本日8時以降のデータを取得
         const logsRef = collection(db, "qrLogs");
         const q = query(
           logsRef,
-          where("readAt", ">=", todayStart),
-          where("readAt", "<=", todayEnd),
+          where("readAt", ">=", resetTime),
+          where("readAt", "<=", now),
           orderBy("readAt", "asc"),
           limit(5000)
         );
@@ -1355,7 +1319,7 @@
           const data = doc.data();
           if(data.line === line && (data.judge || data.result || '') === 'OK'){
             const seiriNo = data.sliced || '';
-            const qty = getQtyBySeiriNo(seiriNo); // qrMasterから個数取得
+            const qty = getQtyBySeiriNo(seiriNo);
             logs.push({
               time: data.readAt.toDate(),
               product: seiriNo,
@@ -1481,9 +1445,12 @@
     }else{
       $noData.style.display = "none";
       $dashboard.style.display = "grid";
-      filtered.forEach(data => {
-        $dashboard.appendChild(createLineCard(data));
-      });
+      
+      // カードを順次生成（非同期）
+      for(const data of filtered){
+        const card = await createLineCard(data);
+        $dashboard.appendChild(card);
+      }
       
       // グラフ更新
       updateOutputCharts(filtered);
@@ -1646,14 +1613,9 @@
     $loading.textContent = "エラーが発生しました";
   });
 
-  // 定期的に日次リセットをチェック（1分ごと）
-  setInterval(checkDailyReset, 60000);
-
   // 初期化
   await loadSettings();
   await loadQrMaster(); // QRマスタ読み込み
-  await loadLastResetDate(); // 最終リセット日読み込み
-  await checkDailyReset(); // 初回リセットチェック
 
   console.log('ダッシュボード初期化完了');
 </script>
