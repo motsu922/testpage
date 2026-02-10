@@ -971,6 +971,54 @@ function nowString(){
   const d=new Date(); const pad=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+
+  /* ================== 出来高：8:00リセット（シフト日） ================== */
+// 8:00を「日付の切り替わり」とみなす（8:00〜翌7:59を同一日扱い）
+function getShiftKey(d = new Date()){
+  const dd = new Date(d);
+  if(dd.getHours() < 8){
+    dd.setDate(dd.getDate() - 1);
+  }
+  const y = dd.getFullYear();
+  const m = String(dd.getMonth()+1).padStart(2,"0");
+  const day = String(dd.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`; // 例: 2026-02-10
+}
+
+// ライン別に「最後に適用したシフト日」を保存するキー
+function getResetStorageKey(){
+  return `qr_goodcount_shiftkey_v1_${lineName || "NO_LINE"}`;
+}
+
+// 出来高を0に戻す（ログも残す）
+function resetGoodCountByShift(reason="COUNTER_RESET_8AM"){
+  goodCount = 0;
+  updateCountersUI();
+  persistLineStatus(reason);
+
+  // 区切りログを残したい場合（おすすめ）
+  logRow([nowString(), "-", "-", reason, isLocked?"LOCKED":"UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
+}
+
+// 朝8:00を跨いでいたらリセットする
+function checkAndResetAt8IfNeeded(){
+  const key = getShiftKey(new Date());
+  const skey = getResetStorageKey();
+  const last = localStorage.getItem(skey);
+
+  // 初回は「現時点のシフト日」を記録のみ（いきなりリセットしない）
+  if(!last){
+    localStorage.setItem(skey, key);
+    return;
+  }
+
+  // シフト日が変わった＝8:00を跨いだ → 出来高リセット
+  if(last !== key){
+    localStorage.setItem(skey, key);
+    resetGoodCountByShift("COUNTER_RESET_8AM");
+  }
+}
+
 function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
 function cutQR(qr){ return normalizeSeiriNo(String(qr||"").substr(CUT_START, CUT_LENGTH)); }
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
@@ -1260,6 +1308,7 @@ $btnMaterialChange.addEventListener("click", ()=>setProdStatus(PROD_STATUS.MATER
 
 /* ========== 起動時復元 ========== */
 async function applyRestoredState(state){
+  checkAndResetAt8IfNeeded(); // ★追加
   const restoredProdText = state && state.stateText ? String(state.stateText) : null;
   const restoredBase = state && state.product ? String(state.product) : null;
   const restoredLock = state && state.lockState ? String(state.lockState) : "UNLOCK";
@@ -1393,6 +1442,7 @@ document.addEventListener("keydown", (e)=>{
 
 /* ========== 照合処理 ========== */
 async function processQR(qrRaw){
+  checkAndResetAt8IfNeeded();
   if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
     buffer = "";
     if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
