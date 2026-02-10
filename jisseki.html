@@ -1328,22 +1328,30 @@
           }
         });
 
-        // 時間ごとに集計
-        const hourlyData = Array(24).fill(0);
+// ===== 8:00起点の24時間（08→…→23→00→…→07）で集計 =====
+const hourlyData = Array(24).fill(0);
 
-        logs.forEach(log => {
-          const hour = log.time.getHours();
-          if(hour >= 0 && hour < 24){
-            hourlyData[hour] += log.qty;
-          }
-        });
+// resetTime（= 今日の8:00、8:00前なら昨日8:00）からの経過時間でバケット化
+logs.forEach(log => {
+  const diffMs = log.time.getTime() - resetTime.getTime();
+  if(diffMs < 0) return; // 念のため
+  const bucket = Math.floor(diffMs / (60 * 60 * 1000)); // 0..23
+  if(bucket >= 0 && bucket < 24){
+    hourlyData[bucket] += log.qty;
+  }
+});
+
 
         // 最大値を計算
         const maxValue = Math.max(...hourlyData, 0);
         const suggestedMax = maxValue > 0 ? Math.ceil(maxValue * 1.2) : 10;
 
         const chartData = {
-          labels: Array.from({length:24}, (_,i) => `${String(i).padStart(2,'0')}時`),
+          labels: Array.from({length:24}, (_,i) => {
+  const hour = (8 + i) % 24; // 8時起点
+  return `${String(hour).padStart(2,'0')}時`;
+}),
+
           datasets: [{
             label: '出来高',
             data: hourlyData,
