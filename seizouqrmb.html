@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<title>QR照合（改善版）</title>
+<title>QR照合（スマホ版）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <meta name="format-detection" content="telephone=no" />
 <style>
@@ -38,24 +38,6 @@
     padding:2px 6px; border-radius:4px; 
     background:#f1f5f9; border:1px solid #cbd5e1;
   }
-
-  /* ========== デバッグ情報 ========== */
-  .debugInfo{
-    position:fixed;
-    bottom:80px;
-    left:10px;
-    background:rgba(0,0,0,0.8);
-    color:#0f0;
-    padding:8px;
-    border-radius:8px;
-    font-size:11px;
-    font-family:monospace;
-    max-width:90%;
-    z-index:150;
-    display:none;
-    line-height:1.4;
-  }
-  .debugInfo.show{ display:block; }
 
   /* ========== メインコンテナ ========== */
   main{ 
@@ -733,22 +715,16 @@
 
 <body class="bg-NOT_STARTED">
 <header>
-  <h1>📱 QR照合システム（改善版）</h1>
+  <h1>📱 QR照合システム</h1>
   <div class="statusLine">
     <span id="firebaseStatus" class="badge">Firebase: 未接続</span>
     <span id="lineBadge" class="badge">ライン: 未設定</span>
     <span id="bushoBadge" class="badge">部署: 未設定</span>
-    <button id="debugToggleBtn" class="badge" style="cursor:pointer;background:#fef3f2;border-color:#fecdcf;">デバッグ: OFF</button>
   </div>
 </header>
 
 <input id="scanInput" type="text" readonly inputmode="none"
   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-hidden="true" />
-
-<!-- デバッグ情報 -->
-<div class="debugInfo" id="debugInfo">
-  <div id="debugLog">待機中...</div>
-</div>
 
 <main>
   <!-- 整理No + 製品画像カード -->
@@ -920,8 +896,9 @@
 
 <script>
 /* ================== 設定 ================== */
+const CUT_START = 2;
 const CUT_LENGTH = 5;
-const MIN_QR_LENGTH = 6;  // 記号+英数字5文字=最低6文字
+const MIN_QR_LENGTH = 33;
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
@@ -935,7 +912,7 @@ let isLocked = false;
 let logData = [["時刻","読み込んだQR","切り出し後値","判定","ロック状態","画像情報","ライン","部署","生産ステータス"]];
 let goodCount = 0;
 let qtyPerKanban = null;
-let planQuantity = 0;
+let planQuantity = 0; // 計画数
 const qrLogDocIds = [];
 const counterDeltas = [{good:0}];
 let lineName = localStorage.getItem(LINE_KEY) || "";
@@ -952,29 +929,6 @@ const PROD_STATUS = {
 };
 let prodStatus = PROD_STATUS.NOT_STARTED;
 let __restoring = false;
-
-/* ================== デバッグ ================== */
-let DEBUG_QR = false;
-const $debugInfo = document.getElementById("debugInfo");
-const $debugLog = document.getElementById("debugLog");
-const $debugToggleBtn = document.getElementById("debugToggleBtn");
-
-function updateDebugLog(msg){
-  if(!DEBUG_QR) return;
-  const ts = new Date().toLocaleTimeString();
-  $debugLog.innerHTML = `[${ts}] ${msg}<br>` + $debugLog.innerHTML.split('<br>').slice(0, 10).join('<br>');
-}
-
-$debugToggleBtn.addEventListener('click', ()=>{
-  DEBUG_QR = !DEBUG_QR;
-  $debugToggleBtn.textContent = DEBUG_QR ? 'デバッグ: ON' : 'デバッグ: OFF';
-  $debugToggleBtn.style.background = DEBUG_QR ? '#dcfce7' : '#fef3f2';
-  $debugToggleBtn.style.borderColor = DEBUG_QR ? '#86efac' : '#fecdcf';
-  $debugInfo.classList.toggle('show', DEBUG_QR);
-  if(DEBUG_QR){
-    updateDebugLog('デバッグモード: 有効');
-  }
-});
 
 /* ================== DOM ================== */
 const $ok = document.getElementById("ok");
@@ -996,6 +950,8 @@ const $btnTry = document.getElementById("btnTry");
 const $btnAbnormalStop = document.getElementById("btnAbnormalStop");
 const $btnPlanStop = document.getElementById("btnPlanStop");
 const $btnMaterialChange = document.getElementById("btnMaterialChange");
+
+/* 計画数関連 */
 const $planBtn = document.getElementById("planBtnFixed");
 const $planModal = document.getElementById("planModal");
 const $planModalClose = document.getElementById("planModalClose");
@@ -1015,54 +971,8 @@ function nowString(){
   const d=new Date(); const pad=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
-
-/* ================== 出来高：8:00リセット（シフト日） ================== */
-function getShiftKey(d = new Date()){
-  const dd = new Date(d);
-  if(dd.getHours() < 8){
-    dd.setDate(dd.getDate() - 1);
-  }
-  const y = dd.getFullYear();
-  const m = String(dd.getMonth()+1).padStart(2,"0");
-  const day = String(dd.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
-}
-
-function getResetStorageKey(){
-  return `qr_goodcount_shiftkey_v1_${lineName || "NO_LINE"}`;
-}
-
-function resetGoodCountByShift(reason="COUNTER_RESET_8AM"){
-  goodCount = 0;
-  updateCountersUI();
-  persistLineStatus(reason);
-  logRow([nowString(), "-", "-", reason, isLocked?"LOCKED":"UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
-}
-
-function checkAndResetAt8IfNeeded(){
-  const key = getShiftKey(new Date());
-  const skey = getResetStorageKey();
-  const last = localStorage.getItem(skey);
-
-  if(!last){
-    localStorage.setItem(skey, key);
-    return;
-  }
-
-  if(last !== key){
-    localStorage.setItem(skey, key);
-    resetGoodCountByShift("COUNTER_RESET_8AM");
-  }
-}
-
 function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
-function cutQR(qr){ 
-  // 先頭の記号（スペース、コロン、アンド、セミコロン）を除去
-  const cleaned = String(qr || "").replace(/^[\s:&;]+/, '');
-  // 最初の5文字を切り出し
-  const extracted = cleaned.substr(0, CUT_LENGTH);
-  return normalizeSeiriNo(extracted); 
-}
+function cutQR(qr){ return normalizeSeiriNo(String(qr||"").substr(CUT_START, CUT_LENGTH)); }
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
 
 function showOK(){
@@ -1173,10 +1083,12 @@ function updateCountersUI(){
   updateProgressMeter();
 }
 
+/* 進捗メーター更新 */
 function updateProgressMeter(){
   const $simpleCounterSection = document.getElementById('simpleCounterSection');
   const $simpleCounterValue = document.getElementById('simpleCounterValue');
   
+  // 計画数が未設定の場合：シンプルカウンター表示
   if(!planQuantity || planQuantity <= 0){
     $progressSection.style.display = 'none';
     $simpleCounterSection.style.display = 'block';
@@ -1184,6 +1096,7 @@ function updateProgressMeter(){
     return;
   }
   
+  // 計画数が設定されている場合：進捗メーター表示
   $simpleCounterSection.style.display = 'none';
   $progressSection.style.display = 'block';
   $progressCurrent.textContent = String(goodCount || 0);
@@ -1195,6 +1108,7 @@ function updateProgressMeter(){
   $progressBar.style.width = percent + '%';
   $progressPercent.textContent = actualPercent + '%';
   
+  // 状態に応じてスタイル変更
   $progressBar.classList.remove('normal', 'complete', 'over100');
   $progressStatus.classList.remove('normal', 'complete', 'over');
   
@@ -1256,16 +1170,19 @@ function statusKeyFromText(text){
 function renderProdStatus(){
   const key = statusKeyFromText(prodStatus);
   
+  // ステータスバッジを更新
   if($prodStatusBadge){
     $prodStatusBadge.textContent = prodStatus;
     $prodStatusBadge.className = `prodStatusBadge status--${key}`;
   }
   
+  // 背景色を更新
   document.body.classList.remove(
     "bg-NOT_STARTED","bg-RUNNING","bg-TRY","bg-ABNORMAL_STOP","bg-PLAN_STOP","bg-MATERIAL_CHANGE","bg-SETUP_CHANGE"
   );
   document.body.classList.add(`bg-${key}`);
   
+  // 状態ボタンのアクティブ状態を更新
   const setActive = (btn, on)=>btn.classList.toggle("active", !!on);
   setActive($btnBackRunning, prodStatus === PROD_STATUS.RUNNING);
   setActive($btnTry, prodStatus === PROD_STATUS.TRY);
@@ -1343,7 +1260,6 @@ $btnMaterialChange.addEventListener("click", ()=>setProdStatus(PROD_STATUS.MATER
 
 /* ========== 起動時復元 ========== */
 async function applyRestoredState(state){
-  checkAndResetAt8IfNeeded();
   const restoredProdText = state && state.stateText ? String(state.stateText) : null;
   const restoredBase = state && state.product ? String(state.product) : null;
   const restoredLock = state && state.lockState ? String(state.lockState) : "UNLOCK";
@@ -1450,106 +1366,42 @@ $bushoSelect.addEventListener("change", ()=>{
   $bushoBadge.textContent = bushoName || "未設定";
 });
 
-/* ========== 改善版QRスキャナ入力 ========== */
+/* ========== スキャナ入力 ========== */
 let buffer = "";
 let idleTimer = null;
-const IDLE_MS = 250;  // 120→250msに延長（スキャナー速度に対応）
-
-function clearBuffer(){
-  buffer = "";
-  if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-  updateDebugLog(`🧹 バッファクリア`);
-}
+const IDLE_MS = 120;
 
 function flushBuffer(){
   if(!buffer) return;
-  
-  updateDebugLog(`📦 バッファ内容: "${buffer}" (長さ:${buffer.length})`);
-  
   const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
-  clearBuffer();
-  
-  if(qr){
-    updateDebugLog(`✅ 処理開始: "${qr}" (長さ:${qr.length})`);
-    processQR(qr);
-  }else{
-    updateDebugLog(`⚠️ 空データのためスキップ`);
-  }
+  buffer = "";
+  if(qr) processQR(qr);
 }
 
-// モーダルが開いているかチェック
-function isModalOpen(){
-  return $planModal.classList.contains('show');
-}
-
-// フォーカスを維持（スマホ対応）
-function ensureFocus(){
-  if(isModalOpen()) return; // モーダル中は無視
-  const $input = document.getElementById("scanInput");
-  if(document.activeElement !== $input){
-    $input.focus();
-    updateDebugLog(`🎯 フォーカス復帰`);
-  }
-}
-
-// キーボードイベント（モーダル開いてない時のみ）
 document.addEventListener("keydown", (e)=>{
-  // モーダル開いている時は無視
-  if(isModalOpen()){
-    updateDebugLog(`🚫 モーダル中のため入力無視`);
-    return;
-  }
-  
   e.preventDefault();
   const k = e.key;
-  
-  if(k==="Enter" || k==="Tab"){ 
-    updateDebugLog(`⏎ Enter/Tab検出 → flush`);
-    flushBuffer(); 
-    return; 
-  }
-  
+  if(k==="Enter" || k==="Tab"){ flushBuffer(); return; }
   if(k.length===1){
     buffer += k;
-    updateDebugLog(`📝 文字追加: "${k}" → バッファ長:${buffer.length}`);
     if(idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(()=>{
-      updateDebugLog(`⏱️ タイムアウト(${IDLE_MS}ms) → flush`);
-      flushBuffer();
-    }, IDLE_MS);
+    idleTimer = setTimeout(()=>flushBuffer(), IDLE_MS);
   }else if(k==="Backspace"){
     buffer = buffer.slice(0,-1);
-    updateDebugLog(`⌫ Backspace → バッファ長:${buffer.length}`);
   }
 },{ passive:false });
 
-// フォーカス維持（スマホでボタンタップ後など）
-setInterval(()=>{
-  if(!isModalOpen()) ensureFocus();
-}, 1000);
-
-// 初回フォーカス
-window.addEventListener("load", ()=>{
-  setTimeout(ensureFocus, 500);
-});
-
 /* ========== 照合処理 ========== */
 async function processQR(qrRaw){
-  checkAndResetAt8IfNeeded();
-  
-  updateDebugLog(`🔍 QR処理: "${qrRaw}" (長さ:${String(qrRaw).length})`);
-  
   if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
-    clearBuffer();
-    const msg = `QR長さ不足: ${String(qrRaw||"").length} < ${MIN_QR_LENGTH}`;
-    updateDebugLog(`❌ ${msg}`);
+    buffer = "";
+    if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     logRow([nowString(), String(qrRaw||""), "-", "QR_TOO_SHORT", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
     return;
   }
   
   const now = nowString();
   const sliced = cutQR(qrRaw);
-  updateDebugLog(`✂️ 切り出し: "${qrRaw}" → "${sliced}"`);
   
   if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
     setProdStatus(PROD_STATUS.RUNNING, "FORCE_RUNNING_BY_SCAN");
@@ -1558,13 +1410,11 @@ async function processQR(qrRaw){
   if(!baseQR){
     baseQR = sliced;
     updateBaseDisplay(baseQR);
-    updateDebugLog(`🎯 基準QR設定: "${baseQR}"`);
     
     try{
       if(window.__getQtyBySeiriNo){
         const q = await window.__getQtyBySeiriNo(baseQR);
         qtyPerKanban = (typeof q === 'number' && isFinite(q) && q > 0) ? q : null;
-        updateDebugLog(`📦 かんばん数: ${qtyPerKanban}`);
       }else{
         qtyPerKanban = null;
       }
@@ -1603,7 +1453,6 @@ async function processQR(qrRaw){
     if(qrRaw===ADMIN_QR){
       setLock(false); 
       showOK();
-      updateDebugLog(`🔓 管理者QRで解除`);
       logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
       
       if(lineName && typeof window.__writeLineStatus === "function"){
@@ -1619,7 +1468,6 @@ async function processQR(qrRaw){
       }
     }else{
       showNGPersistent();
-      updateDebugLog(`🔒 ロック中のNG拒否`);
       logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
     }
     return;
@@ -1633,14 +1481,12 @@ async function processQR(qrRaw){
     const q = (qtyPerKanban==null? 0 : qtyPerKanban);
     deltaGood = (typeof q === "number" && isFinite(q) && q > 0) ? q : 0;
     goodCount += deltaGood;
-    updateDebugLog(`✅ OK判定: +${deltaGood} → 合計:${goodCount}`);
     updateCountersUI();
     persistLineStatus("SCAN_OK");
     logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName, bushoName, prodStatus], {good:deltaGood});
   }else{
     showNGPersistent();
     setLock(true);
-    updateDebugLog(`❌ NG判定: "${sliced}" ≠ "${baseQR}" → ロック`);
     updateCountersUI();
     persistLineStatus("SCAN_NG");
     logRow([now, qrRaw, sliced, "NG", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
@@ -1681,7 +1527,6 @@ $resetBtn.addEventListener("click", ()=>{
   $imgHint.style.display="block";
   $imgHint.textContent="基準QRを読み込むと、整理Noで画像マスタを検索して表示します。";
   logRow([nowString(), "-", "-", "RESET", "UNLOCK", "", lineName, bushoName, prodStatus]);
-  updateDebugLog(`🔄 リセット完了`);
 });
 
 $deleteLastBtn.addEventListener("click", async ()=>{
@@ -1707,8 +1552,8 @@ $deleteLastBtn.addEventListener("click", async ()=>{
   updateCountersUI();
   persistLineStatus("DELETE_LAST");
   alert("直前ログを削除しました（カウンタも巻き戻しました）。");
-  updateDebugLog(`🗑️ 直前ログ削除: -${delta.good}`);
   
+  // メニューを閉じる
   document.getElementById('subBtns').classList.remove('show');
   document.getElementById('mainFloatBtn').classList.remove('open');
   document.getElementById('mainBtnIcon').textContent = '☰';
@@ -1716,6 +1561,7 @@ $deleteLastBtn.addEventListener("click", async ()=>{
 
 $saveBtn.addEventListener("click", ()=>{
   downloadCSV(logData);
+  // メニューを閉じる
   document.getElementById('subBtns').classList.remove('show');
   document.getElementById('mainFloatBtn').classList.remove('open');
   document.getElementById('mainBtnIcon').textContent = '☰';
@@ -1776,6 +1622,7 @@ $planBtn.addEventListener('click', ()=>{
   $planInput.value = String(planQuantity || 0);
   $planModal.classList.add('show');
   
+  // メニューを閉じる
   document.getElementById('subBtns').classList.remove('show');
   document.getElementById('mainFloatBtn').classList.remove('open');
   document.getElementById('mainBtnIcon').textContent = '☰';
@@ -1785,6 +1632,7 @@ $planModalClose.addEventListener('click', ()=>{
   $planModal.classList.remove('show');
 });
 
+// モーダル背景クリックで閉じる
 $planModal.addEventListener('click', (e)=>{
   if(e.target === $planModal){
     $planModal.classList.remove('show');
@@ -1811,6 +1659,7 @@ document.querySelectorAll('.numpadBtn').forEach(btn=>{
       if(current === '0'){
         $planInput.value = num;
       }else{
+        // 最大8桁まで
         if(current.length < 8){
           $planInput.value = current + num;
         }
@@ -1834,7 +1683,6 @@ $planSaveBtn.addEventListener('click', ()=>{
   
   $planModal.classList.remove('show');
   alert(`計画数を ${planQuantity} 個に設定しました。`);
-  updateDebugLog(`📋 計画数設定: ${planQuantity}個`);
 });
 </script>
 
