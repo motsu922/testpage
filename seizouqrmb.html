@@ -804,12 +804,15 @@
 
 <script>
 /* ================== 設定 ================== */
-const CUT_START = 2;
-const CUT_LENGTH = 5;
-const MIN_QR_LENGTH = 33;
+const CUT_START = 2;           // 互換用（最後のフォールバックでのみ使用）
+const CUT_LENGTH = 5;          // 互換用（最後のフォールバックでのみ使用）
+const MIN_QR_LENGTH = 33;      // 旧ルール（ただし抽出方式変更後は実質緩めても良い）
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
+
+/* ★ 任意：短いゴミ（& や ' 等）を確実に捨てる最低長（抽出前） */
+const MIN_RAW_FOR_PARSE = 6;
 
 /* ================== 状態 ================== */
 let baseQR = null;
@@ -876,7 +879,52 @@ function nowString(){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
-function cutQR(qr){ return normalizeSeiriNo(String(qr||"").substr(CUT_START, CUT_LENGTH)); }
+
+/* ====== ★修正ポイント：固定位置CUTを捨て、品番コードを安定抽出 ====== */
+function cutQR(qrRaw){
+  let s = String(qrRaw ?? "");
+
+  // 改行・全角空白を正規化
+  s = s.replace(/[\r\n]/g, " ").replace(/\u3000/g, " ").trim();
+
+  // 末尾の ":" 系などを除去（例: ...1101:）
+  s = s.replace(/[:：]+$/g, "");
+
+  // 先頭のゴミ（& や ' 等）を除去
+  s = s.replace(/^[&'"\s]+/, "").trim();
+
+  // ここから品番コードを抽出
+  const tokens = s.split(/\s+/).filter(Boolean);
+
+  for(const t0 of tokens){
+    const t = String(t0).trim();
+    if(!t) continue;
+
+    // 末尾の & ' " を除去
+    const tt = t.replace(/[&'"]+$/g, "");
+
+    // ハイフン入りは部品番号（例: 432953-1101）なので除外
+    if(tt.includes("-")) continue;
+
+    // 英字+数字（例: SK012 / A009）
+    if(/^[A-Za-z]{1,3}\d{2,5}$/.test(tt)) return tt.toUpperCase();
+
+    // 数字だけ（例: 7583）…長い番号を避けるため 3〜6桁
+    if(/^\d{3,6}$/.test(tt)) return tt;
+  }
+
+  // 文字列全体からの保険
+  const m1 = s.match(/\b([A-Za-z]{1,3}\d{2,5})\b/);
+  if(m1) return m1[1].toUpperCase();
+  const m2 = s.match(/\b(\d{3,6})\b/);
+  if(m2) return m2[1];
+
+  // 最終フォールバック（互換）
+  const compact = normalizeSeiriNo(s);
+  return compact.substr(CUT_START, CUT_LENGTH);
+}
+/* ====== ★ここまで ====== */
+
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
 
 function showOK(){
@@ -1267,7 +1315,7 @@ $bushoSelect.addEventListener("change", ()=>{
 let buffer = "";
 let idleTimer = null;
 
-/* ★ここがIDLE_MS調整ポイント（120→600） */
+/* ★ここがIDLE_MS調整ポイント */
 const IDLE_MS = 600;
 
 function flushBuffer(){
@@ -1312,7 +1360,6 @@ async function processQR(qrRaw){
   if(raw === ADMIN_QR){
     const now = nowString();
 
-    // ロック中なら解除（ロック中でなくてもログは残す）
     if(isLocked){
       setLock(false);
       showOK();
@@ -1329,23 +1376,28 @@ async function processQR(qrRaw){
         }).catch(()=>{});
       }
     }else{
-      // ロックしてない時は「管理者QR読取」をログに残す（挙動は変えない）
       logRow([now, raw, "-", "ADMIN_QR_READ", isLocked?"LOCKED":"UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
       showOK();
     }
     return;
   }
 
-  // 通常QRの短すぎは無視
-  if(!raw || raw.length < MIN_QR_LENGTH){
-    buffer = "";
-    if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  // ★超短いノイズ（& や ' など）は即捨て（ログには残す）
+  if(!raw || raw.trim().length < MIN_RAW_FOR_PARSE){
     logRow([nowString(), raw, "-", "QR_TOO_SHORT", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
     return;
   }
 
+  // ★従来のMIN_QR_LENGTH制限は「分割送信」だと誤判定しやすいので緩和:
+  //    ただし “抽出できない” 場合は IGNORE することで誤ロックを防ぐ
   const now = nowString();
   const sliced = cutQR(raw);
+
+  // ★抽出できない（空/明らかに変）なら無視（ここが肝）
+  if(!sliced || String(sliced).trim().length < 3){
+    logRow([now, raw, "-", "CANNOT_EXTRACT_CODE", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
+    return;
+  }
 
   if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
     setProdStatus(PROD_STATUS.RUNNING, "FORCE_RUNNING_BY_SCAN");
