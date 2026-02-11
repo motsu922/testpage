@@ -619,6 +619,7 @@
   body.bg-MATERIAL_CHANGE{ background:#d8b4fe; }
   body.bg-SETUP_CHANGE{ background:#fde047; }
 
+  /* ★スキャナのフォーカス先（見えない） */
   #scanInput{
     position:absolute;
     left:-9999px;
@@ -641,7 +642,7 @@
   </div>
 </header>
 
-<input id="scanInput" type="text" readonly inputmode="none"
+<input id="scanInput" type="text" inputmode="none"
   autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-hidden="true" />
 
 <main>
@@ -806,13 +807,18 @@
 /* ================== 設定 ================== */
 const CUT_START = 2;           // 互換用（最後のフォールバックでのみ使用）
 const CUT_LENGTH = 5;          // 互換用（最後のフォールバックでのみ使用）
-const MIN_QR_LENGTH = 33;      // 旧ルール（ただし抽出方式変更後は実質緩めても良い）
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
 
-/* ★ 任意：短いゴミ（& や ' 等）を確実に捨てる最低長（抽出前） */
+/* ★短いゴミ（& や ' 等）を確実に捨てる最低長（抽出前） */
 const MIN_RAW_FOR_PARSE = 6;
+
+/* ★スキャナが末尾に付ける終端（ログで & が見えているので採用） */
+const END_CHAR = "&";
+
+/* ★ここがIDLE_MS調整ポイント（終端が来ない機種の保険） */
+const IDLE_MS = 600;
 
 /* ================== 状態 ================== */
 let baseQR = null;
@@ -873,6 +879,20 @@ const $progressPercent = document.getElementById("progressPercent");
 const $progressStatus = document.getElementById("progressStatus");
 const $prodStatusBadge = document.getElementById("prodStatusBadge");
 
+const $scanInput = document.getElementById("scanInput");
+
+/* ================== 画面にエラー表示（動かない原因の見える化） ================== */
+window.addEventListener("error", (e)=>{
+  console.error("JS ERROR:", e.error || e.message);
+  const el = document.getElementById("firebaseStatus");
+  if(el) el.textContent = "JSエラー: " + (e.message || "unknown");
+});
+window.addEventListener("unhandledrejection", (e)=>{
+  console.error("PROMISE ERROR:", e.reason);
+  const el = document.getElementById("firebaseStatus");
+  if(el) el.textContent = "Promiseエラー: " + (e.reason?.message || e.reason || "unknown");
+});
+
 /* ================== Utils ================== */
 function nowString(){
   const d=new Date(); const pad=n=>String(n).padStart(2,"0");
@@ -880,7 +900,7 @@ function nowString(){
 }
 function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
 
-/* ====== ★修正ポイント：固定位置CUTを捨て、品番コードを安定抽出 ====== */
+/* ====== ★固定位置CUTを捨て、品番コードを安定抽出 ====== */
 function cutQR(qrRaw){
   let s = String(qrRaw ?? "");
 
@@ -895,7 +915,7 @@ function cutQR(qrRaw){
 
   const tokens = s.split(/\s+/).filter(Boolean);
 
-  // ① まず英字+数字（SK012 / A009 など）を最優先で探す
+  // ① 英字+数字（SK012 / A009 など）を最優先
   for(const t0 of tokens){
     const tt = String(t0).trim().replace(/[&'"]+$/g, "");
     if(!tt) continue;
@@ -908,27 +928,29 @@ function cutQR(qrRaw){
     }
   }
 
-  // ② 次に「数字だけ」を探す（※3桁や先頭0は誤検出が多いので禁止）
+  // ② 次に「数字だけ」（4〜6桁、先頭0は禁止）
   for(const t0 of tokens){
     const tt = String(t0).trim().replace(/[&'"]+$/g, "");
     if(!tt) continue;
 
-    // 数字だけは 4〜6桁、かつ先頭0は禁止（012/00072 を弾く）
     if(/^\d{4,6}$/.test(tt) && !/^0/.test(tt)){
       return tt;
     }
   }
 
-  // ③ 文字列全体からの保険（英字+数字 → 数字だけの順）
+  // ③ 保険（全文検索）
   const m1 = s.match(/\b([A-Za-z]{1,3}\d{2,6})\b/);
   if(m1) return m1[1].toUpperCase();
 
   const m2 = s.match(/\b(\d{4,6})\b/);
   if(m2 && !/^0/.test(m2[1])) return m2[1];
 
+  // ④ 最後の最後の互換（旧CUT）
+  const legacy = normalizeSeiriNo(String(qrRaw||"").substr(CUT_START, CUT_LENGTH));
+  if(/^[A-Za-z]{1,3}\d{2,6}$/.test(legacy)) return legacy.toUpperCase();
+
   return "";
 }
-
 /* ====== ★ここまで ====== */
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
@@ -972,6 +994,25 @@ function setLock(state){
   $resetBtn.disabled = state;
   if(!state) clearMarks();
 }
+
+/* ================== スキャナフォーカス維持（超重要） ================== */
+function focusScan(){
+  try{
+    if(!$scanInput) return;
+    $scanInput.focus({preventScroll:true});
+  }catch(e){
+    try{ $scanInput && $scanInput.focus(); }catch(_){}
+  }
+}
+window.addEventListener("load", ()=>{
+  focusScan();
+  setInterval(focusScan, 1500); // iOS/一部端末のフォーカス落ち対策
+});
+document.addEventListener("touchstart", focusScan, {passive:true});
+document.addEventListener("mousedown", focusScan);
+document.addEventListener("visibilitychange", ()=>{
+  if(!document.hidden) focusScan();
+});
 
 /* 緊急解除（長押し） */
 (function initEmergencyUnlock(){
@@ -1317,59 +1358,103 @@ $bushoSelect.addEventListener("change", ()=>{
   $bushoBadge.textContent = bushoName || "未設定";
 });
 
-/* ================== スキャナ入力 ================== */
+/* ================== スキャナ入力（分割対策：&終端＋IDLE保険） ================== */
 let buffer = "";
 let idleTimer = null;
 
-/* ★ここがIDLE_MS調整ポイント */
-const IDLE_MS = 600;
-
-function flushBuffer(){
-  if(!buffer) return;
-
-  // 改行/CR混在対策：最後の非空行だけ使う
-  const qr = buffer
-    .replace(/\r/g,"")
-    .split("\n")
-    .map(s=>s.trim())
-    .filter(Boolean)
-    .slice(-1)[0] || "";
-
-  buffer = "";
-  if(qr) processQR(qr);
+function resetIdle(){
+  if(idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(()=>flushBuffer("IDLE_FLUSH"), IDLE_MS);
 }
 
-document.addEventListener("keydown", (e)=>{
-  e.preventDefault();
+function sanitizeScanChunk(s){
+  return String(s||"").replace(/\r/g,"").replace(/\n/g,"");
+}
+
+/**
+ * ★重要:
+ * 1) バッファ中に & が来たら「1件確定」
+ * 2) もし複数件がまとめて入っても & で分割して順に処理
+ * 3) 先頭が & や短いゴミは捨てる
+ */
+function flushBuffer(reason="FLUSH"){
+  const rawBuf = buffer;
+  buffer = "";
+  if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+
+  const s = sanitizeScanChunk(rawBuf);
+  if(!s) return;
+
+  // & で分割。末尾に & があると最後が空になるので filter(Boolean)
+  const parts = s.split(END_CHAR).map(x=>x.trim()).filter(Boolean);
+
+  // 終端なしで来た場合も、最後の1件として処理（partsが空なら全体を使う）
+  const candidates = parts.length ? parts : [s.trim()];
+
+  for(const c of candidates){
+    // “&”単体など短いノイズは捨てる
+    if(!c || c.length < MIN_RAW_FOR_PARSE){
+      logRow([nowString(), c, "-", "QR_TOO_SHORT", "IGNORE", `reason:${reason}`, lineName, bushoName, prodStatus], {good:0});
+      continue;
+    }
+    processQR(c, reason).catch(err=>{
+      console.error("processQR error:", err);
+      logRow([nowString(), c, "-", "PROCESS_ERROR", "IGNORE", String(err?.message||err), lineName, bushoName, prodStatus], {good:0});
+    });
+  }
+}
+
+function onScanKeydown(e){
   const k = e.key;
 
-  // Enter/Tabで即確定
+  // Enter/Tabは確定
   if(k==="Enter" || k==="Tab"){
-    flushBuffer();
+    e.preventDefault();
+    flushBuffer(k);
     return;
   }
 
-  if(k.length===1){
+  // printable
+  if(k && k.length===1){
+    e.preventDefault();
     buffer += k;
-    if(idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(()=>flushBuffer(), IDLE_MS);
-  }else if(k==="Backspace"){
-    buffer = buffer.slice(0,-1);
+
+    // ★終端 & を見たら即確定
+    if(k === END_CHAR){
+      flushBuffer("END_CHAR");
+      return;
+    }
+
+    resetIdle();
+    return;
   }
-},{ passive:false });
+
+  if(k==="Backspace"){
+    e.preventDefault();
+    buffer = buffer.slice(0,-1);
+    resetIdle();
+  }
+}
+
+// ★スキャナはフォーカス先に入ることが多いので input で受ける
+if($scanInput){
+  $scanInput.addEventListener("keydown", onScanKeydown, {passive:false});
+}
+// ★保険：documentでも受ける（端末差対策）
+document.addEventListener("keydown", onScanKeydown, {passive:false});
 
 /* ================== 照合処理 ================== */
-async function processQR(qrRaw){
+async function processQR(qrRaw, source="SCAN"){
   const raw = String(qrRaw || "");
 
-  // ★管理者QRだけは短くても通す（短すぎ判定より先に）
+  // 管理者QRは短くても通す
   if(raw === ADMIN_QR){
     const now = nowString();
 
     if(isLocked){
       setLock(false);
       showOK();
-      logRow([now, raw, "-", "UNLOCK_BY_ADMIN", "UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
+      logRow([now, raw, "-", "UNLOCK_BY_ADMIN", "UNLOCK", `src:${source}`, lineName, bushoName, prodStatus], {good:0});
       if(lineName && typeof window.__writeLineStatus === "function"){
         window.__writeLineStatus(lineName, {
           state: statusKeyFromText(prodStatus),
@@ -1382,37 +1467,32 @@ async function processQR(qrRaw){
         }).catch(()=>{});
       }
     }else{
-      logRow([now, raw, "-", "ADMIN_QR_READ", isLocked?"LOCKED":"UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
+      logRow([now, raw, "-", "ADMIN_QR_READ", isLocked?"LOCKED":"UNLOCK", `src:${source}`, lineName, bushoName, prodStatus], {good:0});
       showOK();
     }
     return;
   }
 
-  // ★超短いノイズ（& や ' など）は即捨て（ログには残す）
+  // 超短いノイズは捨てる
   if(!raw || raw.trim().length < MIN_RAW_FOR_PARSE){
-    logRow([nowString(), raw, "-", "QR_TOO_SHORT", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
+    logRow([nowString(), raw, "-", "QR_TOO_SHORT", "IGNORE", `src:${source}`, lineName, bushoName, prodStatus], {good:0});
     return;
   }
 
-  // ★従来のMIN_QR_LENGTH制限は「分割送信」だと誤判定しやすいので緩和:
-  //    ただし “抽出できない” 場合は IGNORE することで誤ロックを防ぐ
   const now = nowString();
-const sliced = cutQR(raw);
+  const sliced = cutQR(raw);
+  const slicedStr = String(sliced || "").trim();
 
-// ★抽出できない or 危険な候補はロックさせない（誤ロック防止）
-const slicedStr = String(sliced || "").trim();
+  // 抽出できない/怪しい場合はロックさせない
+  const suspicious =
+    !slicedStr ||
+    slicedStr.length < 3 ||
+    (/^\d+$/.test(slicedStr) && (slicedStr.length < 4 || /^0/.test(slicedStr)));
 
-// 例) "012" や "00072" みたいなものは cutQR で基本出ないが、念のためガード
-const suspicious =
-  !slicedStr ||
-  slicedStr.length < 3 ||
-  (/^\d+$/.test(slicedStr) && (slicedStr.length < 4 || /^0/.test(slicedStr)));
-
-if(suspicious){
-  logRow([now, raw, "-", "CANNOT_EXTRACT_CODE", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
-  return;
-}
-
+  if(suspicious){
+    logRow([now, raw, "-", "CANNOT_EXTRACT_CODE", "IGNORE", `src:${source}`, lineName, bushoName, prodStatus], {good:0});
+    return;
+  }
 
   if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
     setProdStatus(PROD_STATUS.RUNNING, "FORCE_RUNNING_BY_SCAN");
@@ -1420,7 +1500,7 @@ if(suspicious){
 
   // 基準QRセット
   if(!baseQR){
-    baseQR = sliced;
+    baseQR = slicedStr;
     updateBaseDisplay(baseQR);
 
     try{
@@ -1445,7 +1525,7 @@ if(suspicious){
         const master = await window.__getMasterBySeiriNo(baseQR);
         if(master && master.downloadUrl){
           showImage(master.downloadUrl);
-          imageInfo = `storage:${master.imagePath}`;
+          imageInfo = `storage:${master.imagePath || ""}`;
         }else{
           showNoImage(`画像マスタ未登録：<b>${esc(baseQR)}</b>`);
         }
@@ -1457,19 +1537,19 @@ if(suspicious){
       showNoImage("画像マスタ検索エラー");
     }
 
-    logRow([now, raw, sliced, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imageInfo, lineName, bushoName, prodStatus], {good:0});
+    logRow([now, raw, baseQR, "SET_BASE", isLocked?"LOCKED":"UNLOCK", imageInfo || `src:${source}`, lineName, bushoName, prodStatus], {good:0});
     return;
   }
 
   // ロック中（管理者QRは上で処理済み）
   if(isLocked){
     showNGPersistent();
-    logRow([now, raw, sliced, "LOCK_REJECT", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
+    logRow([now, raw, slicedStr, "LOCK_REJECT", "LOCKED", `src:${source}`, lineName, bushoName, prodStatus], {good:0});
     return;
   }
 
   // 通常判定
-  const judgedOK = (sliced === baseQR);
+  const judgedOK = (slicedStr === baseQR);
   let deltaGood = 0;
 
   if(judgedOK){
@@ -1479,13 +1559,13 @@ if(suspicious){
     goodCount += deltaGood;
     updateCountersUI();
     persistLineStatus("SCAN_OK");
-    logRow([now, raw, sliced, "OK", "UNLOCK", "", lineName, bushoName, prodStatus], {good:deltaGood});
+    logRow([now, raw, slicedStr, "OK", "UNLOCK", `src:${source}`, lineName, bushoName, prodStatus], {good:deltaGood});
   }else{
     showNGPersistent();
     setLock(true);
     updateCountersUI();
     persistLineStatus("SCAN_NG");
-    logRow([now, raw, sliced, "NG", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
+    logRow([now, raw, slicedStr, "NG", "LOCKED", `base:${baseQR}`, lineName, bushoName, prodStatus], {good:0});
 
     if(lineName && typeof window.__writeLineStatus === "function"){
       window.__writeLineStatus(lineName, {
