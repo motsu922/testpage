@@ -893,36 +893,42 @@ function cutQR(qrRaw){
   // 先頭のゴミ（& や ' 等）を除去
   s = s.replace(/^[&'"\s]+/, "").trim();
 
-  // ここから品番コードを抽出
   const tokens = s.split(/\s+/).filter(Boolean);
 
+  // ① まず英字+数字（SK012 / A009 など）を最優先で探す
   for(const t0 of tokens){
-    const t = String(t0).trim();
-    if(!t) continue;
+    const tt = String(t0).trim().replace(/[&'"]+$/g, "");
+    if(!tt) continue;
 
-    // 末尾の & ' " を除去
-    const tt = t.replace(/[&'"]+$/g, "");
-
-    // ハイフン入りは部品番号（例: 432953-1101）なので除外
+    // 432953-1101 みたいな部品番号は除外
     if(tt.includes("-")) continue;
 
-    // 英字+数字（例: SK012 / A009）
-    if(/^[A-Za-z]{1,3}\d{2,5}$/.test(tt)) return tt.toUpperCase();
-
-    // 数字だけ（例: 7583）…長い番号を避けるため 3〜6桁
-    if(/^\d{3,6}$/.test(tt)) return tt;
+    if(/^[A-Za-z]{1,3}\d{2,6}$/.test(tt)){
+      return tt.toUpperCase();
+    }
   }
 
-  // 文字列全体からの保険
-  const m1 = s.match(/\b([A-Za-z]{1,3}\d{2,5})\b/);
-  if(m1) return m1[1].toUpperCase();
-  const m2 = s.match(/\b(\d{3,6})\b/);
-  if(m2) return m2[1];
+  // ② 次に「数字だけ」を探す（※3桁や先頭0は誤検出が多いので禁止）
+  for(const t0 of tokens){
+    const tt = String(t0).trim().replace(/[&'"]+$/g, "");
+    if(!tt) continue;
 
-  // 最終フォールバック（互換）
-  const compact = normalizeSeiriNo(s);
-  return compact.substr(CUT_START, CUT_LENGTH);
+    // 数字だけは 4〜6桁、かつ先頭0は禁止（012/00072 を弾く）
+    if(/^\d{4,6}$/.test(tt) && !/^0/.test(tt)){
+      return tt;
+    }
+  }
+
+  // ③ 文字列全体からの保険（英字+数字 → 数字だけの順）
+  const m1 = s.match(/\b([A-Za-z]{1,3}\d{2,6})\b/);
+  if(m1) return m1[1].toUpperCase();
+
+  const m2 = s.match(/\b(\d{4,6})\b/);
+  if(m2 && !/^0/.test(m2[1])) return m2[1];
+
+  return "";
 }
+
 /* ====== ★ここまで ====== */
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
@@ -1391,13 +1397,22 @@ async function processQR(qrRaw){
   // ★従来のMIN_QR_LENGTH制限は「分割送信」だと誤判定しやすいので緩和:
   //    ただし “抽出できない” 場合は IGNORE することで誤ロックを防ぐ
   const now = nowString();
-  const sliced = cutQR(raw);
+const sliced = cutQR(raw);
 
-  // ★抽出できない（空/明らかに変）なら無視（ここが肝）
-  if(!sliced || String(sliced).trim().length < 3){
-    logRow([now, raw, "-", "CANNOT_EXTRACT_CODE", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
-    return;
-  }
+// ★抽出できない or 危険な候補はロックさせない（誤ロック防止）
+const slicedStr = String(sliced || "").trim();
+
+// 例) "012" や "00072" みたいなものは cutQR で基本出ないが、念のためガード
+const suspicious =
+  !slicedStr ||
+  slicedStr.length < 3 ||
+  (/^\d+$/.test(slicedStr) && (slicedStr.length < 4 || /^0/.test(slicedStr)));
+
+if(suspicious){
+  logRow([now, raw, "-", "CANNOT_EXTRACT_CODE", "IGNORE", "", lineName, bushoName, prodStatus], {good:0});
+  return;
+}
+
 
   if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
     setProdStatus(PROD_STATUS.RUNNING, "FORCE_RUNNING_BY_SCAN");
