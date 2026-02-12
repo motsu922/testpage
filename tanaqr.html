@@ -433,11 +433,6 @@ header {
   color: var(--muted) !important;
   line-height: 3;
 }
-.emptyCurrentItem {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--accent-out) !important;
-}
 
 .emptySuccessBanner {
   margin-bottom: 16px;
@@ -909,7 +904,7 @@ const MIN_QR_LENGTH = 6;
 const SHELF_COLLECTION = "shelfInventory";
 
 /* ================== 状態 ================== */
-let currentMode = null;    // 'inbound' | 'outbound' | 'empty'
+let currentMode = null;    // 'inbound' | 'outbound' | 'empty' | 'history' | 'shelfmaster'
 let inboundStep = 1;       // 1=製品待ち / 2=棚番待ち
 let inboundProduct = null; // 切り出し後の品番
 let inboundProductRaw = null;
@@ -941,6 +936,15 @@ function daysAgo(iso){
   return Math.floor(diff / (1000*60*60*24));
 }
 
+/* ================== 入力欄判定（←キー入力できない問題の対策） ================== */
+function isTypingField(el){
+  if(!el) return false;
+  const tag = (el.tagName || "").toUpperCase();
+  if(tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if(el.isContentEditable) return true;
+  return false;
+}
+
 /* トースト */
 let toastTimer = null;
 function showToast(msg, type=''){
@@ -968,18 +972,32 @@ function flushBuffer(){
   if(qr) processQR(qr);
 }
 
-function isModalOpen(){ return false; }
-
 function ensureFocus(){
-  const $input = document.getElementById("scanInput");
-  if(document.activeElement !== $input) $input.focus();
+  const scanEl = document.getElementById("scanInput");
+  const active = document.activeElement;
+
+  // 文字入力中はフォーカスを奪わない
+  if(isTypingField(active) && active !== scanEl) return;
+
+  // outbound / shelfmaster は手入力が多いので、強制フォーカスしない
+  if(currentMode === 'outbound' || currentMode === 'shelfmaster') return;
+
+  if(active !== scanEl) scanEl.focus();
 }
 
+/* ★ここが重要：入力欄でのキー入力を邪魔しない */
 document.addEventListener("keydown", (e)=>{
-  // 出庫検索の入力フィールドにフォーカスがある場合は通す
-  if(document.activeElement === document.getElementById('outboundSearchInput')) return;
+  const active = document.activeElement;
+  const scanEl = document.getElementById("scanInput");
 
+  // 入力欄でタイプしている時は通常入力を優先（スキャナ処理しない）
+  if(isTypingField(active) && active !== scanEl){
+    return; // ← preventDefaultしない
+  }
+
+  // ここからスキャナ入力として扱う
   e.preventDefault();
+
   const k = e.key;
   if(k==="Enter" || k==="Tab" || k==="\n" || k==="\r"){ flushBuffer(); return; }
   if(k.length===1){
@@ -990,6 +1008,14 @@ document.addEventListener("keydown", (e)=>{
     buffer = buffer.slice(0,-1);
   }
 },{ passive:false });
+
+/* 画面タップでscanInputに寄せる（ただし入力欄を触ってるときは奪わない） */
+document.addEventListener('click', ()=>{
+  if(currentMode === 'outbound' || currentMode === 'shelfmaster'){
+    if(isTypingField(document.activeElement)) return;
+    document.getElementById('scanInput').focus();
+  }
+});
 
 setInterval(()=>ensureFocus(), 1000);
 window.addEventListener("load", ()=>setTimeout(ensureFocus, 500));
@@ -1112,6 +1138,9 @@ function resetInbound(){
   document.getElementById('step2Value').textContent = '製品QR読込後...';
   document.getElementById('step2Value').classList.add('placeholder');
   document.getElementById('step2Hint').classList.add('hidden');
+
+  const section = document.getElementById('shelfBtnSection');
+  if(section) section.style.display = 'none';
 }
 
 /* ================== 出庫モード ================== */
@@ -1486,6 +1515,7 @@ function showMode(mode){
   currentMode = mode;
   resetInbound();
   emptyTargetShelf = null;
+
   if(mode === 'shelfmaster'){
     document.getElementById('shelfMasterScreen').classList.add('active');
     loadShelfMasterList();
@@ -1498,6 +1528,8 @@ function showMode(mode){
   }
   if(mode === 'inbound'){
     document.getElementById('inboundScreen').classList.add('active');
+    // 入庫はスキャナ優先でフォーカス
+    setTimeout(()=>document.getElementById('scanInput').focus(), 0);
   }else if(mode === 'outbound'){
     document.getElementById('outboundScreen').classList.add('active');
     loadProductButtons();
@@ -1506,14 +1538,15 @@ function showMode(mode){
     document.getElementById('outboundSearchInput').value = '';
     document.getElementById('searchResults').innerHTML = `<div class="noResult"><div class="noResultIcon">🔍</div>品番を選択または入力してください</div>`;
     document.getElementById('resultCount').textContent = '-';
+    // 出庫は手入力優先（scanInputに寄せない）
   }else if(mode === 'empty'){
     document.getElementById('emptyScreen').classList.add('active');
     document.getElementById('emptySuccess').classList.remove('show');
     document.getElementById('emptyTarget').classList.remove('active');
     document.getElementById('emptyTargetValue').textContent = 'QRをスキャン...';
     document.getElementById('emptyTargetValue').classList.add('placeholder');
-    const eci = document.getElementById('emptyCurrentItem');
-    if(eci) eci.style.display='none';
+    // 空き登録はスキャナ優先でフォーカス
+    setTimeout(()=>document.getElementById('scanInput').focus(), 0);
   }
 }
 
@@ -1551,7 +1584,6 @@ document.getElementById('outboundSearchBtn').addEventListener('click', ()=>{
   const v = document.getElementById('outboundSearchInput').value.trim().toUpperCase();
   if(v) searchProduct(v);
 });
-
 document.getElementById('outboundSearchInput').addEventListener('keydown', (e)=>{
   if(e.key === 'Enter'){
     const v = e.target.value.trim().toUpperCase();
