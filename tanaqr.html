@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -279,25 +280,50 @@ header {
 }
 .searchBtn:active { transform: scale(0.95); }
 
-/* QR読み込みボタン */
-.scanForSearchBtn {
-  width: 100%;
-  padding: 14px;
-  background: var(--surface);
-  border: 2px dashed var(--border);
-  border-radius: 12px;
+/* 品番選択ボタン群 */
+.productBtnSection {
+  margin-bottom: 20px;
+}
+.productBtnLabel {
+  font-size: 11px;
   color: var(--muted);
-  font-size: 14px;
+  letter-spacing: 0.12em;
+  margin-bottom: 10px;
+}
+.productBtnGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.productBtn {
+  padding: 10px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
   cursor: pointer;
-  margin-bottom: 16px;
   transition: all 0.2s;
   -webkit-tap-highlight-color: transparent;
-  letter-spacing: 0.05em;
+  font-family: var(--font);
 }
-.scanForSearchBtn:active { background: var(--surface2); }
-.scanForSearchBtn.scanning {
+.productBtn:active {
+  background: rgba(255,107,53,0.15);
   border-color: var(--accent-out);
   color: var(--accent-out);
+  transform: scale(0.96);
+}
+.productBtn.selected {
+  background: rgba(255,107,53,0.15);
+  border-color: var(--accent-out);
+  color: var(--accent-out);
+}
+.productBtnEmpty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 0;
 }
 
 /* 検索結果 */
@@ -425,23 +451,7 @@ header {
   color: var(--accent-out);
 }
 
-.emptyConfirmBtn {
-  width: 100%;
-  padding: 18px;
-  border: none;
-  border-radius: 14px;
-  background: var(--accent-empty);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  cursor: pointer;
-  transition: all 0.2s;
-  -webkit-tap-highlight-color: transparent;
-  display: none;
-}
-.emptyConfirmBtn.show { display: block; }
-.emptyConfirmBtn:active { transform: scale(0.98); }
+
 
 .emptySuccessBanner {
   margin-bottom: 16px;
@@ -536,6 +546,50 @@ header {
   color: var(--muted);
   margin-top: 2px;
 }
+
+/* 入庫履歴カード */
+.modeCard.history::before { background: var(--accent-blue); }
+.modeCard.history .modeCardLabel { color: var(--accent-blue); }
+
+/* 履歴リスト */
+.historyWrap { padding: 0 16px 16px; }
+.historyItem {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.historyItemIcon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.historyItemInfo { flex: 1; min-width: 0; }
+.historyItemProduct {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--text);
+  letter-spacing: 0.06em;
+}
+.historyItemShelf {
+  font-size: 13px;
+  color: var(--accent-in);
+  margin-top: 2px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.historyItemDate {
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+  text-align: right;
+  line-height: 1.5;
+}
 </style>
 </head>
 <body>
@@ -564,6 +618,11 @@ header {
       <div class="modeCardLabel">出　庫</div>
       <div class="modeCardDesc">品番を入力 → 入庫日が古い順に棚番を表示します</div>
     </div>
+    <div class="modeCard history" id="btnModeHistory">
+      <div class="modeCardIcon">📋</div>
+      <div class="modeCardLabel">入庫履歴</div>
+      <div class="modeCardDesc">直近の入庫・空き登録の履歴を一覧表示します</div>
+    </div>
     <div class="modeCard empty" id="btnModeEmpty">
       <div class="modeCardIcon">🗑</div>
       <div class="modeCardLabel">空き登録</div>
@@ -579,7 +638,7 @@ header {
 
   <div class="successBanner" id="inboundSuccess">
     <div class="successIcon">✅</div>
-    <div class="successMsg" id="inboundSuccessMsg">入庫完了！</div>
+    <div class="successMsg" id="inboundSuccessMsg">登録完了！</div>
     <div class="successSub">次の製品のQRを読み込んでください</div>
   </div>
 
@@ -616,16 +675,22 @@ header {
   <div class="workTitle" style="color:var(--accent-out)">📤 出庫確認</div>
 
   <div class="searchWrap">
-    <div class="searchLabel">SEARCH › 品番を入力またはQRスキャン</div>
+    <!-- 入庫済み品番ボタン群 -->
+    <div class="productBtnSection">
+      <div class="productBtnLabel">入庫済み品番 › タップで検索</div>
+      <div class="productBtnGrid" id="productBtnGrid">
+        <div class="productBtnEmpty">読み込み中...</div>
+      </div>
+    </div>
+
+    <!-- キー入力 -->
+    <div class="searchLabel">または直接入力</div>
     <div class="searchInputRow">
       <input type="text" id="outboundSearchInput" class="searchInput"
         placeholder="例: SK012" maxlength="10"
         autocomplete="off" autocapitalize="characters" />
       <button class="searchBtn" id="outboundSearchBtn">🔍</button>
     </div>
-    <button class="scanForSearchBtn" id="scanForSearchBtn">
-      📷  QRをスキャンして品番を自動入力
-    </button>
 
     <!-- タブ -->
     <div class="tabRow">
@@ -644,7 +709,7 @@ header {
       <div id="searchResults">
         <div class="noResult">
           <div class="noResultIcon">🔍</div>
-          品番を入力して検索してください
+          品番を選択または入力してください
         </div>
       </div>
     </div>
@@ -657,6 +722,17 @@ header {
           読み込み中...
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 入庫履歴画面 ========== -->
+<div id="historyScreen" class="workScreen">
+  <button class="backBtn" id="historyBack">◀ 戻る</button>
+  <div class="workTitle" style="color:var(--accent-blue)">📋 入庫履歴</div>
+  <div class="historyWrap">
+    <div id="historyList">
+      <div class="noResult"><div class="noResultIcon">⏳</div>読み込み中...</div>
     </div>
   </div>
 </div>
@@ -681,12 +757,7 @@ header {
     <div class="emptyTarget" id="emptyTarget">
       <div class="emptyTargetLabel">SHELF › 棚番QRをスキャン</div>
       <div class="emptyTargetValue placeholder" id="emptyTargetValue">QRをスキャン...</div>
-      <div class="emptyCurrentItem" id="emptyCurrentItem" style="display:none;"></div>
     </div>
-
-    <button class="emptyConfirmBtn" id="emptyConfirmBtn">
-      ✓ この棚を空きとして登録する
-    </button>
   </div>
 </div>
 
@@ -705,7 +776,6 @@ let inboundStep = 1;       // 1=製品待ち / 2=棚番待ち
 let inboundProduct = null; // 切り出し後の品番
 let inboundProductRaw = null;
 let emptyTargetShelf = null;
-let scanForSearchMode = false;
 
 /* ================== QR共通 ================== */
 function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
@@ -788,14 +858,19 @@ window.addEventListener("load", ()=>setTimeout(ensureFocus, 500));
 
 /* ================== QR処理（モード別） ================== */
 function processQR(qrRaw){
-  if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH) return; // ゴミデータは静かに無視
+  if(!qrRaw) return;
+
+  const isShelfQR = (currentMode === 'empty') ||
+                    (currentMode === 'inbound' && inboundStep === 2);
+
+  // 棚番QRは長さチェックなし、製品QRのみ最小長チェック
+  if(!isShelfQR && String(qrRaw).length < MIN_QR_LENGTH) return;
 
   const sliced = cutQR(qrRaw);
-  if(!sliced) return;
 
   if(currentMode === 'inbound') processInboundQR(sliced, qrRaw);
-  else if(currentMode === 'outbound' && scanForSearchMode) processOutboundQR(sliced);
-  else if(currentMode === 'empty') processEmptyQR(sliced, qrRaw);
+  // outboundはQRスキャン不使用
+  else if(currentMode === 'empty') processEmptyQR(qrRaw); // 棚番はrawをそのまま使用
 }
 
 /* ================== 入庫モード ================== */
@@ -822,8 +897,8 @@ function processInboundQR(sliced, raw){
     showToast(`品番: ${sliced} を確認`, '');
 
   } else if(inboundStep === 2){
-    // 棚番QR受付
-    const shelfId = sliced;
+    // 棚番QR受付（切り出しなし・rawをそのまま使用）
+    const shelfId = raw;
     saveInbound(inboundProduct, inboundProductRaw, shelfId);
   }
 }
@@ -854,10 +929,14 @@ async function saveInbound(productId, productQRRaw, shelfId){
     document.getElementById('step2Card').className = 'stepCard done';
 
     const banner = document.getElementById('inboundSuccess');
-    document.getElementById('inboundSuccessMsg').textContent = `${productId} → 棚 ${shelfId} に入庫しました`;
+    document.getElementById('inboundSuccessMsg').textContent = `${productId} → 棚 ${shelfId} に登録しました`;
     banner.classList.add('show');
 
     showToast(`✅ ${productId} → 棚 ${shelfId}`, 'ok');
+    // 履歴に記録
+    if(window.__addHistory){
+      window.__addHistory({ type:'inbound', shelfId, productId, productQRRaw, at: now, atMs: Date.now() }).catch(()=>{});
+    }
 
     // 2秒後に次の入庫へリセット
     setTimeout(()=>resetInbound(), 2500);
@@ -891,11 +970,40 @@ function resetInbound(){
 }
 
 /* ================== 出庫モード ================== */
-function processOutboundQR(sliced){
-  scanForSearchMode = false;
-  document.getElementById('scanForSearchBtn').classList.remove('scanning');
-  document.getElementById('outboundSearchInput').value = sliced;
-  searchProduct(sliced);
+/* 品番ボタンを生成（入庫済み品番を取得して表示） */
+async function loadProductButtons(){
+  const grid = document.getElementById('productBtnGrid');
+  grid.innerHTML = '<div class="productBtnEmpty">読み込み中...</div>';
+  try{
+    let items = [];
+    if(window.__getAllShelves) items = await window.__getAllShelves();
+    // occupied な品番だけ抽出・重複除去・ソート
+    const products = [...new Set(
+      items
+        .filter(i=>i.status==='occupied' && i.productId)
+        .map(i=>i.productId)
+    )].sort();
+
+    if(products.length === 0){
+      grid.innerHTML = '<div class="productBtnEmpty">入庫済み品番がありません</div>';
+      return;
+    }
+    grid.innerHTML = products.map(p=>`
+      <button class="productBtn" data-product="${p}">${p}</button>
+    `).join('');
+    grid.querySelectorAll('.productBtn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        // 選択状態の視覚フィードバック
+        grid.querySelectorAll('.productBtn').forEach(b=>b.classList.remove('selected'));
+        btn.classList.add('selected');
+        const id = btn.getAttribute('data-product');
+        document.getElementById('outboundSearchInput').value = id;
+        searchProduct(id);
+      });
+    });
+  }catch(e){
+    grid.innerHTML = '<div class="productBtnEmpty">読み込みエラー</div>';
+  }
 }
 
 async function searchProduct(productId){
@@ -956,40 +1064,19 @@ async function searchProduct(productId){
 }
 
 /* ================== 空き登録モード ================== */
-function processEmptyQR(sliced, raw){
-  emptyTargetShelf = sliced;
-
+async function processEmptyQR(raw){
+  // 棚番QR読み取り → 即時空き登録（確認不要）
   const target = document.getElementById('emptyTarget');
   target.classList.add('active');
-  document.getElementById('emptyTargetValue').textContent = sliced;
+  document.getElementById('emptyTargetValue').textContent = raw;
   document.getElementById('emptyTargetValue').classList.remove('placeholder');
   document.getElementById('emptySuccess').classList.remove('show');
-
-  // 現在の在庫を確認表示
-  if(window.__getShelfItem){
-    window.__getShelfItem(sliced).then(item=>{
-      const el = document.getElementById('emptyCurrentItem');
-      if(item && item.status === 'occupied'){
-        el.style.display = 'block';
-        el.textContent = `現在の在庫: ${item.productId} (${formatDate(item.inboundAt)})`;
-      } else {
-        el.style.display = 'none';
-      }
-    }).catch(()=>{});
-  }
-
-  document.getElementById('emptyConfirmBtn').classList.add('show');
-  showToast(`棚 ${sliced} を検出`, '');
-}
-
-async function registerEmpty(){
-  if(!emptyTargetShelf){ showToast('棚番を読み込んでください', 'error'); return; }
 
   const now = new Date().toISOString();
   try{
     if(window.__saveShelfItem){
-      await window.__saveShelfItem(emptyTargetShelf, {
-        shelfId: emptyTargetShelf,
+      await window.__saveShelfItem(raw, {
+        shelfId: raw,
         productId: null,
         productQRRaw: null,
         inboundAt: null,
@@ -998,20 +1085,23 @@ async function registerEmpty(){
         updatedAt: now
       });
     }
+    // 履歴にも記録
+    if(window.__addHistory){
+      window.__addHistory({ type:'empty', shelfId: raw, productId: null, at: now, atMs: Date.now() }).catch(()=>{});
+    }
 
     const banner = document.getElementById('emptySuccess');
-    document.getElementById('emptySuccessMsg').textContent = `棚 ${emptyTargetShelf} を空きとして登録しました`;
+    document.getElementById('emptySuccessMsg').textContent = `棚 ${raw} を空きとして登録しました`;
     banner.classList.add('show');
-    showToast(`🗑 棚 ${emptyTargetShelf} を空き登録`, 'ok');
-    document.getElementById('emptyConfirmBtn').classList.remove('show');
+    showToast(`🗑 棚 ${raw} を空き登録`, 'ok');
 
-    // リセット
+    // 2秒後にリセット
     setTimeout(()=>{
       emptyTargetShelf = null;
-      document.getElementById('emptyTarget').classList.remove('active');
+      target.classList.remove('active');
       document.getElementById('emptyTargetValue').textContent = 'QRをスキャン...';
       document.getElementById('emptyTargetValue').classList.add('placeholder');
-      document.getElementById('emptyCurrentItem').style.display='none';
+      banner.classList.remove('show');
     }, 2000);
 
   }catch(e){
@@ -1058,23 +1148,30 @@ async function loadAllShelves(){
 /* ================== 画面切替 ================== */
 function showMode(mode){
   document.getElementById('modeScreen').style.display = 'none';
-  ['inboundScreen','outboundScreen','emptyScreen'].forEach(id=>{
+  ['inboundScreen','outboundScreen','emptyScreen','historyScreen'].forEach(id=>{
     document.getElementById(id).classList.remove('active');
   });
   currentMode = mode;
   resetInbound();
   emptyTargetShelf = null;
-  scanForSearchMode = false;
-
+  if(mode === 'history'){
+    document.getElementById('historyScreen').classList.add('active');
+    loadHistory();
+    return;
+  }
   if(mode === 'inbound'){
     document.getElementById('inboundScreen').classList.add('active');
   }else if(mode === 'outbound'){
     document.getElementById('outboundScreen').classList.add('active');
+    loadProductButtons();
     loadAllShelves();
+    // 検索欄・結果をリセット
+    document.getElementById('outboundSearchInput').value = '';
+    document.getElementById('searchResults').innerHTML = `<div class="noResult"><div class="noResultIcon">🔍</div>品番を選択または入力してください</div>`;
+    document.getElementById('resultCount').textContent = '-';
   }else if(mode === 'empty'){
     document.getElementById('emptyScreen').classList.add('active');
     document.getElementById('emptySuccess').classList.remove('show');
-    document.getElementById('emptyConfirmBtn').classList.remove('show');
     document.getElementById('emptyTarget').classList.remove('active');
     document.getElementById('emptyTargetValue').textContent = 'QRをスキャン...';
     document.getElementById('emptyTargetValue').classList.add('placeholder');
@@ -1084,9 +1181,8 @@ function showMode(mode){
 
 function showModeSelect(){
   currentMode = null;
-  scanForSearchMode = false;
   document.getElementById('modeScreen').style.display = 'block';
-  ['inboundScreen','outboundScreen','emptyScreen'].forEach(id=>{
+  ['inboundScreen','outboundScreen','emptyScreen','historyScreen'].forEach(id=>{
     document.getElementById(id).classList.remove('active');
   });
 }
@@ -1094,11 +1190,12 @@ function showModeSelect(){
 /* ================== イベント ================== */
 document.getElementById('btnModeInbound').addEventListener('click', ()=>showMode('inbound'));
 document.getElementById('btnModeOutbound').addEventListener('click', ()=>showMode('outbound'));
+document.getElementById('btnModeHistory').addEventListener('click', ()=>showMode('history'));
 document.getElementById('btnModeEmpty').addEventListener('click', ()=>showMode('empty'));
+document.getElementById('historyBack').addEventListener('click', showModeSelect);
 document.getElementById('inboundBack').addEventListener('click', showModeSelect);
 document.getElementById('outboundBack').addEventListener('click', showModeSelect);
 document.getElementById('emptyBack').addEventListener('click', showModeSelect);
-document.getElementById('emptyConfirmBtn').addEventListener('click', registerEmpty);
 
 document.getElementById('outboundSearchBtn').addEventListener('click', ()=>{
   const v = document.getElementById('outboundSearchInput').value.trim().toUpperCase();
@@ -1112,17 +1209,6 @@ document.getElementById('outboundSearchInput').addEventListener('keydown', (e)=>
   }
 });
 
-document.getElementById('scanForSearchBtn').addEventListener('click', ()=>{
-  scanForSearchMode = !scanForSearchMode;
-  const btn = document.getElementById('scanForSearchBtn');
-  if(scanForSearchMode){
-    btn.textContent = '⏹  スキャン待機中... もう一度タップでキャンセル';
-    btn.classList.add('scanning');
-  }else{
-    btn.textContent = '📷  QRをスキャンして品番を自動入力';
-    btn.classList.remove('scanning');
-  }
-});
 
 // タブ切替
 document.querySelectorAll('.tab').forEach(tab=>{
@@ -1136,6 +1222,40 @@ document.querySelectorAll('.tab').forEach(tab=>{
   });
 });
 
+/* ================== 入庫履歴 ================== */
+async function loadHistory(){
+  const list = document.getElementById('historyList');
+  list.innerHTML = '<div class="noResult"><div class="noResultIcon">⏳</div>読み込み中...</div>';
+  try{
+    let items = [];
+    if(window.__getHistory) items = await window.__getHistory();
+    // 新しい順
+    items.sort((a,b)=>(b.atMs||0)-(a.atMs||0));
+    if(items.length === 0){
+      list.innerHTML = '<div class="noResult"><div class="noResultIcon">📋</div>履歴がありません</div>';
+      return;
+    }
+    list.innerHTML = items.map(item=>{
+      const icon = item.type === 'inbound' ? '📥' : '🗑';
+      const label = item.type === 'inbound'
+        ? `<div class="historyItemProduct">${esc(item.productId||'-')}</div>
+           <div class="historyItemShelf">棚: ${esc(item.shelfId||'-')}</div>`
+        : `<div class="historyItemProduct" style="color:var(--accent-empty)">空き登録</div>
+           <div class="historyItemShelf">棚: ${esc(item.shelfId||'-')}</div>`;
+      const d = item.at ? new Date(item.at) : null;
+      const pad = n=>String(n).padStart(2,'0');
+      const dateStr = d ? `${d.getMonth()+1}/${d.getDate()}<br>${pad(d.getHours())}:${pad(d.getMinutes())}` : '-';
+      return `<div class="historyItem">
+        <div class="historyItemIcon">${icon}</div>
+        <div class="historyItemInfo">${label}</div>
+        <div class="historyItemDate">${dateStr}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    list.innerHTML = '<div class="noResult"><div class="noResultIcon">⚠️</div>読み込みエラー</div>';
+  }
+}
+
 /* ================== esc ================== */
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
 </script>
@@ -1146,7 +1266,7 @@ function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
   import {
     getFirestore, doc, getDoc, setDoc, collection,
-    getDocs, query, where, serverTimestamp
+    getDocs, query, where, serverTimestamp, orderBy, limit, addDoc
   } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -1204,6 +1324,25 @@ function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":
   /* 全棚リスト取得 */
   window.__getAllShelves = async () => {
     const snap = await getDocs(collection(db, COLL));
+    return snap.docs.map(d => d.data());
+  };
+
+  /* 履歴を追加 */
+  window.__addHistory = async (data) => {
+    await addDoc(collection(db, "shelfHistory"), {
+      ...data,
+      createdAt: serverTimestamp()
+    });
+  };
+
+  /* 履歴を取得（直近100件） */
+  window.__getHistory = async () => {
+    const q = query(
+      collection(db, "shelfHistory"),
+      orderBy("atMs", "desc"),
+      limit(100)
+    );
+    const snap = await getDocs(q);
     return snap.docs.map(d => d.data());
   };
 </script>
