@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>棚入出庫管理</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="format-detection" content="telephone=no" />
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #222636;
+  --border: #2e3347;
+  --accent-in: #00d084;
+  --accent-out: #ff6b35;
+  --accent-empty: #7c8db5;
+  --accent-blue: #4f8ef7;
+  --text: #e8ecf5;
+  --muted: #7c8db5;
+  --danger: #ff4d6a;
+  --radius: 16px;
+  --font: 'Courier New', 'Noto Sans JP', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow-x: hidden; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 非表示スキャン入力 */
+#scanInput {
+  position: absolute; left: -9999px; top: -9999px;
+  width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+
+/* ========== ヘッダー ========== */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.headerTitle {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--accent-blue);
+}
+.headerBadge {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* ========== モード選択画面 ========== */
+#modeScreen {
+  display: block;
+}
+.modeTitle {
+  text-align: center;
+  padding: 32px 16px 24px;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.15em;
+}
+.modeCards {
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modeCard {
+  border-radius: 20px;
+  border: 2px solid var(--border);
+  padding: 28px 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  -webkit-tap-highlight-color: transparent;
+}
+.modeCard::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 5px;
+  height: 100%;
+}
+.modeCard.inbound::before { background: var(--accent-in); }
+.modeCard.outbound::before { background: var(--accent-out); }
+.modeCard.empty::before { background: var(--accent-empty); }
+
+.modeCard:active { transform: scale(0.98); }
+.modeCardIcon { font-size: 40px; margin-bottom: 12px; }
+.modeCardLabel {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+.modeCard.inbound .modeCardLabel { color: var(--accent-in); }
+.modeCard.outbound .modeCardLabel { color: var(--accent-out); }
+.modeCard.empty .modeCardLabel { color: var(--accent-empty); }
+.modeCardDesc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ========== 作業画面共通 ========== */
+.workScreen { display: none; }
+.workScreen.active { display: block; }
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.2s;
+}
+.backBtn:active { background: var(--surface2); }
+
+.workTitle {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  padding: 0 16px 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+/* ========== ステップUI（入庫） ========== */
+.stepWrap {
+  padding: 0 16px;
+}
+.stepRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.stepNum {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 900;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.stepNum.active { background: var(--accent-in); color: #000; }
+.stepNum.done { background: var(--surface2); color: var(--accent-in); border: 2px solid var(--accent-in); }
+.stepNum.waiting { background: var(--surface2); color: var(--muted); border: 2px solid var(--border); }
+
+.stepCard {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: all 0.3s;
+}
+.stepCard.active { border-color: var(--accent-in); }
+.stepCard.done { border-color: var(--border); opacity: 0.7; }
+
+.stepLabel {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+.stepValue {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--text);
+  letter-spacing: 0.05em;
+  min-height: 36px;
+}
+.stepValue.placeholder {
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 2.2;
+}
+.stepHint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--accent-in);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stepHint.hidden { display: none; }
+
+/* 入庫完了バナー */
+.successBanner {
+  margin: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(0,208,132,0.15), rgba(0,208,132,0.05));
+  border: 1px solid var(--accent-in);
+  border-radius: var(--radius);
+  text-align: center;
+  display: none;
+}
+.successBanner.show { display: block; }
+.successBanner .successIcon { font-size: 36px; margin-bottom: 8px; }
+.successBanner .successMsg { font-size: 16px; font-weight: 900; color: var(--accent-in); margin-bottom: 4px; }
+.successBanner .successSub { font-size: 12px; color: var(--muted); }
+
+/* ========== 出庫検索 ========== */
+.searchWrap {
+  padding: 0 16px 16px;
+}
+.searchLabel {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+.searchInputRow {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.searchInput {
+  flex: 1;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--text);
+  font-family: var(--font);
+  letter-spacing: 0.1em;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+.searchInput:focus {
+  outline: none;
+  border-color: var(--accent-out);
+}
+.searchBtn {
+  padding: 14px 20px;
+  background: var(--accent-out);
+  border: none;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.searchBtn:active { transform: scale(0.95); }
+
+/* QR読み込みボタン */
+.scanForSearchBtn {
+  width: 100%;
+  padding: 14px;
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: 0.05em;
+}
+.scanForSearchBtn:active { background: var(--surface2); }
+.scanForSearchBtn.scanning {
+  border-color: var(--accent-out);
+  color: var(--accent-out);
+}
+
+/* 検索結果 */
+.resultHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.resultCount {
+  font-size: 12px;
+  color: var(--muted);
+}
+.resultCountNum {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--accent-out);
+}
+
+.shelfCard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.2s;
+}
+.shelfCard:active { background: var(--surface2); }
+.shelfRank {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.shelfRank.first {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #000;
+}
+.shelfInfo { flex: 1; }
+.shelfId {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text);
+  letter-spacing: 0.08em;
+}
+.shelfDate {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.shelfAge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.shelfAge.fresh { background: rgba(79,142,247,0.15); color: var(--accent-blue); }
+.shelfAge.old { background: rgba(255,107,53,0.15); color: var(--accent-out); }
+.shelfAge.oldest { background: rgba(255,77,106,0.15); color: var(--danger); }
+
+.noResult {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.noResultIcon { font-size: 40px; margin-bottom: 12px; }
+
+/* ========== 空き登録 ========== */
+.emptyWrap {
+  padding: 0 16px;
+}
+.emptyHint {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.emptyTarget {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+  text-align: center;
+  margin-bottom: 16px;
+  transition: all 0.3s;
+}
+.emptyTarget.active { border-color: var(--accent-empty); }
+.emptyTargetLabel {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  margin-bottom: 12px;
+}
+.emptyTargetValue {
+  font-size: 48px;
+  font-weight: 900;
+  color: var(--text);
+  letter-spacing: 0.05em;
+  min-height: 60px;
+}
+.emptyTargetValue.placeholder {
+  font-size: 20px;
+  color: var(--muted);
+  line-height: 3;
+}
+.emptyCurrentItem {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--accent-out);
+}
+
+.emptyConfirmBtn {
+  width: 100%;
+  padding: 18px;
+  border: none;
+  border-radius: 14px;
+  background: var(--accent-empty);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  display: none;
+}
+.emptyConfirmBtn.show { display: block; }
+.emptyConfirmBtn:active { transform: scale(0.98); }
+
+.emptySuccessBanner {
+  margin-bottom: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(124,141,181,0.15), rgba(124,141,181,0.05));
+  border: 1px solid var(--accent-empty);
+  border-radius: var(--radius);
+  text-align: center;
+  display: none;
+}
+.emptySuccessBanner.show { display: block; }
+
+/* ========== トースト通知 ========== */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 24px;
+  border-radius: 40px;
+  font-size: 14px;
+  font-weight: 700;
+  z-index: 9999;
+  transition: transform 0.3s ease;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.ok { border-color: var(--accent-in); color: var(--accent-in); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+
+/* ========== 棚一覧タブ（出庫画面） ========== */
+.tabRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.tab {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.2s;
+  letter-spacing: 0.05em;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab.active {
+  background: var(--surface2);
+  border-color: var(--accent-out);
+  color: var(--accent-out);
+}
+
+/* ========== 全棚リスト ========== */
+.allShelvesGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.allShelfRow {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.allShelfId {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--text);
+}
+.allShelfProduct {
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 8px;
+}
+.allShelfProduct.occupied { background: rgba(0,208,132,0.15); color: var(--accent-in); }
+.allShelfProduct.empty { background: rgba(124,141,181,0.1); color: var(--muted); }
+.allShelfMeta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+</style>
+</head>
+<body>
+
+<!-- 非表示スキャン入力 -->
+<input id="scanInput" type="text" readonly inputmode="none"
+  autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-hidden="true" />
+
+<!-- ヘッダー -->
+<header>
+  <div class="headerTitle">📦 棚管理システム</div>
+  <div id="firebaseStatus" class="headerBadge">Firebase: 未接続</div>
+</header>
+
+<!-- ========== モード選択 ========== -->
+<div id="modeScreen">
+  <div class="modeTitle">▸ モードを選択してください</div>
+  <div class="modeCards">
+    <div class="modeCard inbound" id="btnModeInbound">
+      <div class="modeCardIcon">📥</div>
+      <div class="modeCardLabel">入　庫</div>
+      <div class="modeCardDesc">製品QR → 棚番QR を読んで紐づけ登録します</div>
+    </div>
+    <div class="modeCard outbound" id="btnModeOutbound">
+      <div class="modeCardIcon">📤</div>
+      <div class="modeCardLabel">出　庫</div>
+      <div class="modeCardDesc">品番を入力 → 入庫日が古い順に棚番を表示します</div>
+    </div>
+    <div class="modeCard empty" id="btnModeEmpty">
+      <div class="modeCardIcon">🗑</div>
+      <div class="modeCardLabel">空き登録</div>
+      <div class="modeCardDesc">棚番QRを読んで、その棚を空きとして登録します</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 入庫画面 ========== -->
+<div id="inboundScreen" class="workScreen">
+  <button class="backBtn" id="inboundBack">◀ 戻る</button>
+  <div class="workTitle" style="color:var(--accent-in)">📥 入庫登録</div>
+
+  <div class="successBanner" id="inboundSuccess">
+    <div class="successIcon">✅</div>
+    <div class="successMsg" id="inboundSuccessMsg">入庫完了！</div>
+    <div class="successSub">次の製品のQRを読み込んでください</div>
+  </div>
+
+  <div class="stepWrap">
+    <!-- Step1: 製品QR -->
+    <div class="stepRow">
+      <div class="stepNum active" id="step1Num">1</div>
+      <div class="stepCard active" id="step1Card">
+        <div class="stepLabel">STEP 1 › 製品QRを読み込む</div>
+        <div class="stepValue placeholder" id="step1Value">QRをスキャン...</div>
+        <div class="stepHint" id="step1Hint">
+          <span>◉</span><span>スキャナーで製品QRを読み込んでください</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step2: 棚番QR -->
+    <div class="stepRow">
+      <div class="stepNum waiting" id="step2Num">2</div>
+      <div class="stepCard" id="step2Card">
+        <div class="stepLabel">STEP 2 › 棚番QRを読み込む</div>
+        <div class="stepValue placeholder" id="step2Value">製品QR読込後...</div>
+        <div class="stepHint hidden" id="step2Hint">
+          <span>◉</span><span>棚番QRをスキャンしてください</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 出庫画面 ========== -->
+<div id="outboundScreen" class="workScreen">
+  <button class="backBtn" id="outboundBack">◀ 戻る</button>
+  <div class="workTitle" style="color:var(--accent-out)">📤 出庫確認</div>
+
+  <div class="searchWrap">
+    <div class="searchLabel">SEARCH › 品番を入力またはQRスキャン</div>
+    <div class="searchInputRow">
+      <input type="text" id="outboundSearchInput" class="searchInput"
+        placeholder="例: SK012" maxlength="10"
+        autocomplete="off" autocapitalize="characters" />
+      <button class="searchBtn" id="outboundSearchBtn">🔍</button>
+    </div>
+    <button class="scanForSearchBtn" id="scanForSearchBtn">
+      📷  QRをスキャンして品番を自動入力
+    </button>
+
+    <!-- タブ -->
+    <div class="tabRow">
+      <div class="tab active" id="tabSearch" data-tab="search">検索結果</div>
+      <div class="tab" id="tabAll" data-tab="all">全棚リスト</div>
+    </div>
+
+    <!-- 検索結果タブ -->
+    <div id="tabContentSearch">
+      <div class="resultHeader">
+        <div class="resultCount">
+          <span class="resultCountNum" id="resultCount">-</span> 件
+        </div>
+        <div style="font-size:11px;color:var(--muted);">★ 先入先出し順</div>
+      </div>
+      <div id="searchResults">
+        <div class="noResult">
+          <div class="noResultIcon">🔍</div>
+          品番を入力して検索してください
+        </div>
+      </div>
+    </div>
+
+    <!-- 全棚リストタブ -->
+    <div id="tabContentAll" style="display:none;">
+      <div id="allShelvesList">
+        <div class="noResult">
+          <div class="noResultIcon">📦</div>
+          読み込み中...
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 空き登録画面 ========== -->
+<div id="emptyScreen" class="workScreen">
+  <button class="backBtn" id="emptyBack">◀ 戻る</button>
+  <div class="workTitle" style="color:var(--accent-empty)">🗑 空き登録</div>
+
+  <div class="emptyWrap">
+    <div class="emptyHint">
+      空になった棚の棚番QRを読み込むと、その棚を「空き」として登録します。<br>
+      ※ 既存の在庫情報は上書きされます。
+    </div>
+
+    <div class="emptySuccessBanner" id="emptySuccess">
+      <div class="successIcon">🗑</div>
+      <div id="emptySuccessMsg" style="font-weight:900;color:var(--accent-empty);font-size:16px;margin-bottom:4px;"></div>
+      <div style="font-size:12px;color:var(--muted);">空き登録が完了しました</div>
+    </div>
+
+    <div class="emptyTarget" id="emptyTarget">
+      <div class="emptyTargetLabel">SHELF › 棚番QRをスキャン</div>
+      <div class="emptyTargetValue placeholder" id="emptyTargetValue">QRをスキャン...</div>
+      <div class="emptyCurrentItem" id="emptyCurrentItem" style="display:none;"></div>
+    </div>
+
+    <button class="emptyConfirmBtn" id="emptyConfirmBtn">
+      ✓ この棚を空きとして登録する
+    </button>
+  </div>
+</div>
+
+<!-- トースト -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================== 設定 ================== */
+const CUT_LENGTH = 5;
+const MIN_QR_LENGTH = 6;
+const SHELF_COLLECTION = "shelfInventory";
+
+/* ================== 状態 ================== */
+let currentMode = null;    // 'inbound' | 'outbound' | 'empty'
+let inboundStep = 1;       // 1=製品待ち / 2=棚番待ち
+let inboundProduct = null; // 切り出し後の品番
+let inboundProductRaw = null;
+let emptyTargetShelf = null;
+let scanForSearchMode = false;
+
+/* ================== QR共通 ================== */
+function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
+function cutQR(qr){
+  const cleaned = String(qr || "").replace(/^[\s:&;]+/, '');
+  const match = cleaned.match(/^[^\s]+/);
+  if (!match) return '';
+  return match[0].substr(0, CUT_LENGTH);
+}
+
+/* ================== Utils ================== */
+function nowString(){
+  const d=new Date(); const pad=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function formatDate(iso){
+  if(!iso) return "-";
+  const d = new Date(iso);
+  const pad=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function daysAgo(iso){
+  if(!iso) return null;
+  const diff = Date.now() - new Date(iso).getTime();
+  return Math.floor(diff / (1000*60*60*24));
+}
+
+/* トースト */
+let toastTimer = null;
+function showToast(msg, type=''){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.classList.remove('show'); }, 2500);
+}
+
+/* ================== スキャナー入力 ================== */
+let buffer = "";
+let idleTimer = null;
+const IDLE_MS = 150;
+
+function clearBuffer(){
+  buffer = "";
+  if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+}
+
+function flushBuffer(){
+  if(!buffer) return;
+  const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
+  clearBuffer();
+  if(qr) processQR(qr);
+}
+
+function isModalOpen(){ return false; }
+
+function ensureFocus(){
+  const $input = document.getElementById("scanInput");
+  if(document.activeElement !== $input) $input.focus();
+}
+
+document.addEventListener("keydown", (e)=>{
+  // 出庫検索の入力フィールドにフォーカスがある場合は通す
+  if(document.activeElement === document.getElementById('outboundSearchInput')) return;
+
+  e.preventDefault();
+  const k = e.key;
+  if(k==="Enter" || k==="Tab" || k==="\n" || k==="\r"){ flushBuffer(); return; }
+  if(k.length===1){
+    buffer += k;
+    if(idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(()=>flushBuffer(), IDLE_MS);
+  }else if(k==="Backspace"){
+    buffer = buffer.slice(0,-1);
+  }
+},{ passive:false });
+
+setInterval(()=>ensureFocus(), 1000);
+window.addEventListener("load", ()=>setTimeout(ensureFocus, 500));
+
+/* ================== QR処理（モード別） ================== */
+function processQR(qrRaw){
+  if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH) return; // ゴミデータは静かに無視
+
+  const sliced = cutQR(qrRaw);
+  if(!sliced) return;
+
+  if(currentMode === 'inbound') processInboundQR(sliced, qrRaw);
+  else if(currentMode === 'outbound' && scanForSearchMode) processOutboundQR(sliced);
+  else if(currentMode === 'empty') processEmptyQR(sliced, qrRaw);
+}
+
+/* ================== 入庫モード ================== */
+function processInboundQR(sliced, raw){
+  if(inboundStep === 1){
+    // 製品QR受付
+    inboundProduct = sliced;
+    inboundProductRaw = raw;
+    document.getElementById('step1Value').textContent = sliced;
+    document.getElementById('step1Value').classList.remove('placeholder');
+    document.getElementById('step1Hint').classList.add('hidden');
+
+    // Step1完了 → Step2へ
+    document.getElementById('step1Num').className = 'stepNum done';
+    document.getElementById('step1Num').textContent = '✓';
+    document.getElementById('step1Card').className = 'stepCard done';
+    document.getElementById('step2Num').className = 'stepNum active';
+    document.getElementById('step2Card').className = 'stepCard active';
+    document.getElementById('step2Value').textContent = 'QRをスキャン...';
+    document.getElementById('step2Value').classList.add('placeholder');
+    document.getElementById('step2Hint').classList.remove('hidden');
+
+    inboundStep = 2;
+    showToast(`品番: ${sliced} を確認`, '');
+
+  } else if(inboundStep === 2){
+    // 棚番QR受付
+    const shelfId = sliced;
+    saveInbound(inboundProduct, inboundProductRaw, shelfId);
+  }
+}
+
+async function saveInbound(productId, productQRRaw, shelfId){
+  const now = new Date().toISOString();
+  const data = {
+    shelfId,
+    productId,
+    productQRRaw,
+    inboundAt: now,
+    inboundAtMs: Date.now(),
+    status: 'occupied',
+    updatedAt: now
+  };
+
+  try{
+    if(window.__saveShelfItem){
+      await window.__saveShelfItem(shelfId, data);
+    }
+
+    // 成功表示
+    document.getElementById('step2Value').textContent = shelfId;
+    document.getElementById('step2Value').classList.remove('placeholder');
+    document.getElementById('step2Hint').classList.add('hidden');
+    document.getElementById('step2Num').className = 'stepNum done';
+    document.getElementById('step2Num').textContent = '✓';
+    document.getElementById('step2Card').className = 'stepCard done';
+
+    const banner = document.getElementById('inboundSuccess');
+    document.getElementById('inboundSuccessMsg').textContent = `${productId} → 棚 ${shelfId} に入庫しました`;
+    banner.classList.add('show');
+
+    showToast(`✅ ${productId} → 棚 ${shelfId}`, 'ok');
+
+    // 2秒後に次の入庫へリセット
+    setTimeout(()=>resetInbound(), 2500);
+
+  }catch(e){
+    console.error(e);
+    showToast('保存エラーが発生しました', 'error');
+  }
+}
+
+function resetInbound(){
+  inboundStep = 1;
+  inboundProduct = null;
+  inboundProductRaw = null;
+
+  document.getElementById('inboundSuccess').classList.remove('show');
+
+  document.getElementById('step1Num').className = 'stepNum active';
+  document.getElementById('step1Num').textContent = '1';
+  document.getElementById('step1Card').className = 'stepCard active';
+  document.getElementById('step1Value').textContent = 'QRをスキャン...';
+  document.getElementById('step1Value').classList.add('placeholder');
+  document.getElementById('step1Hint').classList.remove('hidden');
+
+  document.getElementById('step2Num').className = 'stepNum waiting';
+  document.getElementById('step2Num').textContent = '2';
+  document.getElementById('step2Card').className = 'stepCard';
+  document.getElementById('step2Value').textContent = '製品QR読込後...';
+  document.getElementById('step2Value').classList.add('placeholder');
+  document.getElementById('step2Hint').classList.add('hidden');
+}
+
+/* ================== 出庫モード ================== */
+function processOutboundQR(sliced){
+  scanForSearchMode = false;
+  document.getElementById('scanForSearchBtn').classList.remove('scanning');
+  document.getElementById('outboundSearchInput').value = sliced;
+  searchProduct(sliced);
+}
+
+async function searchProduct(productId){
+  const id = String(productId||"").trim().toUpperCase();
+  if(!id){ showToast('品番を入力してください', 'error'); return; }
+
+  document.getElementById('searchResults').innerHTML = `
+    <div class="noResult"><div class="noResultIcon">⏳</div>検索中...</div>`;
+  document.getElementById('resultCount').textContent = '-';
+
+  try{
+    let items = [];
+    if(window.__queryShelfByProduct){
+      items = await window.__queryShelfByProduct(id);
+    }
+
+    // 入庫日時でソート（古い順）
+    items.sort((a,b)=> (a.inboundAtMs||0) - (b.inboundAtMs||0));
+
+    document.getElementById('resultCount').textContent = items.length;
+
+    if(items.length === 0){
+      document.getElementById('searchResults').innerHTML = `
+        <div class="noResult">
+          <div class="noResultIcon">❌</div>
+          「${id}」の在庫は見つかりませんでした
+        </div>`;
+      return;
+    }
+
+    const html = items.map((item, i)=>{
+      const days = daysAgo(item.inboundAt);
+      const ageClass = days === null ? 'fresh' : days >= 7 ? 'oldest' : days >= 3 ? 'old' : 'fresh';
+      const ageText = days === null ? '-' : days === 0 ? '今日' : `${days}日前`;
+      return `
+        <div class="shelfCard">
+          <div class="shelfRank ${i===0?'first':''}">
+            ${i===0 ? '⭐' : i+1}
+          </div>
+          <div class="shelfInfo">
+            <div class="shelfId">${esc(item.shelfId)}</div>
+            <div class="shelfDate">入庫: ${formatDate(item.inboundAt)}</div>
+          </div>
+          <div class="shelfAge ${ageClass}">${ageText}</div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('searchResults').innerHTML = html;
+
+  }catch(e){
+    console.error(e);
+    document.getElementById('searchResults').innerHTML = `
+      <div class="noResult">
+        <div class="noResultIcon">⚠️</div>
+        検索エラー: ${e.message}
+      </div>`;
+  }
+}
+
+/* ================== 空き登録モード ================== */
+function processEmptyQR(sliced, raw){
+  emptyTargetShelf = sliced;
+
+  const target = document.getElementById('emptyTarget');
+  target.classList.add('active');
+  document.getElementById('emptyTargetValue').textContent = sliced;
+  document.getElementById('emptyTargetValue').classList.remove('placeholder');
+  document.getElementById('emptySuccess').classList.remove('show');
+
+  // 現在の在庫を確認表示
+  if(window.__getShelfItem){
+    window.__getShelfItem(sliced).then(item=>{
+      const el = document.getElementById('emptyCurrentItem');
+      if(item && item.status === 'occupied'){
+        el.style.display = 'block';
+        el.textContent = `現在の在庫: ${item.productId} (${formatDate(item.inboundAt)})`;
+      } else {
+        el.style.display = 'none';
+      }
+    }).catch(()=>{});
+  }
+
+  document.getElementById('emptyConfirmBtn').classList.add('show');
+  showToast(`棚 ${sliced} を検出`, '');
+}
+
+async function registerEmpty(){
+  if(!emptyTargetShelf){ showToast('棚番を読み込んでください', 'error'); return; }
+
+  const now = new Date().toISOString();
+  try{
+    if(window.__saveShelfItem){
+      await window.__saveShelfItem(emptyTargetShelf, {
+        shelfId: emptyTargetShelf,
+        productId: null,
+        productQRRaw: null,
+        inboundAt: null,
+        inboundAtMs: null,
+        status: 'empty',
+        updatedAt: now
+      });
+    }
+
+    const banner = document.getElementById('emptySuccess');
+    document.getElementById('emptySuccessMsg').textContent = `棚 ${emptyTargetShelf} を空きとして登録しました`;
+    banner.classList.add('show');
+    showToast(`🗑 棚 ${emptyTargetShelf} を空き登録`, 'ok');
+    document.getElementById('emptyConfirmBtn').classList.remove('show');
+
+    // リセット
+    setTimeout(()=>{
+      emptyTargetShelf = null;
+      document.getElementById('emptyTarget').classList.remove('active');
+      document.getElementById('emptyTargetValue').textContent = 'QRをスキャン...';
+      document.getElementById('emptyTargetValue').classList.add('placeholder');
+      document.getElementById('emptyCurrentItem').style.display='none';
+    }, 2000);
+
+  }catch(e){
+    console.error(e);
+    showToast('登録エラー', 'error');
+  }
+}
+
+/* ================== 全棚リスト ================== */
+async function loadAllShelves(){
+  document.getElementById('allShelvesList').innerHTML = `
+    <div class="noResult"><div class="noResultIcon">⏳</div>読み込み中...</div>`;
+  try{
+    let items = [];
+    if(window.__getAllShelves) items = await window.__getAllShelves();
+    items.sort((a,b)=> String(a.shelfId||"").localeCompare(String(b.shelfId||"")));
+
+    if(items.length === 0){
+      document.getElementById('allShelvesList').innerHTML = `
+        <div class="noResult"><div class="noResultIcon">📦</div>登録データなし</div>`;
+      return;
+    }
+
+    const html = `<div class="allShelvesGrid">${items.map(item=>`
+      <div class="allShelfRow">
+        <div>
+          <div class="allShelfId">${esc(item.shelfId)}</div>
+          <div class="allShelfMeta">${item.status==='occupied' ? formatDate(item.inboundAt) : '空き'}</div>
+        </div>
+        <div>
+          <div class="allShelfProduct ${item.status}">
+            ${item.status==='occupied' ? esc(item.productId||'-') : '空き'}
+          </div>
+        </div>
+      </div>`).join('')}</div>`;
+
+    document.getElementById('allShelvesList').innerHTML = html;
+  }catch(e){
+    document.getElementById('allShelvesList').innerHTML = `
+      <div class="noResult"><div class="noResultIcon">⚠️</div>読み込みエラー</div>`;
+  }
+}
+
+/* ================== 画面切替 ================== */
+function showMode(mode){
+  document.getElementById('modeScreen').style.display = 'none';
+  ['inboundScreen','outboundScreen','emptyScreen'].forEach(id=>{
+    document.getElementById(id).classList.remove('active');
+  });
+  currentMode = mode;
+  resetInbound();
+  emptyTargetShelf = null;
+  scanForSearchMode = false;
+
+  if(mode === 'inbound'){
+    document.getElementById('inboundScreen').classList.add('active');
+  }else if(mode === 'outbound'){
+    document.getElementById('outboundScreen').classList.add('active');
+    loadAllShelves();
+  }else if(mode === 'empty'){
+    document.getElementById('emptyScreen').classList.add('active');
+    document.getElementById('emptySuccess').classList.remove('show');
+    document.getElementById('emptyConfirmBtn').classList.remove('show');
+    document.getElementById('emptyTarget').classList.remove('active');
+    document.getElementById('emptyTargetValue').textContent = 'QRをスキャン...';
+    document.getElementById('emptyTargetValue').classList.add('placeholder');
+    document.getElementById('emptyCurrentItem').style.display='none';
+  }
+}
+
+function showModeSelect(){
+  currentMode = null;
+  scanForSearchMode = false;
+  document.getElementById('modeScreen').style.display = 'block';
+  ['inboundScreen','outboundScreen','emptyScreen'].forEach(id=>{
+    document.getElementById(id).classList.remove('active');
+  });
+}
+
+/* ================== イベント ================== */
+document.getElementById('btnModeInbound').addEventListener('click', ()=>showMode('inbound'));
+document.getElementById('btnModeOutbound').addEventListener('click', ()=>showMode('outbound'));
+document.getElementById('btnModeEmpty').addEventListener('click', ()=>showMode('empty'));
+document.getElementById('inboundBack').addEventListener('click', showModeSelect);
+document.getElementById('outboundBack').addEventListener('click', showModeSelect);
+document.getElementById('emptyBack').addEventListener('click', showModeSelect);
+document.getElementById('emptyConfirmBtn').addEventListener('click', registerEmpty);
+
+document.getElementById('outboundSearchBtn').addEventListener('click', ()=>{
+  const v = document.getElementById('outboundSearchInput').value.trim().toUpperCase();
+  if(v) searchProduct(v);
+});
+
+document.getElementById('outboundSearchInput').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){
+    const v = e.target.value.trim().toUpperCase();
+    if(v) searchProduct(v);
+  }
+});
+
+document.getElementById('scanForSearchBtn').addEventListener('click', ()=>{
+  scanForSearchMode = !scanForSearchMode;
+  const btn = document.getElementById('scanForSearchBtn');
+  if(scanForSearchMode){
+    btn.textContent = '⏹  スキャン待機中... もう一度タップでキャンセル';
+    btn.classList.add('scanning');
+  }else{
+    btn.textContent = '📷  QRをスキャンして品番を自動入力';
+    btn.classList.remove('scanning');
+  }
+});
+
+// タブ切替
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    const name = tab.getAttribute('data-tab');
+    document.getElementById('tabContentSearch').style.display = name==='search' ? 'block' : 'none';
+    document.getElementById('tabContentAll').style.display = name==='all' ? 'block' : 'none';
+    if(name === 'all') loadAllShelves();
+  });
+});
+
+/* ================== esc ================== */
+function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
+</script>
+
+<!-- ========== Firebase SDK ========== -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, collection,
+    getDocs, query, where, serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+    projectId: "miyamaunitec-fb87a",
+    storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+    messagingSenderId: "495316649507",
+    appId: "1:495316649507:web:1f98ee3dd851474fa39396"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  const statusEl = document.getElementById("firebaseStatus");
+  const setStatus = (t,c)=>{ statusEl.textContent=`Firebase: ${t}`; statusEl.style.color=c; };
+
+  try{
+    await signInAnonymously(auth);
+    setStatus("接続済み","#00d084");
+  }catch(e){
+    console.warn("認証失敗:", e);
+    setStatus("未接続","#ff4d6a");
+  }
+
+  const COLL = "shelfInventory";
+
+  /* 棚データを保存（upsert） */
+  window.__saveShelfItem = async (shelfId, data) => {
+    const ref = doc(db, COLL, String(shelfId));
+    await setDoc(ref, {
+      ...data,
+      savedAt: serverTimestamp()
+    }, { merge: false });
+  };
+
+  /* 棚データを1件取得 */
+  window.__getShelfItem = async (shelfId) => {
+    const snap = await getDoc(doc(db, COLL, String(shelfId)));
+    return snap.exists() ? snap.data() : null;
+  };
+
+  /* 品番で棚を検索（occupied のみ） */
+  window.__queryShelfByProduct = async (productId) => {
+    const q = query(
+      collection(db, COLL),
+      where("productId", "==", productId),
+      where("status", "==", "occupied")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data());
+  };
+
+  /* 全棚リスト取得 */
+  window.__getAllShelves = async () => {
+    const snap = await getDocs(collection(db, COLL));
+    return snap.docs.map(d => d.data());
+  };
+</script>
+</body>
+</html>
