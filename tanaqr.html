@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -547,31 +546,39 @@ header {
   margin-top: 2px;
 }
 
-/* 全出庫ボタン */
-.allOutBtn {
-  width: 100%;
-  padding: 16px;
-  margin-bottom: 12px;
-  border: 2px solid var(--accent-empty);
-  border-radius: 14px;
+/* 棚ごとの出庫ボタン */
+.shelfOutBtn {
+  padding: 8px 14px;
+  border: 1px solid var(--accent-empty);
+  border-radius: 10px;
   background: rgba(124,141,181,0.1);
   color: var(--accent-empty);
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.06em;
   cursor: pointer;
   transition: all 0.2s;
   -webkit-tap-highlight-color: transparent;
   font-family: var(--font);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.allOutBtn:active {
-  background: rgba(124,141,181,0.25);
-  transform: scale(0.98);
+.shelfOutBtn:active { background: rgba(124,141,181,0.3); transform: scale(0.95); }
+.shelfOutBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 棚削除ボタン */
+.shelfDeleteBtn {
+  padding: 6px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: rgba(255,77,106,0.08);
+  color: var(--danger);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
 }
-.allOutBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.shelfDeleteBtn:active { background: rgba(255,77,106,0.2); transform: scale(0.95); }
 
 /* 入庫履歴カード */
 .modeCard.history::before { background: var(--accent-blue); }
@@ -1074,25 +1081,22 @@ async function searchProduct(productId){
             <div class="shelfDate">入庫: ${formatDate(item.inboundAt)}</div>
           </div>
           <div class="shelfAge ${ageClass}">${ageText}</div>
+          <button class="shelfOutBtn" data-shelf="${esc(item.shelfId)}" data-product="${esc(item.productId||'')}">
+            出庫
+          </button>
         </div>`;
     }).join('');
 
-    // 全出庫ボタン（2件以上の場合のみ表示）
-    const allOutBtn = items.length >= 1 ? `
-      <button class="allOutBtn" id="allOutBtn" data-product="${esc(id)}">
-        🗑 全出庫（${items.length}棚を空き登録）
-      </button>` : '';
+    document.getElementById('searchResults').innerHTML = html;
 
-    document.getElementById('searchResults').innerHTML = allOutBtn + html;
-
-    // 全出庫ボタンのイベント
-    const btn = document.getElementById('allOutBtn');
-    if(btn){
+    // 棚ごとの出庫ボタンのイベント
+    document.querySelectorAll('#searchResults .shelfOutBtn').forEach(btn=>{
       btn.addEventListener('click', ()=>{
-        const product = btn.getAttribute('data-product');
-        registerAllEmpty(product, items);
+        const shelfId = btn.getAttribute('data-shelf');
+        const productId = btn.getAttribute('data-product');
+        registerOneEmpty(shelfId, productId, btn, id);
       });
-    }
+    });
 
   }catch(e){
     console.error(e);
@@ -1104,54 +1108,47 @@ async function searchProduct(productId){
   }
 }
 
-/* ================== 全出庫処理 ================== */
-async function registerAllEmpty(productId, items){
-  if(!items || items.length === 0) return;
-  if(!confirm(`「${productId}」の棚 ${items.length} 件をすべて空き登録しますか？`)) return;
-
-  const btn = document.getElementById('allOutBtn');
-  if(btn){ btn.disabled = true; btn.textContent = '処理中...'; }
+/* ================== 棚1件の出庫処理 ================== */
+async function registerOneEmpty(shelfId, productId, btnEl, currentSearchId){
+  if(!shelfId) return;
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = '処理中...'; }
 
   const now = new Date().toISOString();
-  let successCount = 0;
-
-  for(const item of items){
-    try{
-      if(window.__saveShelfItem){
-        await window.__saveShelfItem(item.shelfId, {
-          shelfId: item.shelfId,
-          productId: null,
-          productQRRaw: null,
-          inboundAt: null,
-          inboundAtMs: null,
-          status: 'empty',
-          updatedAt: now
-        });
-      }
-      if(window.__addHistory){
-        window.__addHistory({
-          type: 'empty',
-          shelfId: item.shelfId,
-          productId: productId,
-          at: now,
-          atMs: Date.now()
-        }).catch(()=>{});
-      }
-      // 対象カードを視覚的に消す
-      const card = document.getElementById(`shelfCard_${item.shelfId}`);
-      if(card){ card.style.opacity = '0.3'; card.style.textDecoration = 'line-through'; }
-      successCount++;
-    }catch(e){
-      console.error('空き登録失敗:', item.shelfId, e);
+  try{
+    if(window.__saveShelfItem){
+      await window.__saveShelfItem(shelfId, {
+        shelfId,
+        productId: null,
+        productQRRaw: null,
+        inboundAt: null,
+        inboundAtMs: null,
+        status: 'empty',
+        updatedAt: now
+      });
     }
+    if(window.__addHistory){
+      window.__addHistory({
+        type: 'empty',
+        shelfId,
+        productId,
+        at: now,
+        atMs: Date.now()
+      }).catch(()=>{});
+    }
+    // カードを視覚的にフェードアウト
+    const card = document.getElementById(`shelfCard_${shelfId}`);
+    if(card){ card.style.transition='opacity 0.4s'; card.style.opacity='0.25'; }
+    showToast(`🗑 棚 ${shelfId} を空き登録`, 'ok');
+    // 1秒後にリフレッシュ
+    setTimeout(()=>{
+      loadProductButtons();
+      if(currentSearchId) searchProduct(currentSearchId);
+    }, 1000);
+  }catch(e){
+    console.error(e);
+    if(btnEl){ btnEl.disabled = false; btnEl.textContent = '出庫'; }
+    showToast('登録エラー', 'error');
   }
-
-  showToast(`✅ ${successCount}件を空き登録しました`, 'ok');
-  // 結果を再検索してリフレッシュ
-  setTimeout(()=>{
-    loadProductButtons();
-    searchProduct(productId);
-  }, 1200);
 }
 
 /* ================== 空き登録モード ================== */
@@ -1217,22 +1214,54 @@ async function loadAllShelves(){
     }
 
     const html = `<div class="allShelvesGrid">${items.map(item=>`
-      <div class="allShelfRow">
-        <div>
+      <div class="allShelfRow" id="allRow_${esc(item.shelfId)}">
+        <div style="flex:1;min-width:0;">
           <div class="allShelfId">${esc(item.shelfId)}</div>
           <div class="allShelfMeta">${item.status==='occupied' ? formatDate(item.inboundAt) : '空き'}</div>
         </div>
-        <div>
-          <div class="allShelfProduct ${item.status}">
-            ${item.status==='occupied' ? esc(item.productId||'-') : '空き'}
-          </div>
+        <div class="allShelfProduct ${item.status}">
+          ${item.status==='occupied' ? esc(item.productId||'-') : '空き'}
         </div>
+        <button class="shelfDeleteBtn" data-shelf="${esc(item.shelfId)}">🗑</button>
       </div>`).join('')}</div>`;
 
     document.getElementById('allShelvesList').innerHTML = html;
+
+    // 削除ボタンのイベント
+    document.querySelectorAll('#allShelvesList .shelfDeleteBtn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const shelfId = btn.getAttribute('data-shelf');
+        deleteShelf(shelfId);
+      });
+    });
   }catch(e){
     document.getElementById('allShelvesList').innerHTML = `
       <div class="noResult"><div class="noResultIcon">⚠️</div>読み込みエラー</div>`;
+  }
+}
+
+
+/* ================== 棚削除 ================== */
+async function deleteShelf(shelfId){
+  if(!shelfId) return;
+  if(!confirm(`棚「${shelfId}」をリストから完全に削除しますか？\n※ この操作は取り消せません`)) return;
+  try{
+    if(window.__deleteShelfItem){
+      await window.__deleteShelfItem(shelfId);
+    }
+    // 行をフェードアウトして消す
+    const row = document.getElementById(`allRow_${shelfId}`);
+    if(row){
+      row.style.transition = 'opacity 0.4s';
+      row.style.opacity = '0';
+      setTimeout(()=>row.remove(), 400);
+    }
+    showToast(`🗑 棚 ${shelfId} を削除しました`, 'ok');
+    // 品番ボタンも更新
+    loadProductButtons();
+  }catch(e){
+    console.error(e);
+    showToast('削除エラー', 'error');
   }
 }
 
@@ -1416,6 +1445,12 @@ function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":
   window.__getAllShelves = async () => {
     const snap = await getDocs(collection(db, COLL));
     return snap.docs.map(d => d.data());
+  };
+
+  /* 棚データを削除 */
+  window.__deleteShelfItem = async (shelfId) => {
+    const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js");
+    await deleteDoc(doc(db, COLL, String(shelfId)));
   };
 
   /* 履歴を追加 */
