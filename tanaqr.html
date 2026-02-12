@@ -547,6 +547,32 @@ header {
   margin-top: 2px;
 }
 
+/* 全出庫ボタン */
+.allOutBtn {
+  width: 100%;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 2px solid var(--accent-empty);
+  border-radius: 14px;
+  background: rgba(124,141,181,0.1);
+  color: var(--accent-empty);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  font-family: var(--font);
+}
+.allOutBtn:active {
+  background: rgba(124,141,181,0.25);
+  transform: scale(0.98);
+}
+.allOutBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 入庫履歴カード */
 .modeCard.history::before { background: var(--accent-blue); }
 .modeCard.history .modeCardLabel { color: var(--accent-blue); }
@@ -1039,7 +1065,7 @@ async function searchProduct(productId){
       const ageClass = days === null ? 'fresh' : days >= 7 ? 'oldest' : days >= 3 ? 'old' : 'fresh';
       const ageText = days === null ? '-' : days === 0 ? '今日' : `${days}日前`;
       return `
-        <div class="shelfCard">
+        <div class="shelfCard" id="shelfCard_${esc(item.shelfId)}">
           <div class="shelfRank ${i===0?'first':''}">
             ${i===0 ? '⭐' : i+1}
           </div>
@@ -1051,7 +1077,22 @@ async function searchProduct(productId){
         </div>`;
     }).join('');
 
-    document.getElementById('searchResults').innerHTML = html;
+    // 全出庫ボタン（2件以上の場合のみ表示）
+    const allOutBtn = items.length >= 1 ? `
+      <button class="allOutBtn" id="allOutBtn" data-product="${esc(id)}">
+        🗑 全出庫（${items.length}棚を空き登録）
+      </button>` : '';
+
+    document.getElementById('searchResults').innerHTML = allOutBtn + html;
+
+    // 全出庫ボタンのイベント
+    const btn = document.getElementById('allOutBtn');
+    if(btn){
+      btn.addEventListener('click', ()=>{
+        const product = btn.getAttribute('data-product');
+        registerAllEmpty(product, items);
+      });
+    }
 
   }catch(e){
     console.error(e);
@@ -1061,6 +1102,56 @@ async function searchProduct(productId){
         検索エラー: ${e.message}
       </div>`;
   }
+}
+
+/* ================== 全出庫処理 ================== */
+async function registerAllEmpty(productId, items){
+  if(!items || items.length === 0) return;
+  if(!confirm(`「${productId}」の棚 ${items.length} 件をすべて空き登録しますか？`)) return;
+
+  const btn = document.getElementById('allOutBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '処理中...'; }
+
+  const now = new Date().toISOString();
+  let successCount = 0;
+
+  for(const item of items){
+    try{
+      if(window.__saveShelfItem){
+        await window.__saveShelfItem(item.shelfId, {
+          shelfId: item.shelfId,
+          productId: null,
+          productQRRaw: null,
+          inboundAt: null,
+          inboundAtMs: null,
+          status: 'empty',
+          updatedAt: now
+        });
+      }
+      if(window.__addHistory){
+        window.__addHistory({
+          type: 'empty',
+          shelfId: item.shelfId,
+          productId: productId,
+          at: now,
+          atMs: Date.now()
+        }).catch(()=>{});
+      }
+      // 対象カードを視覚的に消す
+      const card = document.getElementById(`shelfCard_${item.shelfId}`);
+      if(card){ card.style.opacity = '0.3'; card.style.textDecoration = 'line-through'; }
+      successCount++;
+    }catch(e){
+      console.error('空き登録失敗:', item.shelfId, e);
+    }
+  }
+
+  showToast(`✅ ${successCount}件を空き登録しました`, 'ok');
+  // 結果を再検索してリフレッシュ
+  setTimeout(()=>{
+    loadProductButtons();
+    searchProduct(productId);
+  }, 1200);
 }
 
 /* ================== 空き登録モード ================== */
