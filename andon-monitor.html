@@ -1788,64 +1788,90 @@ textarea.form-control {
     }
 
     // ✅ 2種類チャイム（通常 / 緊急）
-    function playChime(type = 'normal') {
-      if (!soundEnabled) return;
-      if (!audioCtx) return;
+// ✅ 聞きなじみのあるメロディに変更
+// 通常：ウェストミンスターチャイム（E5→C5→D5→G4）
+// 緊急：ピポピポアラーム（救急車・工場サイレン風）
+function playChime(type = 'normal') {
+  if (!soundEnabled) return;
+  if (!audioCtx) return;
 
-      const ctx = audioCtx;
-      const t0 = ctx.currentTime;
+  const ctx = audioCtx;
+  const t0 = ctx.currentTime;
 
-      const master = ctx.createGain();
-      master.connect(ctx.destination);
+  // ── ベル音符ヘルパー（サイン波 + 自然な減衰） ──
+  function bellNote(freq, startSec, durSec, vol = 0.45) {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
 
-      const peak = (type === 'urgent') ? 0.34 : 0.28;
-      master.gain.setValueAtTime(0.0001, t0);
-      master.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
-      master.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.6);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t0 + startSec);
 
-      const filter = ctx.createBiquadFilter();
-      filter.type = "highpass";
-      filter.frequency.setValueAtTime(type === 'urgent' ? 320 : 380, t0);
-      filter.connect(master);
+    // 倍音（オクターブ上を薄く重ねて金属っぽさを追加）
+    const osc2  = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(freq * 2, t0 + startSec);
 
-      function note(freq, start, dur, oscType="sine", vel=1.0) {
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0 + startSec);
+    gain.gain.linearRampToValueAtTime(vol, t0 + startSec + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + startSec + durSec);
 
-        osc.type = oscType;
-        osc.frequency.setValueAtTime(freq, t0 + start);
+    gain2.gain.setValueAtTime(0.0001, t0 + startSec);
+    gain2.gain.linearRampToValueAtTime(vol * 0.22, t0 + startSec + 0.012);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, t0 + startSec + durSec * 0.6);
 
-        g.gain.setValueAtTime(0.0001, t0 + start);
-        g.gain.exponentialRampToValueAtTime(0.24 * vel, t0 + start + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+    osc.connect(gain);   gain.connect(ctx.destination);
+    osc2.connect(gain2); gain2.connect(ctx.destination);
 
-        osc.connect(g);
-        g.connect(filter);
+    osc.start(t0 + startSec);  osc.stop(t0 + startSec + durSec);
+    osc2.start(t0 + startSec); osc2.stop(t0 + startSec + durSec);
+  }
 
-        osc.start(t0 + start);
-        osc.stop(t0 + start + dur);
-      }
+  // ── ピポ音ヘルパー（矩形波 + ローパスで耳に優しく） ──
+  function pipoNote(freq, startSec, durSec, vol = 0.22) {
+    const osc    = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const gain   = ctx.createGain();
 
-      if (type === 'normal') {
-        // 通常：キラッ（上昇チャイム）
-        note(1046.5, 0.00, 0.28, "sine", 0.95); // C6
-        note(1318.5, 0.14, 0.28, "sine", 0.90); // E6
-        note(1568.0, 0.28, 0.30, "sine", 0.85); // G6
-        note(2093.0, 0.46, 0.52, "sine", 0.80); // C7
-        note(523.25, 0.00, 0.95, "triangle", 0.20); // 余韻
-      } else {
-        // 緊急：注意喚起（2回チャイム）
-        note(880.0,  0.00, 0.18, "square", 0.70);   // A5
-        note(1174.7, 0.06, 0.22, "sawtooth", 0.75); // D6
-        note(1568.0, 0.16, 0.35, "sine", 0.85);     // G6
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, t0 + startSec);
 
-        note(880.0,  0.62, 0.18, "square", 0.78);
-        note(1318.5, 0.68, 0.22, "sawtooth", 0.82); // E6
-        note(1760.0, 0.78, 0.45, "sine", 0.95);     // A6
+    filter.type            = 'lowpass';
+    filter.frequency.value = 1800;   // 高域を丸める
 
-        note(440.0,  0.00, 1.20, "triangle", 0.18); // 支え
-      }
+    gain.gain.setValueAtTime(0.0001, t0 + startSec);
+    gain.gain.linearRampToValueAtTime(vol, t0 + startSec + 0.01);
+    gain.gain.setValueAtTime(vol,         t0 + startSec + durSec - 0.03);
+    gain.gain.linearRampToValueAtTime(0.0001, t0 + startSec + durSec);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(t0 + startSec);
+    osc.stop(t0 + startSec + durSec);
+  }
+
+  if (type === 'normal') {
+    // ━━ ウェストミンスターチャイム（第1四半） ━━
+    // E5 → C5 → D5 → G4
+    bellNote(659.3, 0.00, 0.55);   // E5
+    bellNote(523.3, 0.55, 0.55);   // C5
+    bellNote(587.3, 1.10, 0.55);   // D5
+    bellNote(392.0, 1.65, 1.10);   // G4（長め）
+
+  } else {
+    // ━━ ピポピポアラーム（880Hz/660Hz を交互に6回） ━━
+    const HI  = 880.0;  // A5
+    const LO  = 660.0;  // E5
+    const LEN = 0.22;   // 1音の長さ
+    const GAP = 0.26;   // 間隔
+
+    for (let i = 0; i < 6; i++) {
+      pipoNote(i % 2 === 0 ? HI : LO, i * GAP, LEN);
     }
+  }
+}
 
     function stopUrgentAlarm(){
       if (urgentAlarmTimer) {
