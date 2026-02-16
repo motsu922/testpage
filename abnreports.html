@@ -1449,10 +1449,10 @@ function normalizeSerial(val){
     .toLowerCase();
 }
 
-function getPastChangePointsBySerial(currentSerial){
+async function getPastChangePointsBySerial(currentSerial){
   const key = normalizeSerial(currentSerial);
-
-  return anomalyCache.filter(item => {
+  const allData = await fetchAllData(); // DB全体を対象に
+  return allData.filter(item => {
     return (
       normalizeSerial(item.serialNo) === key &&
       (item.changePointCategory || item.changePointContent)
@@ -2631,22 +2631,30 @@ return itemSerial === normalizedSearch;
 
 // 過去の変化点ボタン（発信部署）
 document.getElementById('btnShowPastChangePoints')
-  .addEventListener('click', () => {
-
+  .addEventListener('click', async () => {
     const serial = document.getElementById('serialNo').value;
     if (!serial) {
       alert('整理Noを入力してください');
       return;
     }
 
-    const past = getPastChangePointsBySerial(serial);
-    renderPastChangePoints(
-      past,
-      'mfgPastChangePointsBox',
-      'mfgPastChangePointsContent'
-    );
-});
+    const box = document.getElementById('mfgPastChangePointsBox');
+    const content = document.getElementById('mfgPastChangePointsContent');
+    content.innerHTML = '<div style="text-align:center;padding:20px;color:#666;">検索中...</div>';
+    box.classList.add('active');
 
+    try {
+      const past = await getPastChangePointsBySerial(serial);
+      renderPastChangePoints(
+        past,
+        'mfgPastChangePointsBox',
+        'mfgPastChangePointsContent'
+      );
+    } catch (error) {
+      console.error('Error fetching past change points:', error);
+      content.innerHTML = '<div style="text-align:center;padding:20px;color:#c62828;">データの取得に失敗しました</div>';
+    }
+});
 
 // 過去の変化点ボタン（技術部門）
 document.getElementById('btnShowPastChangePointsTech').addEventListener('click', () => {
