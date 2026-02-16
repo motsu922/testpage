@@ -935,6 +935,86 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   width: 1px; height: 1px; opacity: 0; pointer-events: none;
 }
 
+/* ===== SHELF PREFIX BUTTON (入庫用・空き状況表示) ===== */
+.shelf-prefix-btn {
+  background: var(--surface) !important;
+  border: 2px solid var(--border) !important;
+  border-radius: 10px;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  padding: 10px 8px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+  letter-spacing: 1px;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+  overflow: hidden;
+}
+.shelf-prefix-btn:active { transform: scale(0.93); }
+.shelf-prefix-btn.has-empty {
+  border-color: rgba(46,204,113,0.5) !important;
+}
+.shelf-prefix-btn.is-full {
+  opacity: 0.45;
+}
+.shelf-prefix-btn.selected {
+  background: rgba(245,166,35,0.2) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent);
+  opacity: 1;
+}
+.shelf-prefix-btn .spb-label {
+  font-size: 8px;
+  font-family: 'Noto Sans JP', sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.shelf-prefix-btn.has-empty .spb-label {
+  color: var(--green) !important;
+  -webkit-text-fill-color: var(--green);
+}
+.shelf-prefix-btn.is-full .spb-label {
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+}
+.shelf-prefix-btn.selected .spb-label {
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent);
+  opacity: 0.8;
+}
+/* 空き棒グラフ */
+.spb-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: rgba(255,255,255,0.08) !important;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.spb-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.shelf-prefix-btn.has-empty .spb-bar-fill {
+  background: var(--green) !important;
+}
+.shelf-prefix-btn.is-full .spb-bar-fill {
+  background: var(--muted) !important;
+}
+.shelf-prefix-btn.selected .spb-bar-fill {
+  background: var(--accent) !important;
+}
+
 /* ===== EMPTY / OCCUPIED SHELF (入庫用) ===== */
 .item-btn.shelf-empty {
   background: rgba(46,204,113,0.08) !important;
@@ -987,6 +1067,7 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
 
   .initial-grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 9px; }
   .initial-btn { font-size: 20px; padding: 12px 4px; }
+  .shelf-prefix-btn { font-size: 22px; }
 
   .btn-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
   .item-btn { font-size: 14px; padding: 16px 8px; min-height: 68px; }
@@ -1023,6 +1104,8 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   .initial-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; }
   .initial-btn { font-size: 22px; padding: 14px 4px; }
   .initial-btn .count { font-size: 10px; }
+  .shelf-prefix-btn { font-size: 24px; }
+  .shelf-prefix-btn .spb-label { font-size: 9px; }
 
   .btn-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
   .item-btn { font-size: 15px; padding: 18px 10px; min-height: 72px; }
@@ -1674,10 +1757,15 @@ function renderIn(){
     const occupiedSetPfx = new Set(cachedStock.map(s => s.shelfId));
     spg.innerHTML = prefixes.map(([p, cnt]) => {
       const emptyCnt = cachedShelves.filter(s => getShelfPrefix(s) === p && !occupiedSetPfx.has(s)).length;
-      const countLabel = emptyCnt > 0 ? `空${emptyCnt}/${cnt}棚` : `全${cnt}棚 満`;
-      const emptyAttr = emptyCnt > 0 ? '' : ' style="opacity:0.5"';
-      return `<button class="initial-btn ${inState.shelfPrefix===p?'selected':''}"${emptyAttr} onclick="selectInShelfPrefix('${escJsSingle(p)}')">
-        ${escHtml(p)}<span class="count">${countLabel}</span>
+      const isFull = emptyCnt === 0;
+      const isSelected = inState.shelfPrefix === p;
+      const emptyPct = Math.round((emptyCnt / cnt) * 100);
+      const stateClass = isSelected ? 'selected' : (isFull ? 'is-full' : 'has-empty');
+      const label = isFull ? `全${cnt}棚 満` : `空き ${emptyCnt}/${cnt}棚`;
+      return `<button class="shelf-prefix-btn ${stateClass}" onclick="selectInShelfPrefix('${escJsSingle(p)}')">
+        <span>${escHtml(p)}</span>
+        <span class="spb-label">${label}</span>
+        <div class="spb-bar-wrap"><div class="spb-bar-fill" style="width:${emptyPct}%"></div></div>
       </button>`;
     }).join('');
     if(inState.shelfPrefix){
