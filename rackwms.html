@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -936,6 +935,44 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   width: 1px; height: 1px; opacity: 0; pointer-events: none;
 }
 
+/* ===== EMPTY / OCCUPIED SHELF (入庫用) ===== */
+.item-btn.shelf-empty {
+  background: rgba(46,204,113,0.08) !important;
+  border-color: rgba(46,204,113,0.6) !important;
+}
+.item-btn.shelf-empty::after {
+  content: '空';
+  position: absolute;
+  top: -8px; right: -8px;
+  background: var(--green) !important;
+  color: white !important;
+  -webkit-text-fill-color: white;
+  font-size: 10px;
+  font-weight: 700;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.item-btn.shelf-empty.selected {
+  background: rgba(245,166,35,0.18) !important;
+  border-color: var(--accent) !important;
+}
+.item-btn.shelf-empty.selected::after {
+  background: var(--accent) !important;
+}
+.item-btn.shelf-occupied-in {
+  opacity: 0.4;
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+}
+.item-btn.shelf-occupied-in.selected {
+  opacity: 1;
+  background: rgba(245,166,35,0.18) !important;
+  border-color: var(--accent) !important;
+}
+
 /* ===================== TABLET (640px+) ===================== */
 @media (min-width: 640px) {
   .header { padding: 12px 24px; }
@@ -1634,18 +1671,35 @@ function renderIn(){
     shelfPanel.classList.remove('visible');
   } else {
     const prefixes = getShelfPrefixes(cachedShelves);
-    spg.innerHTML = prefixes.map(([p, cnt]) =>
-      `<button class="initial-btn ${inState.shelfPrefix===p?'selected':''}" onclick="selectInShelfPrefix('${escJsSingle(p)}')">
-        ${escHtml(p)}<span class="count">${cnt}棚</span>
-      </button>`
-    ).join('');
+    const occupiedSetPfx = new Set(cachedStock.map(s => s.shelfId));
+    spg.innerHTML = prefixes.map(([p, cnt]) => {
+      const emptyCnt = cachedShelves.filter(s => getShelfPrefix(s) === p && !occupiedSetPfx.has(s)).length;
+      const countLabel = emptyCnt > 0 ? `空${emptyCnt}/${cnt}棚` : `全${cnt}棚 満`;
+      const emptyAttr = emptyCnt > 0 ? '' : ' style="opacity:0.5"';
+      return `<button class="initial-btn ${inState.shelfPrefix===p?'selected':''}"${emptyAttr} onclick="selectInShelfPrefix('${escJsSingle(p)}')">
+        ${escHtml(p)}<span class="count">${countLabel}</span>
+      </button>`;
+    }).join('');
     if(inState.shelfPrefix){
       shelfPanel.classList.add('visible');
       document.getElementById('in-shelf-panel-label').textContent = `「${inState.shelfPrefix}-」の棚番`;
       const filtered = cachedShelves.filter(s => getShelfPrefix(s) === inState.shelfPrefix);
-      sg.innerHTML = filtered.map(shelf =>
-        `<button class="item-btn ${inState.shelf===shelf?'selected':''}" onclick="selectInShelf('${escJsSingle(shelf)}')">${escHtml(shelf)}</button>`
-      ).join('');
+      const occupiedSet = new Set(cachedStock.map(s => s.shelfId));
+      // 空き棚を先頭に並べる
+      const sortedShelves = [...filtered].sort((a,b) => {
+        const aOcc = occupiedSet.has(a) ? 1 : 0;
+        const bOcc = occupiedSet.has(b) ? 1 : 0;
+        return aOcc - bOcc || a.localeCompare(b);
+      });
+      sg.innerHTML = sortedShelves.map(shelf => {
+        const isOccupied = occupiedSet.has(shelf);
+        const stockItem = isOccupied ? cachedStock.find(s => s.shelfId === shelf) : null;
+        const stateClass = inState.shelf===shelf ? 'selected' : (isOccupied ? 'shelf-occupied-in' : 'shelf-empty');
+        const sub = isOccupied && stockItem?.productId
+          ? `<span class="item-btn-sub">${escHtml(stockItem.productId)}</span>`
+          : (!isOccupied ? `<span class="item-btn-sub" style="color:var(--green);-webkit-text-fill-color:var(--green)">空き</span>` : '');
+        return `<button class="item-btn ${stateClass}" onclick="selectInShelf('${escJsSingle(shelf)}')">${escHtml(shelf)}${sub}</button>`;
+      }).join('');
     } else {
       shelfPanel.classList.remove('visible');
       sg.innerHTML = '';
@@ -1678,7 +1732,7 @@ function clearInShelfPrefix(){ inState.shelfPrefix = null; inState.shelf = null;
 function selectInShelf(shelf){
   inState.shelf = shelf;
   document.querySelectorAll('#in-shelves-grid .item-btn').forEach(b => {
-    b.classList.toggle('selected', b.textContent.trim() === shelf);
+    b.classList.toggle('selected', b.textContent.trim().startsWith(shelf));
   });
   document.getElementById('in-sel-shelf').textContent = shelf;
   updateInSteps();
