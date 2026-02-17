@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -466,6 +467,11 @@
     box-shadow:0 12px 24px rgba(0,0,0,0.3);
   }
 
+  /* 再スキャン案内 */
+  #rescanMsg{
+    background:#0b3b75;
+  }
+
   /* 緊急解除ボタン */
   .emergencyGhost{
     position:absolute;
@@ -921,6 +927,7 @@
   <div id="ok" class="resultMark ok">○</div>
   <div id="ng" class="resultMark ng">×</div>
   <div id="lockMsg" class="lock">NG！ 管理者QRを読み込むまでロック中</div>
+  <div id="rescanMsg" class="lock">読み取り不完全です。もう一度読んでください</div>
   <button id="emergencyUnlockBtn" class="emergencyGhost">緊急解除（長押し）</button>
 </div>
 
@@ -1127,16 +1134,42 @@ function showNGPersistent(){
   $ng.style.display="block";
 }
 
+function showRescanPrompt(msg="読み取り不完全です。もう一度読んでください"){
+  const resultArea = document.querySelector('.resultArea');
+  const el = document.getElementById("rescanMsg");
+  if(!el) return;
+
+  resultArea.classList.add('show');
+  $ok.style.display="none";
+  $ng.style.display="none";
+  $lockMsg.style.display="none";
+  $emergencyUnlockBtn.style.display="none";
+
+  el.textContent = msg;
+  el.style.display="block";
+
+  // ロック中でない場合のみ自動で閉じる
+  setTimeout(()=>{
+    if(isLocked) return;
+    el.style.display="none";
+    resultArea.classList.remove('show');
+  }, 1200);
+}
+
 function clearMarks(){
   const resultArea = document.querySelector('.resultArea');
   resultArea.classList.remove('show');
   $ok.style.display="none";
   $ng.style.display="none";
+  const $rescan = document.getElementById("rescanMsg");
+  if($rescan) $rescan.style.display="none";
 }
 
 function setLock(state){
   isLocked = state;
   const resultArea = document.querySelector('.resultArea');
+  const $rescan = document.getElementById('rescanMsg');
+  if($rescan) $rescan.style.display='none';
   if (state) {
     resultArea.classList.add('show');
     $lockMsg.style.display = "block";
@@ -1667,11 +1700,17 @@ async function processQR(qrRaw){
     return;
   }
 
-  // === 欠損対策：切り出し後の文字数が直前と違う場合は無視 ===
-  if(lastSlicedLength !== null && sliced.length !== lastSlicedLength){
-    updateDebugLog(`⚠ 切出文字数不一致のため無視：prev=${lastSlicedLength}, now=${sliced.length}, sliced="${sliced}"`);
+  // === 欠損対策：長さが想定と違う場合は「再スキャン」扱い（NGにしない） ===
+  // 基準QRがある場合は「基準QRの長さ」を期待値にする（より確実）
+  const expectedLen = (baseQR ? String(baseQR).length : lastSlicedLength);
+
+  if(expectedLen !== null && sliced.length !== expectedLen){
+    showRescanPrompt(`読み取り不完全です。もう一度読んでください\n(prev=${expectedLen}, now=${sliced.length})`);
+    updateDebugLog(`⚠ 長さ不一致→再スキャン：expected=${expectedLen}, now=${sliced.length}, sliced="${sliced}"`);
     return;
   }
+
+  // ここに来たものだけ「正常に受け付けた」とみなす
   lastSlicedLength = sliced.length;
   // === /欠損対策 ===
   
