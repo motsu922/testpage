@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1533,6 +1535,10 @@ $bushoSelect.addEventListener("change", ()=>{
 
 let buffer = "";
 let idleTimer = null;
+
+// 直前に「正常に受け付けた」QRの文字数（欠損対策用）
+let lastQRLength = null;
+
 const IDLE_MS = 120;
 
 function flushBuffer(){
@@ -1631,6 +1637,16 @@ async function processQR(qrRaw){
     if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     return;
   }
+
+  // === 欠損対策：文字数が直前と違う場合は無視して再スキャン促し ===
+  const currentLength = String(qrRaw).length;
+  if(lastQRLength !== null && currentLength !== lastQRLength){
+    updateDebugLog(`⚠ QR文字数不一致のため無視：prev=${lastQRLength}, now=${currentLength}`);
+    return;
+  }
+  // ここまで来たQRのみ「正常に受け付けた」とみなして更新
+  lastQRLength = currentLength;
+  // === /欠損対策 ===
   
   const now = nowString();
   const sliced = cutQR(qrRaw);
