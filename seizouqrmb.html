@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1694,19 +1693,52 @@ async function processQR(qrRaw){
   // まず切り出し（制御文字除去・トークン抽出は cutQR 側）
   const sliced = cutQR(qrRaw);
 
-  // 切出が空なら無視（スキャナ由来の制御文字/ノイズ対策）
+  // 切出が空ならNG（読取異常）
   if(!sliced){
-    updateDebugLog(`⚠ 切出が空のため無視 raw="${String(qrRaw).slice(0,60)}"`);
+    updateDebugLog(`❌ 切出失敗 → NG raw="${String(qrRaw).slice(0,60)}"`);
+    showNGPersistent();
+    setLock(true);
+    updateCountersUI();
+    persistLineStatus("SCAN_NG");
+    logRow([now, qrRaw, "", "NG_CUT_FAILED", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
+
+    if(lineName && typeof window.__writeLineStatus === "function"){
+      window.__writeLineStatus(lineName, {
+        state: statusKeyFromText(prodStatus),
+        stateText: prodStatus,
+        reason: "NG_LOCK_CUT_FAILED",
+        product: baseQR || null,
+        updatedAt: new Date().toISOString(),
+        busho: bushoName || null,
+        lockState: "LOCKED"
+      }).catch(()=>{});
+    }
     return;
   }
 
-  // === 欠損対策：長さが想定と違う場合は「再スキャン」扱い（NGにしない） ===
+  // === 欠損対策：長さが想定と違う場合もNG（読取異常） ===
   // 基準QRがある場合は「基準QRの長さ」を期待値にする（より確実）
   const expectedLen = (baseQR ? String(baseQR).length : lastSlicedLength);
 
   if(expectedLen !== null && sliced.length !== expectedLen){
-    showRescanPrompt(`読み取り不完全です。もう一度読んでください\n(prev=${expectedLen}, now=${sliced.length})`);
-    updateDebugLog(`⚠ 長さ不一致→再スキャン：expected=${expectedLen}, now=${sliced.length}, sliced="${sliced}"`);
+    updateDebugLog(`❌ 長さ不一致 → NG expected=${expectedLen}, now=${sliced.length}, sliced="${sliced}"`);
+    showNGPersistent();
+    setLock(true);
+    updateCountersUI();
+    persistLineStatus("SCAN_NG");
+    logRow([now, qrRaw, sliced, "NG_LENGTH_MISMATCH", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
+
+    if(lineName && typeof window.__writeLineStatus === "function"){
+      window.__writeLineStatus(lineName, {
+        state: statusKeyFromText(prodStatus),
+        stateText: prodStatus,
+        reason: "NG_LOCK_LENGTH_MISMATCH",
+        product: baseQR || null,
+        updatedAt: new Date().toISOString(),
+        busho: bushoName || null,
+        lockState: "LOCKED"
+      }).catch(()=>{});
+    }
     return;
   }
 
