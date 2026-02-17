@@ -975,8 +975,10 @@
 
 <script>
 /* ================== 設定 ================== */
+/* ================== 設定 ================== */
+const CUT_START = 2;
 const CUT_LENGTH = 5;
-const MIN_QR_LENGTH = 6;
+const MIN_QR_LENGTH = 33;
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
@@ -1007,40 +1009,6 @@ const PROD_STATUS = {
 };
 let prodStatus = PROD_STATUS.NOT_STARTED;
 let __restoring = false;
-let currentBgClass = "bg-NOT_STARTED";
-
-/* ================== デバッグ ================== */
-let DEBUG_QR = true; // デフォルトでONに変更
-const $debugInfo = document.getElementById("debugInfo");
-const $debugLog = document.getElementById("debugLog");
-const $debugToggleBtn = document.getElementById("debugToggleBtn");
-const MAX_DEBUG_LINES = 20;
-
-function updateDebugLog(msg){
-  if(!DEBUG_QR) return;
-  const ts = new Date().toLocaleTimeString();
-  const lines = $debugLog.innerHTML.split('<br>');
-  lines.unshift(`[${ts}] ${msg}`);
-  $debugLog.innerHTML = lines.slice(0, MAX_DEBUG_LINES).join('<br>');
-}
-
-$debugToggleBtn.addEventListener('click', ()=>{
-  DEBUG_QR = !DEBUG_QR;
-  $debugToggleBtn.textContent = DEBUG_QR ? 'デバッグ: ON' : 'デバッグ: OFF';
-  $debugToggleBtn.style.background = DEBUG_QR ? '#dcfce7' : '#fef3f2';
-  $debugToggleBtn.style.borderColor = DEBUG_QR ? '#86efac' : '#fecdcf';
-  $debugInfo.classList.toggle('show', DEBUG_QR);
-  if(DEBUG_QR){
-    updateDebugLog('🟢 デバッグモード有効');
-  }
-});
-
-// 初期状態でデバッグ表示
-$debugToggleBtn.textContent = 'デバッグ: ON';
-$debugToggleBtn.style.background = '#dcfce7';
-$debugToggleBtn.style.borderColor = '#86efac';
-$debugInfo.classList.add('show');
-updateDebugLog('🟢 デバッグモード有効（初期状態）');
 
 /* ================== DOM ================== */
 const $ok = document.getElementById("ok");
@@ -1123,23 +1091,7 @@ function checkAndResetAt8IfNeeded(){
 
 function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
 function cutQR(qr){ 
-  const original = String(qr || "");
-  // 先頭の記号（スペース、コロン、アンド、セミコロン、シングルクォート）のみを除去
-  // 数字やアルファベットは保持
-  const cleaned = original.replace(/^[\s:&;']+/, '');
-  const match = cleaned.match(/^[^\s]+/);
-  if (!match) {
-    updateDebugLog(`⚠️ cutQR: マッチなし "${original}"`);
-    return '';
-  }
-  const firstWord = match[0];
-  const result = firstWord.substr(0, CUT_LENGTH);
-  
-  if(DEBUG_QR && original !== result){
-    updateDebugLog(`✂️ cutQR: "${original}" → cleaned:"${cleaned}" → word:"${firstWord}" → result:"${result}"`);
-  }
-  
-  return result;
+  return normalizeSeiriNo(String(qr||"").substr(CUT_START, CUT_LENGTH)); 
 }
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
 
@@ -1593,73 +1545,16 @@ $bushoSelect.addEventListener("change", ()=>{
   }, 500);
 });
 
-/* ================== 【改善版】QRスキャナ入力 ================== */
+/* ================== シンプルなスキャナ入力（元の方式） ================== */
 let buffer = "";
 let idleTimer = null;
-let scanInProgress = false;
-let lastKeyTime = 0;
-const IDLE_MS = 150;  // 120ms → 150msに延長（複数行データ対応）
-const MAX_BUFFER_LENGTH = 100;
-const RAPID_INPUT_THRESHOLD = 50; // 50ms以内の連続入力でスキャナーと判断
-
-function clearBuffer(){
-  buffer = "";
-  scanInProgress = false;
-  if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-  updateDebugLog(`🧹 バッファクリア (scanInProgress=false)`);
-}
+const IDLE_MS = 120;
 
 function flushBuffer(){
-  if(!buffer || buffer.length === 0){
-    scanInProgress = false;
-    return;
-  }
-  
-  updateDebugLog(`📦 フラッシュ開始: "${buffer}" (長さ:${buffer.length})`);
-  
-  // 改行とキャリッジリターンを正規化
-  const normalized = buffer.replace(/[\r\n]+/g, '\n').trim();
-  const lines = normalized.split('\n').filter(Boolean);
-  
-  updateDebugLog(`📋 正規化後の行数: ${lines.length}, 行内容: ${JSON.stringify(lines)}`);
-  
-  // 有効な行をフィルタ（MIN_QR_LENGTH以上）
-  const validLines = lines.filter(line => line.length >= MIN_QR_LENGTH);
-  
-  if(validLines.length === 0){
-    updateDebugLog(`⚠️ 有効なQRデータなし（無視）`);
-    clearBuffer();
-    return;
-  }
-  
-  // 優先順位: 1) アルファベットで始まる行, 2) 最長行
-  const alphaLines = validLines.filter(line => /^[a-zA-Z]/.test(line.trim()));
-  
-  let qr = '';
-  if(alphaLines.length > 0){
-    // アルファベットで始まる行の中から最長のものを選択
-    qr = alphaLines.reduce((longest, current) => current.length > longest.length ? current : longest, '');
-    if(validLines.length > 1){
-      updateDebugLog(`✨ 複数行検出(${validLines.length}行) → アルファベット行を優先選択: "${qr}"`);
-    }
-  }else{
-    // アルファベット行がない場合は最長行を選択
-    qr = validLines.reduce((longest, current) => current.length > longest.length ? current : longest, '');
-    if(validLines.length > 1){
-      updateDebugLog(`⚠️ 複数行検出(${validLines.length}行) → 最長行を選択: "${qr}"`);
-    }
-  }
-  
-  clearBuffer();
-  
-  if(qr && qr.length >= MIN_QR_LENGTH){
-    updateDebugLog(`✅ 処理開始: "${qr}" (長さ:${qr.length})`);
-    processQR(qr);
-  }else if(qr){
-    if(DEBUG_QR){
-      updateDebugLog(`⚠️ QR長さ不足: "${qr}" 長さ=${qr.length} < ${MIN_QR_LENGTH} (静かに無視)`);
-    }
-  }
+  if(!buffer) return;
+  const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
+  buffer = "";
+  if(qr) processQR(qr);
 }
 
 // モーダルが開いているかチェック
@@ -1738,77 +1633,16 @@ document.addEventListener('visibilitychange', ()=>{
   }, {passive: true});
 });
 
-// キーボードイベント（モーダル開いてない時のみ）
 document.addEventListener("keydown", (e)=>{
-  // モーダル開いている時は無視
-  if(isModalOpen()){
-    if(DEBUG_QR) updateDebugLog(`🚫 モーダル中のため入力無視`);
-    return;
-  }
-  
-  // select操作中は無視
-  if(selectIsFocused){
-    if(DEBUG_QR) updateDebugLog(`🚫 select操作中のため入力無視: ${e.key}`);
-    return;
-  }
-  
   e.preventDefault();
   const k = e.key;
-  const now = Date.now();
-  const timeSinceLastKey = now - lastKeyTime;
-  
-  // 高速入力検出（QRスキャナーの特徴）
-  if(timeSinceLastKey < RAPID_INPUT_THRESHOLD && buffer.length > 0){
-    if(!scanInProgress){
-      scanInProgress = true;
-      updateDebugLog(`🚀 スキャナー検出: ${timeSinceLastKey}ms間隔`);
-    }
-  }
-  
-  lastKeyTime = now;
-  
-  // バッファオーバーフロー対策
-  if(buffer.length >= MAX_BUFFER_LENGTH){
-    updateDebugLog(`⚠️ バッファオーバーフロー → 強制flush`);
-    flushBuffer();
-    buffer = "";
-    scanInProgress = false;
-  }
-  
-  if(k==="Enter" || k==="Tab"){ 
-    updateDebugLog(`⏎ Enter/Tab検出 → flush`);
-    flushBuffer();
-    // フラッシュ後、確実にバッファをクリア
-    buffer = "";
-    scanInProgress = false;
-    if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-    return; 
-  }
-  
+  if(k==="Enter" || k==="Tab"){ flushBuffer(); return; }
   if(k.length===1){
     buffer += k;
-    updateDebugLog(`📝 "${k}" → バッファ長:${buffer.length}, scanMode:${scanInProgress}, 間隔:${timeSinceLastKey}ms`);
-    
-    // タイマーリセット
     if(idleTimer) clearTimeout(idleTimer);
-    
-    idleTimer = setTimeout(()=>{
-      updateDebugLog(`⏱️ タイムアウト(${IDLE_MS}ms) → flush`);
-      flushBuffer();
-      // タイムアウト後も確実にクリア
-      buffer = "";
-      scanInProgress = false;
-      idleTimer = null;
-    }, IDLE_MS);
+    idleTimer = setTimeout(()=>flushBuffer(), IDLE_MS);
   }else if(k==="Backspace"){
     buffer = buffer.slice(0,-1);
-    updateDebugLog(`⌫ Backspace → バッファ長:${buffer.length}`);
-    
-    // バッファが空になったらスキャン終了
-    if(buffer.length === 0){
-      scanInProgress = false;
-      updateDebugLog(`🛑 バッファ空 → scanInProgress=false`);
-    }
   }
 },{ passive:false });
 
@@ -1819,28 +1653,14 @@ window.addEventListener("load", ()=>{
 
 /* ========== 照合処理 ========== */
 async function processQR(qrRaw){
-  // 処理開始時にバッファを強制クリア（次のスキャンへの影響を防ぐ）
-  buffer = "";
-  scanInProgress = false;
-  if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-  
-  checkAndResetAt8IfNeeded();
-  
-  updateDebugLog(`🔍 QR処理: "${qrRaw}" (長さ:${String(qrRaw).length})`);
-  
-  // 短すぎるQRは静かに無視（スキャナーのSuffix等のゴミデータ対策）
   if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
-    clearBuffer();
-    if(DEBUG_QR){
-      const msg = `QR長さ不足: ${String(qrRaw||"").length} < ${MIN_QR_LENGTH}`;
-      updateDebugLog(`⚠️ ${msg} (静かに無視)`);
-    }
+    buffer = "";
+    if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     return;
   }
   
   const now = nowString();
   const sliced = cutQR(qrRaw);
-  updateDebugLog(`✂️ 切り出し: "${qrRaw}" → "${sliced}"`);
   
   if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
     setProdStatus(PROD_STATUS.RUNNING, "FORCE_RUNNING_BY_SCAN");
@@ -1849,25 +1669,17 @@ async function processQR(qrRaw){
   if(!baseQR){
     baseQR = sliced;
     updateBaseDisplay(baseQR);
-    updateDebugLog(`🎯 基準QR設定: "${baseQR}"`);
     
     try{
       if(window.__getQtyBySeiriNo){
         const q = await window.__getQtyBySeiriNo(baseQR);
         qtyPerKanban = (typeof q === 'number' && isFinite(q) && q > 0) ? q : null;
-        if(qtyPerKanban === null){
-          updateDebugLog(`📦 かんばん数: 未設定（1個/QRとしてカウント）`);
-        }else{
-          updateDebugLog(`📦 かんばん数: ${qtyPerKanban}個/QR`);
-        }
       }else{
         qtyPerKanban = null;
-        updateDebugLog(`📦 かんばん数: 取得不可（1個/QRとしてカウント）`);
       }
     }catch(e){
       console.warn('LOAD_QTY failed:', e);
       qtyPerKanban = null;
-      updateDebugLog(`📦 かんばん数: エラー（1個/QRとしてカウント）`);
     }
     
     updateCountersUI();
@@ -1900,7 +1712,6 @@ async function processQR(qrRaw){
     if(qrRaw===ADMIN_QR){
       setLock(false); 
       showOK();
-      updateDebugLog(`🔓 管理者QRで解除`);
       logRow([now, qrRaw, sliced, "UNLOCK_BY_ADMIN", "UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
       
       if(lineName && typeof window.__writeLineStatus === "function"){
@@ -1916,7 +1727,6 @@ async function processQR(qrRaw){
       }
     }else{
       showNGPersistent();
-      updateDebugLog(`🔒 ロック中のNG拒否`);
       logRow([now, qrRaw, sliced, "LOCK_REJECT", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
     }
     return;
@@ -1927,17 +1737,15 @@ async function processQR(qrRaw){
   
   if(judgedOK){
     showOK();
-    // qtyPerKanbanがnullまたは0以下の場合は1個としてカウント
+    // qtyPerKanbanがnullまたは0以下の場合は1個としてカウント（修正済み）
     deltaGood = (qtyPerKanban != null && qtyPerKanban > 0) ? qtyPerKanban : 1;
     goodCount += deltaGood;
-    updateDebugLog(`✅ OK判定: +${deltaGood} (かんばん数:${qtyPerKanban}) → 合計:${goodCount}`);
     updateCountersUI();
     persistLineStatus("SCAN_OK");
     logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName, bushoName, prodStatus], {good:deltaGood});
   }else{
     showNGPersistent();
     setLock(true);
-    updateDebugLog(`❌ NG判定: "${sliced}" ≠ "${baseQR}" → ロック`);
     updateCountersUI();
     persistLineStatus("SCAN_NG");
     logRow([now, qrRaw, sliced, "NG", "LOCKED", "", lineName, bushoName, prodStatus], {good:0});
