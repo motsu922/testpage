@@ -762,7 +762,7 @@
 
 <body class="bg-NOT_STARTED">
 <header>
-  <h1>📱 QR照合システム（最適化版）</h1>
+  <h1>📱 QR照合システム（修正版）</h1>
   <div class="statusLine">
     <span id="firebaseStatus" class="badge">Firebase: 未接続</span>
     <span id="lineBadge" class="badge">ライン: 未設定</span>
@@ -975,16 +975,10 @@
 
 <script>
 /* ================== 設定 ================== */
-/* ================== 設定 ================== */
-const CUT_START = 2;
-const CUT_LENGTH = 5;
 const MIN_QR_LENGTH = 33;
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
-const STORAGE_DIR = "productImages";
-const MASTER_COLLECTION = "imageMasters";
-const STATUS_LOG_COLLECTION = "prodStatusLogs";
 
 /* ================== 状態 ================== */
 let baseQR = null;
@@ -1009,6 +1003,38 @@ const PROD_STATUS = {
 };
 let prodStatus = PROD_STATUS.NOT_STARTED;
 let __restoring = false;
+let currentBgClass = "bg-NOT_STARTED"; // 背景色クラス追跡用
+
+/* ================== デバッグ機能 ================== */
+let DEBUG_QR = false;
+const $debugInfo = document.getElementById("debugInfo");
+const $debugLog = document.getElementById("debugLog");
+const $debugToggleBtn = document.getElementById("debugToggleBtn");
+const MAX_DEBUG_LINES = 20;
+
+function updateDebugLog(msg){
+  if(!DEBUG_QR) return;
+  const ts = new Date().toLocaleTimeString();
+  const lines = $debugLog.innerHTML.split('<br>');
+  lines.unshift(`[${ts}] ${msg}`);
+  if(lines.length > MAX_DEBUG_LINES){
+    lines.length = MAX_DEBUG_LINES;
+  }
+  $debugLog.innerHTML = lines.join('<br>');
+}
+
+if($debugToggleBtn){
+  $debugToggleBtn.addEventListener('click', ()=>{
+    DEBUG_QR = !DEBUG_QR;
+    $debugToggleBtn.textContent = DEBUG_QR ? 'デバッグ: ON' : 'デバッグ: OFF';
+    $debugToggleBtn.style.background = DEBUG_QR ? '#dcfce7' : '#fef3f2';
+    $debugToggleBtn.style.borderColor = DEBUG_QR ? '#86efac' : '#fecdcf';
+    $debugInfo.classList.toggle('show', DEBUG_QR);
+    if(DEBUG_QR){
+      updateDebugLog('🟢 デバッグモード有効');
+    }
+  });
+}
 
 /* ================== DOM ================== */
 const $ok = document.getElementById("ok");
@@ -1050,53 +1076,13 @@ function nowString(){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-/* ================== 出来高：8:00リセット（シフト日） ================== */
-function getShiftKey(d = new Date()){
-  const dd = new Date(d);
-  if(dd.getHours() < 8){
-    dd.setDate(dd.getDate() - 1);
-  }
-  const y = dd.getFullYear();
-  const m = String(dd.getMonth()+1).padStart(2,"0");
-  const day = String(dd.getDate()).padStart(2,"0");
-  return `${y}-${m}-${day}`;
-}
-
-function getResetStorageKey(){
-  return `qr_goodcount_shiftkey_v1_${lineName || "NO_LINE"}`;
-}
-
-function resetGoodCountByShift(reason="COUNTER_RESET_8AM"){
-  goodCount = 0;
-  updateCountersUI();
-  persistLineStatus(reason);
-  logRow([nowString(), "-", "-", reason, isLocked?"LOCKED":"UNLOCK", "", lineName, bushoName, prodStatus], {good:0});
-}
-
-function checkAndResetAt8IfNeeded(){
-  const key = getShiftKey(new Date());
-  const skey = getResetStorageKey();
-  const last = localStorage.getItem(skey);
-
-  if(!last){
-    localStorage.setItem(skey, key);
-    return;
-  }
-
-  if(last !== key){
-    localStorage.setItem(skey, key);
-    resetGoodCountByShift("COUNTER_RESET_8AM");
-  }
-}
-
-function normalizeSeiriNo(s){ return String(s||"").trim().replace(/\s+/g,""); }
-
 function cutQR(qr){ 
   // スペースで分割して最初の単語を取得
   const str = String(qr || "").trim();
   const firstWord = str.split(/\s+/)[0] || "";
   return firstWord;
 }
+
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
 
 function showOK(){
@@ -1109,12 +1095,14 @@ function showOK(){
     resultArea.classList.remove('show');
   }, 1500);
 }
+
 function showNGPersistent(){
   const resultArea = document.querySelector('.resultArea');
   resultArea.classList.add('show');
   $ok.style.display="none";
   $ng.style.display="block";
 }
+
 function clearMarks(){
   const resultArea = document.querySelector('.resultArea');
   resultArea.classList.remove('show');
@@ -1197,6 +1185,7 @@ function showImage(url){
     $imgHint.style.display="none";
   }
 }
+
 function showNoImage(html){
   $productImage.style.display="none"; 
   $imgHint.style.display="block"; 
@@ -1251,7 +1240,6 @@ function updateProgressMeter(){
   }
 }
 
-/* CSV */
 function csvEscape(field){ const s=String(field??""); return /[\",\n]/.test(s)?`"${s.replace(/\"/g,'\"\"')}"`:s; }
 function buildCSV(rows){ return rows.map(r=>r.map(csvEscape).join(",")).join("\n"); }
 function downloadCSV(rows, baseName="qr_log"){
@@ -1385,7 +1373,6 @@ function setProdStatus(next, reason="MANUAL"){
   }
 }
 
-/* ========== 状態ボタン ========== */
 $btnBackRunning.addEventListener("click", ()=>{
   setProdStatus(PROD_STATUS.RUNNING, "BACK_TO_RUNNING_BTN");
   clearMarks();
@@ -1395,9 +1382,7 @@ $btnAbnormalStop.addEventListener("click", ()=>setProdStatus(PROD_STATUS.ABNORMA
 $btnPlanStop.addEventListener("click", ()=>setProdStatus(PROD_STATUS.PLAN_STOP, "PLAN_STOP_BTN"));
 $btnMaterialChange.addEventListener("click", ()=>setProdStatus(PROD_STATUS.MATERIAL_CHANGE, "MATERIAL_CHANGE_BTN"));
 
-/* ========== 起動時復元 ========== */
 async function applyRestoredState(state){
-  checkAndResetAt8IfNeeded();
   const restoredProdText = state && state.stateText ? String(state.stateText) : null;
   const restoredBase = state && state.product ? String(state.product) : null;
   const restoredLock = state && state.lockState ? String(state.lockState) : "UNLOCK";
@@ -1482,7 +1467,6 @@ async function restoreFromFirebase(){
 }
 window.__restoreFromFirebase = restoreFromFirebase;
 
-/* ========== 初期設定 ========== */
 window.addEventListener("load", ()=>{
   if (lineName) Array.from($lineSelect.options).forEach(o=>{ if(o.value===lineName) o.selected=true; });
   if (bushoName) Array.from($bushoSelect.options).forEach(o=>{ if(o.value===bushoName) o.selected=true; });
@@ -1491,7 +1475,8 @@ window.addEventListener("load", ()=>{
   renderProdStatus();
 });
 
-// select要素のフォーカス保護
+let selectIsFocused = false;
+
 [$lineSelect, $bushoSelect].forEach(select => {
   select.addEventListener('focus', ()=>{
     selectIsFocused = true;
@@ -1502,10 +1487,9 @@ window.addEventListener("load", ()=>{
     setTimeout(()=>{
       selectIsFocused = false;
       updateDebugLog(`🎯 select要素からフォーカス解除`);
-    }, 300); // 200ms → 300msに延長
+    }, 300);
   });
   
-  // クリック/タッチ時もフォーカスを維持
   select.addEventListener('click', (e)=>{
     e.stopPropagation();
     selectIsFocused = true;
@@ -1530,11 +1514,10 @@ $lineSelect.addEventListener("change", ()=>{
   $lineBadge.textContent = lineName || "未設定";
   updateDebugLog(`⚙️ ライン変更: "${lineName}"`);
   
-  // 選択後、確実に完了してからFirebase復元
   setTimeout(()=>{
-    selectIsFocused = false; // フラグをクリア
+    selectIsFocused = false;
     restoreFromFirebase();
-  }, 500); // 300ms → 500msに延長
+  }, 500);
 });
 
 $bushoSelect.addEventListener("change", ()=>{
@@ -1543,13 +1526,11 @@ $bushoSelect.addEventListener("change", ()=>{
   $bushoBadge.textContent = bushoName || "未設定";
   updateDebugLog(`⚙️ 部署変更: "${bushoName}"`);
   
-  // フラグをクリア
   setTimeout(()=>{
     selectIsFocused = false;
   }, 500);
 });
 
-/* ================== シンプルなスキャナ入力（元の方式） ================== */
 let buffer = "";
 let idleTimer = null;
 const IDLE_MS = 120;
@@ -1561,30 +1542,24 @@ function flushBuffer(){
   if(qr) processQR(qr);
 }
 
-// モーダルが開いているかチェック
 function isModalOpen(){
   return $planModal.classList.contains('show');
 }
 
-// ========== 【改善版】フォーカス管理 ========== //
 const $scanInput = document.getElementById("scanInput");
-let selectIsFocused = false;
 let lastFocusTime = 0;
 
 function ensureFocus(){
   if(isModalOpen()) return;
   
-  // 連続したフォーカス要求を抑制（100ms以内は無視）
   const now = Date.now();
   if(now - lastFocusTime < 100) return;
   
-  // selectがフォーカス中の場合はスキップ
   if(selectIsFocused){
     updateDebugLog(`🚫 select操作中のためフォーカス移動スキップ`);
     return;
   }
   
-  // selectやsettingsPanel内の要素がアクティブな場合はフォーカスしない
   const activeEl = document.activeElement;
   if(activeEl && (
     activeEl.tagName === 'SELECT' ||
@@ -1603,26 +1578,22 @@ function ensureFocus(){
   }
 }
 
-// フォーカス喪失時のリカバリ（シンプル化）
 $scanInput.addEventListener('blur', ()=>{
   if(!isModalOpen() && !selectIsFocused){
     setTimeout(()=>{
       if(!isModalOpen() && !selectIsFocused) ensureFocus();
-    }, 150); // 300ms → 150msに短縮（QRスキャン優先）
+    }, 150);
   }
 });
 
-// ページ表示状態の監視
 document.addEventListener('visibilitychange', ()=>{
   if(!document.hidden && !isModalOpen()){
     setTimeout(ensureFocus, 200);
   }
 });
 
-// ユーザー操作後の自動フォーカス（select以外）
 ['click', 'touchend'].forEach(eventType => {
   document.addEventListener(eventType, (e)=>{
-    // select要素やその親要素、settingsPanel全体をクリックした場合はスキップ
     if(e.target.tagName === 'SELECT' || 
        e.target.tagName === 'OPTION' ||
        e.target.closest('select') ||
@@ -1632,7 +1603,7 @@ document.addEventListener('visibilitychange', ()=>{
     }
     
     if(!isModalOpen() && !selectIsFocused){
-      setTimeout(ensureFocus, 50); // 150ms → 50msに短縮
+      setTimeout(ensureFocus, 50);
     }
   }, {passive: true});
 });
@@ -1650,12 +1621,10 @@ document.addEventListener("keydown", (e)=>{
   }
 },{ passive:false });
 
-// 初回フォーカス
 window.addEventListener("load", ()=>{
   setTimeout(ensureFocus, 500);
 });
 
-/* ========== 照合処理 ========== */
 async function processQR(qrRaw){
   if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
     buffer = "";
@@ -1741,7 +1710,6 @@ async function processQR(qrRaw){
   
   if(judgedOK){
     showOK();
-    // qtyPerKanbanがnullまたは0以下の場合は1個としてカウント（修正済み）
     deltaGood = (qtyPerKanban != null && qtyPerKanban > 0) ? qtyPerKanban : 1;
     goodCount += deltaGood;
     updateCountersUI();
@@ -1768,7 +1736,6 @@ async function processQR(qrRaw){
   }
 }
 
-/* ========== ボタンイベント ========== */
 $resetBtn.addEventListener("click", ()=>{
   if(isLocked){
     alert("NGロック中は切替できません。管理者QRで解除してください。");
@@ -1830,7 +1797,6 @@ $saveBtn.addEventListener("click", ()=>{
   document.getElementById('mainBtnIcon').textContent = '☰';
 });
 
-/* ========== フローティングボタン展開 ========== */
 document.getElementById('mainFloatBtn').addEventListener('click', ()=>{
   const subBtns = document.getElementById('subBtns');
   const mainBtn = document.getElementById('mainFloatBtn');
@@ -1847,7 +1813,6 @@ document.getElementById('mainFloatBtn').addEventListener('click', ()=>{
   }
 });
 
-/* ========== パネル展開 ========== */
 document.getElementById('statePanelToggle').addEventListener('click', ()=>{
   const buttons = document.getElementById('stateButtons');
   const toggle = document.querySelector('.stateToggle');
@@ -1875,7 +1840,6 @@ document.getElementById('settingsPanelToggle').addEventListener('click', (e)=>{
   }
 });
 
-// settingsPanel全体のクリックでフォーカスが奪われないようにする
 const $settingsPanel = document.querySelector('.settingsPanel');
 if($settingsPanel){
   $settingsPanel.addEventListener('click', (e)=>{
@@ -1887,7 +1851,6 @@ if($settingsPanel){
   }, {passive: true});
 }
 
-/* ========== 計画数モーダル ========== */
 $planBtn.addEventListener('click', ()=>{
   if(!baseQR){
     alert('先に基準QR（整理No）を読み込んでください。');
@@ -1913,7 +1876,6 @@ $planModal.addEventListener('click', (e)=>{
   }
 });
 
-/* テンキー入力 */
 document.querySelectorAll('.numpadBtn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     const num = btn.getAttribute('data-num');
@@ -1941,7 +1903,6 @@ document.querySelectorAll('.numpadBtn').forEach(btn=>{
   });
 });
 
-/* 計画数保存 */
 $planSaveBtn.addEventListener('click', ()=>{
   const value = parseInt($planInput.value, 10);
   
@@ -2002,13 +1963,9 @@ $planSaveBtn.addEventListener('click', ()=>{
     if(!key) return null;
     try{
       const snap = await getDoc(doc(db, QR_MASTER_COLLECTION, key));
-      if(!snap.exists()) {
-        // データが存在しない場合はnullを返す（呼び出し側で1としてカウント）
-        return null;
-      }
+      if(!snap.exists()) return null;
       const data = snap.data() || {};
       const q = Number(data.quantity);
-      // quantityが有効な数値の場合はその値を、無効な場合はnullを返す
       return (isFinite(q) && q > 0) ? q : null;
     }catch(e){
       console.warn("getQty error:", e);
