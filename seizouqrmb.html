@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -991,6 +990,7 @@ let qtyPerKanban = null;
 let planQuantity = 0;
 const qrLogDocIds = [];
 const counterDeltas = [{good:0}];
+let lastSlicedLength = null; // 欠損対策（切出後の長さで判定）
 let lineName = localStorage.getItem(LINE_KEY) || "";
 let bushoName = localStorage.getItem(BUSHO_KEY) || "";
 
@@ -1078,11 +1078,33 @@ function nowString(){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-function cutQR(qr){ 
-  // スペースで分割して最初の単語を取得
-  const str = String(qr || "").trim();
-  const firstWord = str.split(/\s+/)[0] || "";
-  return firstWord;
+function cutQR(qr){
+  if(qr == null) return "";
+
+  // 1) 文字列化
+  let str = String(qr);
+
+  // 2) 制御文字を完全除去（GS/RS/US/STX/ETX等）
+  str = str.replace(/[\u0000-\u001F\u007F]/g, "");
+
+  // 3) trim
+  str = str.trim();
+  if(!str) return "";
+
+  // 4) 空白で分解
+  const parts = str.split(/\s+/).filter(Boolean);
+  if(parts.length === 0) return "";
+
+  // 5) 優先①：英字＋数字（例：SK012）
+  const alnum = parts.find(p => /^[A-Za-z]+\d+/.test(p));
+  if(alnum) return alnum;
+
+  // 6) 優先②：数字のみ（例：00072）
+  const digits = parts.find(p => /^\d+$/.test(p));
+  if(digits) return digits;
+
+  // 7) fallback：先頭
+  return parts[0];
 }
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
@@ -1535,10 +1557,6 @@ $bushoSelect.addEventListener("change", ()=>{
 
 let buffer = "";
 let idleTimer = null;
-
-// 直前に「正常に受け付けた」QRの文字数（欠損対策用）
-let lastQRLength = null;
-
 const IDLE_MS = 120;
 
 function flushBuffer(){
@@ -1638,18 +1656,24 @@ async function processQR(qrRaw){
     return;
   }
 
-  // === 欠損対策：文字数が直前と違う場合は無視して再スキャン促し ===
-  const currentLength = String(qrRaw).length;
-  if(lastQRLength !== null && currentLength !== lastQRLength){
-    updateDebugLog(`⚠ QR文字数不一致のため無視：prev=${lastQRLength}, now=${currentLength}`);
+  const now = nowString();
+
+  // まず切り出し（制御文字除去・トークン抽出は cutQR 側）
+  const sliced = cutQR(qrRaw);
+
+  // 切出が空なら無視（スキャナ由来の制御文字/ノイズ対策）
+  if(!sliced){
+    updateDebugLog(`⚠ 切出が空のため無視 raw="${String(qrRaw).slice(0,60)}"`);
     return;
   }
-  // ここまで来たQRのみ「正常に受け付けた」とみなして更新
-  lastQRLength = currentLength;
+
+  // === 欠損対策：切り出し後の文字数が直前と違う場合は無視 ===
+  if(lastSlicedLength !== null && sliced.length !== lastSlicedLength){
+    updateDebugLog(`⚠ 切出文字数不一致のため無視：prev=${lastSlicedLength}, now=${sliced.length}, sliced="${sliced}"`);
+    return;
+  }
+  lastSlicedLength = sliced.length;
   // === /欠損対策 ===
-  
-  const now = nowString();
-  const sliced = cutQR(qrRaw);
   
   if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
     setProdStatus(PROD_STATUS.RUNNING, "FORCE_RUNNING_BY_SCAN");
@@ -1761,6 +1785,7 @@ $resetBtn.addEventListener("click", ()=>{
   
   setProdStatus(PROD_STATUS.SETUP_CHANGE, "RESET_BTN");
   baseQR=null;
+  lastSlicedLength = null; // 欠損対策の前回長さをリセット
   goodCount = 0;
   qtyPerKanban = null;
   planQuantity = 0;
