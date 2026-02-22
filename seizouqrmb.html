@@ -40,6 +40,19 @@
     background:#f1f5f9; border:1px solid #cbd5e1;
   }
 
+  /* ========== クールダウン表示 ========== */
+  .cooldownBar{
+    position:fixed;
+    top:0;
+    left:0;
+    height:4px;
+    background:linear-gradient(90deg, #f59e0b, #fbbf24);
+    width:0%;
+    z-index:9998;
+    transition:width linear;
+    box-shadow:0 0 8px rgba(245,158,11,0.6);
+  }
+
   /* ========== デバッグ情報 ========== */
   .debugInfo{
     position:fixed;
@@ -767,12 +780,17 @@
 </head>
 
 <body class="bg-NOT_STARTED">
+
+<!-- クールダウンバー（画面上部の黄色いプログレスバー） -->
+<div class="cooldownBar" id="cooldownBar"></div>
+
 <header>
   <h1>📱 QR照合システム（修正版）</h1>
   <div class="statusLine">
     <span id="firebaseStatus" class="badge">Firebase: 未接続</span>
     <span id="lineBadge" class="badge">ライン: 未設定</span>
     <span id="bushoBadge" class="badge">部署: 未設定</span>
+    <span id="cooldownBadge" class="badge" style="display:none;background:#fef9c3;border-color:#fde047;color:#854d0e;">⏳ 待機中...</span>
     <button id="debugToggleBtn" class="badge" style="cursor:pointer;background:#fef3f2;border-color:#fecdcf;">デバッグ: OFF</button>
   </div>
 </header>
@@ -986,6 +1004,52 @@ const MIN_QR_LENGTH = 33;
 const ADMIN_QR = "ADMIN123";
 const LINE_KEY = "qr_line_name";
 const BUSHO_KEY = "qr_busho_name";
+
+/* ================== 2度読み対策 ================== */
+let lastScanTime = 0;
+const SCAN_COOLDOWN_MS = 3000; // 3秒クールダウン
+let cooldownTimer = null;
+
+const $cooldownBar = document.getElementById("cooldownBar");
+const $cooldownBadge = document.getElementById("cooldownBadge");
+
+function startCooldownUI(){
+  // バッジ表示
+  $cooldownBadge.style.display = "inline-block";
+  
+  // バーをリセットしてアニメーション開始
+  $cooldownBar.style.transition = "none";
+  $cooldownBar.style.width = "100%";
+  
+  // 次フレームでアニメーション開始（0%に向かって縮む）
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      $cooldownBar.style.transition = `width ${SCAN_COOLDOWN_MS}ms linear`;
+      $cooldownBar.style.width = "0%";
+    });
+  });
+  
+  // カウントダウン表示
+  let remaining = SCAN_COOLDOWN_MS;
+  const interval = setInterval(()=>{
+    remaining -= 100;
+    if(remaining <= 0){
+      clearInterval(interval);
+      $cooldownBadge.style.display = "none";
+      $cooldownBar.style.transition = "none";
+      $cooldownBar.style.width = "0%";
+    } else {
+      $cooldownBadge.textContent = `⏳ 待機 ${(remaining/1000).toFixed(1)}秒`;
+    }
+  }, 100);
+  
+  // 前のタイマーをクリア
+  if(cooldownTimer) clearTimeout(cooldownTimer);
+  cooldownTimer = setTimeout(()=>{
+    $cooldownBadge.style.display = "none";
+    clearInterval(interval);
+  }, SCAN_COOLDOWN_MS + 50);
+}
 
 /* ================== 状態 ================== */
 let baseQR = null;
@@ -1335,14 +1399,12 @@ function renderProdStatus(){
   const key = statusKeyFromText(prodStatus);
   const newBgClass = `bg-${key}`;
   
-  // 背景色の変更（変更がある場合のみ）
   if(currentBgClass !== newBgClass){
     document.body.classList.remove(currentBgClass);
     document.body.classList.add(newBgClass);
     currentBgClass = newBgClass;
   }
   
-  // バッジの更新
   if($prodStatusBadge){
     const newText = prodStatus;
     const newClassName = `prodStatusBadge status--${key}`;
@@ -1355,7 +1417,6 @@ function renderProdStatus(){
     }
   }
   
-  // ボタンのactive状態（変更時のみ）
   const buttonStates = [
     [$btnBackRunning, prodStatus === PROD_STATUS.RUNNING],
     [$btnTry, prodStatus === PROD_STATUS.TRY],
@@ -1682,6 +1743,17 @@ window.addEventListener("load", ()=>{
 });
 
 async function processQR(qrRaw){
+  // ===== 2度読み対策：クールダウンチェック =====
+  const now_ms = Date.now();
+  if(now_ms - lastScanTime < SCAN_COOLDOWN_MS){
+    const remaining = Math.ceil((SCAN_COOLDOWN_MS - (now_ms - lastScanTime)) / 1000);
+    updateDebugLog(`⏳ クールダウン中 (残${remaining}秒) スキップ`);
+    buffer = "";
+    if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+    return;
+  }
+  // ===== /2度読み対策 =====
+
   if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
     buffer = "";
     if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
@@ -1717,7 +1789,6 @@ async function processQR(qrRaw){
   }
 
   // === 欠損対策：長さが想定と違う場合もNG（読取異常） ===
-  // 基準QRがある場合は「基準QRの長さ」を期待値にする（より確実）
   const expectedLen = (baseQR ? String(baseQR).length : lastSlicedLength);
 
   if(expectedLen !== null && sliced.length !== expectedLen){
@@ -1743,7 +1814,9 @@ async function processQR(qrRaw){
   }
 
   // ここに来たものだけ「正常に受け付けた」とみなす
+  lastScanTime = Date.now(); // ★ 2度読み対策：タイムスタンプ更新
   lastSlicedLength = sliced.length;
+  startCooldownUI();          // ★ クールダウンUI開始
   // === /欠損対策 ===
   
   if (baseQR && !isLocked && prodStatus !== PROD_STATUS.RUNNING) {
@@ -1856,7 +1929,8 @@ $resetBtn.addEventListener("click", ()=>{
   
   setProdStatus(PROD_STATUS.SETUP_CHANGE, "RESET_BTN");
   baseQR=null;
-  lastSlicedLength = null; // 欠損対策の前回長さをリセット
+  lastSlicedLength = null;
+  lastScanTime = 0; // クールダウンもリセット
   goodCount = 0;
   qtyPerKanban = null;
   planQuantity = 0;
