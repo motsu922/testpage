@@ -1006,7 +1006,7 @@ const BUSHO_KEY = "qr_busho_name";
 
 /* ================== 2度読み対策 ================== */
 let lastScanTime = 0;
-const SCAN_COOLDOWN_MS = 1000; // 3秒クールダウン
+const SCAN_COOLDOWN_MS = 1000; // 1秒クールダウン（QRスキャナの2度読み防止）
 let cooldownTimer = null;
 
 const $cooldownBar = document.getElementById("cooldownBar");
@@ -1742,9 +1742,9 @@ window.addEventListener("load", ()=>{
 });
 
 async function processQR(qrRaw){
-  // ===== 2度読み対策：クールダウンチェック（ロック中はスキップ） =====
+  // ===== 2度読み対策：クールダウンチェック（ロック中・基準QR未設定時はスキップ） =====
   const now_ms = Date.now();
-  if(!isLocked && now_ms - lastScanTime < SCAN_COOLDOWN_MS){
+  if(baseQR && !isLocked && now_ms - lastScanTime < SCAN_COOLDOWN_MS){
     const remaining = Math.ceil((SCAN_COOLDOWN_MS - (now_ms - lastScanTime)) / 1000);
     updateDebugLog(`⏳ クールダウン中 (残${remaining}秒) スキップ`);
     buffer = "";
@@ -1900,6 +1900,8 @@ async function processQR(qrRaw){
     persistLineStatus("SCAN_OK");
     logRow([now, qrRaw, sliced, "OK", "UNLOCK", "", lineName, bushoName, prodStatus], {good:deltaGood});
   }else{
+    lastScanTime = Date.now(); // 2度読み対策（NG時も更新）
+    startCooldownUI();
     showNGPersistent();
     setLock(true);
     updateCountersUI();
