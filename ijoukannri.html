@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<title>異常の対策状況管理</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Hiragino Sans',sans-serif;background:#f0f2f9;color:#111;font-size:14px}
+
+/* ── Auth ── */
+#authGate{position:fixed;inset:0;background:#f0f2f9;display:flex;align-items:center;justify-content:center;z-index:200}
+#authCard{background:#fff;max-width:400px;width:92%;padding:28px;border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.14)}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-weight:700;margin-bottom:5px;color:#444;font-size:.85rem}
+.fg input{width:100%;padding:10px 12px;border:2px solid #dde1f5;border-radius:9px;font-size:.95rem;font-family:inherit}
+.btn-login{width:100%;padding:11px;border:0;border-radius:9px;background:linear-gradient(135deg,#3d52d5,#6a3fc8);color:#fff;font-weight:800;font-size:.95rem;cursor:pointer;margin-top:4px}
+
+/* ── App shell: full viewport, flex column ── */
+#appRoot{display:none;height:100vh;flex-direction:column;overflow:hidden}
+
+/* ── Top bar ── */
+.topbar{flex-shrink:0;background:linear-gradient(135deg,#2d3fc4,#5a30ba);color:#fff;display:flex;align-items:center;gap:16px;padding:0 18px;height:52px;box-shadow:0 2px 8px rgba(0,0,0,.22)}
+.topbar-title{font-size:1rem;font-weight:900;white-space:nowrap}
+.topbar-sub{font-size:.72rem;opacity:.72;white-space:nowrap}
+.kpis{display:flex;gap:8px;margin-left:auto}
+.kpi{background:rgba(255,255,255,.16);border-radius:8px;padding:5px 12px;text-align:center;white-space:nowrap;min-width:56px}
+.kpi .kv{font-size:1.05rem;font-weight:900;line-height:1}
+.kpi .kl{font-size:.62rem;opacity:.78;margin-top:2px}
+#signOutBtn{margin-left:8px;border:0;border-radius:7px;padding:6px 11px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:.74rem;white-space:nowrap}
+
+/* ── Filter bar ── */
+.filterbar{flex-shrink:0;background:#fff;border-bottom:1px solid #e4e8f5;padding:7px 18px;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.fb-g{display:flex;flex-direction:column;gap:3px}
+.fb-g label{font-size:.68rem;font-weight:700;color:#777}
+.fb-g input,.fb-g select{padding:5px 8px;border:1.5px solid #dde1f5;border-radius:6px;font-size:.8rem;font-family:inherit;background:#fafbff;height:30px}
+.fb-g input:focus,.fb-g select:focus{outline:none;border-color:#3d52d5}
+.fb-btn{height:30px;padding:0 12px;border:0;border-radius:6px;font-weight:800;font-size:.78rem;cursor:pointer;white-space:nowrap}
+.fb-apply{background:#3d52d5;color:#fff}
+.fb-clear{background:#eaecf8;color:#444}
+.fb-export{background:#2e7d32;color:#fff}
+.fb-charts{background:#f3f0ff;color:#5a30ba;border:1.5px solid #d4c8ff}
+
+/* ── Chart drawer ── */
+.chart-drawer{flex-shrink:0;background:#f8f9ff;border-bottom:1px solid #e4e8f5;overflow:hidden;max-height:0;transition:max-height .3s ease}
+.chart-drawer.open{max-height:300px}
+.chart-inner{padding:10px 18px 12px;display:grid;grid-template-columns:1fr 260px;gap:12px}
+@media(max-width:860px){.chart-inner{grid-template-columns:1fr}}
+.chart-box{background:#fff;border-radius:10px;padding:10px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.chart-box h4{font-size:.75rem;font-weight:800;color:#3d52d5;margin-bottom:7px}
+
+/* ── Dept tabs ── */
+.dept-strip{flex-shrink:0;background:#fff;border-bottom:2px solid #e8ebff;padding:0 18px;display:flex;gap:0;overflow-x:auto;scrollbar-width:thin}
+.dept-tab{padding:7px 15px;border:none;border-bottom:3px solid transparent;background:none;font-weight:700;font-size:.78rem;color:#999;cursor:pointer;white-space:nowrap;transition:all .15s}
+.dept-tab:hover{color:#3d52d5}
+.dept-tab.active{color:#3d52d5;border-bottom-color:#3d52d5}
+.dept-tab .cnt{font-size:.66rem;margin-left:3px;opacity:.65}
+
+/* ── Table scroll area ── */
+.table-wrap{flex:1;overflow-y:auto;padding:12px 18px 24px}
+.tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 8px rgba(0,0,0,.07)}
+.tbl thead th{background:#f0f2ff;color:#2d3fc4;font-weight:800;font-size:.76rem;padding:9px 11px;text-align:left;position:sticky;top:0;z-index:2;white-space:nowrap;cursor:pointer;user-select:none;border-bottom:2px solid #dde1f5}
+.tbl thead th:hover{background:#e5e9ff}
+.tbl thead th.sort-asc::after{content:' ↑';opacity:.6}
+.tbl thead th.sort-desc::after{content:' ↓';opacity:.6}
+
+/* Data rows */
+.tbl tbody tr.dr{border-bottom:1px solid #f3f3f3;cursor:pointer;transition:background .1s}
+.tbl tbody tr.dr:hover{background:#f7f8ff}
+.tbl tbody tr.dr.expanded{background:#eef0ff}
+.tbl td{padding:8px 11px;font-size:.81rem;vertical-align:middle}
+
+/* Left stripe by status */
+.tbl tbody tr.dr td:first-child{padding-left:7px;border-left:4px solid transparent}
+.tbl tbody tr.dr.s-検討 td:first-child{border-left-color:#f59e0b}
+.tbl tbody tr.dr.s-暫定 td:first-child{border-left-color:#3b82f6}
+.tbl tbody tr.dr.s-部品 td:first-child{border-left-color:#ef4444}
+.tbl tbody tr.dr.s-確認 td:first-child{border-left-color:#8b5cf6}
+.tbl tbody tr.dr.s-完了 td:first-child{border-left-color:#22c55e}
+.tbl tbody tr.dr.s-未入力 td:first-child{border-left-color:#d1d5db}
+
+.td-serial{font-weight:800;color:#2d3fc4;white-space:nowrap}
+.td-dept{color:#555;font-size:.78rem}
+.td-num{text-align:center;font-weight:700}
+.td-num .sub{font-size:.68rem;color:#bbb;font-weight:400}
+.td-occ{white-space:nowrap;color:#777;font-size:.76rem}
+.memo-snippet{font-size:.73rem;color:#2e7d32;background:#f0fff4;border-radius:5px;padding:3px 7px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:inline-block}
+.no-memo{font-size:.72rem;color:#ddd}
+.td-arrow{text-align:center;width:26px;color:#bbb;font-size:.82rem}
+.arrow-icon{display:inline-block;transition:transform .2s}
+.expanded .arrow-icon{transform:rotate(180deg)}
+
+/* Inline status select */
+.st-sel{padding:4px 6px;border:1.5px solid #dde1f5;border-radius:5px;font-size:.74rem;font-family:inherit;background:#fff;cursor:pointer;max-width:136px}
+.st-sel:focus{outline:none;border-color:#3d52d5}
+.st-sel.saving{opacity:.4}
+.st-ok{font-size:.68rem;color:#2e7d32;font-weight:800;margin-left:3px;opacity:0;transition:opacity .3s}
+.st-ok.show{opacity:1}
+
+/* ── Expand row panel ── */
+tr.exp-row{background:#f4f6ff}
+tr.exp-row td{padding:0}
+.exp-panel{padding:12px 16px 16px;display:grid;grid-template-columns:1fr 340px;gap:14px}
+@media(max-width:1050px){.exp-panel{grid-template-columns:1fr}}
+.ep-box{background:#fff;border-radius:9px;border:1px solid #e4e8f5;overflow:hidden}
+.ep-hd{font-size:.77rem;font-weight:800;color:#3d52d5;padding:8px 13px;background:#f0f2ff;border-bottom:1px solid #e4e8f5}
+.ep-bd{padding:10px 13px}
+
+/* Mini history table */
+.mini-tbl{width:100%;border-collapse:collapse}
+.mini-tbl th{font-size:.7rem;color:#999;font-weight:700;padding:4px 7px;border-bottom:1px solid #eee;text-align:left;background:#fafbff}
+.mini-tbl td{font-size:.76rem;padding:5px 7px;border-bottom:1px solid #f5f5f5;vertical-align:top;line-height:1.4}
+.mini-tbl tr:last-child td{border-bottom:none}
+.rb{display:inline-block;padding:1px 5px;border-radius:999px;font-size:.63rem;font-weight:800;white-space:nowrap}
+.rb-re{background:#fee2e2;color:#b91c1c}
+.rb-new{background:#dbeafe;color:#1e40af}
+.summary-box{font-size:.77rem;color:#444;line-height:1.6;margin:8px 13px;padding:7px;background:#f7f8ff;border-radius:6px;border:1px solid #e4e8ff}
+.open-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:0;border-radius:6px;background:#1976d2;color:#fff;font-size:.73rem;font-weight:800;cursor:pointer;margin:4px 13px 10px}
+
+/* Memo panel */
+.memo-list-ep{display:grid;gap:5px;max-height:180px;overflow-y:auto;margin-bottom:8px}
+.mi{background:#f9fafb;border:1px solid #eee;border-radius:6px;padding:6px 28px 6px 9px;position:relative}
+.mi-date{font-weight:800;color:#2e7d32;font-size:.7rem;margin-bottom:2px}
+.mi-text{font-size:.76rem;color:#333;line-height:1.5;white-space:pre-wrap}
+.mi-del{position:absolute;top:4px;right:4px;border:0;background:none;color:#e53935;cursor:pointer;font-size:.76rem;padding:2px 5px;border-radius:4px}
+.mi-del:hover{background:#ffebee}
+.memo-add{display:flex;gap:5px;align-items:flex-end;margin-top:6px}
+.memo-add input[type=date]{padding:5px 6px;border:1.5px solid #c8e6c9;border-radius:6px;font-size:.74rem;width:118px;height:28px}
+.memo-add textarea{flex:1;padding:6px;border:1.5px solid #c8e6c9;border-radius:6px;font-size:.74rem;resize:vertical;min-height:42px;font-family:inherit}
+.memo-add-btn{padding:0 10px;height:28px;border:0;border-radius:6px;background:#43a047;color:#fff;font-weight:800;cursor:pointer;font-size:.74rem;white-space:nowrap;align-self:flex-end}
+.memo-add-btn:disabled{opacity:.6}
+
+/* Loading */
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(255,255,255,.88);z-index:300;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+.loading-overlay.active{display:flex}
+.spinner{width:40px;height:40px;border:4px solid #dde1f5;border-top-color:#3d52d5;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-msg td{text-align:center;color:#bbb;padding:36px;font-size:.88rem}
+</style>
+</head>
+<body>
+
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="spinner"></div>
+  <div style="color:#3d52d5;font-weight:800;font-size:.88rem">読み込み中…</div>
+</div>
+
+<!-- Auth -->
+<div id="authGate">
+  <div id="authCard">
+    <h2 style="text-align:center;color:#2d3fc4;margin-bottom:18px;font-size:1.05rem">📌 異常の対策状況管理</h2>
+    <div class="fg"><label>メールアドレス</label><input type="email" id="authEmail" placeholder="user@example.com"></div>
+    <div class="fg"><label>パスワード</label><input type="password" id="authPassword" placeholder="••••••••"></div>
+    <button class="btn-login" id="authLoginBtn">ログイン</button>
+    <p id="authMsg" style="color:#c62828;margin-top:8px;font-size:.8rem"></p>
+  </div>
+</div>
+
+<!-- App -->
+<div id="appRoot">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div>
+      <div class="topbar-title">📌 異常の対策状況管理</div>
+      <div class="topbar-sub">整理No単位で再発×停滞を管理</div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="kv" id="sTotal">—</div><div class="kl">件数</div></div>
+      <div class="kpi"><div class="kv" id="sAvgRepeat">—</div><div class="kl">平均再発</div></div>
+      <div class="kpi"><div class="kv" id="sMaxRepeat">—</div><div class="kl">最大再発</div></div>
+      <div class="kpi"><div class="kv" id="sMemoCount">0</div><div class="kl">メモ</div></div>
+    </div>
+    <button id="signOutBtn" style="display:none">ログアウト</button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filterbar">
+    <div class="fb-g"><label>集計期間（日）</label><input type="number" id="windowDays" min="7" max="365" value="90" style="width:74px"></div>
+    <div class="fb-g"><label>再発閾値</label><input type="number" id="repeatThreshold" min="1" max="99" value="3" style="width:56px"></div>
+    <div class="fb-g"><label>総件数閾値</label><input type="number" id="totalThreshold" min="1" max="999" value="5" style="width:56px"></div>
+    <div class="fb-g"><label>部署</label><select id="filterDepartment" style="min-width:100px"><option value="">すべて</option></select></div>
+    <div class="fb-g"><label>ライン</label><select id="filterLine" style="min-width:100px"><option value="">すべて</option></select></div>
+    <div class="fb-g"><label>整理No</label><input type="text" id="filterSerialNo" placeholder="部分一致" style="width:90px"></div>
+    <div class="fb-g">
+      <label>対策状況</label>
+      <select id="filterStagStatus" style="min-width:116px">
+        <option value="">すべて</option>
+        <option value="対策検討中">対策検討中</option>
+        <option value="暫定対策中">暫定対策中</option>
+        <option value="対策部品待ち">対策部品待ち</option>
+        <option value="未入力">未入力</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:5px;align-items:flex-end;flex-wrap:wrap">
+      <button class="fb-btn fb-apply" id="btnApply">🔄 更新</button>
+      <button class="fb-btn fb-clear" id="btnClear">✕ クリア</button>
+      <button class="fb-btn fb-export" id="btnExport">📥 CSV</button>
+      <button class="fb-btn fb-charts" id="btnToggleCharts">📊 グラフ</button>
+    </div>
+    <div style="font-size:.68rem;color:#aaa;align-self:flex-end;white-space:nowrap">更新: <span id="lastUpdated">—</span></div>
+  </div>
+
+  <!-- Chart drawer -->
+  <div class="chart-drawer" id="chartDrawer">
+    <div class="chart-inner">
+      <div class="chart-box">
+        <h4>🔴 再発件数ランキング（上位15件）</h4>
+        <div style="position:relative;height:220px"><canvas id="chartRank"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <h4>🟡 対策状況の内訳</h4>
+        <div style="position:relative;height:220px"><canvas id="chartStatus"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dept tabs -->
+  <div class="dept-strip" id="deptTabs"></div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th style="width:34px">#</th>
+          <th data-sort="serialNo">整理No</th>
+          <th data-sort="department">部署 / ライン</th>
+          <th data-sort="repeatCount" style="width:68px">再発数</th>
+          <th data-sort="totalCount" style="width:68px">総件数</th>
+          <th style="min-width:170px">対策状況</th>
+          <th data-sort="latestOccurrence" style="width:88px">最新発生日</th>
+          <th style="min-width:160px">最新メモ</th>
+          <th style="width:26px"></th>
+        </tr>
+      </thead>
+      <tbody id="tblBody"></tbody>
+    </table>
+  </div>
+
+</div><!-- /appRoot -->
+
+<script type="module">
+import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
+import{getAuth,signInWithEmailAndPassword,onAuthStateChanged,setPersistence,browserLocalPersistence,signOut}
+  from'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
+import{getFirestore,collection,getDocs,addDoc,deleteDoc,updateDoc,doc,query,where,limit,serverTimestamp}
+  from'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+
+const FC={
+  apiKey:"AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
+  authDomain:"abnreport-fd733.firebaseapp.com",
+  databaseURL:"https://abnreport-fd733-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"abnreport-fd733",
+  storageBucket:"abnreport-fd733.firebasestorage.app",
+  messagingSenderId:"349748947315",
+  appId:"1:349748947315:web:010cb671d2a95bcf1f7d06"
+};
+const app=initializeApp(FC);
+const db=getFirestore(app);
+const auth=getAuth(app);
+const gate=document.getElementById('authGate');
+const appRoot=document.getElementById('appRoot');
+const signOutBtn=document.getElementById('signOutBtn');
+const loadingOverlay=document.getElementById('loadingOverlay');
+const $=id=>document.getElementById(id);
+
+const els={
+  email:$('authEmail'),pw:$('authPassword'),login:$('authLoginBtn'),msg:$('authMsg'),
+  tbody:$('tblBody'),
+  windowDays:$('windowDays'),repeatTh:$('repeatThreshold'),totalTh:$('totalThreshold'),
+  dep:$('filterDepartment'),line:$('filterLine'),serial:$('filterSerialNo'),stagSt:$('filterStagStatus'),
+  apply:$('btnApply'),clear:$('btnClear'),export:$('btnExport'),
+  deptTabs:$('deptTabs'),drawer:$('chartDrawer'),toggleCharts:$('btnToggleCharts'),
+  last:$('lastUpdated'),
+};
+
+// Auth
+els.login.addEventListener('click',async()=>{
+  els.msg.textContent='';
+  try{
+    await setPersistence(auth,browserLocalPersistence);
+    await signInWithEmailAndPassword(auth,(els.email.value||'').trim(),els.pw.value||'');
+  }catch(e){els.msg.textContent='ログイン失敗: '+(e.code||e.message);}
+});
+signOutBtn.addEventListener('click',()=>signOut(auth));
+onAuthStateChanged(auth,user=>{
+  if(user){gate.style.display='none';appRoot.style.display='flex';signOutBtn.style.display='inline-block';boot();}
+  else{appRoot.style.display='none';gate.style.display='flex';signOutBtn.style.display='none';}
+});
+
+// Chart toggle
+els.toggleCharts.addEventListener('click',()=>{
+  const willOpen=!els.drawer.classList.contains('open');
+  els.drawer.classList.toggle('open',willOpen);
+  if(willOpen&&lastResult.length)renderCharts(lastResult);
+});
+
+// Helpers
+const normSer=v=>String(v||'').trim().replace(/[\s\u3000]/g,'').toLowerCase();
+function toDate(occ){const m=String(occ||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?new Date(+m[1],+m[2]-1,+m[3]):null;}
+const msDays=ms=>ms/86400000;
+const pickSt=it=>it.measureStatus||it.mfg_measureStatus||'';
+const pickRe=it=>it.recurrenceType||it.mfg_recurrenceType||'';
+const pickDep=it=>it.department||'';
+const pickLn=it=>it.lineName||'';
+function pickProg(it){const ts=it.measureStatusUpdatedAt||it.mfgMeasureStatusUpdatedAt||it.updatedAt||it.createdAt;if(ts&&typeof ts.toDate==='function')return ts.toDate();return toDate(it.occurrenceDate);}
+function summ(s,max=110){const t=String(s||'').replace(/\s+/g,' ').trim();return t.length>max?t.slice(0,max)+'…':t;}
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function today(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function stCls(s){return s==='対策検討中'?'s-検討':s==='暫定対策中'?'s-暫定':s==='対策部品待ち'?'s-部品':s==='対策効果確認中'?'s-確認':s==='恒久対策完了'?'s-完了':s==='未入力'?'s-未入力':'';}
+
+// State
+let allAnom=[],lastResult=[],memoCache={};
+let masters={deps:new Set(),lineMap:new Map()};
+let activeDept='',sortKey='repeatCount',sortDir=-1,expandedKey=null;
+
+// Masters
+async function buildMasters(data){
+  const deps=new Set(),lm=new Map();
+  data.forEach(it=>{const dep=pickDep(it),ln=pickLn(it);if(dep)deps.add(dep);if(dep&&ln){if(!lm.has(dep))lm.set(dep,new Set());lm.get(dep).add(ln);}});
+  masters={deps,lineMap:lm};
+  els.dep.innerHTML='<option value="">すべて</option>'+[...deps].sort().map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  refreshLines();
+}
+function refreshLines(){
+  const dep=els.dep.value||'';
+  const lines=dep&&masters.lineMap.has(dep)?[...masters.lineMap.get(dep)]:[...new Set([...masters.lineMap.values()].flatMap(s=>[...s]))];
+  els.line.innerHTML='<option value="">すべて</option>'+lines.sort().map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+}
+els.dep.addEventListener('change',()=>refreshLines());
+
+// Firestore
+async function fetchAnom(days){
+  const from=new Date(Date.now()-days*86400000);
+  const q=query(collection(db,'anomalies'),where('createdAt','>=',from),limit(4000));
+  const snap=await getDocs(q);
+  const arr=[];snap.forEach(d=>arr.push({_id:d.id,...d.data()}));return arr;
+}
+async function fetchMemos(key){
+  const q=query(collection(db,'watchMemos'),where('serialKey','==',key));
+  const snap=await getDocs(q);
+  const arr=[];snap.forEach(d=>arr.push({id:d.id,...d.data()}));
+  arr.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  memoCache[key]=arr;return arr;
+}
+async function fetchAllMemos(keys){await Promise.all(keys.map(k=>fetchMemos(k)));}
+async function saveMemo(key,date,text){
+  const ref=await addDoc(collection(db,'watchMemos'),{serialKey:key,date,text,uid:auth.currentUser?.uid||'',createdAt:serverTimestamp()});
+  const m={id:ref.id,serialKey:key,date,text,uid:auth.currentUser?.uid||''};
+  if(!memoCache[key])memoCache[key]=[];
+  memoCache[key]=[m,...memoCache[key]].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  updateMemoStat();return m;
+}
+async function deleteMemo(key,id){
+  await deleteDoc(doc(db,'watchMemos',id));
+  if(memoCache[key])memoCache[key]=memoCache[key].filter(m=>m.id!==id);
+  updateMemoStat();
+}
+function updateMemoStat(){$('sMemoCount').textContent=Object.values(memoCache).reduce((s,a)=>s+a.length,0);}
+
+// Compute
+function computeRisk(data,opts){
+  const{windowDays,repeatTh,totalTh,filterDep,filterLn,filterSer,filterSt}=opts;
+  const now=new Date(),from=new Date(now-windowDays*86400000);
+  const groups=new Map();
+  data.forEach(it=>{
+    const ser=normSer(it.serialNo);if(!ser)return;
+    const dep=pickDep(it),ln=pickLn(it);
+    if(filterDep&&dep!==filterDep)return;
+    if(filterLn&&ln!==filterLn)return;
+    const dt=toDate(it.occurrenceDate)||(it.createdAt?.toDate?.())||null;
+    if(dt&&dt<from)return;
+    if(!groups.has(ser))groups.set(ser,[]);
+    groups.get(ser).push(it);
+  });
+  const results=[];
+  for(const[serialKey,items]of groups){
+    const sampleNo=items.find(x=>x.serialNo)?.serialNo||serialKey;
+    if(filterSer&&!normSer(sampleNo).includes(normSer(filterSer)))continue;
+    let total=0,repeat=0,latestOcc=null,latestItem=null;
+    items.forEach(it=>{
+      total++;if(pickRe(it)==='再発')repeat++;
+      const dt=toDate(it.occurrenceDate)||(it.createdAt?.toDate?.())||null;
+      if(dt&&(!latestOcc||dt>latestOcc)){latestOcc=dt;latestItem=it;}
+    });
+    if(repeat<repeatTh&&total<totalTh)continue;
+    const withSt=items.filter(it=>pickSt(it)).sort((a,b)=>(pickProg(b)||new Date(0))-(pickProg(a)||new Date(0)));
+    const cur=withSt[0]||latestItem||items[0];
+    const status=pickSt(cur)||'';
+    const progressAt=pickProg(cur)||latestOcc||new Date(0);
+    const stag=Math.floor(msDays(now-progressAt));
+    const displayStatus=status||'未入力';
+    const STAG=['対策検討中','暫定対策中','対策部品待ち','未入力'];
+    if(!STAG.includes(displayStatus)||stag<14)continue;
+    if(filterSt&&displayStatus!==filterSt)continue;
+    results.push({
+      serialNo:sampleNo,serialKey,totalCount:total,repeatCount:repeat,
+      latestOccurrence:latestOcc,currentStatus:displayStatus,
+      currentDocId:(withSt[0]||latestItem||items[0])?._id||'',
+      progressAt,
+      department:pickDep(latestItem||cur)||'',lineName:pickLn(latestItem||cur)||'',
+      latestSummary:summ((latestItem||cur)?.anomalyContent||''),
+      items
+    });
+  }
+  results.sort((a,b)=>b.repeatCount-a.repeatCount);
+  return results;
+}
+
+// Charts
+let charts={};
+function dChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+function renderCharts(results){
+  {
+    dChart('rank');
+    const top=results.slice(0,15);
+    const COLS=['#3d52d5','#5046e4','#6a3fc8','#8b38b0','#ab3298','#c42e82','#dc2b6e','#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#06b6d4','#3b82f6','#8b5cf6'];
+    charts['rank']=new Chart($('chartRank').getContext('2d'),{
+      type:'bar',
+      data:{labels:top.map(r=>r.serialNo.length>12?'…'+r.serialNo.slice(-11):r.serialNo),
+        datasets:[{data:top.map(r=>r.repeatCount),backgroundColor:COLS.slice(0,top.length),borderRadius:4}]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{afterLabel(ctx){const r=top[ctx.dataIndex];return r?`総件数: ${r.totalCount} / ${r.currentStatus}`:'';}}}},
+        scales:{x:{ticks:{font:{size:9}}},y:{title:{display:true,text:'再発件数',font:{size:10}},grid:{color:'#f0f0f0'},ticks:{stepSize:1}}}}
+    });
+  }
+  {
+    dChart('status');
+    const sMap={};results.forEach(r=>{const s=r.currentStatus||'不明';sMap[s]=(sMap[s]||0)+1;});
+    const labels=Object.keys(sMap);
+    const CM={'対策検討中':'#f59e0b','暫定対策中':'#3b82f6','対策部品待ち':'#ef4444','対策効果確認中':'#8b5cf6','恒久対策完了':'#22c55e','未入力':'#d1d5db'};
+    charts['status']=new Chart($('chartStatus').getContext('2d'),{
+      type:'doughnut',
+      data:{labels,datasets:[{data:labels.map(k=>sMap[k]),backgroundColor:labels.map(k=>CM[k]||'#a78bfa'),borderWidth:2,borderColor:'#fff'}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'55%',
+        plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:6}},
+          tooltip:{callbacks:{label(ctx){return` ${ctx.label}: ${ctx.raw}件`;}}}}}
+    });
+  }
+}
+
+// Dept tabs
+function renderDeptTabs(results){
+  const depts=[...new Set(results.map(r=>r.department).filter(Boolean))].sort();
+  const tabs=[{l:'すべて',v:''}, ...depts.map(d=>({l:d,v:d}))];
+  els.deptTabs.innerHTML=tabs.map(t=>`
+    <button class="dept-tab${t.v===activeDept?' active':''}" data-dept="${esc(t.v)}">
+      ${esc(t.l)}<span class="cnt">${t.v===''?results.length:results.filter(r=>r.department===t.v).length}</span>
+    </button>`).join('');
+}
+els.deptTabs.addEventListener('click',e=>{
+  const btn=e.target.closest('.dept-tab');if(!btn)return;
+  activeDept=btn.dataset.dept;expandedKey=null;
+  renderDeptTabs(lastResult);renderTable(lastResult);
+});
+
+// Sort
+document.querySelector('.tbl thead').addEventListener('click',e=>{
+  const th=e.target.closest('th[data-sort]');if(!th)return;
+  const key=th.dataset.sort;
+  if(sortKey===key)sortDir*=-1;else{sortKey=key;sortDir=-1;}
+  expandedKey=null;renderTable(lastResult);
+});
+
+function sortedRows(results){
+  const f=activeDept?results.filter(r=>r.department===activeDept):results;
+  return[...f].sort((a,b)=>{
+    let av=a[sortKey],bv=b[sortKey];
+    if(av instanceof Date)av=av.getTime();if(bv instanceof Date)bv=bv.getTime();
+    if(av==null)av='';if(bv==null)bv='';
+    return sortDir*(av>bv?1:av<bv?-1:0);
+  });
+}
+
+// Memo cell
+function memoCell(key){
+  const memos=memoCache[key]||[];
+  if(!memos.length)return'<span class="no-memo">—</span>';
+  const m=memos[0];
+  return`<span class="memo-snippet" title="${esc(m.date+' '+m.text)}">📅${esc(m.date)} ${esc(m.text)}</span>`;
+}
+
+// Expand panel HTML
+function expandPanel(r){
+  const items=[...r.items].sort((a,b)=>(toDate(b.occurrenceDate)||new Date(0))-(toDate(a.occurrenceDate)||new Date(0)));
+  const rows=items.map(it=>{
+    const re=pickRe(it)==='再発';
+    return`<tr>
+      <td style="white-space:nowrap">${esc(it.occurrenceDate||'—')}</td>
+      <td><span class="rb ${re?'rb-re':'rb-new'}">${re?'再発':'新規'}</span></td>
+      <td style="white-space:nowrap">${esc(pickSt(it)||'—')}</td>
+      <td>${esc(summ(it.anomalyContent||it.rootCauseAction||'',100))}</td>
+    </tr>`;
+  }).join('');
+  const memos=memoCache[r.serialKey]||[];
+  const memoItems=memos.map(m=>`
+    <div class="mi">
+      <div class="mi-date">📅 ${esc(m.date)}</div>
+      <div class="mi-text">${esc(m.text)}</div>
+      <button class="mi-del" data-id="${esc(m.id)}" data-key="${esc(r.serialKey)}">✕</button>
+    </div>`).join('')||'<div style="color:#ccc;font-size:.72rem;text-align:center;padding:6px">メモなし</div>';
+
+  return`<div class="exp-panel">
+    <div class="ep-box">
+      <div class="ep-hd">📋 異常履歴（${r.totalCount}件）</div>
+      <div class="summary-box">${esc(r.latestSummary||'（なし）')}</div>
+      <div style="overflow-x:auto">
+        <table class="mini-tbl">
+          <thead><tr><th>発生日</th><th>区分</th><th>対策状況</th><th>内容</th></tr></thead>
+          <tbody>${rows||'<tr><td colspan=4 style="text-align:center;color:#ccc;padding:10px">データなし</td></tr>'}</tbody>
+        </table>
+      </div>
+      <button class="open-btn" data-open="${esc(r.serialKey)}">🔗 異常履歴ツールで開く</button>
+    </div>
+    <div class="ep-box">
+      <div class="ep-hd">📝 進捗メモ</div>
+      <div class="ep-bd">
+        <div class="memo-list-ep" id="ml-${esc(r.serialKey)}">${memoItems}</div>
+        <div class="memo-add">
+          <input type="date" class="ep-dt" value="${today()}">
+          <textarea class="ep-tx" placeholder="進捗・対応状況を入力…"></textarea>
+          <button class="memo-add-btn ep-sv" data-key="${esc(r.serialKey)}">追加</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// Render table
+function renderTable(results){
+  const data=sortedRows(results);
+  // Update sort indicators
+  document.querySelectorAll('.tbl thead th[data-sort]').forEach(th=>{
+    th.classList.remove('sort-asc','sort-desc');
+    if(th.dataset.sort===sortKey)th.classList.add(sortDir>0?'sort-asc':'sort-desc');
+  });
+
+  const ST_OPTS=['未入力','対策検討中','暫定対策中','対策部品待ち','対策効果確認中','恒久対策完了'];
+  if(!data.length){
+    els.tbody.innerHTML='<tr class="empty-msg"><td colspan="9">条件に合う案件がありません</td></tr>';return;
+  }
+  els.tbody.innerHTML='';
+  data.forEach((r,i)=>{
+    const occ=r.latestOccurrence?r.latestOccurrence.toISOString().slice(0,10):'—';
+    const isExp=r.serialKey===expandedKey;
+    const opts=ST_OPTS.map(s=>`<option value="${s}"${r.currentStatus===s?' selected':''}>${s}</option>`).join('');
+
+    const tr=document.createElement('tr');
+    tr.className=`dr ${stCls(r.currentStatus)}${isExp?' expanded':''}`;
+    tr.dataset.key=r.serialKey;
+    tr.innerHTML=`
+      <td class="td-num" style="color:#aaa;font-size:.72rem">${i+1}</td>
+      <td class="td-serial">${esc(r.serialNo)}</td>
+      <td class="td-dept">${esc(r.department)||'—'} <span style="color:#ddd">/</span> ${esc(r.lineName)||'—'}</td>
+      <td class="td-num">${r.repeatCount}</td>
+      <td class="td-num" style="color:#888">${r.totalCount}</td>
+      <td>
+        <select class="st-sel" data-docid="${esc(r.currentDocId)}" data-key="${esc(r.serialKey)}">${opts}</select>
+        <span class="st-ok" id="stok-${esc(r.serialKey)}">✓</span>
+      </td>
+      <td class="td-occ">${occ}</td>
+      <td>${memoCell(r.serialKey)}</td>
+      <td class="td-arrow"><span class="arrow-icon">▼</span></td>`;
+    els.tbody.appendChild(tr);
+
+    if(isExp){
+      const expTr=document.createElement('tr');
+      expTr.className='exp-row';
+      expTr.dataset.key=r.serialKey;
+      const td=document.createElement('td');
+      td.colSpan=9;
+      td.innerHTML=expandPanel(r);
+      expTr.appendChild(td);
+      els.tbody.appendChild(expTr);
+    }
+  });
+}
+
+// tbody event delegation
+els.tbody.addEventListener('click',async e=>{
+  if(e.target.matches('.st-sel'))return;
+
+  // Memo delete
+  const delBtn=e.target.closest('.mi-del');
+  if(delBtn){
+    if(!confirm('このメモを削除しますか？'))return;
+    const key=delBtn.dataset.key,id=delBtn.dataset.id;
+    try{
+      await deleteMemo(key,id);
+      const expRow=els.tbody.querySelector(`tr.exp-row[data-key="${CSS.escape(key)}"]`);
+      const r=lastResult.find(x=>x.serialKey===key);
+      if(expRow&&r)expRow.querySelector('td').innerHTML=expandPanel(r);
+      const dr=els.tbody.querySelector(`tr.dr[data-key="${CSS.escape(key)}"]`);
+      if(dr)dr.querySelectorAll('td')[7].innerHTML=memoCell(key);
+    }catch(err){alert('削除失敗: '+err.message);}
+    return;
+  }
+
+  // Memo add
+  const addBtn=e.target.closest('.ep-sv');
+  if(addBtn){
+    const key=addBtn.dataset.key;
+    const panel=addBtn.closest('.exp-panel');
+    const date=panel.querySelector('.ep-dt').value||today();
+    const text=panel.querySelector('.ep-tx').value.trim();
+    if(!text){alert('メモを入力してください');return;}
+    addBtn.disabled=true;addBtn.textContent='保存中…';
+    try{
+      await saveMemo(key,date,text);
+      panel.querySelector('.ep-tx').value='';
+      const memos=memoCache[key]||[];
+      const ml=document.getElementById(`ml-${key}`);
+      if(ml)ml.innerHTML=memos.map(m=>`
+        <div class="mi">
+          <div class="mi-date">📅 ${esc(m.date)}</div>
+          <div class="mi-text">${esc(m.text)}</div>
+          <button class="mi-del" data-id="${esc(m.id)}" data-key="${esc(key)}">✕</button>
+        </div>`).join('');
+      const dr=els.tbody.querySelector(`tr.dr[data-key="${CSS.escape(key)}"]`);
+      if(dr)dr.querySelectorAll('td')[7].innerHTML=memoCell(key);
+    }catch(err){alert('保存失敗: '+err.message);}
+    finally{addBtn.disabled=false;addBtn.textContent='追加';}
+    return;
+  }
+
+  // Open link
+  const openBtn=e.target.closest('[data-open]');
+  if(openBtn){
+    const key=openBtn.dataset.open;
+    const r=lastResult.find(x=>x.serialKey===key);if(!r)return;
+    const newest=[...r.items].sort((a,b)=>(toDate(b.occurrenceDate)||new Date(0))-(toDate(a.occurrenceDate)||new Date(0)))[0];
+    window.open('abnreport.html?focusAnomalyId='+encodeURIComponent(newest?._id||''),'_blank');
+    return;
+  }
+
+  // Row toggle expand
+  const row=e.target.closest('tr.dr');
+  if(row){
+    const key=row.dataset.key;
+    if(expandedKey===key){expandedKey=null;}
+    else{
+      expandedKey=key;
+      if(!memoCache[key])await fetchMemos(key);
+    }
+    renderTable(lastResult);
+    if(expandedKey){
+      // Scroll expanded row into view
+      setTimeout(()=>{
+        const expRow=els.tbody.querySelector(`tr.exp-row[data-key="${CSS.escape(key)}"]`);
+        if(expRow)expRow.scrollIntoView({behavior:'smooth',block:'nearest'});
+      },50);
+    }
+  }
+});
+
+// Status change
+els.tbody.addEventListener('change',async e=>{
+  if(!e.target.matches('.st-sel'))return;
+  const sel=e.target;
+  const docId=sel.dataset.docid,key=sel.dataset.key,newSt=sel.value;
+  if(!docId){alert('ドキュメントIDが見つかりません');return;}
+  sel.classList.add('saving');
+  try{
+    await updateDoc(doc(db,'anomalies',docId),{measureStatus:newSt==='未入力'?'':newSt,measureStatusUpdatedAt:serverTimestamp()});
+    const r=lastResult.find(x=>x.serialKey===key);if(r)r.currentStatus=newSt;
+    const row=sel.closest('tr.dr');
+    if(row)row.className=`dr ${stCls(newSt)}${row.classList.contains('expanded')?' expanded':''}`;
+    const ok=$(`stok-${key}`);if(ok){ok.classList.add('show');setTimeout(()=>ok.classList.remove('show'),2200);}
+  }catch(err){alert('更新失敗: '+err.message);}
+  finally{sel.classList.remove('saving');}
+});
+
+// Stats
+function renderStats(results){
+  const n=results.length;
+  $('sTotal').textContent=n;
+  if(n>0){
+    $('sAvgRepeat').textContent=(results.reduce((s,r)=>s+r.repeatCount,0)/n).toFixed(1);
+    $('sMaxRepeat').textContent=Math.max(...results.map(r=>r.repeatCount));
+  }else{$('sAvgRepeat').textContent='—';$('sMaxRepeat').textContent='—';}
+  updateMemoStat();
+}
+
+function renderAll(results){
+  els.last.textContent=new Date().toLocaleString('ja-JP');
+  renderStats(results);
+  renderDeptTabs(results);
+  renderTable(results);
+  if(els.drawer.classList.contains('open'))renderCharts(results);
+}
+
+// Actions
+els.clear.addEventListener('click',()=>{
+  els.dep.value='';els.line.value='';els.serial.value='';els.stagSt.value='';
+  refreshLines();applyAndRender();
+});
+els.apply.addEventListener('click',()=>applyAndRender());
+
+els.export.addEventListener('click',()=>{
+  if(!lastResult.length){alert('出力対象がありません');return;}
+  const headers=['整理No','部署','ライン','再発件数','総件数','対策状況','最新発生日','最新要約','最新メモ日付','最新メモ内容'];
+  let csv='\uFEFF'+headers.join(',')+'\n';
+  lastResult.forEach(r=>{
+    const lm=(memoCache[r.serialKey]||[])[0];
+    const row=[r.serialNo,r.department,r.lineName,r.repeatCount,r.totalCount,r.currentStatus,
+      r.latestOccurrence?r.latestOccurrence.toISOString().slice(0,10):'',
+      r.latestSummary,lm?.date||'',lm?.text||''
+    ].map(v=>`"${String(v??'').replace(/"/g,'""')}"`);
+    csv+=row.join(',')+'\n';
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.download=`異常の対策状況管理_${new Date().toISOString().slice(0,10)}.csv`;a.click();
+});
+
+async function applyAndRender(){
+  const opts={
+    windowDays:Number(els.windowDays.value||90),
+    repeatTh:Number(els.repeatTh.value||3),totalTh:Number(els.totalTh.value||5),
+    filterDep:els.dep.value||'',filterLn:els.line.value||'',
+    filterSer:els.serial.value||'',filterSt:els.stagSt.value||'',
+  };
+  lastResult=computeRisk(allAnom,opts);
+  const missing=lastResult.map(r=>r.serialKey).filter(k=>!memoCache[k]);
+  if(missing.length)await fetchAllMemos(missing);
+  activeDept='';expandedKey=null;
+  renderAll(lastResult);
+}
+
+async function boot(){
+  loadingOverlay.classList.add('active');
+  try{
+    const win=Math.max(7,Math.min(365,Number(els.windowDays.value||90)));
+    allAnom=await fetchAnom(win);
+    await buildMasters(allAnom);
+    await applyAndRender();
+  }finally{loadingOverlay.classList.remove('active');}
+}
+</script>
+</body>
+</html>
