@@ -1263,7 +1263,122 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   background: rgba(230,126,34,0.1) !important;
 }
 
-/* ===================== TABLET (640px+) ===================== */
+/* ===== 棚出し通知 ===== */
+.tanaだし-modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0,0,0,0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.tanaだし-modal.show {
+  opacity: 1;
+  pointer-events: all;
+}
+.tanaだし-card {
+  background: var(--surface) !important;
+  border: 2px solid var(--blue) !important;
+  border-radius: 16px;
+  padding: 24px 22px 20px;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  transform: translateY(12px);
+  transition: transform 0.25s;
+}
+.tanaだし-modal.show .tanaだし-card { transform: translateY(0); }
+.tanaだし-icon {
+  font-size: 32px;
+  text-align: center;
+  display: block;
+  margin-bottom: 10px;
+}
+.tanaだし-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--blue) !important;
+  -webkit-text-fill-color: var(--blue);
+  letter-spacing: 1px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+.tanaだし-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.tanaだし-shelf {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px;
+  padding: 8px 14px;
+  text-align: center;
+}
+.tanaだし-shelf-id {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text);
+  display: block;
+}
+.tanaだし-shelf-label {
+  font-size: 9px;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+  letter-spacing: 1px;
+  font-weight: 700;
+}
+.tanaだし-arrow {
+  font-size: 22px;
+  color: var(--blue) !important;
+  -webkit-text-fill-color: var(--blue);
+  font-weight: 700;
+}
+.tanaだし-dest .tanaだし-shelf-id {
+  color: var(--orange) !important;
+  -webkit-text-fill-color: var(--orange);
+}
+.tanaだし-product {
+  text-align: center;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent);
+  margin-bottom: 6px;
+}
+.tanaだし-date {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+  margin-bottom: 16px;
+}
+.tanaだし-ok-btn {
+  width: 100%;
+  background: var(--blue) !important;
+  border: none;
+  border-radius: 10px;
+  color: white !important;
+  -webkit-text-fill-color: white;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 14px;
+  cursor: pointer;
+  letter-spacing: 2px;
+}
+
 @media (min-width: 640px) {
   .header { padding: 12px 24px; }
   .header-title { font-size: 26px; letter-spacing: 3px; }
@@ -2265,6 +2380,28 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
 
 </div><!-- /app-wrapper -->
 
+<!-- ===== 棚出しモーダル ===== -->
+<div class="tanaだし-modal" id="tanaDashiModal" onclick="closeTanaDashi()">
+  <div class="tanaだし-card" onclick="event.stopPropagation()">
+    <span class="tanaだし-icon">📦</span>
+    <div class="tanaだし-title">棚出し指示 — 定番地へ移動してください</div>
+    <div class="tanaだし-product" id="td-product"></div>
+    <div class="tanaだし-flow">
+      <div class="tanaだし-shelf">
+        <span class="tanaだし-shelf-id" id="td-from-shelf"></span>
+        <span class="tanaだし-shelf-label">ここから取る</span>
+      </div>
+      <span class="tanaだし-arrow">→</span>
+      <div class="tanaだし-shelf tanaだし-dest">
+        <span class="tanaだし-shelf-id" id="td-to-shelf"></span>
+        <span class="tanaだし-shelf-label">📌 ここへ移動</span>
+      </div>
+    </div>
+    <div class="tanaだし-date" id="td-date"></div>
+    <button class="tanaだし-ok-btn" onclick="closeTanaDashi()">移動完了</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2911,6 +3048,8 @@ async function doConfirm(mode){
     if(!item || !shelf) return;
     if(isOnHold(item)){ showToast('出荷停止中のため出庫できません', 'error'); return; }
     const now = new Date().toISOString();
+    // 定番地かどうか出庫前に確認（cachedFixed はこの時点のもの）
+    const isFixed = cachedFixed[shelf] === item;
     try{
       await window.__deleteShelfItemByProduct(shelf, item);
       if(window.__addHistory){
@@ -2919,6 +3058,8 @@ async function doConfirm(mode){
       showToast(`✅ 出庫：棚 ${shelf} → ${item}`);
       outState = { initial: null, item: null, shelfPrefix: null, shelf: null };
       await loadCache(); renderOut();
+      // 定番地から出庫した場合は自動棚出し（非同期：UI をブロックしない）
+      if(isFixed) autoReplenishFixed(shelf, item, now);
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
 
   } else if(mode === 'hold'){
@@ -2934,6 +3075,82 @@ async function doConfirm(mode){
       document.getElementById('hold-reason-input').value = '';
       await loadCache(); renderHold();
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
+  }
+}
+
+/* ===================== 棚出し（自動補充）===================== */
+function showTanaDashi(fromShelf, toShelf, productId, inboundAtMs){
+  document.getElementById('td-product').textContent = productId;
+  document.getElementById('td-from-shelf').textContent = fromShelf;
+  document.getElementById('td-to-shelf').textContent = toShelf;
+  document.getElementById('td-date').textContent =
+    `移動元 入庫日時：${formatTime(inboundAtMs)}（最古在庫）`;
+  const modal = document.getElementById('tanaDashiModal');
+  modal.classList.add('show');
+}
+function closeTanaDashi(){
+  document.getElementById('tanaDashiModal').classList.remove('show');
+}
+
+/**
+ * 定番地への自動棚出し処理
+ * @param {string} fixedShelf  出庫された定番地棚番
+ * @param {string} productId   品番
+ * @param {string} now         現在時刻ISO文字列
+ */
+async function autoReplenishFixed(fixedShelf, productId, now){
+  // 定番地として設定されている全棚（同品番）
+  const allFixedShelves = new Set(
+    Object.entries(cachedFixed)
+      .filter(([, p]) => p === productId)
+      .map(([s]) => s)
+  );
+
+  // キャッシュ再取得（出庫後の最新状態）
+  await loadCache();
+
+  // 定番地 以外 の在庫から最古のものを探す
+  const candidates = cachedStock
+    .filter(s => s.productId === productId && !allFixedShelves.has(s.shelfId))
+    .sort((a, b) => (a.inboundAtMs || 0) - (b.inboundAtMs || 0));
+
+  if(!candidates.length) return; // 補充できる在庫なし
+
+  const source = candidates[0];
+  const nowMs = Date.now();
+
+  try{
+    // 移動元から削除
+    await window.__deleteShelfItemByProduct(source.shelfId, productId);
+    // 定番地へ追加（元の入庫日時を引き継ぐ）
+    await window.__addShelfItem(fixedShelf, {
+      shelfId: fixedShelf,
+      productId,
+      productQRRaw: productId,
+      inboundAt: source.inboundAt || now,
+      inboundAtMs: source.inboundAtMs || nowMs,
+      status: 'occupied',
+      updatedAt: now,
+      movedFromShelf: source.shelfId,
+      movedAtMs: nowMs,
+    });
+    // 履歴：移動元出庫
+    if(window.__addHistory){
+      window.__addHistory({
+        type: 'tana-dashi-from', shelfId: source.shelfId, productId,
+        toShelf: fixedShelf, at: now, atMs: nowMs
+      }).catch(()=>{});
+      // 履歴：定番地入庫
+      window.__addHistory({
+        type: 'tana-dashi-to', shelfId: fixedShelf, productId,
+        fromShelf: source.shelfId, at: now, atMs: nowMs
+      }).catch(()=>{});
+    }
+    // モーダル表示
+    showTanaDashi(source.shelfId, fixedShelf, productId, source.inboundAtMs);
+  }catch(e){
+    console.error('棚出しエラー:', e);
+    showToast('棚出し処理でエラーが発生しました', 'error');
   }
 }
 
