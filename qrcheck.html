@@ -4,17 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>QR照合システム</title>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
 
+  <!-- Chrome誤操作対策（選択・ズーム系） -->
+  <meta name="format-detection" content="telephone=no">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0a0a0a !important;
       min-height: 100vh;
       color: #e0e0e0;
+      touch-action: manipulation;
+      overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
+    input, textarea { -webkit-user-select: text; user-select: text; }
+
     html { background: #0a0a0a !important; }
 
     /* タブナビ */
@@ -144,7 +150,7 @@
     }
     .log-btn:hover { background: #333; }
 
-    /* 設定（省略なし：前回のまま） */
+    /* 設定 */
     .settings-locked { text-align: center; padding: 40px 20px; }
     .lock-icon { font-size: 64px; margin-bottom: 16px; }
     .lock-text { font-size: 16px; color: #888; margin-bottom: 20px; }
@@ -191,6 +197,7 @@
       background: #0a0a0a;
       border-radius: 8px;
       border: 1px solid #333;
+      position: relative;
     }
     .range-group-title { font-size: 14px; font-weight: 600; color: #ffb74d; margin-bottom: 10px; }
     .range-inputs { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -361,13 +368,19 @@
     ::-webkit-scrollbar-track { background: #1a1a1a; }
     ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+    /* scanonlyモード：設定タブを隠す */
+    .scanonly-hide { display: none !important; }
   </style>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 </head>
 <body>
 
-  <div class="tab-nav">
-    <button class="tab-btn active" onclick="switchTab('scan')">📷 照合</button>
-    <button class="tab-btn" onclick="switchTab('settings')">⚙️ 設定</button>
+  <div class="tab-nav" id="tabNav">
+    <button class="tab-btn active" id="tabBtnScan" onclick="switchTab('scan')">📷 照合</button>
+    <button class="tab-btn" id="tabBtnSettings" onclick="switchTab('settings')">⚙️ 設定</button>
   </div>
 
   <div class="firebase-status disconnected" id="firebaseStatus">🔌 Firebase未接続</div>
@@ -384,7 +397,9 @@
           <input type="text" class="scan-input" id="scanInput"
                  placeholder="QRリーダーで読み取り"
                  autocomplete="off"
-                 inputmode="latin">
+                 inputmode="latin"
+                 autocapitalize="none"
+                 spellcheck="false">
           <div class="input-hint">QRリーダーでスキャンしてください</div>
         </div>
       </div>
@@ -490,13 +505,12 @@
     </div>
   </div>
 
-  <!-- 結果オーバーレイ（OKは自動で閉じるのでボタン無し） -->
+  <!-- 結果オーバーレイ -->
   <div class="result-overlay" id="resultOverlay">
     <div class="result-symbol" id="resultSymbol">○</div>
     <div class="result-text" id="resultText">一致</div>
     <div class="result-detail" id="resultDetail"></div>
 
-    <!-- 互換のため残すが常に非表示（押さずに自動遷移） -->
     <button style="display:none;" id="okBtn" onclick="closeAndContinue()">次の照合へ</button>
 
     <div class="admin-area" id="adminArea" style="display:none;">
@@ -504,12 +518,24 @@
       <div class="admin-input-group">
         <input type="text" class="admin-input" id="adminInput"
                placeholder="管理者QRを読み取り"
-               inputmode="latin">
+               inputmode="latin"
+               autocapitalize="none"
+               spellcheck="false">
       </div>
     </div>
   </div>
 
 <script>
+  // ====== scanonlyモード判定 ======
+  const params = new URLSearchParams(location.search);
+  const MODE = (params.get('mode') || '').toLowerCase();
+  const SCAN_ONLY = MODE === 'scanonly';
+
+  // ピンチズーム抑制（Chrome/Android）
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('gesturechange', (e) => e.preventDefault());
+  document.addEventListener('gestureend', (e) => e.preventDefault());
+
   // ========= 状態 =========
   let currentStep = 0;
   let value1 = '';
@@ -548,6 +574,8 @@
 
   // ========= 初期化 =========
   document.addEventListener('DOMContentLoaded', () => {
+    applyScanOnlyModeUI();
+
     loadSettings();
     loadLog();
     setupInputListeners();
@@ -559,6 +587,15 @@
     // 常時フォーカス維持（照合タブの時だけ）
     setupFocusKeeper();
   });
+
+  function applyScanOnlyModeUI(){
+    if (!SCAN_ONLY) return;
+    // 設定タブ・ボタンを消す
+    document.getElementById('tabBtnSettings').classList.add('scanonly-hide');
+    document.getElementById('tab-settings').classList.add('scanonly-hide');
+    // タブナビを「照合だけ」に見せる（余白対策）
+    // 2ボタン前提CSSなので、1つだけでもOKだが、必要ならここで幅調整も可
+  }
 
   // ========= 常時フォーカス維持 =========
   function setupFocusKeeper(){
@@ -586,7 +623,7 @@
       if (document.activeElement === scanInput || document.activeElement === document.getElementById('adminInput')) return;
 
       focusScanInputSoon();
-    }, 700);
+    }, 600);
   }
 
   function focusScanInputSoon(){
@@ -596,7 +633,7 @@
       if (document.getElementById('resultOverlay').classList.contains('show')) return;
       if (currentTab !== 'scan') return;
       scanInput.focus({ preventScroll: true });
-    }, 30);
+    }, 20);
   }
 
   // ========= 文字列正規化 =========
@@ -681,12 +718,12 @@
     logsRef.remove().catch(err => console.error('Firebaseクリアエラー:', err));
   }
 
-  // ========= 入力リスナー =========
+  // ========= 入力リスナー（Chrome安定のkeydown） =========
   function setupInputListeners() {
     const scanInput = document.getElementById('scanInput');
     const adminInput = document.getElementById('adminInput');
 
-    scanInput.addEventListener('keypress', (e) => {
+    scanInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const raw = scanInput.value;
@@ -698,7 +735,7 @@
       }
     });
 
-    adminInput.addEventListener('keypress', (e) => {
+    adminInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const raw = adminInput.value;
@@ -719,7 +756,6 @@
 
   // ========= スキャン処理 =========
   function handleScan(decoded) {
-    // OK表示中に追加入力が来たら無視（誤爆防止）
     if (document.getElementById('resultOverlay').classList.contains('show')) return;
 
     if (currentStep === 1) {
@@ -819,7 +855,7 @@
   function renderExtractRules() {
     const container = document.getElementById('extractRulesContainer');
     container.innerHTML = (settings.extractRules || []).map((rule, index) => `
-      <div class="range-group" style="position: relative;">
+      <div class="range-group">
         <button onclick="removeExtractRule(${index})"
           style="position:absolute; top:8px; right:8px; background:#f44336; color:white; border:none; border-radius:4px; padding:4px 8px; font-size:11px; cursor:pointer;">
           削除
@@ -948,17 +984,18 @@
 
   // ========= タブ切り替え =========
   function switchTab(tab) {
+    if (SCAN_ONLY) tab = 'scan'; // scanonlyは常に照合
     currentTab = tab;
 
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
     if (tab === 'scan') {
-      document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+      document.getElementById('tabBtnScan').classList.add('active');
       document.getElementById('tab-scan').classList.add('active');
       focusScanInputSoon();
     } else {
-      document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+      document.getElementById('tabBtnSettings').classList.add('active');
       document.getElementById('tab-settings').classList.add('active');
     }
   }
@@ -1115,7 +1152,6 @@
       ? `rule: [${logEntry.matchedRule.minLen}-${logEntry.matchedRule.maxLen}] start=${logEntry.matchedRule.startPos} count=${logEntry.matchedRule.charCount} prefix="${logEntry.matchedRule.prefix}"`
       : 'rule: (none)';
 
-    // もし前のOKタイマーが残ってたら消す
     if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
 
     if (isOK) {
@@ -1130,7 +1166,6 @@
       adminArea.style.display = 'none';
       playSound('ok');
 
-      // ★ここが変更点：0.4秒で自動的に次へ
       okAutoTimer = setTimeout(() => {
         overlay.classList.remove('show');
         startScanning(true);
@@ -1150,7 +1185,7 @@
       adminArea.style.display = 'block';
       isNGLocked = true;
       playSound('ng');
-      setTimeout(() => document.getElementById('adminInput').focus(), 100);
+      setTimeout(() => document.getElementById('adminInput').focus(), 80);
     }
   }
 
@@ -1182,7 +1217,7 @@
     document.getElementById('resultText').textContent = 'エラー状態';
     document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
     document.getElementById('adminArea').style.display = 'block';
-    setTimeout(() => document.getElementById('adminInput').focus(), 100);
+    setTimeout(() => document.getElementById('adminInput').focus(), 80);
   }
 
   function updateScanUI() {
