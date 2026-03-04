@@ -1598,6 +1598,119 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   .confirm-btn { height: 88px; font-size: 26px; }
 }
 
+/* ===== テンキーモーダル ===== */
+.numpad-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.numpad-modal.show {
+  opacity: 1;
+  pointer-events: all;
+}
+.numpad-card {
+  background: var(--surface) !important;
+  border-radius: 20px 20px 0 0;
+  padding: 16px 16px 32px;
+  width: 100%;
+  max-width: 360px;
+  transform: translateY(100%);
+  transition: transform 0.25s cubic-bezier(.32,1,.46,1);
+}
+.numpad-modal.show .numpad-card { transform: translateY(0); }
+.numpad-display {
+  background: var(--card) !important;
+  border: 2px solid var(--border) !important;
+  border-radius: 12px;
+  text-align: right;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text);
+  padding: 10px 18px;
+  margin-bottom: 12px;
+  letter-spacing: 2px;
+  min-height: 68px;
+  line-height: 1.2;
+}
+.numpad-label {
+  font-size: 11px;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.numpad-key {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text);
+  padding: 14px 0;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.1s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.numpad-key:active { transform: scale(0.93); background: var(--surface) !important; }
+.numpad-key.del {
+  background: rgba(231,76,60,0.1) !important;
+  border-color: rgba(231,76,60,0.3) !important;
+  color: var(--red) !important;
+  -webkit-text-fill-color: var(--red);
+  font-size: 20px;
+}
+.numpad-key.zero { grid-column: span 2; }
+.numpad-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 8px;
+}
+.numpad-cancel {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 12px;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 14px;
+  cursor: pointer;
+}
+.numpad-ok {
+  background: var(--accent) !important;
+  border: none;
+  border-radius: 12px;
+  color: var(--bg) !important;
+  -webkit-text-fill-color: var(--bg);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  padding: 14px;
+  cursor: pointer;
+  letter-spacing: 2px;
+}
+
 /* ===== 棚卸し ===== */
 .inv-session-banner {
   background: var(--card) !important;
@@ -2520,6 +2633,31 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
   </div><!-- /body-area -->
 
 </div><!-- /app-wrapper -->
+
+<!-- ===== テンキーモーダル ===== -->
+<div class="numpad-modal" id="numpadModal" onclick="numpadClose(false)">
+  <div class="numpad-card" onclick="event.stopPropagation()">
+    <div class="numpad-label" id="numpad-label">数量を入力</div>
+    <div class="numpad-display" id="numpad-display">0</div>
+    <div class="numpad-grid">
+      <button class="numpad-key" onclick="numpadKey('7')">7</button>
+      <button class="numpad-key" onclick="numpadKey('8')">8</button>
+      <button class="numpad-key" onclick="numpadKey('9')">9</button>
+      <button class="numpad-key" onclick="numpadKey('4')">4</button>
+      <button class="numpad-key" onclick="numpadKey('5')">5</button>
+      <button class="numpad-key" onclick="numpadKey('6')">6</button>
+      <button class="numpad-key" onclick="numpadKey('1')">1</button>
+      <button class="numpad-key" onclick="numpadKey('2')">2</button>
+      <button class="numpad-key" onclick="numpadKey('3')">3</button>
+      <button class="numpad-key zero" onclick="numpadKey('0')">0</button>
+      <button class="numpad-key del" onclick="numpadKey('del')">⌫</button>
+    </div>
+    <div class="numpad-actions">
+      <button class="numpad-cancel" onclick="numpadClose(false)">キャンセル</button>
+      <button class="numpad-ok" onclick="numpadClose(true)">確定</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -3480,6 +3618,32 @@ async function removeStock(shelfId){
 }
 
 
+/* ===================== テンキーモーダル ===================== */
+let _numpadCb   = null;  // 確定時コールバック (value:number) => void
+let _numpadVal  = '0';
+
+function numpadOpen(currentVal, label, callback){
+  _numpadVal = String(parseInt(currentVal) || 0);
+  _numpadCb  = callback;
+  document.getElementById('numpad-display').textContent = _numpadVal;
+  document.getElementById('numpad-label').textContent   = label || '数量を入力';
+  document.getElementById('numpadModal').classList.add('show');
+}
+function numpadKey(k){
+  if(k === 'del'){
+    _numpadVal = _numpadVal.length > 1 ? _numpadVal.slice(0, -1) : '0';
+  } else {
+    if(_numpadVal === '0') _numpadVal = k;
+    else if(_numpadVal.length < 5) _numpadVal += k;
+  }
+  document.getElementById('numpad-display').textContent = _numpadVal;
+}
+function numpadClose(confirm){
+  document.getElementById('numpadModal').classList.remove('show');
+  if(confirm && _numpadCb) _numpadCb(parseInt(_numpadVal) || 0);
+  _numpadCb = null;
+}
+
 /* ===================== 棚卸し ===================== */
 let invSession = null;
 let invResults = {};
@@ -3710,9 +3874,10 @@ function invRenderRows(shelfId, prefix){
         </select>
         <div class="inv-multi-qty-group" style="${hasProduct ? '' : 'display:none'}" id="ivc-qg-${pfx}-${escHtml(shelfId)}-${idx}">
           <button class="inv-multi-adj" onclick="invRowAdjQty('${escJsSingle(shelfId)}',${idx},-1)">－</button>
-          <input class="inv-qty" type="number" value="${row.quantity}" min="1" inputmode="numeric"
+          <input class="inv-qty" type="number" value="${row.quantity}" min="0" inputmode="none" readonly
             id="ivc-qinput-${pfx}-${escHtml(shelfId)}-${idx}"
-            onchange="invRowSetQty('${escJsSingle(shelfId)}',${idx},this.value)">
+            onclick="numpadOpen(this.value, '${escJsSingle(shelfId)} — 数量', v => invRowSetQty('${escJsSingle(shelfId)}',${idx},v))"
+            style="cursor:pointer">
           <button class="inv-multi-adj" onclick="invRowAdjQty('${escJsSingle(shelfId)}',${idx},1)">＋</button>
         </div>
         <button class="inv-del-row-btn" onclick="invRemoveRow('${escJsSingle(shelfId)}',${idx})" title="削除">✕</button>
@@ -3723,7 +3888,7 @@ function invRenderRows(shelfId, prefix){
 
 function invAddRow(shelfId, prefix){
   if(!invEntryRows[shelfId]) invEntryRows[shelfId] = [];
-  invEntryRows[shelfId].push({ productId: '', quantity: 1 });
+  invEntryRows[shelfId].push({ productId: '', quantity: 0 });
   invRenderRows(shelfId);
 }
 
@@ -3744,8 +3909,8 @@ function invRowProductChange(shelfId, idx, val, prefix){
 
 function invRowAdjQty(shelfId, idx, delta){
   if(!invEntryRows[shelfId]) return;
-  const cur = invEntryRows[shelfId][idx].quantity || 1;
-  const next = Math.max(1, cur + delta);
+  const cur = invEntryRows[shelfId][idx].quantity ?? 0;
+  const next = Math.max(0, cur + delta);
   invEntryRows[shelfId][idx].quantity = next;
   for(const pfx of ['r','m']){
     const el = document.getElementById(`ivc-qinput-${pfx}-${shelfId}-${idx}`);
@@ -3755,7 +3920,7 @@ function invRowAdjQty(shelfId, idx, delta){
 
 function invRowSetQty(shelfId, idx, val){
   if(!invEntryRows[shelfId]) return;
-  const next = Math.max(1, parseInt(val) || 1);
+  const next = Math.max(0, parseInt(val) || 0);
   invEntryRows[shelfId][idx].quantity = next;
   for(const pfx of ['r','m']){
     const el = document.getElementById(`ivc-qinput-${pfx}-${shelfId}-${idx}`);
