@@ -2605,6 +2605,20 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
                   <div class="inv-report-title">📋 サマリー</div>
                   <div id="inv-report-summary"></div>
                 </div>
+                <button onclick="invExportCSV()" style="
+                  width:100%;margin-top:4px;padding:14px;border-radius:12px;cursor:pointer;
+                  background:rgba(46,204,113,0.15)!important;
+                  border:2px solid var(--green)!important;
+                  color:var(--green)!important;-webkit-text-fill-color:var(--green);
+                  font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;letter-spacing:2px;
+                ">📥 棚別CSV出力</button>
+                <button onclick="invExportProductCSV()" style="
+                  width:100%;margin-top:8px;padding:14px;border-radius:12px;cursor:pointer;
+                  background:rgba(52,152,219,0.15)!important;
+                  border:2px solid var(--blue)!important;
+                  color:var(--blue)!important;-webkit-text-fill-color:var(--blue);
+                  font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;letter-spacing:2px;
+                ">📊 品番別CSV出力</button>
               </div>
 
             </div>
@@ -3628,6 +3642,9 @@ function numpadOpen(currentVal, label, callback){
   document.getElementById('numpad-display').textContent = _numpadVal;
   document.getElementById('numpad-label').textContent   = label || '数量を入力';
   document.getElementById('numpadModal').classList.add('show');
+  document.body.style.overflow = 'hidden';
+  document.body.style.position = 'fixed';
+  document.body.style.width    = '100%';
 }
 function numpadKey(k){
   if(k === 'del'){
@@ -3640,6 +3657,9 @@ function numpadKey(k){
 }
 function numpadClose(confirm){
   document.getElementById('numpadModal').classList.remove('show');
+  document.body.style.overflow = '';
+  document.body.style.position = '';
+  document.body.style.width    = '';
   if(confirm && _numpadCb) _numpadCb(parseInt(_numpadVal) || 0);
   _numpadCb = null;
 }
@@ -4047,6 +4067,116 @@ function invRenderReport(){
       <div class="inv-report-row"><span class="status-key">📭 空き確認済み</span><span style="color:var(--muted);-webkit-text-fill-color:var(--muted);font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700">${emptyOk}</span></div>
     `;
   }
+}
+
+function invExportCSV(){
+  if(!invSession){ showToast('セッションがありません', 'error'); return; }
+
+  const statusLabel = { 'ok':'一致', 'discrepancy':'差異', 'empty-ok':'空き確認済み' };
+  const rows = [];
+
+  // ヘッダー
+  rows.push(['棚番','品番','実数量','システム在庫品番','ステータス','確認日時']);
+
+  // 全棚を棚番順に出力
+  for(const shelf of [...cachedShelves].sort()){
+    const r = invResults[shelf];
+    if(!r){
+      // 未確認棚
+      const sysItems = cachedStock.filter(s => s.shelfId === shelf).map(s => s.productId).join('/');
+      rows.push([shelf, '', '', sysItems || '', '未確認', '']);
+      continue;
+    }
+    const items = r.items && r.items.length
+      ? r.items
+      : (r.actualProduct ? [{ productId: r.actualProduct, quantity: r.quantity || 0 }] : []);
+    const status = statusLabel[r.status] || r.status || '';
+    const checkedAt = r.checkedAt ? formatTime(r.checkedAt) : '';
+    const sysProduct = r.systemProduct || '';
+
+    if(!items.length){
+      rows.push([shelf, '', 0, sysProduct, status, checkedAt]);
+    } else {
+      items.forEach((item, i) => {
+        rows.push([
+          shelf,
+          item.productId || '',
+          item.quantity ?? 0,
+          i === 0 ? sysProduct : '',   // システム在庫は1行目のみ
+          i === 0 ? status : '',
+          i === 0 ? checkedAt : ''
+        ]);
+      });
+    }
+  }
+
+  // CSVテキスト生成（BOM付きUTF-8でExcel対応）
+  const csv = '\uFEFF' + rows.map(r =>
+    r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')
+  ).join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const d    = new Date();
+  const pad  = n => String(n).padStart(2,'0');
+  a.href     = url;
+  a.download = `棚卸_${invSession.sessionId}_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('📥 CSVを出力しました');
+}
+
+function invExportProductCSV(){
+  if(!invSession){ showToast('セッションがありません', 'error'); return; }
+
+  // 品番ごとに集計
+  const totals = {}; // { productId: { actual, shelves: [] } }
+  for(const r of Object.values(invResults)){
+    const items = r.items && r.items.length
+      ? r.items
+      : (r.actualProduct ? [{ productId: r.actualProduct, quantity: r.quantity || 0 }] : []);
+    for(const item of items){
+      if(!item.productId) continue;
+      if(!totals[item.productId]) totals[item.productId] = { actual: 0, shelves: [] };
+      totals[item.productId].actual += item.quantity ?? 0;
+      totals[item.productId].shelves.push(r.shelfId);
+    }
+  }
+
+  // システム在庫数も集計
+  const sysTotals = {};
+  for(const s of cachedStock){
+    if(!s.productId) continue;
+    sysTotals[s.productId] = (sysTotals[s.productId] || 0) + 1;
+  }
+
+  // 全品番（実棚＋システム在庫の和集合）
+  const allProducts = new Set([...Object.keys(totals), ...Object.keys(sysTotals)]);
+  const rows = [['品番', '実棚数量', 'システム在庫数', '差異', '実棚場所']];
+
+  for(const prod of [...allProducts].sort()){
+    const actual = totals[prod]?.actual ?? 0;
+    const sys    = sysTotals[prod] ?? 0;
+    const diff   = actual - sys;
+    const shelves = totals[prod]?.shelves.join('/') ?? '';
+    rows.push([prod, actual, sys, diff, shelves]);
+  }
+
+  const csv = '\uFEFF' + rows.map(r =>
+    r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')
+  ).join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const d    = new Date();
+  const pad  = n => String(n).padStart(2,'0');
+  a.href     = url;
+  a.download = `棚卸_品番別_${invSession.sessionId}_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('📊 品番別CSVを出力しました');
 }
 
 /* ===================== TOAST ===================== */
