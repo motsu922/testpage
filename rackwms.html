@@ -3837,11 +3837,11 @@ function invSelectShelf(shelfId){
   const existingResult = invResults[shelfId];
 
   if(existingResult && existingResult.items && existingResult.items.length){
-    invEntryRows[shelfId] = existingResult.items.map(i => ({ productId: i.productId || '', quantity: i.quantity || 1 }));
+    invEntryRows[shelfId] = existingResult.items.map(i => ({ productId: i.productId || '', quantity: i.quantity ?? 0 }));
   } else if(existingResult && existingResult.actualProduct){
-    invEntryRows[shelfId] = [{ productId: existingResult.actualProduct, quantity: existingResult.quantity || 1 }];
+    invEntryRows[shelfId] = [{ productId: existingResult.actualProduct, quantity: existingResult.quantity ?? 0 }];
   } else if(sysStockItems.length > 0){
-    invEntryRows[shelfId] = sysStockItems.map(s => ({ productId: s.productId, quantity: 1 }));
+    invEntryRows[shelfId] = sysStockItems.map(s => ({ productId: s.productId, quantity: 0 }));
   } else {
     invEntryRows[shelfId] = [];
   }
@@ -4018,7 +4018,7 @@ function invRenderReport(){
   const totals = {};
   const discrepancies = [];
   for(const r of Object.values(invResults)){
-    const items = r.items && r.items.length ? r.items : (r.actualProduct ? [{productId: r.actualProduct, quantity: r.quantity || 1}] : []);
+    const items = r.items && r.items.length ? r.items : (r.actualProduct ? [{productId: r.actualProduct, quantity: r.quantity ?? 0}] : []);
     for(const item of items){
       if(item.productId) totals[item.productId] = (totals[item.productId] || 0) + (item.quantity || 0);
     }
@@ -4153,14 +4153,12 @@ function invExportProductCSV(){
 
   // 全品番（実棚＋システム在庫の和集合）
   const allProducts = new Set([...Object.keys(totals), ...Object.keys(sysTotals)]);
-  const rows = [['品番', '実棚数量', 'システム在庫数', '差異', '実棚場所']];
+  const rows = [['品番', '実棚数量', '実棚場所']];
 
   for(const prod of [...allProducts].sort()){
     const actual = totals[prod]?.actual ?? 0;
-    const sys    = sysTotals[prod] ?? 0;
-    const diff   = actual - sys;
     const shelves = totals[prod]?.shelves.join('/') ?? '';
-    rows.push([prod, actual, sys, diff, shelves]);
+    rows.push([prod, actual, shelves]);
   }
 
   const csv = '\uFEFF' + rows.map(r =>
