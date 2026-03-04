@@ -2250,7 +2250,7 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
         <div class="steps">
           <div class="step active" id="out-step1">① 品番</div>
           <div class="step-arrow">▶</div>
-          <div class="step" id="out-step2">② 棚番</div>
+          <div class="step" id="out-step2">② 補充元</div>
           <div class="step-arrow">▶</div>
           <div class="step" id="out-step3">③ 確定</div>
         </div>
@@ -2261,8 +2261,12 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
             <div class="sel-value" id="out-sel-item">—</div>
           </div>
           <div>
-            <div class="sel-label">棚番</div>
-            <div class="sel-value" id="out-sel-shelf">—</div>
+            <div class="sel-label">定番地</div>
+            <div class="sel-value" style="color:var(--orange);-webkit-text-fill-color:var(--orange)" id="out-sel-fixed">—</div>
+          </div>
+          <div>
+            <div class="sel-label">補充元</div>
+            <div class="sel-value" id="out-sel-source">—</div>
           </div>
         </div>
 
@@ -2286,10 +2290,16 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
                 <div class="hold-warning-meta" id="out-hold-reason-meta"></div>
               </div>
 
-              <div class="sec-label" id="out-shelf-label" style="display:none">
-                候補棚（先入先出し順）<span class="fifo-badge">FIFO</span>
+              <!-- 定番地なし警告 -->
+              <div class="hold-warning" id="out-no-fixed-warning" style="background:rgba(230,126,34,0.08)!important;border-color:rgba(230,126,34,0.4)!important">
+                <div class="hold-warning-title" style="color:var(--orange);-webkit-text-fill-color:var(--orange)">⚠️ 定番地が設定されていません</div>
               </div>
-              <div class="btn-grid" id="out-shelves-grid"></div>
+
+              <!-- ② 補充元棚グリッド -->
+              <div class="sec-label" id="out-source-label" style="display:none">
+                補充元棚を選択（先入先出し順）<span class="fifo-badge">FIFO</span>
+              </div>
+              <div class="btn-grid" id="out-source-grid"></div>
             </div>
           </div>
 
@@ -2301,8 +2311,12 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
                 <span class="status-val" id="out-panel-item-val">—</span>
               </div>
               <div class="status-row">
-                <span class="status-key">棚番</span>
-                <span class="status-val green" id="out-panel-shelf-val">—</span>
+                <span class="status-key">定番地</span>
+                <span class="status-val" style="color:var(--orange);-webkit-text-fill-color:var(--orange)" id="out-panel-fixed-val">—</span>
+              </div>
+              <div class="status-row">
+                <span class="status-key">補充元</span>
+                <span class="status-val green" id="out-panel-source-val">—</span>
               </div>
             </div>
             <div class="status-panel" id="out-hold-panel" style="display:none;">
@@ -2535,34 +2549,12 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
 
 </div><!-- /app-wrapper -->
 
-<!-- ===== 棚出しモーダル ===== -->
-<div class="tanaだし-modal" id="tanaDashiModal" onclick="closeTanaDashi()">
-  <div class="tanaだし-card" onclick="event.stopPropagation()">
-    <span class="tanaだし-icon">📦</span>
-    <div class="tanaだし-title">棚出し指示 — 定番地へ移動してください</div>
-    <div class="tanaだし-product" id="td-product"></div>
-    <div class="tanaだし-flow">
-      <div class="tanaだし-shelf">
-        <span class="tanaだし-shelf-id" id="td-from-shelf"></span>
-        <span class="tanaだし-shelf-label">ここから取る</span>
-      </div>
-      <span class="tanaだし-arrow">→</span>
-      <div class="tanaだし-shelf tanaだし-dest">
-        <span class="tanaだし-shelf-id" id="td-to-shelf"></span>
-        <span class="tanaだし-shelf-label">📌 ここへ移動</span>
-      </div>
-    </div>
-    <div class="tanaだし-date" id="td-date"></div>
-    <button class="tanaだし-ok-btn" onclick="closeTanaDashi()">移動完了</button>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <script>
 /* ===================== 状態 ===================== */
 let inState   = { initial: null, item: null, shelfPrefix: null, shelf: null };
-let outState  = { initial: null, item: null, shelfPrefix: null, shelf: null };
+let outState  = { initial: null, item: null, fixedShelf: null, sourceShelf: null };
 let holdState = { initial: null, item: null };
 let holdTimer = null;
 let currentTab = 'in';
@@ -2759,15 +2751,17 @@ function updateOutSteps(){
   const s = outState;
   const hold = s.item ? isOnHold(s.item) : null;
   document.getElementById('out-step1').className = 'step ' + (s.item ? 'done' : 'active');
-  document.getElementById('out-step2').className = 'step ' + (!s.item ? '' : s.shelf ? 'done' : 'active');
-  document.getElementById('out-step3').className = 'step ' + (s.item && s.shelf && !hold ? 'active' : '');
+  document.getElementById('out-step2').className = 'step ' + (!s.item ? '' : s.sourceShelf ? 'done' : 'active');
+  document.getElementById('out-step3').className = 'step ' + (s.item && s.fixedShelf && s.sourceShelf && !hold ? 'active' : '');
   const btn = document.getElementById('out-confirm');
-  if(s.item && s.shelf && !hold){ btn.classList.remove('disabled'); btn.classList.add('ready'); }
+  if(s.item && s.fixedShelf && s.sourceShelf && !hold){ btn.classList.remove('disabled'); btn.classList.add('ready'); }
   else { btn.classList.add('disabled'); btn.classList.remove('ready'); }
   const ip = document.getElementById('out-panel-item-val');
-  const sp = document.getElementById('out-panel-shelf-val');
+  const fp = document.getElementById('out-panel-fixed-val');
+  const sp = document.getElementById('out-panel-source-val');
   if(ip) ip.textContent = s.item || '—';
-  if(sp) sp.textContent = s.shelf || '—';
+  if(fp) fp.textContent = s.fixedShelf || '—';
+  if(sp) sp.textContent = s.sourceShelf || '—';
   const hp = document.getElementById('out-hold-panel');
   const hc = document.getElementById('out-hold-panel-content');
   if(hold && hp){
@@ -3009,7 +3003,6 @@ function renderOut(){
         ${escHtml(ch)}<span class="count">${cnt}件</span>
       </button>`
     ).join('');
-
     if(outState.initial){
       panel.classList.add('visible');
       document.getElementById('out-panel-label').textContent = `「${outState.initial}」の品番`;
@@ -3024,6 +3017,7 @@ function renderOut(){
     }
   }
 
+  // 出荷停止警告
   const warning = document.getElementById('out-hold-warning');
   const hold = outState.item ? isOnHold(outState.item) : null;
   if(hold){
@@ -3034,53 +3028,71 @@ function renderOut(){
     warning.classList.remove('visible');
   }
 
-  const sgrid = document.getElementById('out-shelves-grid');
-  const label = document.getElementById('out-shelf-label');
+  // 定番地なし警告
+  const noFixedWarn = document.getElementById('out-no-fixed-warning');
+  const hasFixed = outState.item && !!outState.fixedShelf;
+  if(outState.item && !hold && !hasFixed){
+    noFixedWarn.classList.add('visible');
+  } else {
+    noFixedWarn?.classList.remove('visible');
+  }
 
-  if(outState.item && !hold){
-    label.style.display = 'flex';
+  // ② 補充元棚グリッド
+  const sourceLabel = document.getElementById('out-source-label');
+  const sourceGrid  = document.getElementById('out-source-grid');
+  if(outState.item && outState.fixedShelf && !hold){
+    sourceLabel.style.display = 'flex';
+    const allFixedShelves = new Set(Object.keys(cachedFixed));
     const candidateMap = {};
-    for(const s of cachedStock.filter(s => s.productId === outState.item)){
+    for(const s of cachedStock.filter(s => s.productId === outState.item && !allFixedShelves.has(s.shelfId))){
       if(!candidateMap[s.shelfId] || (s.inboundAtMs||0) < (candidateMap[s.shelfId].inboundAtMs||0)){
         candidateMap[s.shelfId] = s;
       }
     }
     const candidates = Object.values(candidateMap).sort((a,b) => (a.inboundAtMs||0) - (b.inboundAtMs||0));
     if(!candidates.length){
-      sgrid.innerHTML = '<div class="empty">この品番の在庫がありません</div>';
+      sourceGrid.innerHTML = '<div class="empty">フリーアドレスに補充できる在庫がありません</div>';
     } else {
-      sgrid.innerHTML = candidates.map((c, i) =>
-        `<button class="item-btn shelf-recommend ${outState.shelf===c.shelfId?'selected':''}"
+      sourceGrid.innerHTML = candidates.map((c, i) =>
+        `<button class="item-btn shelf-recommend ${outState.sourceShelf===c.shelfId?'selected':''}"
           data-rank="${i+1}"
-          onclick="selectOutShelf('${escJsSingle(c.shelfId)}')">
+          onclick="selectOutSource('${escJsSingle(c.shelfId)}')">
           ${escHtml(c.shelfId)}<span class="item-btn-sub">${escHtml(formatTime(c.inboundAt))}</span>
         </button>`
       ).join('');
     }
   } else {
-    label.style.display = 'none';
-    sgrid.innerHTML = '';
+    sourceLabel.style.display = 'none';
+    sourceGrid.innerHTML = '';
   }
 
-  document.getElementById('out-sel-item').textContent  = outState.item  || '—';
-  document.getElementById('out-sel-shelf').textContent = outState.shelf || '—';
+  document.getElementById('out-sel-item').textContent   = outState.item        || '—';
+  document.getElementById('out-sel-fixed').textContent  = outState.fixedShelf  || '—';
+  document.getElementById('out-sel-source').textContent = outState.sourceShelf || '—';
   updateOutSteps();
 }
 function selectOutInitial(ch){
   outState.initial = ch;
-  if(outState.item && outState.item.charAt(0).toUpperCase() !== ch){ outState.item = null; outState.shelf = null; }
+  if(outState.item && outState.item.charAt(0).toUpperCase() !== ch){ outState.item = null; outState.fixedShelf = null; outState.sourceShelf = null; }
   renderOut();
 }
-function clearOutInitial(){ outState.initial = null; outState.item = null; outState.shelf = null; renderOut(); }
+function clearOutInitial(){ outState = { initial: null, item: null, fixedShelf: null, sourceShelf: null }; renderOut(); }
 function selectOutItem(item){
-  outState.item = item;
-  outState.shelf = null;
+  outState.item = item; outState.sourceShelf = null;
+  // 定番地を自動決定：在庫ありの定番地、なければ設定済みの最初の棚
+  const fixedShelves = Object.entries(cachedFixed)
+    .filter(([, pid]) => pid === item).map(([s]) => s);
+  const occupied = fixedShelves.find(s => cachedStock.some(st => st.shelfId === s && st.productId === item));
+  outState.fixedShelf = occupied || fixedShelves[0] || null;
   renderOut();
   const hold = isOnHold(item);
   if(hold) scrollToEl('out-hold-warning', 'sec-out-scroll');
-  else scrollToEl('out-shelf-label', 'sec-out-scroll');
+  else if(outState.fixedShelf) scrollToEl('out-source-label', 'sec-out-scroll');
+  else scrollToEl('out-no-fixed-warning', 'sec-out-scroll');
 }
-function selectOutShelf(shelf){ outState.shelf = shelf; renderOut(); }
+function selectOutFixed(shelfId){ outState.fixedShelf = shelfId; outState.sourceShelf = null; renderOut(); }
+function selectOutSource(shelfId){ outState.sourceShelf = shelfId; renderOut(); }
+
 
 /* ===================== 出荷停止 RENDER ===================== */
 function renderHold(){
@@ -3205,22 +3217,38 @@ async function doConfirm(mode){
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
 
   } else if(mode === 'out'){
-    const { item, shelf } = outState;
-    if(!item || !shelf) return;
+    const { item, fixedShelf, sourceShelf } = outState;
+    if(!item || !fixedShelf || !sourceShelf) return;
     if(isOnHold(item)){ showToast('出荷停止中のため出庫できません', 'error'); return; }
     const now = new Date().toISOString();
-    // 定番地かどうか出庫前に確認（cachedFixed はこの時点のもの）
-    const isFixed = cachedFixed[shelf] === item;
+    const nowMs = Date.now();
     try{
-      await window.__deleteShelfItemByProduct(shelf, item);
+      // ① 定番地の在庫データを削除
+      await window.__deleteShelfItemByProduct(fixedShelf, item);
+      // ② 補充元の在庫データを取得（入庫日時引き継ぎのため）
+      const sourceStock = cachedStock
+        .filter(s => s.shelfId === sourceShelf && s.productId === item)
+        .sort((a,b) => (a.inboundAtMs||0) - (b.inboundAtMs||0))[0];
+      // ② 補充元から削除し、定番地へ移動
+      await window.__deleteShelfItemByProduct(sourceShelf, item);
+      await window.__addShelfItem(fixedShelf, {
+        shelfId: fixedShelf,
+        productId: item,
+        productQRRaw: item,
+        inboundAt: sourceStock?.inboundAt || now,
+        inboundAtMs: sourceStock?.inboundAtMs || nowMs,
+        status: 'occupied',
+        updatedAt: now,
+        movedFromShelf: sourceShelf,
+        movedAtMs: nowMs,
+      });
       if(window.__addHistory){
-        window.__addHistory({ type:'empty', shelfId: shelf, productId: item, at: now, atMs: Date.now() }).catch(()=>{});
+        window.__addHistory({ type:'outbound', shelfId: fixedShelf, productId: item, at: now, atMs: nowMs }).catch(()=>{});
+        window.__addHistory({ type:'move-to-fixed', shelfId: fixedShelf, productId: item, fromShelf: sourceShelf, at: now, atMs: nowMs }).catch(()=>{});
       }
-      showToast(`✅ 出庫：棚 ${shelf} → ${item}`);
-      outState = { initial: null, item: null, shelfPrefix: null, shelf: null };
+      showToast(`✅ 出庫完了：${item}　${sourceShelf} → 定番地 ${fixedShelf}`);
+      outState = { initial: null, item: null, fixedShelf: null, sourceShelf: null };
       await loadCache(); renderOut();
-      // 定番地から出庫した場合は自動棚出し（非同期：UI をブロックしない）
-      if(isFixed) autoReplenishFixed(shelf, item, now);
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
 
   } else if(mode === 'hold'){
@@ -3236,84 +3264,6 @@ async function doConfirm(mode){
       document.getElementById('hold-reason-input').value = '';
       await loadCache(); renderHold();
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
-  }
-}
-
-/* ===================== 棚出し（自動補充）===================== */
-function showTanaDashi(fromShelf, toShelf, productId, inboundAtMs){
-  document.getElementById('td-product').textContent = productId;
-  document.getElementById('td-from-shelf').textContent = fromShelf;
-  document.getElementById('td-to-shelf').textContent = toShelf;
-  document.getElementById('td-date').textContent =
-    `移動元 入庫日時：${formatTime(inboundAtMs)}（最古在庫）`;
-  const modal = document.getElementById('tanaDashiModal');
-  modal.classList.add('show');
-}
-function closeTanaDashi(){
-  document.getElementById('tanaDashiModal').classList.remove('show');
-}
-
-/**
- * 定番地への自動棚出し処理
- * @param {string} fixedShelf  出庫された定番地棚番
- * @param {string} productId   品番
- * @param {string} now         現在時刻ISO文字列
- */
-async function autoReplenishFixed(fixedShelf, productId, now){
-  // 出庫した棚が属するグループを特定
-  const group = cachedFixedGroups.find(g => g.shelfIds.includes(fixedShelf) && g.productId === productId);
-  // グループ内の全定番地棚を除外対象にする
-  const allFixedShelves = new Set(
-    group
-      ? group.shelfIds
-      : Object.entries(cachedFixed).filter(([,p]) => p === productId).map(([s]) => s)
-  );
-
-  // キャッシュ再取得（出庫後の最新状態）
-  await loadCache();
-
-  // 定番地外の同品番在庫から最古を探す
-  const candidates = cachedStock
-    .filter(s => s.productId === productId && !allFixedShelves.has(s.shelfId))
-    .sort((a, b) => (a.inboundAtMs || 0) - (b.inboundAtMs || 0));
-
-  if(!candidates.length) return; // 補充できる在庫なし
-
-  const source = candidates[0];
-  const nowMs = Date.now();
-
-  try{
-    // 移動元から削除
-    await window.__deleteShelfItemByProduct(source.shelfId, productId);
-    // 定番地へ追加（元の入庫日時を引き継ぐ）
-    await window.__addShelfItem(fixedShelf, {
-      shelfId: fixedShelf,
-      productId,
-      productQRRaw: productId,
-      inboundAt: source.inboundAt || now,
-      inboundAtMs: source.inboundAtMs || nowMs,
-      status: 'occupied',
-      updatedAt: now,
-      movedFromShelf: source.shelfId,
-      movedAtMs: nowMs,
-    });
-    // 履歴：移動元出庫
-    if(window.__addHistory){
-      window.__addHistory({
-        type: 'tana-dashi-from', shelfId: source.shelfId, productId,
-        toShelf: fixedShelf, at: now, atMs: nowMs
-      }).catch(()=>{});
-      // 履歴：定番地入庫
-      window.__addHistory({
-        type: 'tana-dashi-to', shelfId: fixedShelf, productId,
-        fromShelf: source.shelfId, at: now, atMs: nowMs
-      }).catch(()=>{});
-    }
-    // モーダル表示
-    showTanaDashi(source.shelfId, fixedShelf, productId, source.inboundAtMs);
-  }catch(e){
-    console.error('棚出しエラー:', e);
-    showToast('棚出し処理でエラーが発生しました', 'error');
   }
 }
 
