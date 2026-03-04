@@ -1226,6 +1226,39 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   background: rgba(245,166,35,0.25) !important;
   border-color: var(--accent) !important;
 }
+/* 定番地近傍おすすめ空き棚 */
+.item-btn.shelf-near-fixed {
+  background: rgba(52,152,219,0.12) !important;
+  border-color: var(--blue) !important;
+  border-width: 2px !important;
+}
+.item-btn.shelf-near-fixed::before {
+  content: 'おすすめ';
+  position: absolute;
+  top: -9px; left: 50%;
+  transform: translateX(-50%);
+  background: var(--blue) !important;
+  color: white !important;
+  -webkit-text-fill-color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.item-btn.shelf-near-fixed.selected {
+  background: rgba(245,166,35,0.25) !important;
+  border-color: var(--accent) !important;
+}
+/* プレフィックス：近傍おすすめ棚あり */
+.shelf-prefix-btn.pfx-near-fixed {
+  border-color: var(--blue) !important;
+  border-width: 2px !important;
+}
+.shelf-prefix-btn.pfx-near-fixed:not(.selected):not(.pfx-item-fixed) {
+  background: rgba(52,152,219,0.08) !important;
+}
+
 /* プレフィックスボタン：選択品番の定番地あり＆空き */
 .shelf-prefix-btn.pfx-item-fixed {
   border-color: var(--orange) !important;
@@ -2927,6 +2960,34 @@ function renderInStockMini(){
   ).join('') + (Object.keys(shelfMap).length > 8 ? `<div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0">他${Object.keys(shelfMap).length-8}棚</div>` : '');
 }
 
+/* 2棚間の「近さ」スコアを返す（小さいほど近い） */
+function getShelfDistance(shelfA, shelfB){
+  const parse = s => {
+    const m = String(s).match(/^(.+?)-(\d+)/);
+    return m ? { pfx: m[1], num: parseInt(m[2]) } : { pfx: String(s), num: 0 };
+  };
+  const a = parse(shelfA), b = parse(shelfB);
+  if(a.pfx === b.pfx) return Math.abs(a.num - b.num);
+  // 異なるプレフィックスは大きなペナルティ（おすすめ対象外にする）
+  return 99999;
+}
+
+/* 選択品番の定番地に近い空き棚（定番地自体を除く）を近さ順で返す */
+function getNearFixedShelves(item, maxDist = 5){
+  if(!item) return [];
+  const fixedShelves = Object.entries(cachedFixed)
+    .filter(([, pid]) => pid === item).map(([s]) => s);
+  if(!fixedShelves.length) return [];
+  const occupiedSet = new Set(cachedStock.map(s => s.shelfId));
+  const fixedSet    = new Set(Object.keys(cachedFixed));
+  // 空き × 定番地外 の棚を対象に、定番地への最短距離を計算
+  return cachedShelves
+    .filter(s => !occupiedSet.has(s) && !fixedSet.has(s))
+    .map(s => ({ shelfId: s, dist: Math.min(...fixedShelves.map(f => getShelfDistance(s, f))) }))
+    .filter(x => x.dist <= maxDist)
+    .sort((a, b) => a.dist - b.dist);
+}
+
 /* ===================== 入庫 RENDER ===================== */
 function renderIn(){
   const ig = document.getElementById('in-initial-grid');
@@ -2964,6 +3025,11 @@ function renderIn(){
   } else {
     const prefixes = getShelfPrefixes(cachedShelves);
     const occupiedSetPfx = new Set(cachedStock.map(s => s.shelfId));
+    // 近傍おすすめ棚セット（品番選択済み時のみ計算）
+    const nearFixed = inState.item ? getNearFixedShelves(inState.item) : [];
+    const nearFixedSet = new Set(nearFixed.map(x => x.shelfId));
+    const nearFixedPfxSet = new Set(nearFixed.map(x => getShelfPrefix(x.shelfId)));
+
     spg.innerHTML = prefixes.map(([p, cnt]) => {
       const emptyCnt = cachedShelves.filter(s => getShelfPrefix(s) === p && !occupiedSetPfx.has(s)).length;
       const isFull = emptyCnt === 0;
@@ -2971,16 +3037,18 @@ function renderIn(){
       const emptyPct = Math.round((emptyCnt / cnt) * 100);
       const hasFixed = cachedShelves.filter(s => getShelfPrefix(s) === p).some(s => cachedFixed[s]);
       const fixedPfxClass = hasFixed ? 'pfx-has-fixed' : '';
-      // 選択中品番の定番地がこのプレフィックスにあり空きがある
       const itemFixedAvailable = inState.item
         ? getAvailableFixedShelves(inState.item).some(s => getShelfPrefix(s) === p)
         : false;
       const itemFixedClass = itemFixedAvailable ? 'pfx-item-fixed' : '';
+      const isNearPfx = !itemFixedAvailable && nearFixedPfxSet.has(p);
+      const nearPfxClass = isNearPfx ? 'pfx-near-fixed' : '';
       const stateClass = isSelected ? 'selected' : (isFull ? 'is-full' : 'has-empty');
       const label = isFull ? `全${cnt}棚 満` : `空き ${emptyCnt}/${cnt}棚`;
-      return `<button class="shelf-prefix-btn ${stateClass} ${fixedPfxClass} ${itemFixedClass}" onclick="selectInShelfPrefix('${escJsSingle(p)}')">
+      const spbLabel = itemFixedAvailable ? '📌定番地あり' : isNearPfx ? '⭐ 定番地に近い' : label;
+      return `<button class="shelf-prefix-btn ${stateClass} ${fixedPfxClass} ${itemFixedClass} ${nearPfxClass}" onclick="selectInShelfPrefix('${escJsSingle(p)}')">
         <span>${escHtml(p)}</span>
-        <span class="spb-label">${itemFixedAvailable ? '📌定番地あり' : label}</span>
+        <span class="spb-label">${spbLabel}</span>
         <div class="spb-bar-wrap"><div class="spb-bar-fill" style="width:${emptyPct}%"></div></div>
       </button>`;
     }).join('');
@@ -2989,30 +3057,38 @@ function renderIn(){
       document.getElementById('in-shelf-panel-label').textContent = `「${inState.shelfPrefix}-」の棚番`;
       const filtered = cachedShelves.filter(s => getShelfPrefix(s) === inState.shelfPrefix);
       const occupiedSet = new Set(cachedStock.map(s => s.shelfId));
-      // 定番地（選択品番）が空き → 最上位、次に空き棚、最後に使用中
       const availableFixed = inState.item ? getAvailableFixedShelves(inState.item) : [];
-      const sortedShelves = [...filtered].sort((a,b) => {
-        const aFixed = availableFixed.includes(a) ? 0 : 1;
-        const bFixed = availableFixed.includes(b) ? 0 : 1;
-        if(aFixed !== bFixed) return aFixed - bFixed;
-        const aOcc = occupiedSet.has(a) ? 1 : 0;
-        const bOcc = occupiedSet.has(b) ? 1 : 0;
-        return aOcc - bOcc || a.localeCompare(b);
+      // ソート：定番地空き → 近傍おすすめ空き（距離順）→ その他空き → 使用中
+      const nearMap = Object.fromEntries(nearFixed.map(x => [x.shelfId, x.dist]));
+      const sortedShelves = [...filtered].sort((a, b) => {
+        const rank = s => {
+          if(availableFixed.includes(s)) return 0;
+          if(nearFixedSet.has(s)) return 1;
+          if(!occupiedSet.has(s)) return 2;
+          return 3;
+        };
+        const ra = rank(a), rb = rank(b);
+        if(ra !== rb) return ra - rb;
+        // 近傍同士は距離順
+        if(ra === 1) return (nearMap[a] ?? 999) - (nearMap[b] ?? 999);
+        return a.localeCompare(b);
       });
       sg.innerHTML = sortedShelves.map(shelf => {
         const isOccupied = occupiedSet.has(shelf);
         const stockItems = isOccupied ? cachedStock.filter(s => s.shelfId === shelf) : [];
         const fixedProd = cachedFixed[shelf];
-        const isItemFixed = availableFixed.includes(shelf); // 選択品番の定番地かつ空き
+        const isItemFixed = availableFixed.includes(shelf);
+        const isNear = !isItemFixed && nearFixedSet.has(shelf) && !isOccupied;
         const fixedClass = fixedProd ? 'shelf-has-fixed' : '';
         const fixedRecommendClass = isItemFixed ? 'shelf-fixed-recommend' : '';
+        const nearClass = isNear ? 'shelf-near-fixed' : '';
         const stateClass = inState.shelf===shelf ? 'selected' : (isOccupied ? 'shelf-occupied-in' : 'shelf-empty');
         const prodLabel = stockItems.map(s => s.productId).filter(Boolean).join(' / ');
         const sub = isOccupied && prodLabel
           ? `<span class="item-btn-sub">${escHtml(prodLabel)}</span>`
           : (!isOccupied ? `<span class="item-btn-sub" style="color:var(--green);-webkit-text-fill-color:var(--green)">空き</span>` : '');
         const fixedSub = fixedProd && !isItemFixed ? `<span class="item-btn-sub" style="color:var(--orange);-webkit-text-fill-color:var(--orange)">📌${escHtml(fixedProd)}</span>` : '';
-        return `<button class="item-btn ${stateClass} ${fixedClass} ${fixedRecommendClass}" onclick="selectInShelf('${escJsSingle(shelf)}')">${escHtml(shelf)}${sub}${!isOccupied && fixedProd && !isItemFixed ? fixedSub : ''}</button>`;
+        return `<button class="item-btn ${stateClass} ${fixedClass} ${fixedRecommendClass} ${nearClass}" onclick="selectInShelf('${escJsSingle(shelf)}')">${escHtml(shelf)}${sub}${!isOccupied && fixedProd && !isItemFixed ? fixedSub : ''}</button>`;
       }).join('');
     } else {
       shelfPanel.classList.remove('visible');
