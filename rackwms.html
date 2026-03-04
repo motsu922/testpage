@@ -1090,38 +1090,10 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
 }
 
 /* ===== 定番地 ===== */
-.fixed-badge {
-  position: absolute;
-  top: -8px; left: -8px;
-  background: var(--orange) !important;
-  color: white !important;
-  -webkit-text-fill-color: white;
-  font-size: 9px;
-  font-weight: 700;
-  padding: 2px 5px;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
-  pointer-events: none;
-}
 .item-btn.shelf-has-fixed {
   border-color: rgba(230,126,34,0.55) !important;
 }
 .shelf-prefix-btn.pfx-has-fixed { position: relative; }
-.pfx-fixed-dot {
-  display: none;
-  position: absolute;
-  top: 3px; right: 3px;
-  background: var(--orange) !important;
-  color: white !important;
-  -webkit-text-fill-color: white;
-  font-size: 8px;
-  font-weight: 700;
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  align-items: center;
-  justify-content: center;
-}
-.shelf-prefix-btn.pfx-has-fixed .pfx-fixed-dot { display: flex; }
 .fixed-pair-row {
   display: flex;
   align-items: center;
@@ -2651,13 +2623,13 @@ function switchTab(tab, el){
   const sidebarEl = document.getElementById('sidebar-' + tab);
   if(sidebarEl) sidebarEl.classList.add('active');
 
-  if(tab === 'in')      { loadCache().then(() => { renderIn(); renderInStockMini(); }); }
-  if(tab === 'out')     { loadCache().then(renderOut); }
+  if(tab === 'in')      { renderIn(); renderInStockMini(); }
+  if(tab === 'out')     { renderOut(); }
   if(tab === 'history') { renderHistory(); }
-  if(tab === 'hold')    { loadCache().then(renderHold); }
-  if(tab === 'master')  { loadCache().then(renderMaster); }
+  if(tab === 'hold')    { renderHold(); renderHoldList(); }
+  if(tab === 'master')  { renderMaster(); }
   if(tab !== 'inv') { invStopPolling(); }
-  if(tab === 'inv')     { loadCache().then(renderInv); }
+  if(tab === 'inv')     { renderInv(); }
 
   setTimeout(focusScanInput, 50);
 }
@@ -2855,7 +2827,6 @@ function renderIn(){
       const stateClass = isSelected ? 'selected' : (isFull ? 'is-full' : 'has-empty');
       const label = isFull ? `全${cnt}棚 満` : `空き ${emptyCnt}/${cnt}棚`;
       return `<button class="shelf-prefix-btn ${stateClass} ${fixedPfxClass} ${itemFixedClass}" onclick="selectInShelfPrefix('${escJsSingle(p)}')">
-        <span class="pfx-fixed-dot">定</span>
         <span>${escHtml(p)}</span>
         <span class="spb-label">${itemFixedAvailable ? '📌定番地あり' : label}</span>
         <div class="spb-bar-wrap"><div class="spb-bar-fill" style="width:${emptyPct}%"></div></div>
@@ -2889,8 +2860,7 @@ function renderIn(){
           ? `<span class="item-btn-sub">${escHtml(prodLabel)}</span>`
           : (!isOccupied ? `<span class="item-btn-sub" style="color:var(--green);-webkit-text-fill-color:var(--green)">空き</span>` : '');
         const fixedSub = fixedProd && !isItemFixed ? `<span class="item-btn-sub" style="color:var(--orange);-webkit-text-fill-color:var(--orange)">📌${escHtml(fixedProd)}</span>` : '';
-        const fixedBadge = fixedProd ? `<span class="fixed-badge">定</span>` : '';
-        return `<button class="item-btn ${stateClass} ${fixedClass} ${fixedRecommendClass}" onclick="selectInShelf('${escJsSingle(shelf)}')">${fixedBadge}${escHtml(shelf)}${sub}${!isOccupied && fixedProd && !isItemFixed ? fixedSub : ''}</button>`;
+        return `<button class="item-btn ${stateClass} ${fixedClass} ${fixedRecommendClass}" onclick="selectInShelf('${escJsSingle(shelf)}')">${escHtml(shelf)}${sub}${!isOccupied && fixedProd && !isItemFixed ? fixedSub : ''}</button>`;
       }).join('');
     } else {
       shelfPanel.classList.remove('visible');
@@ -3213,7 +3183,7 @@ async function doConfirm(mode){
       if(banner) banner.classList.remove('visible');
       const guideBanner = document.getElementById('in-fixed-guide-banner');
       if(guideBanner) guideBanner.classList.remove('visible');
-      await loadCache(); renderIn(); renderInStockMini();
+      
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
 
   } else if(mode === 'out'){
@@ -3248,7 +3218,7 @@ async function doConfirm(mode){
       }
       showToast(`✅ 出庫完了：${item}　${sourceShelf} → 定番地 ${fixedShelf}`);
       outState = { initial: null, item: null, fixedShelf: null, sourceShelf: null };
-      await loadCache(); renderOut();
+      
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
 
   } else if(mode === 'hold'){
@@ -3262,7 +3232,7 @@ async function doConfirm(mode){
       showToast(`🚫 ${item} を出荷停止しました`);
       holdState = { initial: null, item: null };
       document.getElementById('hold-reason-input').value = '';
-      await loadCache(); renderHold();
+      
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
   }
 }
@@ -3273,7 +3243,7 @@ async function releaseHold(itemId){
   try{
     await window.__deleteHold(itemId);
     showToast(`✅ ${itemId} の出荷停止を解除しました`);
-    await loadCache();
+    
     renderHoldList();
     if(currentTab === 'out') renderOut();
   }catch(e){ console.error(e); showToast('解除エラー', 'error'); }
@@ -3469,7 +3439,7 @@ async function addItem(){
     await window.__saveItemMaster(val);
     el.value = '';
     showToast(`✅ 品番 ${val} を登録しました`);
-    await loadCache(); renderMaster();
+    
   }catch(e){ console.error(e); showToast('登録エラー', 'error'); }
 }
 async function removeItem(item){
@@ -3477,7 +3447,7 @@ async function removeItem(item){
   try{
     await window.__deleteItemMaster(item);
     showToast(`🗑 品番 ${item} を削除しました`);
-    await loadCache(); renderMaster();
+    
   }catch(e){ console.error(e); showToast('削除エラー', 'error'); }
 }
 async function addShelf(){
@@ -3489,7 +3459,7 @@ async function addShelf(){
     await window.__saveShelfMaster(val);
     el.value = '';
     showToast(`✅ 棚番 ${val} を登録しました`);
-    await loadCache(); renderMaster();
+    
   }catch(e){ console.error(e); showToast('登録エラー', 'error'); }
 }
 async function removeShelf(shelf){
@@ -3497,7 +3467,7 @@ async function removeShelf(shelf){
   try{
     await window.__deleteShelfMaster(shelf);
     showToast(`🗑 棚番 ${shelf} を削除しました`);
-    await loadCache(); renderMaster();
+    
   }catch(e){ console.error(e); showToast('削除エラー', 'error'); }
 }
 async function removeStock(shelfId){
@@ -3505,7 +3475,7 @@ async function removeStock(shelfId){
   try{
     await window.__deleteShelfItem(shelfId);
     showToast(`🗑 削除しました`);
-    await loadCache(); renderMaster();
+    
   }catch(e){ console.error(e); showToast('削除エラー', 'error'); }
 }
 
@@ -3842,7 +3812,7 @@ async function invSaveResult(shelfId, sysProduct, forceEmpty){
     invResults[shelfId] = resultData;
     invUpdateProgress();
     invCloseEntry();
-    await loadCache();
+    
     invRenderShelfGrid();
 
     const nextShelf = cachedShelves.find(s => !invResults[s]);
@@ -3925,9 +3895,6 @@ function showToast(msg, type){
 /* ===================== キー入力 ===================== */
 document.getElementById('new-item').addEventListener('keydown', e => { if(e.key==='Enter') addItem(); });
 document.getElementById('new-shelf').addEventListener('keydown', e => { if(e.key==='Enter') addShelf(); });
-
-/* ===================== 初期ロード ===================== */
-loadCache().then(() => { renderIn(); renderInStockMini(); });
 </script>
 
 <!-- ===== Firebase SDK ===== -->
@@ -3936,7 +3903,7 @@ loadCache().then(() => { renderIn(); renderInStockMini(); });
   import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
   import {
     getFirestore, doc, getDoc, setDoc, deleteDoc, collection,
-    getDocs, query, serverTimestamp, orderBy, limit, addDoc
+    getDocs, query, serverTimestamp, orderBy, limit, addDoc, onSnapshot
   } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -4085,9 +4052,55 @@ loadCache().then(() => { renderIn(); renderInStockMini(); });
     return snap.docs.map(d => d.data()).filter(d => d.sessionId === sessionId);
   };
 
-  await loadCache();
-  renderIn();
-  renderInStockMini();
+  /* ===== リアルタイムリスナー ===== */
+  let _listenersReady = 0;
+  const LISTENER_COUNT = 5; // INV, SHM, ITM, HLD, FGRP
+
+  function _onAllReady(){
+    // 全リスナーの初回スナップショット完了後に初期描画
+    fgRebuildCache();
+    renderIn();
+    renderInStockMini();
+    setStatus('接続済み（リアルタイム）', '#2ecc71');
+  }
+
+  function _rerender(){
+    // 現在表示中のタブを再描画
+    const active = document.querySelector('.section.active')?.id;
+    if(active === 'sec-in')      { renderIn(); renderInStockMini(); }
+    else if(active === 'sec-out')     { renderOut(); }
+    else if(active === 'sec-hold')    { renderHold(); renderHoldList(); }
+    else if(active === 'sec-master')  { renderMaster(); }
+    else if(active === 'sec-inv')     { renderInv(); }
+  }
+
+  // 在庫
+  onSnapshot(collection(db, INV), snap => {
+    cachedStock = snap.docs.map(d => d.data()).filter(s => s && s.status === 'occupied');
+    if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
+  });
+  // 棚マスター
+  onSnapshot(collection(db, SHM), snap => {
+    cachedShelves = snap.docs.map(d => d.data()).map(s => s.shelfId).filter(Boolean).sort();
+    if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
+  });
+  // 品番マスター
+  onSnapshot(collection(db, ITM), snap => {
+    cachedItems = snap.docs.map(d => d.data()).map(i => i.itemId).filter(Boolean).sort();
+    if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
+  });
+  // 出荷停止
+  onSnapshot(collection(db, HLD), snap => {
+    cachedHolds = snap.docs.map(d => d.data());
+    if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
+  });
+  // 定番地グループ
+  onSnapshot(collection(db, FGRP), snap => {
+    cachedFixedGroups = snap.docs.map(d => d.data()).map(d => ({ ...d, shelfIds: Array.isArray(d.shelfIds) ? d.shelfIds : [] }));
+    fgRebuildCache();
+    if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
+  });
+
 </script>
 
 </body>
