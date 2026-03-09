@@ -187,10 +187,12 @@ tr.exp-row td{padding:0}
       <label>対策状況</label>
       <select id="filterStagStatus" style="min-width:116px">
         <option value="">すべて</option>
+        <option value="未入力">未入力</option>
         <option value="対策検討中">対策検討中</option>
         <option value="暫定対策中">暫定対策中</option>
         <option value="対策部品待ち">対策部品待ち</option>
-        <option value="未入力">未入力</option>
+        <option value="対策効果確認中">対策効果確認中</option>
+        <option value="恒久対策完了">恒久対策完了</option>
       </select>
     </div>
     <div style="display:flex;gap:5px;align-items:flex-end;flex-wrap:wrap">
@@ -331,13 +333,20 @@ function refreshLines(){
 }
 els.dep.addEventListener('change',()=>refreshLines());
 
-// Firestore
+// ── Firestore ──
+// [FIX] occurrenceDate（発生日）基準で取得し、createdAt との二重フィルタを解消
 async function fetchAnom(days){
   const from=new Date(Date.now()-days*86400000);
-  const q=query(collection(db,'anomalies'),where('createdAt','>=',from),limit(4000));
+  const fromStr=from.toISOString().slice(0,10); // 'YYYY-MM-DD'
+  const q=query(
+    collection(db,'anomalies'),
+    where('occurrenceDate','>=',fromStr),
+    limit(8000)
+  );
   const snap=await getDocs(q);
   const arr=[];snap.forEach(d=>arr.push({_id:d.id,...d.data()}));return arr;
 }
+
 async function fetchMemos(key){
   const q=query(collection(db,'watchMemos'),where('serialKey','==',key));
   const snap=await getDocs(q);
@@ -361,17 +370,17 @@ async function deleteMemo(key,id){
 function updateMemoStat(){$('sMemoCount').textContent=Object.values(memoCache).reduce((s,a)=>s+a.length,0);}
 
 // Compute
+// [FIX] computeRisk内のoccurrenceDate日付フィルタを削除（Firestoreクエリ側で担保）
 function computeRisk(data,opts){
   const{windowDays,repeatTh,totalTh,filterDep,filterLn,filterSer,filterSt}=opts;
-  const now=new Date(),from=new Date(now-windowDays*86400000);
+  const now=new Date();
   const groups=new Map();
   data.forEach(it=>{
     const ser=normSer(it.serialNo);if(!ser)return;
     const dep=pickDep(it),ln=pickLn(it);
     if(filterDep&&dep!==filterDep)return;
     if(filterLn&&ln!==filterLn)return;
-    const dt=toDate(it.occurrenceDate)||(it.createdAt?.toDate?.())||null;
-    if(dt&&dt<from)return;
+    // ↑ occurrenceDateによる日付フィルタ削除済み（fetchAnomのFirestoreクエリで担保）
     if(!groups.has(ser))groups.set(ser,[]);
     groups.get(ser).push(it);
   });
@@ -392,8 +401,7 @@ function computeRisk(data,opts){
     const progressAt=pickProg(cur)||latestOcc||new Date(0);
     const stag=Math.floor(msDays(now-progressAt));
     const displayStatus=status||'未入力';
-    const STAG=['対策検討中','暫定対策中','対策部品待ち','未入力'];
-    if(!STAG.includes(displayStatus)||stag<14)continue;
+    // [変更] ステータス・停滞日数による除外を撤廃 → 全ステータス・全日数を対象とする
     if(filterSt&&displayStatus!==filterSt)continue;
     results.push({
       serialNo:sampleNo,serialKey,totalCount:total,repeatCount:repeat,
@@ -646,7 +654,6 @@ els.tbody.addEventListener('click',async e=>{
     }
     renderTable(lastResult);
     if(expandedKey){
-      // Scroll expanded row into view
       setTimeout(()=>{
         const expRow=els.tbody.querySelector(`tr.exp-row[data-key="${CSS.escape(key)}"]`);
         if(expRow)expRow.scrollIntoView({behavior:'smooth',block:'nearest'});
