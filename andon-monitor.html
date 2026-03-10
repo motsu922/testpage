@@ -728,8 +728,14 @@
 <body>
   <div class="page">
     <div class="header">
-      <h1>📢 品質呼び出しモニター</h1>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h1>📢 品質呼び出しモニター</h1>
+        <button id="settingsToggleBtn" title="設定を表示/非表示"
+          style="background:none;border:2px solid #dee2e6;border-radius:10px;padding:8px 14px;cursor:pointer;font-size:1.3rem;color:#888;transition:all 0.2s;line-height:1;"
+        >⚙️</button>
+      </div>
 
+      <div id="settingsPanel" style="display:none;">
       <div class="header-actions">
         <!-- サウンドコントロール群 -->
         <div class="sound-controls">
@@ -761,6 +767,7 @@
       </div>
 
       <div id="qcQuickBar" class="qc-quick-bar" aria-label="QC対応可否トグル"></div>
+      </div><!-- /settingsPanel -->
     </div>
 
     <div class="stats-grid">
@@ -1130,8 +1137,11 @@
     }
     // -------------------
 
-    function playChime(type = 'normal') {
+    async function playChime(type = 'normal') {
       if (!soundEnabled || !audioCtx) return;
+      try {
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+      } catch (e) { console.warn('audioCtx resume error', e); return; }
       const isUrgent = (type === 'urgent');
       const fn = PATTERNS[soundPattern] || PATTERNS[1];
       try { fn(audioCtx, audioCtx.currentTime, isUrgent); } catch (e) { console.warn('playChime error', e); }
@@ -1143,7 +1153,7 @@
 
     function startUrgentAlarm() {
       if (urgentAlarmTimer) return;
-      playChime('urgent');
+      playChime('urgent'); // async but fire-and-forget for alarm
       urgentAlarmTimer = setInterval(() => {
         if (!soundEnabled || !hasUrgentPending) { stopUrgentAlarm(); return; }
         playChime('urgent');
@@ -1165,7 +1175,7 @@
         const ok = await unlockAudio();
         if (!ok) { alert('音声再生がブロックされました。ブラウザ設定を確認してください。'); return; }
         updateUrgentAlarmState();
-        if (!hasUrgentPending) playChime('normal');
+        if (!hasUrgentPending) await playChime('normal');
       } else {
         stopUrgentAlarm();
       }
@@ -1179,10 +1189,8 @@
 
     // テスト再生
     testSoundBtn.addEventListener('click', async () => {
-      if (!audioCtx) {
-        const ok = await unlockAudio();
-        if (!ok) { alert('音声再生がブロックされました。'); return; }
-      }
+      const ok = await unlockAudio();
+      if (!ok) { alert('音声再生がブロックされました。ブラウザ設定を確認してください。'); return; }
       const fn = PATTERNS[soundPattern] || PATTERNS[1];
       try { fn(audioCtx, audioCtx.currentTime, false); } catch (e) { console.warn(e); }
     });
@@ -1860,6 +1868,21 @@
     function escapeAttr(s) {
       return escapeHtml(String(s ?? '')).replaceAll('\n',' ').replaceAll('\r',' ');
     }
+
+    // ===== 設定パネル 表示/非表示 =====
+    (function() {
+      const btn   = document.getElementById('settingsToggleBtn');
+      const panel = document.getElementById('settingsPanel');
+      if (!btn || !panel) return;
+      let open = false;
+      btn.addEventListener('click', () => {
+        open = !open;
+        panel.style.display  = open ? 'block' : 'none';
+        btn.style.background  = open ? 'linear-gradient(135deg,#667eea,#764ba2)' : 'none';
+        btn.style.borderColor = open ? '#667eea' : '#dee2e6';
+        btn.style.color       = open ? '#fff' : '#888';
+      });
+    })();
   </script>
 </body>
 </html>
