@@ -1,5 +1,6 @@
 
 
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1863,6 +1864,8 @@ const FILTER_PAGE_SIZE = 25;
   let techPhotos = [];
  let editMfgPhotos = [];
 let editTechPhotos = [];
+let editDeletedMfgPhotoUrls = [];
+let editDeletedTechPhotoUrls = [];
   let currentView='card';
   let mastersCache = null;
   let unsubscribeSnapshot = null;
@@ -3884,6 +3887,52 @@ const dataUrl = exportCanvas.toDataURL('image/png');
     (handlers[dept]||[]).forEach(h=>{ const o=document.createElement('option'); o.value=o.textContent=h; handlerSel.appendChild(o); });
   }
 
+  function renderEditLineOptions(department, selectedValue){
+    const lines = (mastersCache?.lines?.[department] || []).slice();
+    const current = String(selectedValue || '').trim();
+    if (current && !lines.includes(current)) lines.unshift(current);
+    const options = ['<option value="">選択してください</option>'];
+    lines.forEach(line => {
+      const selected = line === current ? 'selected' : '';
+      options.push(`<option value="${escapeHtml(line)}" ${selected}>${escapeHtml(line)}</option>`);
+    });
+    return options.join('');
+  }
+
+  function renderExistingEditPhotos(urls = [], kind = 'mfg'){
+    if (!urls.length) return '<div style="color:#888;font-size:.9rem;">既存写真はありません</div>';
+
+    return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;">
+        ${urls.map((url, idx) => `
+          <div style="position:relative;border-radius:6px;overflow:hidden;box-shadow:0 2px 5px rgba(0,0,0,.12);background:#f8f9fa;">
+            <img src="${url}" style="width:100%;aspect-ratio:1;object-fit:cover;cursor:pointer;display:block;" onclick="window.open('${url}','_blank')">
+            <button
+              type="button"
+              data-existing-photo-delete="${kind}"
+              data-photo-url="${encodeURIComponent(url)}"
+              style="position:absolute;top:6px;right:6px;background:rgba(220,53,69,.95);color:#fff;border:none;border-radius:999px;width:28px;height:28px;cursor:pointer;font-weight:700;"
+              title="この写真を削除"
+            >×</button>
+            <div style="padding:6px 8px;font-size:.78rem;color:#555;text-align:center;">写真${idx + 1}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  async function deletePhotosFromStorage(urls = []){
+    for (const url of urls) {
+      if (!url) continue;
+      try {
+        const photoRef = ref(storage, url);
+        await deleteObject(photoRef);
+      } catch (error) {
+        console.warn('写真削除スキップ:', url, error?.message || error);
+      }
+    }
+  }
+
   function calcStopMinutes(item){
     const ot = item.occurrenceTime || '';
     const rt = item.restartTime || '';
@@ -4888,6 +4937,8 @@ document.addEventListener('click', async (e)=>{
     editCurrentTab = 'mfg';
     editMfgPhotos = [];
     editTechPhotos = [];
+    editDeletedMfgPhotoUrls = [];
+    editDeletedTechPhotoUrls = [];
     renderEditModalUI();
     document.getElementById('editModal').classList.add('active');
   });
@@ -4903,6 +4954,24 @@ document.addEventListener('click', async (e)=>{
     renderEditModalUI();
   });
 
+
+  document.addEventListener('click', (e) => {
+    const deleteBtn = e.target.closest('button[data-existing-photo-delete]');
+    if (!deleteBtn) return;
+
+    const kind = deleteBtn.getAttribute('data-existing-photo-delete');
+    const url = decodeURIComponent(deleteBtn.getAttribute('data-photo-url') || '');
+    if (!url) return;
+    if (!confirm('この写真を削除候補にします。保存すると反映されます。よろしいですか？')) return;
+
+    if (kind === 'mfg') {
+      if (!editDeletedMfgPhotoUrls.includes(url)) editDeletedMfgPhotoUrls.push(url);
+    } else {
+      if (!editDeletedTechPhotoUrls.includes(url)) editDeletedTechPhotoUrls.push(url);
+    }
+    renderEditModalUI();
+  });
+
   // 編集モーダルUI描画
   function renderEditModalUI() {
     const item = anomalyCache.find(x => x._id === editingId);
@@ -4913,6 +4982,7 @@ document.addEventListener('click', async (e)=>{
     if (editCurrentTab === 'mfg') {
       container.innerHTML = `
         <div class="form-group"><label>整理No</label><input type="text" id="edit_serialNo" value="${item.serialNo || ''}"></div>
+        <div class="form-group"><label>ライン名</label><select id="edit_lineName">${renderEditLineOptions(item.department || '', item.lineName || '')}</select></div>
         <div class="form-group"><label>発生日</label><input type="date" id="edit_occurrenceDate" value="${item.occurrenceDate || ''}"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div class="form-group"><label>発生時刻</label><input type="time" id="edit_occurrenceTime" value="${item.occurrenceTime || ''}"></div>
@@ -4955,14 +5025,10 @@ document.addEventListener('click', async (e)=>{
           </div>
           <div id="edit_mfgPhotoPreview" class="photo-preview"></div>
         </div>
-        ${(item.mfgPhotoUrls && item.mfgPhotoUrls.length) ? `
-          <div class="form-group">
-            <label>既存写真（発信部署）</label>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-              ${item.mfgPhotoUrls.map(url => `<img src="${url}" style="width:100%;border-radius:4px;cursor:pointer;" onclick="window.open('${url}','_blank')">`).join('')}
-            </div>
-          </div>
-        ` : ''}
+        <div class="form-group">
+          <label>既存写真（発信部署）</label>
+          ${renderExistingEditPhotos((item.mfgPhotoUrls || []).filter(url => !editDeletedMfgPhotoUrls.includes(url)), 'mfg')}
+        </div>
       `;
     } else {
       container.innerHTML = `
@@ -5050,14 +5116,10 @@ document.addEventListener('click', async (e)=>{
           </div>
           <div id="edit_techPhotoPreview" class="photo-preview"></div>
         </div>
-        ${(item.techPhotoUrls && item.techPhotoUrls.length) ? `
-          <div class="form-group">
-            <label>既存写真（対応部署）</label>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-              ${item.techPhotoUrls.map(url => `<img src="${url}" style="width:100%;border-radius:4px;cursor:pointer;" onclick="window.open('${url}','_blank')">`).join('')}
-            </div>
-          </div>
-        ` : ''}
+        <div class="form-group">
+          <label>既存写真（対応部署）</label>
+          ${renderExistingEditPhotos((item.techPhotoUrls || []).filter(url => !editDeletedTechPhotoUrls.includes(url)), 'tech')}
+        </div>
       `;
     }
     
@@ -5082,6 +5144,7 @@ document.getElementById('btnEditSave').addEventListener('click', async () => {
     
     if (editCurrentTab === 'mfg') {
       updates.serialNo = document.getElementById('edit_serialNo')?.value || '';
+      updates.lineName = document.getElementById('edit_lineName')?.value || '';
       updates.occurrenceDate = document.getElementById('edit_occurrenceDate')?.value || '';
       updates.occurrenceTime = document.getElementById('edit_occurrenceTime')?.value || '';
       updates.restartTime = document.getElementById('edit_restartTime')?.value || '';
@@ -5094,9 +5157,12 @@ document.getElementById('btnEditSave').addEventListener('click', async () => {
       updates.changePointCategory = document.getElementById('edit_changePointCategory')?.value || '';
       updates.changePointContent = document.getElementById('edit_changePointContent')?.value || '';
       
-      if (editMfgPhotos.length > 0) {
-        const newUrls = await uploadPhotos(editingId, 'mfg', editMfgPhotos);
-        updates.mfgPhotoUrls = [...(item.mfgPhotoUrls || []), ...newUrls];
+      const keptMfgPhotoUrls = (item.mfgPhotoUrls || []).filter(url => !editDeletedMfgPhotoUrls.includes(url));
+      if (editDeletedMfgPhotoUrls.length > 0 || editMfgPhotos.length > 0) {
+        const newUrls = editMfgPhotos.length > 0
+          ? await uploadPhotos(editingId, 'mfg', editMfgPhotos)
+          : [];
+        updates.mfgPhotoUrls = [...keptMfgPhotoUrls, ...newUrls];
       }
     } else {
       updates.techHandler = document.getElementById('edit_techHandler')?.value || '';
@@ -5111,9 +5177,12 @@ document.getElementById('btnEditSave').addEventListener('click', async () => {
       updates.changePointCategory = document.getElementById('edit_tech_changePointCategory')?.value || '';
       updates.changePointContent = document.getElementById('edit_tech_changePointContent')?.value || '';
       
-      if (editTechPhotos.length > 0) {
-        const newUrls = await uploadPhotos(editingId, 'tech', editTechPhotos);
-        updates.techPhotoUrls = [...(item.techPhotoUrls || []), ...newUrls];
+      const keptTechPhotoUrls = (item.techPhotoUrls || []).filter(url => !editDeletedTechPhotoUrls.includes(url));
+      if (editDeletedTechPhotoUrls.length > 0 || editTechPhotos.length > 0) {
+        const newUrls = editTechPhotos.length > 0
+          ? await uploadPhotos(editingId, 'tech', editTechPhotos)
+          : [];
+        updates.techPhotoUrls = [...keptTechPhotoUrls, ...newUrls];
       }
     }
     // ===== ここを btnEditSave の try 内、updates を作り終えた直後に追加 =====
@@ -5145,6 +5214,13 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
 
     // anomaliesコレクションを更新
     await updateDoc(doc(db, 'anomalies', editingId), updates);
+
+    if (editDeletedMfgPhotoUrls.length > 0) {
+      await deletePhotosFromStorage(editDeletedMfgPhotoUrls);
+    }
+    if (editDeletedTechPhotoUrls.length > 0) {
+      await deletePhotosFromStorage(editDeletedTechPhotoUrls);
+    }
     
     // 変化点がある場合、changepointsコレクションにも記録
     if (updates.changePointCategory) {
@@ -5153,7 +5229,7 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
         category: updates.changePointCategory,
         content: updates.changePointContent || '',
         department: item.department || '',
-        lineName: item.lineName || '',
+        lineName: updates.lineName || item.lineName || '',
         serialNo: updates.serialNo || item.serialNo || '',
         occurrenceDate: updates.occurrenceDate || item.occurrenceDate || '',
         occurrenceTime: updates.occurrenceTime || item.occurrenceTime || '',
@@ -5185,6 +5261,8 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
     document.getElementById('editModal').classList.remove('active');
     editMfgPhotos = [];
     editTechPhotos = [];
+    editDeletedMfgPhotoUrls = [];
+    editDeletedTechPhotoUrls = [];
     alert('保存しました');
     
   } catch (error) {
@@ -5201,6 +5279,8 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
     document.getElementById('editModal').classList.remove('active');
     editMfgPhotos = [];
     editTechPhotos = [];
+    editDeletedMfgPhotoUrls = [];
+    editDeletedTechPhotoUrls = [];
   });
 
   document.getElementById('editModal').addEventListener('click', (e) => {
@@ -5208,6 +5288,8 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
       document.getElementById('editModal').classList.remove('active');
       editMfgPhotos = [];
       editTechPhotos = [];
+      editDeletedMfgPhotoUrls = [];
+      editDeletedTechPhotoUrls = [];
     }
   });
 </script>
