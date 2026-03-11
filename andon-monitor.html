@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -703,6 +704,105 @@
       font-weight: 700;
     }
 
+
+    .sound-level-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid #81c784;
+      box-shadow: 0 2px 8px rgba(76,175,80,0.12);
+    }
+
+    .sound-level-wrap label {
+      font-weight: 700;
+      font-size: 13px;
+      color: #1b5e20;
+      white-space: nowrap;
+    }
+
+    .sound-volume-range {
+      width: 120px;
+      cursor: pointer;
+    }
+
+    .sound-volume-value {
+      min-width: 46px;
+      text-align: right;
+      font-size: 13px;
+      font-weight: 800;
+      color: #1b5e20;
+    }
+
+    .alarm-mode-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid #ef9a9a;
+      box-shadow: 0 2px 8px rgba(239,83,80,0.12);
+      color: #b71c1c;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .alarm-mode-wrap input {
+      transform: scale(1.15);
+      cursor: pointer;
+    }
+
+    .alarm-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      background:
+        radial-gradient(circle at center, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 45%),
+        repeating-linear-gradient(
+          -45deg,
+          rgba(239,83,80,0.16) 0px,
+          rgba(239,83,80,0.16) 28px,
+          rgba(255,255,255,0.00) 28px,
+          rgba(255,255,255,0.00) 56px
+        );
+    }
+
+    .alarm-overlay.active {
+      opacity: 1;
+      animation: alarmFlash 0.9s infinite;
+    }
+
+    @keyframes alarmFlash {
+      0%, 100% { opacity: 0.10; }
+      50%      { opacity: 0.42; }
+    }
+
+    body.alarm-screen-flash {
+      animation: bodyAlarmPulse 0.9s infinite;
+    }
+
+    @keyframes bodyAlarmPulse {
+      0%, 100% { filter: saturate(1) brightness(1); }
+      50%      { filter: saturate(1.18) brightness(1.04); }
+    }
+
+    .case-card.urgent-pending-active {
+      border-color: #ef5350;
+      box-shadow: 0 0 0 2px rgba(239,83,80,0.16), 0 10px 30px rgba(239,83,80,0.24);
+      animation: urgentCardPulse 1.2s infinite;
+    }
+
+    @keyframes urgentCardPulse {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-3px); }
+    }
+
     /* ========== 大画面TV向け ========== */
     @media (min-width: 1600px) {
       body { font-size: 16px; padding: 20px; }
@@ -720,11 +820,13 @@
       .qc-quick-item .qc-name { max-width: 110px; }
       .sound-controls { gap: 6px; }
       .sound-pattern-select { max-width: 160px; }
+      .sound-volume-range { width: 100px; }
     }
   </style>
 </head>
 
 <body>
+  <div id="alarmOverlay" class="alarm-overlay" aria-hidden="true"></div>
   <div class="page">
     <div class="header">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -757,8 +859,25 @@
               <option value="9">⑨ 和音警告メロディ</option>
               <option value="10">⑩ 最大緊急警報（EAS風）</option>
             </select>
-            <button class="btn-test-sound" id="testSoundBtn" title="選択中のパターンをテスト再生">▶ テスト</button>
+            <button class="btn-test-sound" id="testSoundBtn" title="通常アラームをテスト再生">▶ 通常</button>
+            <button class="btn-test-sound" id="testUrgentSoundBtn" title="緊急アラームをテスト再生">🚨 緊急</button>
           </div>
+
+          <div class="sound-level-wrap" title="現場の聞こえ方に合わせて調整できます">
+            <label for="soundVolumeRange">音量</label>
+            <input type="range" id="soundVolumeRange" class="sound-volume-range" min="40" max="160" step="5">
+            <span id="soundVolumeValue" class="sound-volume-value">100%</span>
+          </div>
+
+          <label class="alarm-mode-wrap" title="通常より大きめ・迫力ある出力にします">
+            <input type="checkbox" id="alarmBoostMode">
+            <span>現場強化モード</span>
+          </label>
+
+          <label class="alarm-mode-wrap" title="緊急未対応時に画面全体を赤く点滅させます">
+            <input type="checkbox" id="visualAlarmMode" checked>
+            <span>画面フラッシュ</span>
+          </label>
         </div>
 
         <button class="btn btn-secondary" id="qcMembersBtn">👥 QCメンバー</button>
@@ -913,22 +1032,51 @@
 
     // ===== サウンド設定 =====
     let soundEnabled = localStorage.getItem('sound_enabled') === 'true';
-    let soundPattern = Number(localStorage.getItem('sound_pattern') || '1');
+    let soundPattern = Number(localStorage.getItem('sound_pattern') || '2');
+    let soundVolume = Number(localStorage.getItem('sound_volume') || '100');
+    let alarmBoostMode = localStorage.getItem('alarm_boost_mode') !== 'false';
+    let visualAlarmMode = localStorage.getItem('visual_alarm_mode') !== 'false';
 
-    const soundCheckbox    = document.getElementById('soundNotification');
-    const soundPatternSel  = document.getElementById('soundPatternSelect');
-    const testSoundBtn     = document.getElementById('testSoundBtn');
+    const soundCheckbox       = document.getElementById('soundNotification');
+    const soundPatternSel     = document.getElementById('soundPatternSelect');
+    const testSoundBtn        = document.getElementById('testSoundBtn');
+    const testUrgentSoundBtn  = document.getElementById('testUrgentSoundBtn');
+    const soundVolumeRange    = document.getElementById('soundVolumeRange');
+    const soundVolumeValue    = document.getElementById('soundVolumeValue');
+    const alarmBoostModeEl    = document.getElementById('alarmBoostMode');
+    const visualAlarmModeEl   = document.getElementById('visualAlarmMode');
+    const alarmOverlay        = document.getElementById('alarmOverlay');
 
-    soundCheckbox.checked   = soundEnabled;
-    soundPatternSel.value   = String(soundPattern);
+    soundCheckbox.checked    = soundEnabled;
+    soundPatternSel.value    = String(soundPattern);
+    soundVolumeRange.value   = String(soundVolume);
+    alarmBoostModeEl.checked = alarmBoostMode;
+    visualAlarmModeEl.checked = visualAlarmMode;
+    updateVolumeLabel();
 
     let previousCaseIds = new Set();
     let urgentAlarmTimer = null;
     let hasUrgentPending = false;
     let prevHasUrgentPending = false;
-    const URGENT_ALARM_INTERVAL_MS = 2000;
+    const URGENT_ALARM_INTERVAL_MS = 3500;
 
     let audioCtx = null;
+    function updateVolumeLabel() {
+      if (soundVolumeValue) soundVolumeValue.textContent = `${soundVolume}%`;
+    }
+
+    function getOutputMultiplier(isUrgent = false) {
+      const volumeScale = Math.max(0.4, Math.min(1.6, soundVolume / 100));
+      const boostScale = alarmBoostMode ? (isUrgent ? 1.35 : 1.18) : 1;
+      return volumeScale * boostScale;
+    }
+
+    function setVisualAlarmActive(active) {
+      const enabled = !!visualAlarmMode;
+      if (alarmOverlay) alarmOverlay.classList.toggle('active', !!active && enabled);
+      document.body.classList.toggle('alarm-screen-flash', !!active && enabled);
+    }
+
 
     async function unlockAudio() {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -1306,9 +1454,26 @@
     // ---- ヘルパー ----
     function makemaster(ctx, t0, peak, dur) {
       const g = ctx.createGain();
-      g.connect(ctx.destination);
+      const limiter = ctx.createDynamicsCompressor();
+      const tone = ctx.createBiquadFilter();
+      const finalPeak = Math.min(0.95, peak * getOutputMultiplier(!!window.__alarmUrgentContext));
+
+      tone.type = 'lowpass';
+      tone.frequency.setValueAtTime(alarmBoostMode ? 4200 : 3400, t0);
+      tone.Q.setValueAtTime(0.7, t0);
+
+      limiter.threshold.setValueAtTime(-16, t0);
+      limiter.knee.setValueAtTime(18, t0);
+      limiter.ratio.setValueAtTime(4, t0);
+      limiter.attack.setValueAtTime(0.003, t0);
+      limiter.release.setValueAtTime(0.18, t0);
+
+      g.connect(tone);
+      tone.connect(limiter);
+      limiter.connect(ctx.destination);
+
       g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(peak, t0 + 0.03);
+      g.gain.exponentialRampToValueAtTime(finalPeak, t0 + 0.03);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
       return g;
     }
@@ -1333,25 +1498,37 @@
       try {
         if (audioCtx.state === 'suspended') await audioCtx.resume();
       } catch (e) { console.warn('audioCtx resume error', e); return; }
-      const isUrgent = (type === 'urgent');
+      const isUrgent = true;
       const fn = PATTERNS[soundPattern] || PATTERNS[1];
+      const prevMultiplier = window.__alarmUrgentContext;
+      window.__alarmUrgentContext = isUrgent;
       try { fn(audioCtx, audioCtx.currentTime, isUrgent); } catch (e) { console.warn('playChime error', e); }
+      finally { window.__alarmUrgentContext = prevMultiplier; }
     }
 
     function stopUrgentAlarm() {
       if (urgentAlarmTimer) { clearInterval(urgentAlarmTimer); urgentAlarmTimer = null; }
+      setVisualAlarmActive(false);
     }
 
     function startUrgentAlarm() {
+      setVisualAlarmActive(true);
       if (urgentAlarmTimer) return;
       playChime('urgent');
       urgentAlarmTimer = setInterval(() => {
-        if (!soundEnabled || !hasUrgentPending) { stopUrgentAlarm(); return; }
+        if (!hasUrgentPending) { stopUrgentAlarm(); return; }
+        setVisualAlarmActive(true);
+        if (!soundEnabled) return;
         playChime('urgent');
       }, URGENT_ALARM_INTERVAL_MS);
     }
 
     function updateUrgentAlarmState() {
+      if (hasUrgentPending) {
+        setVisualAlarmActive(true);
+      } else {
+        setVisualAlarmActive(false);
+      }
       if (!soundEnabled) { stopUrgentAlarm(); return; }
       if (!audioCtx) return;
       if (hasUrgentPending) startUrgentAlarm();
@@ -1368,7 +1545,8 @@
         updateUrgentAlarmState();
         if (!hasUrgentPending) await playChime('normal');
       } else {
-        stopUrgentAlarm();
+        if (hasUrgentPending) setVisualAlarmActive(true);
+        else stopUrgentAlarm();
       }
     });
 
@@ -1378,12 +1556,40 @@
       localStorage.setItem('sound_pattern', soundPattern);
     });
 
+    soundVolumeRange.addEventListener('input', () => {
+      soundVolume = Number(soundVolumeRange.value || 100);
+      localStorage.setItem('sound_volume', soundVolume);
+      updateVolumeLabel();
+    });
+
+    alarmBoostModeEl.addEventListener('change', () => {
+      alarmBoostMode = !!alarmBoostModeEl.checked;
+      localStorage.setItem('alarm_boost_mode', String(alarmBoostMode));
+    });
+
+    visualAlarmModeEl.addEventListener('change', () => {
+      visualAlarmMode = !!visualAlarmModeEl.checked;
+      localStorage.setItem('visual_alarm_mode', String(visualAlarmMode));
+      updateUrgentAlarmState();
+    });
+
     // テスト再生
     testSoundBtn.addEventListener('click', async () => {
       const ok = await unlockAudio();
       if (!ok) { alert('音声再生がブロックされました。ブラウザ設定を確認してください。'); return; }
       const fn = PATTERNS[soundPattern] || PATTERNS[1];
-      try { fn(audioCtx, audioCtx.currentTime, false); } catch (e) { console.warn(e); }
+      window.__alarmUrgentContext = true;
+      try { fn(audioCtx, audioCtx.currentTime, true); } catch (e) { console.warn(e); }
+      finally { window.__alarmUrgentContext = false; }
+    });
+
+    testUrgentSoundBtn.addEventListener('click', async () => {
+      const ok = await unlockAudio();
+      if (!ok) { alert('音声再生がブロックされました。ブラウザ設定を確認してください。'); return; }
+      const fn = PATTERNS[soundPattern] || PATTERNS[1];
+      window.__alarmUrgentContext = true;
+      try { fn(audioCtx, audioCtx.currentTime, true); } catch (e) { console.warn(e); }
+      finally { window.__alarmUrgentContext = false; }
     });
 
     // ===== QCメンバー =====
@@ -1582,7 +1788,7 @@
         snapshot.forEach(docSnap => {
           const data = { _id: docSnap.id, ...docSnap.data() };
           newCases.push(data);
-          if ((data.status || 'pending') === 'pending' && !previousCaseIds.has(docSnap.id)) {
+          if (isTodayCase(data) && (data.status || 'pending') === 'pending' && !previousCaseIds.has(docSnap.id)) {
             if ((data.priority || 'normal') !== 'urgent') newlyDetectedNormalPending.push(docSnap.id);
           }
           previousCaseIds.add(docSnap.id);
@@ -1596,11 +1802,13 @@
         updateStats();
 
         prevHasUrgentPending = hasUrgentPending;
-        hasUrgentPending = casesCache.some(c => (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending');
+        hasUrgentPending = casesCache.some(c => isTodayCase(c) && (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending');
 
         if (soundEnabled && audioCtx && newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
           playChime('normal');
         }
+
+        updateUrgentAlarmState();
 
         if (soundEnabled && audioCtx) {
           if (!prevHasUrgentPending && hasUrgentPending) startUrgentAlarm();
@@ -1754,12 +1962,30 @@
       }
     }
 
+
+    function getCaseCreatedDate(caseData) {
+      if (!caseData?.createdAt) return null;
+      return caseData.createdAt?.toDate ? caseData.createdAt.toDate() : new Date(caseData.createdAt);
+    }
+
+    function isSameDay(a, b) {
+      return a.getFullYear() === b.getFullYear()
+        && a.getMonth() === b.getMonth()
+        && a.getDate() === b.getDate();
+    }
+
+    function isTodayCase(caseData) {
+      const created = getCaseCreatedDate(caseData);
+      if (!created || Number.isNaN(created.getTime())) return false;
+      return isSameDay(created, new Date());
+    }
+
     // ===== 案件表示 =====
     function renderCases() {
       const container = document.getElementById('casesContainer');
       const statusOrder = { pending: 1, inprogress: 2, completed: 3 };
 
-      let list = casesCache.slice().sort((a, b) => {
+      let list = casesCache.filter(c => isTodayCase(c)).slice().sort((a, b) => {
         const oa = statusOrder[a.status] ?? 9, ob = statusOrder[b.status] ?? 9;
         if (oa !== ob) return oa - ob;
         const ta = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
@@ -1772,7 +1998,7 @@
       }
 
       if (list.length === 0) {
-        container.innerHTML = '<div class="empty-state">現在、該当する呼び出しはありません</div>';
+        container.innerHTML = '<div class="empty-state">本日分の呼び出しはありません</div>';
         return;
       }
 
@@ -1857,7 +2083,7 @@
       const disabledAttr = status === 'completed' ? 'disabled style="opacity:.5;cursor:not-allowed;"' : '';
 
       return `
-        <div class="case-card ${status === 'completed' ? 'completed' : ''}" data-id="${c._id}">
+        <div class="case-card ${status === 'completed' ? 'completed' : ''} ${priority === 'urgent' && status === 'pending' ? 'urgent-pending-active' : ''}" data-id="${c._id}">
           <div class="priority-bar ${priority}"></div>
 
           <div class="case-header">
@@ -1867,10 +2093,10 @@
             <div class="case-time">${escapeHtml(timeStr)}</div>
           </div>
 
-          <div class="case-badges">
-            <span class="status-badge ${status}">${escapeHtml(statusLabel)}</span>
-            ${getElapsedTimeBadge(c.createdAt)}
-          </div>
+<div class="case-badges">
+  <span class="status-badge ${status}">${escapeHtml(statusLabel)}</span>
+  ${(status === 'pending') ? getElapsedTimeBadge(c.createdAt) : ''}
+</div>
 
           ${responderHighlight}
           ${assigneeHighlight}
@@ -2016,9 +2242,10 @@
     // ===== 統計 =====
     function updateStats() {
       const today = new Date(); today.setHours(0, 0, 0, 0);
-      document.getElementById('statUrgentPending').textContent  = casesCache.filter(c => (c.priority || 'normal') === 'urgent'  && (c.status || 'pending') === 'pending').length;
-      document.getElementById('statNormalPending').textContent  = casesCache.filter(c => (c.priority || 'normal') === 'normal'  && (c.status || 'pending') === 'pending').length;
-      document.getElementById('statInProgress').textContent     = casesCache.filter(c => (c.status || 'pending') === 'inprogress').length;
+      const todayCases = casesCache.filter(c => isTodayCase(c));
+      document.getElementById('statUrgentPending').textContent  = todayCases.filter(c => (c.priority || 'normal') === 'urgent'  && (c.status || 'pending') === 'pending').length;
+      document.getElementById('statNormalPending').textContent  = todayCases.filter(c => (c.priority || 'normal') === 'normal'  && (c.status || 'pending') === 'pending').length;
+      document.getElementById('statInProgress').textContent     = todayCases.filter(c => (c.status || 'pending') === 'inprogress').length;
       document.getElementById('statCompletedToday').textContent = casesCache.filter(c => {
         if ((c.status || '') !== 'completed' || !c.completedAt) return false;
         return c.completedAt.toDate() >= today;
