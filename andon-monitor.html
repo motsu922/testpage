@@ -181,7 +181,7 @@
       background: #fff;
       cursor: pointer;
       outline: none;
-      max-width: 190px;
+      max-width: 220px;
     }
 
     .sound-pattern-select:focus {
@@ -719,7 +719,7 @@
       .qc-quick-item { padding: 8px 10px; gap: 8px; }
       .qc-quick-item .qc-name { max-width: 110px; }
       .sound-controls { gap: 6px; }
-      .sound-pattern-select { max-width: 140px; }
+      .sound-pattern-select { max-width: 160px; }
     }
   </style>
 </head>
@@ -746,16 +746,16 @@
           <div class="sound-pattern-wrap">
             <label for="soundPatternSelect">🎵</label>
             <select id="soundPatternSelect" class="sound-pattern-select" title="アラーム音パターンを選択">
-              <option value="1">① クラシックチャイム</option>
-              <option value="2">② ファンファーレ</option>
-              <option value="3">③ デジタルビープ</option>
-              <option value="4">④ ペンタトニック</option>
-              <option value="5">⑤ 工場サイレン</option>
-              <option value="6">⑥ ピアノロール</option>
-              <option value="7">⑦ パルスアラート</option>
-              <option value="8">⑧ ウェーブチャイム</option>
-              <option value="9">⑨ 3連ビープ</option>
-              <option value="10">⑩ 緊急ブザー</option>
+              <option value="1">① ウェストミンスターチャイム</option>
+              <option value="2">② 工場サイレン（ウェーリング）</option>
+              <option value="3">③ パトカーサイレン（ハイロー）</option>
+              <option value="4">④ 緊急ブザー（強パルス）</option>
+              <option value="5">⑤ 放送チャイム（ピンポンパン）</option>
+              <option value="6">⑥ エスカレート警報（上昇）</option>
+              <option value="7">⑦ クラクション（ホーン）</option>
+              <option value="8">⑧ 三連ビープ×繰り返し</option>
+              <option value="9">⑨ 和音警告メロディ</option>
+              <option value="10">⑩ 最大緊急警報（EAS風）</option>
             </select>
             <button class="btn-test-sound" id="testSoundBtn" title="選択中のパターンをテスト再生">▶ テスト</button>
           </div>
@@ -926,7 +926,7 @@
     let urgentAlarmTimer = null;
     let hasUrgentPending = false;
     let prevHasUrgentPending = false;
-    const URGENT_ALARM_INTERVAL_MS = 8000;
+    const URGENT_ALARM_INTERVAL_MS = 2000;
 
     let audioCtx = null;
 
@@ -949,164 +949,356 @@
     }
 
     // ============================================================
-    //  10種類のアラーム音パターン
-    //  各パターンは playPattern(ctx, t0, isUrgent) を実装
+    //  10種類のアラーム音パターン（本格版・長め）
+    //  通常: 3〜4秒、緊急: 4〜5秒、各パターンは明確に区別できる音
     // ============================================================
 
     const PATTERNS = {
 
-      // ① クラシックチャイム（元々の音）
+      // ① ウェストミンスターチャイム（鐘の音・長）
+      // 4音の本格的なチャイム。緊急は2回繰り返し
       1: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.34 : 0.28, 1.6);
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'highpass';
-        filter.frequency.setValueAtTime(isUrgent ? 320 : 380, t0);
-        filter.connect(master);
-        function note(freq, start, dur, type = 'sine', vel = 1.0) {
-          osc(ctx, freq, t0 + start, dur, type, vel * 0.24, filter);
-        }
-        if (!isUrgent) {
-          note(1046.5, 0.00, 0.28, 'sine', 0.95);
-          note(1318.5, 0.14, 0.28, 'sine', 0.90);
-          note(1568.0, 0.28, 0.30, 'sine', 0.85);
-          note(2093.0, 0.46, 0.52, 'sine', 0.80);
-          note(523.25, 0.00, 0.95, 'triangle', 0.20);
-        } else {
-          note(880.0,  0.00, 0.18, 'square', 0.70);
-          note(1174.7, 0.06, 0.22, 'sawtooth', 0.75);
-          note(1568.0, 0.16, 0.35, 'sine', 0.85);
-          note(880.0,  0.62, 0.18, 'square', 0.78);
-          note(1318.5, 0.68, 0.22, 'sawtooth', 0.82);
-          note(1760.0, 0.78, 0.45, 'sine', 0.95);
-          note(440.0,  0.00, 1.20, 'triangle', 0.18);
+        const reps = isUrgent ? 2 : 1;
+        const noteFreqs = [659.25, 523.25, 587.33, 392.00];
+        const gap = isUrgent ? 0.40 : 0.55;
+        const totalDur = reps * (noteFreqs.length * gap + 0.3) + 1.5;
+        const master = makemaster(ctx, t0, isUrgent ? 0.55 : 0.42, totalDur);
+
+        for (let r = 0; r < reps; r++) {
+          noteFreqs.forEach((freq, i) => {
+            const s = t0 + r * (noteFreqs.length * gap + 0.3) + i * gap;
+            const noteDur = isUrgent ? 0.95 : 1.35;
+
+            // 基音（鐘の本体）
+            const o1 = ctx.createOscillator(), g1 = ctx.createGain();
+            o1.type = 'sine'; o1.frequency.setValueAtTime(freq, s);
+            g1.gain.setValueAtTime(0, s);
+            g1.gain.linearRampToValueAtTime(0.48, s + 0.005);
+            g1.gain.exponentialRampToValueAtTime(0.001, s + noteDur);
+            o1.connect(g1); g1.connect(master); o1.start(s); o1.stop(s + noteDur + 0.1);
+
+            // 非整数倍音（鐘らしい響き）
+            const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+            o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 2.756, s);
+            g2.gain.setValueAtTime(0, s);
+            g2.gain.linearRampToValueAtTime(0.16, s + 0.003);
+            g2.gain.exponentialRampToValueAtTime(0.001, s + noteDur * 0.32);
+            o2.connect(g2); g2.connect(master); o2.start(s); o2.stop(s + noteDur * 0.38);
+
+            // 低音胴鳴り
+            const o3 = ctx.createOscillator(), g3 = ctx.createGain();
+            o3.type = 'sine'; o3.frequency.setValueAtTime(freq * 0.5, s);
+            g3.gain.setValueAtTime(0, s);
+            g3.gain.linearRampToValueAtTime(0.09, s + 0.01);
+            g3.gain.exponentialRampToValueAtTime(0.001, s + noteDur * 0.5);
+            o3.connect(g3); g3.connect(master); o3.start(s); o3.stop(s + noteDur * 0.55);
+          });
         }
       },
 
-      // ② ファンファーレ（明るい上昇音）
+      // ② 工場サイレン（ウェーリング・長）
+      // ウーーーンと上下するサイレン音。通常3回、緊急5回
       2: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.38 : 0.30, 2.0);
-        const freqs = isUrgent
-          ? [523.25, 659.25, 783.99, 1046.5, 783.99, 1046.5, 1318.5]
-          : [523.25, 659.25, 783.99, 1046.5, 1318.5];
-        freqs.forEach((f, i) => osc(ctx, f, t0 + i * 0.14, 0.20, 'triangle', 0.28, master));
-        osc(ctx, 261.63, t0, 0.80, 'sine', 0.10, master);
-        if (isUrgent) {
-          osc(ctx, 1046.5, t0 + 1.1, 0.35, 'sine', 0.30, master);
-          osc(ctx, 1318.5, t0 + 1.35, 0.45, 'sine', 0.34, master);
-        }
-      },
+        const cycles = isUrgent ? 5 : 3;
+        const cycleDur = 0.85;
+        const totalDur = cycles * cycleDur + 0.4;
+        const master = makemaster(ctx, t0, isUrgent ? 0.52 : 0.38, totalDur);
 
-      // ③ デジタルビープ（シンプルなビープ）
-      3: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.42 : 0.32, 1.4);
-        const count = isUrgent ? 4 : 2;
-        const freq  = isUrgent ? 1200 : 880;
-        for (let i = 0; i < count; i++) {
-          osc(ctx, freq, t0 + i * 0.22, 0.12, 'square', 0.35, master);
-          if (isUrgent) osc(ctx, freq * 1.5, t0 + i * 0.22 + 0.06, 0.08, 'square', 0.20, master);
-        }
-      },
-
-      // ④ ペンタトニック（5音スケール）
-      4: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.35 : 0.28, 2.0);
-        const scale  = isUrgent
-          ? [523.25, 622.25, 783.99, 1046.5, 1244.5, 1567.98]
-          : [523.25, 587.33, 659.25, 783.99, 880.0];
-        scale.forEach((f, i) => {
-          osc(ctx, f, t0 + i * 0.16, 0.28, 'sine', 0.28, master);
-          osc(ctx, f * 2, t0 + i * 0.16, 0.18, 'sine', 0.08, master);
-        });
-      },
-
-      // ⑤ 工場サイレン（うねるサイレン）
-      5: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.45 : 0.32, 2.5);
-        const cycles = isUrgent ? 3 : 2;
         for (let i = 0; i < cycles; i++) {
-          const os = ctx.createOscillator();
-          const g  = ctx.createGain();
-          os.type = 'sawtooth';
-          const start = t0 + i * 0.75;
-          os.frequency.setValueAtTime(isUrgent ? 440 : 380, start);
-          os.frequency.linearRampToValueAtTime(isUrgent ? 880 : 640, start + 0.35);
-          os.frequency.linearRampToValueAtTime(isUrgent ? 440 : 380, start + 0.70);
-          g.gain.setValueAtTime(0, start);
-          g.gain.linearRampToValueAtTime(0.30, start + 0.05);
-          g.gain.linearRampToValueAtTime(0.30, start + 0.65);
-          g.gain.linearRampToValueAtTime(0, start + 0.72);
-          os.connect(g); g.connect(master);
-          os.start(start); os.stop(start + 0.75);
+          const s = t0 + i * cycleDur;
+          const loF = isUrgent ? 480 : 360, hiF = isUrgent ? 1080 : 720;
+
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'sawtooth';
+          o.frequency.setValueAtTime(loF, s);
+          o.frequency.linearRampToValueAtTime(hiF, s + cycleDur * 0.48);
+          o.frequency.linearRampToValueAtTime(loF, s + cycleDur * 0.95);
+          g.gain.setValueAtTime(0, s);
+          g.gain.linearRampToValueAtTime(0.38, s + 0.07);
+          g.gain.setValueAtTime(0.38, s + cycleDur * 0.88);
+          g.gain.linearRampToValueAtTime(0, s + cycleDur);
+          const filt = ctx.createBiquadFilter();
+          filt.type = 'lowpass'; filt.frequency.setValueAtTime(2400, s);
+          o.connect(filt); filt.connect(g); g.connect(master);
+          o.start(s); o.stop(s + cycleDur + 0.05);
+
+          // 低音副振動（ずっしり感）
+          const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+          o2.type = 'sine';
+          o2.frequency.setValueAtTime(loF * 0.5, s);
+          o2.frequency.linearRampToValueAtTime(hiF * 0.5, s + cycleDur * 0.48);
+          o2.frequency.linearRampToValueAtTime(loF * 0.5, s + cycleDur * 0.95);
+          g2.gain.setValueAtTime(0, s);
+          g2.gain.linearRampToValueAtTime(0.14, s + 0.07);
+          g2.gain.setValueAtTime(0.14, s + cycleDur * 0.88);
+          g2.gain.linearRampToValueAtTime(0, s + cycleDur);
+          o2.connect(g2); g2.connect(master); o2.start(s); o2.stop(s + cycleDur + 0.05);
         }
       },
 
-      // ⑥ ピアノロール（柔らかいピアノ風）
-      6: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.36 : 0.28, 2.2);
-        const melody = isUrgent
-          ? [784.0, 880.0, 1046.5, 1174.7, 1318.5, 1568.0]
-          : [523.25, 659.25, 783.99, 1046.5];
-        melody.forEach((f, i) => {
-          // 基音
-          osc(ctx, f,       t0 + i * 0.18, 0.45, 'sine',     0.30, master);
-          // 倍音（ピアノの響き）
-          osc(ctx, f * 2,   t0 + i * 0.18, 0.25, 'sine',     0.10, master);
-          osc(ctx, f * 3,   t0 + i * 0.18, 0.15, 'sine',     0.05, master);
-        });
+      // ③ パトカーサイレン（ハイロー交互）
+      // 高音・低音が交互に切り替わるサイレン。通常4ペア、緊急7ペア
+      3: (ctx, t0, isUrgent) => {
+        const pairs = isUrgent ? 7 : 4;
+        const pairDur = isUrgent ? 0.55 : 0.70;
+        const totalDur = pairs * pairDur + 0.3;
+        const master = makemaster(ctx, t0, isUrgent ? 0.50 : 0.38, totalDur);
+
+        for (let i = 0; i < pairs; i++) {
+          const s = t0 + i * pairDur;
+          const hiF = isUrgent ? 980 : 780, loF = isUrgent ? 740 : 580;
+
+          // Hi音
+          const oHi = ctx.createOscillator(), gHi = ctx.createGain();
+          oHi.type = 'square'; oHi.frequency.setValueAtTime(hiF, s);
+          gHi.gain.setValueAtTime(0, s);
+          gHi.gain.linearRampToValueAtTime(0.28, s + 0.02);
+          gHi.gain.setValueAtTime(0.28, s + pairDur * 0.45);
+          gHi.gain.linearRampToValueAtTime(0, s + pairDur * 0.50);
+          const fHi = ctx.createBiquadFilter();
+          fHi.type = 'lowpass'; fHi.frequency.setValueAtTime(2000, s);
+          oHi.connect(fHi); fHi.connect(gHi); gHi.connect(master);
+          oHi.start(s); oHi.stop(s + pairDur * 0.52);
+
+          // Lo音
+          const oLo = ctx.createOscillator(), gLo = ctx.createGain();
+          oLo.type = 'square'; oLo.frequency.setValueAtTime(loF, s + pairDur * 0.5);
+          gLo.gain.setValueAtTime(0, s + pairDur * 0.5);
+          gLo.gain.linearRampToValueAtTime(0.24, s + pairDur * 0.52);
+          gLo.gain.setValueAtTime(0.24, s + pairDur * 0.95);
+          gLo.gain.linearRampToValueAtTime(0, s + pairDur);
+          const fLo = ctx.createBiquadFilter();
+          fLo.type = 'lowpass'; fLo.frequency.setValueAtTime(1600, s);
+          oLo.connect(fLo); fLo.connect(gLo); gLo.connect(master);
+          oLo.start(s + pairDur * 0.5); oLo.stop(s + pairDur + 0.05);
+        }
       },
 
-      // ⑦ パルスアラート（鋭い断続音）
-      7: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.46 : 0.34, 1.8);
-        const pulses = isUrgent ? 6 : 3;
-        const gap    = isUrgent ? 0.16 : 0.24;
-        const freq   = isUrgent ? 1400 : 1000;
+      // ④ 緊急ブザー（強パルス・長）
+      // ブッ・ブッ・ブッと繰り返す強力なブザー。通常5回、緊急9回
+      4: (ctx, t0, isUrgent) => {
+        const pulses = isUrgent ? 9 : 5;
+        const onD = isUrgent ? 0.22 : 0.30, offD = isUrgent ? 0.14 : 0.22;
+        const freq = isUrgent ? 1200 : 900;
+        const totalDur = pulses * (onD + offD) + 0.2;
+        const master = makemaster(ctx, t0, isUrgent ? 0.60 : 0.44, totalDur);
+
         for (let i = 0; i < pulses; i++) {
-          osc(ctx, freq,         t0 + i * gap, 0.08, 'square',   0.38, master);
-          osc(ctx, freq * 0.75,  t0 + i * gap, 0.08, 'square',   0.18, master);
+          const s = t0 + i * (onD + offD);
+
+          const o1 = ctx.createOscillator(), g1 = ctx.createGain();
+          o1.type = 'square'; o1.frequency.setValueAtTime(freq, s);
+          g1.gain.setValueAtTime(0, s);
+          g1.gain.linearRampToValueAtTime(0.42, s + 0.008);
+          g1.gain.setValueAtTime(0.42, s + onD - 0.02);
+          g1.gain.linearRampToValueAtTime(0, s + onD);
+          const filt = ctx.createBiquadFilter();
+          filt.type = 'lowpass'; filt.frequency.setValueAtTime(3200, s);
+          o1.connect(filt); filt.connect(g1); g1.connect(master);
+          o1.start(s); o1.stop(s + onD + 0.05);
+
+          // 低音で迫力追加
+          const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+          o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 0.5, s);
+          g2.gain.setValueAtTime(0, s);
+          g2.gain.linearRampToValueAtTime(0.22, s + 0.01);
+          g2.gain.setValueAtTime(0.22, s + onD - 0.02);
+          g2.gain.linearRampToValueAtTime(0, s + onD);
+          o2.connect(g2); g2.connect(master); o2.start(s); o2.stop(s + onD + 0.05);
         }
       },
 
-      // ⑧ ウェーブチャイム（波形チャイム）
-      8: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.36 : 0.26, 2.5);
-        const base   = isUrgent ? 440 : 329.63;
-        const ratios = [1, 1.25, 1.5, 2.0, 2.5];
-        ratios.forEach((r, i) => {
-          const delay = i * (isUrgent ? 0.13 : 0.18);
-          osc(ctx, base * r,       t0 + delay, 0.50, 'sine',     0.26, master);
-          osc(ctx, base * r * 1.5, t0 + delay, 0.30, 'triangle', 0.08, master);
+      // ⑤ 放送チャイム（ピンポンパン）
+      // NHK・駅放送前のチャイム風3音。緊急は折り返しあり2セット
+      5: (ctx, t0, isUrgent) => {
+        const sets = isUrgent ? 2 : 1;
+        const setInterval = 2.5;
+        const totalDur = sets * setInterval + 1.8;
+        const master = makemaster(ctx, t0, isUrgent ? 0.50 : 0.38, totalDur);
+
+        for (let si = 0; si < sets; si++) {
+          const base = t0 + si * setInterval;
+          const notes = isUrgent
+            ? [659.25, 830.61, 987.77, 830.61, 659.25]
+            : [659.25, 830.61, 987.77];
+
+          notes.forEach((freq, i) => {
+            const start = base + i * 0.48;
+            const noteDur = 1.6;
+
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'sine'; o.frequency.setValueAtTime(freq, start);
+            g.gain.setValueAtTime(0, start);
+            g.gain.linearRampToValueAtTime(0.42, start + 0.005);
+            g.gain.exponentialRampToValueAtTime(0.001, start + noteDur);
+            o.connect(g); g.connect(master); o.start(start); o.stop(start + noteDur + 0.1);
+
+            // 高次倍音（輝き）
+            const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+            o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 3.0, start);
+            g2.gain.setValueAtTime(0, start);
+            g2.gain.linearRampToValueAtTime(0.12, start + 0.004);
+            g2.gain.exponentialRampToValueAtTime(0.001, start + noteDur * 0.28);
+            o2.connect(g2); g2.connect(master); o2.start(start); o2.stop(start + noteDur * 0.32);
+          });
+        }
+      },
+
+      // ⑥ エスカレート警報（ピッチ上昇）
+      // 低音からどんどん高くなるLFOパルス付き警告音
+      6: (ctx, t0, isUrgent) => {
+        const dur = isUrgent ? 4.5 : 3.5;
+        const master = makemaster(ctx, t0, isUrgent ? 0.54 : 0.40, dur);
+
+        const startF = isUrgent ? 220 : 180, endF = isUrgent ? 1760 : 1200;
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(startF, t0);
+        o.frequency.exponentialRampToValueAtTime(endF, t0 + dur - 0.2);
+        g.gain.setValueAtTime(0.28, t0); g.gain.setValueAtTime(0.28, t0 + dur - 0.15);
+        g.gain.linearRampToValueAtTime(0, t0 + dur);
+        const filt = ctx.createBiquadFilter();
+        filt.type = 'bandpass';
+        filt.frequency.setValueAtTime(startF, t0);
+        filt.frequency.exponentialRampToValueAtTime(endF, t0 + dur - 0.2);
+        filt.Q.setValueAtTime(2.5, t0);
+        o.connect(filt); filt.connect(g); g.connect(master);
+        o.start(t0); o.stop(t0 + dur + 0.1);
+
+        // LFO（速度が増す断続感）
+        const lfo = ctx.createOscillator(), lfoG = ctx.createGain();
+        lfo.type = 'square';
+        lfo.frequency.setValueAtTime(isUrgent ? 5 : 4, t0);
+        lfo.frequency.linearRampToValueAtTime(isUrgent ? 16 : 10, t0 + dur);
+        lfoG.gain.setValueAtTime(0.14, t0);
+        lfo.connect(lfoG); lfoG.connect(g.gain);
+        lfo.start(t0); lfo.stop(t0 + dur + 0.1);
+      },
+
+      // ⑦ クラクション（長いホーン）
+      // 車のクラクション風。緊急は「長・短・短・長長」パターン
+      7: (ctx, t0, isUrgent) => {
+        const blasts = isUrgent
+          ? [{dur:0.9,gap:0.18},{dur:0.3,gap:0.12},{dur:0.3,gap:0.12},{dur:1.2,gap:0}]
+          : [{dur:0.8,gap:0.25},{dur:0.8,gap:0}];
+        const totalDur = blasts.reduce((a,b) => a+b.dur+b.gap, 0) + 0.3;
+        const master = makemaster(ctx, t0, isUrgent ? 0.56 : 0.44, totalDur);
+
+        let cursor = 0;
+        blasts.forEach(({dur, gap}) => {
+          const s = t0 + cursor;
+          const baseF = isUrgent ? 230 : 195;
+          // 整数倍音を重ねて豊かなホーン音に
+          [1, 1.5, 2, 3, 4].forEach((h, idx) => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'sawtooth'; o.frequency.setValueAtTime(baseF * h, s);
+            const vols = [0.32, 0.20, 0.16, 0.10, 0.07];
+            g.gain.setValueAtTime(0, s);
+            g.gain.linearRampToValueAtTime(vols[idx], s + 0.03);
+            g.gain.setValueAtTime(vols[idx], s + dur - 0.04);
+            g.gain.linearRampToValueAtTime(0, s + dur);
+            const filt = ctx.createBiquadFilter();
+            filt.type = 'lowpass'; filt.frequency.setValueAtTime(3000, s);
+            o.connect(filt); filt.connect(g); g.connect(master);
+            o.start(s); o.stop(s + dur + 0.05);
+          });
+          cursor += dur + gap;
         });
-        // 残響
-        const dur = isUrgent ? 2.0 : 2.4;
-        osc(ctx, base, t0, dur, 'sine', 0.05, master);
       },
 
-      // ⑨ 3連ビープ（2〜3回繰り返し）
-      9: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.44 : 0.32, 2.0);
-        const sets   = isUrgent ? 3 : 2;
-        const freq   = isUrgent ? 1320 : 1000;
+      // ⑧ 三連ビープ×繰り返し
+      // ピッピッピッ（間）ピッピッピッ…と繰り返す。通常4セット、緊急6セット
+      8: (ctx, t0, isUrgent) => {
+        const sets = isUrgent ? 6 : 4;
+        const setDur = isUrgent ? 0.62 : 0.82;
+        const totalDur = sets * setDur + 0.2;
+        const master = makemaster(ctx, t0, isUrgent ? 0.54 : 0.40, totalDur);
+
         for (let s = 0; s < sets; s++) {
-          const base = t0 + s * 0.55;
-          osc(ctx, freq,       base + 0.00, 0.10, 'square', 0.36, master);
-          osc(ctx, freq,       base + 0.14, 0.10, 'square', 0.36, master);
-          osc(ctx, freq * 1.2, base + 0.28, 0.14, 'square', 0.40, master);
+          const base = t0 + s * setDur;
+          const freq = isUrgent ? 1400 : 1000;
+          const bDur = isUrgent ? 0.10 : 0.14, bGap = isUrgent ? 0.07 : 0.11;
+
+          [0, bDur+bGap, (bDur+bGap)*2].forEach(offset => {
+            const start = base + offset;
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'square'; o.frequency.setValueAtTime(freq, start);
+            g.gain.setValueAtTime(0, start);
+            g.gain.linearRampToValueAtTime(0.40, start + 0.007);
+            g.gain.setValueAtTime(0.40, start + bDur - 0.01);
+            g.gain.linearRampToValueAtTime(0, start + bDur);
+            const filt = ctx.createBiquadFilter();
+            filt.type = 'lowpass'; filt.frequency.setValueAtTime(2600, start);
+            o.connect(filt); filt.connect(g); g.connect(master);
+            o.start(start); o.stop(start + bDur + 0.05);
+          });
         }
       },
 
-      // ⑩ 緊急ブザー（大きく長い警報音）
+      // ⑨ 和音警告メロディ
+      // 短調コードが順番に鳴る重厚なメロディ警告。通常4和音、緊急5和音
+      9: (ctx, t0, isUrgent) => {
+        const chords = isUrgent
+          ? [[220,261.63,329.63],[246.94,293.66,369.99],[261.63,311.13,392.00],[293.66,349.23,440.00],[329.63,392.00,523.25]]
+          : [[261.63,329.63,392.00],[293.66,369.99,440.00],[329.63,415.30,523.25],[392.00,493.88,587.33]];
+        const chordDur = isUrgent ? 0.58 : 0.80;
+        const totalDur = chords.length * chordDur + 1.2;
+        const master = makemaster(ctx, t0, isUrgent ? 0.50 : 0.38, totalDur);
+
+        chords.forEach((chord, ci) => {
+          const s = t0 + ci * chordDur;
+          chord.forEach(freq => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'triangle'; o.frequency.setValueAtTime(freq, s);
+            g.gain.setValueAtTime(0, s);
+            g.gain.linearRampToValueAtTime(0.20, s + 0.02);
+            g.gain.setValueAtTime(0.20, s + chordDur * 0.65);
+            g.gain.exponentialRampToValueAtTime(0.001, s + chordDur + 0.5);
+            o.connect(g); g.connect(master); o.start(s); o.stop(s + chordDur + 0.55);
+
+            // 高音アクセント
+            const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+            o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 2, s);
+            g2.gain.setValueAtTime(0, s);
+            g2.gain.linearRampToValueAtTime(0.07, s + 0.015);
+            g2.gain.exponentialRampToValueAtTime(0.001, s + chordDur * 0.5);
+            o2.connect(g2); g2.connect(master); o2.start(s); o2.stop(s + chordDur * 0.55);
+          });
+        });
+      },
+
+      // ⑩ 最大緊急警報（EAS風・2音持続）
+      // 米国緊急放送（EAS）風の2音同時持続音＋断続パルス。最も目立つ
       10: (ctx, t0, isUrgent) => {
-        const master = makemaster(ctx, t0, isUrgent ? 0.55 : 0.38, 2.2);
-        const f1 = isUrgent ? 640 : 500;
-        const f2 = isUrgent ? 900 : 700;
-        const reps = isUrgent ? 4 : 2;
-        for (let i = 0; i < reps; i++) {
-          const s = t0 + i * 0.44;
-          osc(ctx, f1, s,        0.18, 'sawtooth', 0.44, master);
-          osc(ctx, f2, s + 0.20, 0.18, 'sawtooth', 0.48, master);
-          // 低音サブ
-          osc(ctx, f1 * 0.5, s,  0.38, 'sine',     0.15, master);
+        const dur = isUrgent ? 5.0 : 4.0;
+        const master = makemaster(ctx, t0, isUrgent ? 0.62 : 0.48, dur);
+        const tone1 = isUrgent ? 960 : 853, tone2 = isUrgent ? 1366 : 960;
+
+        // 2音同時持続
+        [tone1, tone2].forEach(freq => {
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'square'; o.frequency.setValueAtTime(freq, t0);
+          g.gain.setValueAtTime(0, t0);
+          g.gain.linearRampToValueAtTime(0.26, t0 + 0.02);
+          g.gain.setValueAtTime(0.26, t0 + dur - 0.25);
+          g.gain.linearRampToValueAtTime(0, t0 + dur);
+          const filt = ctx.createBiquadFilter();
+          filt.type = 'lowpass'; filt.frequency.setValueAtTime(3200, t0);
+          o.connect(filt); filt.connect(g); g.connect(master);
+          o.start(t0); o.stop(t0 + dur + 0.1);
+        });
+
+        // 断続パルス（緊急感を演出）
+        const pulseCount = isUrgent ? 10 : 7;
+        const pulseDur = dur / pulseCount;
+        for (let i = 0; i < pulseCount; i++) {
+          const s = t0 + i * pulseDur;
+          const o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = 'sine'; o.frequency.setValueAtTime(isUrgent ? 1800 : 1400, s);
+          g.gain.setValueAtTime(0, s);
+          g.gain.linearRampToValueAtTime(0.18, s + 0.01);
+          g.gain.linearRampToValueAtTime(0, s + pulseDur * 0.38);
+          o.connect(g); g.connect(master); o.start(s); o.stop(s + pulseDur * 0.42);
         }
       }
     };
@@ -1152,7 +1344,7 @@
 
     function startUrgentAlarm() {
       if (urgentAlarmTimer) return;
-      playChime('urgent'); // async but fire-and-forget for alarm
+      playChime('urgent');
       urgentAlarmTimer = setInterval(() => {
         if (!soundEnabled || !hasUrgentPending) { stopUrgentAlarm(); return; }
         playChime('urgent');
@@ -1359,7 +1551,6 @@
           ${escapeHtml(n)}
         </button>`;
       }).join('');
-      // click handler
       wrap.querySelectorAll('.responder-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           wrap.querySelectorAll('.responder-btn').forEach(b => b.classList.remove('selected'));
@@ -1730,7 +1921,6 @@
       const hidden = document.getElementById('completeBySelect');
       const presel = ((caseData.assignedTo || caseData.completedBy || '') || '').trim();
       if (hidden) hidden.value = presel;
-      // ボタン再描画（選択状態を反映）
       const wrap = document.getElementById('completeByBtns');
       if (wrap) {
         wrap.querySelectorAll('.responder-btn').forEach(btn => {
