@@ -1,6 +1,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1869,7 +1870,7 @@ let editDeletedTechPhotoUrls = [];
   let currentView='card';
   let mastersCache = null;
   let unsubscribeSnapshot = null;
-
+let editPendingData = { mfg: {}, tech: {} }; //
   // マスタデータはキャッシュして再利用
   async function fetchMasters(){
     if (mastersCache) return mastersCache;
@@ -2524,7 +2525,7 @@ async function applyFilter(){
                 </div>
               </div>
             ` : ''}
-            ${item.status==='complete' && item.techRequest==='要請' ? `
+            ${item.status==='complete' && (item.techRequest==='要請' || item.techHandler || item.rootCauseAction || item.causeCategory) ? `
               <div class="card-tech-info">
                 ${item.techHandler ? `<div class="tech-info-item"><span class="tech-info-label">対応部署_処置者:</span><span class="tech-info-value">${item.techHandler}</span></div>` : ''}
                 ${item.maintenanceUnit ? `<div class="tech-info-item"><span class="tech-info-label">保全単位:</span><span class="tech-info-value">${item.maintenanceUnit}</span></div>` : ''}
@@ -4939,6 +4940,7 @@ document.addEventListener('click', async (e)=>{
     editTechPhotos = [];
     editDeletedMfgPhotoUrls = [];
     editDeletedTechPhotoUrls = [];
+   editPendingData = { mfg: {}, tech: {} }; // ← 追加
     renderEditModalUI();
     document.getElementById('editModal').classList.add('active');
   });
@@ -4947,7 +4949,7 @@ document.addEventListener('click', async (e)=>{
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('.edit-tab');
     if (!tab) return;
-    
+    saveEditTabData(); //
     document.querySelectorAll('.edit-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     editCurrentTab = tab.getAttribute('data-edit-tab');
@@ -4971,7 +4973,45 @@ document.addEventListener('click', async (e)=>{
     }
     renderEditModalUI();
   });
+function saveEditTabData() {
+  if (editCurrentTab === 'mfg') {
+    editPendingData.mfg = {
+      serialNo:            document.getElementById('edit_serialNo')?.value            ?? null,
+      lineName:            document.getElementById('edit_lineName')?.value            ?? null,
+      occurrenceDate:      document.getElementById('edit_occurrenceDate')?.value      ?? null,
+      occurrenceTime:      document.getElementById('edit_occurrenceTime')?.value      ?? null,
+      restartTime:         document.getElementById('edit_restartTime')?.value         ?? null,
+      anomalyContent:      document.getElementById('edit_anomalyContent')?.value      ?? null,
+      anomalyCategory:     document.getElementById('edit_anomalyCategory')?.value     ?? null,
+      actionTaken:         document.getElementById('edit_actionTaken')?.value         ?? null,
+      traceback:           document.getElementById('edit_traceback')?.value           ?? null,
+      lotNo:               document.getElementById('edit_lotNo')?.value               ?? null,
+      qualityResponse:     document.getElementById('edit_qualityResponse')?.value     ?? null,
+      changePointCategory: document.getElementById('edit_changePointCategory')?.value ?? null,
+      changePointContent:  document.getElementById('edit_changePointContent')?.value  ?? null,
+    };
+  } else {
+    editPendingData.tech = {
+      techHandler:              document.getElementById('edit_techHandler')?.value              ?? null,
+      lifespan:                 document.getElementById('edit_lifespan')?.value                 ?? null,
+      lifespanReached:          document.getElementById('edit_lifespanReached')?.value          ?? null,
+      maintenanceUnit:          document.getElementById('edit_maintenanceUnit')?.value          ?? null,
+      rootCauseAction:          document.getElementById('edit_rootCauseAction')?.value          ?? null,
+      causeCategory:            document.getElementById('edit_causeCategory')?.value            ?? null,
+      recurrenceType:           document.getElementById('edit_recurrenceType')?.value           ?? null,
+      affirmation:              document.getElementById('edit_affirmation')?.value              ?? null,
+      measureStatus:            document.getElementById('edit_measureStatus')?.value            ?? null,
+      changePointCategory:      document.getElementById('edit_tech_changePointCategory')?.value ?? null,
+      changePointContent:       document.getElementById('edit_tech_changePointContent')?.value  ?? null,
+    };
+  }
+}
 
+// pendingData から値を取得するヘルパー（pending優先、なければitemの値）
+function ep(tab, field, itemValue) {
+  const v = (tab === 'mfg' ? editPendingData.mfg : editPendingData.tech)[field];
+  return (v !== null && v !== undefined) ? v : (itemValue ?? '');
+}
   // 編集モーダルUI描画
   function renderEditModalUI() {
     const item = anomalyCache.find(x => x._id === editingId);
@@ -5031,32 +5071,33 @@ document.addEventListener('click', async (e)=>{
         </div>
       `;
     } else {
+      const cpCat = ep('tech','changePointCategory', item.changePointCategory);
       container.innerHTML = `
-        <div class="form-group"><label>対応部署_処置者</label><input type="text" id="edit_techHandler" value="${item.techHandler || ''}"></div>
+        <div class="form-group"><label>対応部署_処置者</label><input type="text" id="edit_techHandler" value="${ep('tech','techHandler', item.techHandler)}"></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div class="form-group">
             <label>命数有無</label>
             <select id="edit_lifespan">
               <option value="">選択</option>
-              <option value="有" ${item.lifespan === '有' ? 'selected' : ''}>有</option>
-              <option value="無" ${item.lifespan === '無' ? 'selected' : ''}>無</option>
+              <option value="有" ${ep('tech','lifespan', item.lifespan) === '有' ? 'selected' : ''}>有</option>
+              <option value="無" ${ep('tech','lifespan', item.lifespan) === '無' ? 'selected' : ''}>無</option>
             </select>
           </div>
           <div class="form-group">
             <label>命数到達</label>
             <select id="edit_lifespanReached">
               <option value="">選択</option>
-              <option value="至" ${item.lifespanReached === '至' ? 'selected' : ''}>至</option>
-              <option value="未" ${item.lifespanReached === '未' ? 'selected' : ''}>未</option>
+              <option value="至" ${ep('tech','lifespanReached', item.lifespanReached) === '至' ? 'selected' : ''}>至</option>
+              <option value="未" ${ep('tech','lifespanReached', item.lifespanReached) === '未' ? 'selected' : ''}>未</option>
             </select>
           </div>
         </div>
-        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit" value="${item.maintenanceUnit || ''}"></div>
-        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction">${item.rootCauseAction || ''}</textarea></div>
+        <div class="form-group"><label>保全単位</label><input type="text" id="edit_maintenanceUnit" value="${ep('tech','maintenanceUnit', item.maintenanceUnit)}"></div>
+        <div class="form-group"><label>何が悪くどうした</label><textarea id="edit_rootCauseAction">${ep('tech','rootCauseAction', item.rootCauseAction)}</textarea></div>
         <div class="form-group">
           <label>原因分類</label>
           <select id="edit_causeCategory">
-            ${renderCauseCategoryOptions(item.causeCategory || '', false, item.anomalyCategory || '')}
+            ${renderCauseCategoryOptions(ep('tech','causeCategory', item.causeCategory), false, item.anomalyCategory || '')}
           </select>
           <div style="margin-top:6px;font-size:.82rem;color:#666;">※ 異常分類に連動した原因分類マスタから選択</div>
         </div>
@@ -5065,28 +5106,29 @@ document.addEventListener('click', async (e)=>{
             <label>再発/新規</label>
             <select id="edit_recurrenceType">
               <option value="">選択</option>
-              <option value="再発" ${item.recurrenceType === '再発' ? 'selected' : ''}>再発</option>
-              <option value="新規" ${item.recurrenceType === '新規' ? 'selected' : ''}>新規</option>
-              <option value="調節" ${item.recurrenceType === '調節' ? 'selected' : ''}>調節</option>
+              <option value="再発" ${ep('tech','recurrenceType', item.recurrenceType) === '再発' ? 'selected' : ''}>再発</option>
+              <option value="新規" ${ep('tech','recurrenceType', item.recurrenceType) === '新規' ? 'selected' : ''}>新規</option>
+              <option value="調節" ${ep('tech','recurrenceType', item.recurrenceType) === '調節' ? 'selected' : ''}>調節</option>
             </select>
           </div>
           <div class="form-group">
             <label>暫定</label>
             <select id="edit_affirmation">
               <option value="">選択</option>
-              <option value="有" ${item.affirmation === '有' ? 'selected' : ''}>有</option>
-              <option value="無" ${item.affirmation === '無' ? 'selected' : ''}>無</option>
+              <option value="有" ${ep('tech','affirmation', item.affirmation) === '有' ? 'selected' : ''}>有</option>
+              <option value="無" ${ep('tech','affirmation', item.affirmation) === '無' ? 'selected' : ''}>無</option>
             </select>
           </div>
         </div>
-        <div class="form-group"><label>対策状況</label>
+        <div class="form-group">
+          <label>対策状況</label>
           <select id="edit_measureStatus">
             <option value="">選択</option>
-            <option value="対策検討中" ${item.measureStatus === '対策検討中' ? 'selected' : ''}>対策検討中</option>
-            <option value="暫定対策中" ${item.measureStatus === '暫定対策中' ? 'selected' : ''}>暫定対策中</option>
-            <option value="対策部品待ち" ${item.measureStatus === '対策部品待ち' ? 'selected' : ''}>対策部品待ち</option>
-            <option value="恒久対策済" ${item.measureStatus === '恒久対策済' ? 'selected' : ''}>恒久対策済</option>
-            <option value="対策効果確認中" ${item.measureStatus === '対策効果確認中' ? 'selected' : ''}>対策効果確認中</option>
+            <option value="対策検討中" ${ep('tech','measureStatus', item.measureStatus) === '対策検討中' ? 'selected' : ''}>対策検討中</option>
+            <option value="暫定対策中" ${ep('tech','measureStatus', item.measureStatus) === '暫定対策中' ? 'selected' : ''}>暫定対策中</option>
+            <option value="対策部品待ち" ${ep('tech','measureStatus', item.measureStatus) === '対策部品待ち' ? 'selected' : ''}>対策部品待ち</option>
+            <option value="恒久対策済" ${ep('tech','measureStatus', item.measureStatus) === '恒久対策済' ? 'selected' : ''}>恒久対策済</option>
+            <option value="対策効果確認中" ${ep('tech','measureStatus', item.measureStatus) === '対策効果確認中' ? 'selected' : ''}>対策効果確認中</option>
           </select>
         </div>
         <div style="background:#e3f2fd;padding:15px;border-radius:6px;margin:16px 0;border:2px solid #1976d2;">
@@ -5095,17 +5137,17 @@ document.addEventListener('click', async (e)=>{
             <label>変化点分類</label>
             <select id="edit_tech_changePointCategory">
               <option value="">なし</option>
-              <option value="人" ${item.changePointCategory === '人' ? 'selected' : ''}>人</option>
-              <option value="方法" ${item.changePointCategory === '方法' ? 'selected' : ''}>方法</option>
-              <option value="材料" ${item.changePointCategory === '材料' ? 'selected' : ''}>材料</option>
-              <option value="金型" ${item.changePointCategory === '金型' ? 'selected' : ''}>金型</option>
-              <option value="設備" ${item.changePointCategory === '設備' ? 'selected' : ''}>設備</option>
-              <option value="その他" ${item.changePointCategory === 'その他' ? 'selected' : ''}>その他</option>
+              <option value="人" ${cpCat === '人' ? 'selected' : ''}>人</option>
+              <option value="方法" ${cpCat === '方法' ? 'selected' : ''}>方法</option>
+              <option value="材料" ${cpCat === '材料' ? 'selected' : ''}>材料</option>
+              <option value="金型" ${cpCat === '金型' ? 'selected' : ''}>金型</option>
+              <option value="設備" ${cpCat === '設備' ? 'selected' : ''}>設備</option>
+              <option value="その他" ${cpCat === 'その他' ? 'selected' : ''}>その他</option>
             </select>
           </div>
           <div class="form-group" style="margin-bottom:0;">
             <label>変化点内容</label>
-            <textarea id="edit_tech_changePointContent">${item.changePointContent || ''}</textarea>
+            <textarea id="edit_tech_changePointContent">${ep('tech','changePointContent', item.changePointContent)}</textarea>
           </div>
         </div>
         <div class="form-group">
@@ -5121,11 +5163,11 @@ document.addEventListener('click', async (e)=>{
           ${renderExistingEditPhotos((item.techPhotoUrls || []).filter(url => !editDeletedTechPhotoUrls.includes(url)), 'tech')}
         </div>
       `;
-    }
-    
+    }  // if/else の閉じ
+
     bindPhotoInputs();
     if (editCurrentTab === 'tech') bindEditCauseCategorySuggestions();
-  }
+  }  // renderEditModalUI 関数の閉じ
 
   // 編集保存
 // 編集保存
@@ -5140,6 +5182,7 @@ document.getElementById('btnEditSave').addEventListener('click', async () => {
   btn.textContent = '保存中...';
   
   try {
+   saveEditTabData(); //
     const updates = {};
     
     if (editCurrentTab === 'mfg') {
@@ -5271,6 +5314,7 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
   } finally {
     btn.disabled = false;
     btn.textContent = '保存';
+   editPendingData = { mfg: {}, tech: {} };
   }
 });
 
@@ -5281,6 +5325,7 @@ if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
     editTechPhotos = [];
     editDeletedMfgPhotoUrls = [];
     editDeletedTechPhotoUrls = [];
+   editPendingData = { mfg: {}, tech: {} }; // ← 追加
   });
 
 
