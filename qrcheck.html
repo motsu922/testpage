@@ -342,6 +342,51 @@
       color: #000;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
     }
+
+    /* ===== 長押し解除ボタン ===== */
+    .hold-release-btn {
+      position: relative;
+      margin-top: 16px;
+      width: min(320px, 86vw);
+      padding: 18px 20px;
+      background: rgba(255,255,255,0.12);
+      border: 2px solid rgba(255,255,255,0.35);
+      border-radius: 12px;
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: none;
+      letter-spacing: 0.03em;
+    }
+    .hold-release-btn .btn-label { position: relative; z-index: 1; pointer-events: none; }
+    .hold-release-btn .hold-progress {
+      position: absolute;
+      inset: 0;
+      width: 0%;
+      background: rgba(255,255,255,0.28);
+      transition: none;
+      border-radius: 10px;
+      z-index: 0;
+    }
+    .hold-release-btn.holding .hold-progress {
+      transition: width var(--hold-duration, 3s) linear;
+      width: 100%;
+    }
+    .hold-release-btn .hold-timer-text {
+      position: relative;
+      z-index: 1;
+      font-size: 12px;
+      font-weight: 400;
+      opacity: 0.75;
+      margin-top: 4px;
+      pointer-events: none;
+    }
+    /* ============================= */
+
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #1a1a1a; }
     ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
@@ -420,7 +465,7 @@
           </div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
             <span class="setting-label">Database URL</span>
-            <input type="text" class="setting-input-wide" id="fbDatabaseURL" placeholder="https://your-app-default-rtdb.firebaseio.com">
+            <input type="text" class="setting-input-wide" id="fbDatabaseURL" placeholder="https://your-app-default-rtdb.firebasedatabase.app">
           </div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
             <span class="setting-label">Project ID</span>
@@ -449,6 +494,14 @@
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
             <span class="setting-label">管理者QR（エラー解除用）</span>
             <input type="text" class="setting-input" id="adminQR" placeholder="QRの値" style="width:100%;">
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">長押し解除を有効にする</span>
+            <div class="toggle-switch on" id="holdReleaseToggle" onclick="toggleHoldRelease()"></div>
+          </div>
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;" id="holdDurationRow">
+            <span class="setting-label">長押し時間（秒）</span>
+            <input type="number" class="setting-input" id="holdDuration" value="3" min="1" max="10" step="1" style="width:120px; margin-top:8px; text-align:center;">
           </div>
         </div>
 
@@ -485,6 +538,13 @@
                autocapitalize="none"
                spellcheck="false">
       </div>
+      <!-- 長押し解除ボタン（holdReleaseEnabled時のみ表示） -->
+      <button class="hold-release-btn" id="holdReleaseBtn" style="display:none;"
+              oncontextmenu="return false;">
+        <div class="hold-progress" id="holdProgress"></div>
+        <div class="btn-label">🔓 長押しで強制解除</div>
+        <div class="hold-timer-text" id="holdTimerText">押し続けてください</div>
+      </button>
     </div>
   </div>
 
@@ -510,11 +570,19 @@
   let database = null;
   let logsRef = null;
 
+  // ===== 長押し解除 状態 =====
+  let holdTimer = null;
+  let holdCountdownInterval = null;
+  let holdStartTime = null;
+  // ===========================
+
   let settings = {
     adminPassword: 'admin',
     adminQR: 'ADMIN123',
     soundEnabled: true,
     vibrationEnabled: true,
+    holdReleaseEnabled: true,
+    holdDuration: 3,
     firebase: {
       apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
       authDomain: "miyamaunitec-fb87a.firebaseapp.com",
@@ -534,6 +602,7 @@
     initFirebase();
     startScanning(true);
     setupFocusKeeper();
+    setupHoldReleaseBtn();
   });
 
   function applyScanOnlyModeUI(){
@@ -542,15 +611,13 @@
     document.getElementById('tab-settings').classList.add('scanonly-hide');
   }
 
-  // ========= 常時フォーカス維持（強化版） =========
+  // ========= 常時フォーカス維持 =========
   function setupFocusKeeper(){
     document.addEventListener('pointerdown', () => { requestFocus(); }, { passive: true });
     document.addEventListener('touchstart',  () => { requestFocus(); }, { passive: true });
-
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') requestFocus();
     });
-
     setInterval(() => { requestFocus(); }, 150);
   }
 
@@ -561,7 +628,6 @@
     if (!scanInput) return;
     if (document.activeElement === scanInput) return;
     if (document.activeElement === document.getElementById('adminInput')) return;
-    // 設定タブの入力欄にフォーカス中は奪わない
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.id !== 'scanInput') return;
     scanInput.focus({ preventScroll: true });
@@ -708,6 +774,102 @@
     }
   }
 
+  // ========= 長押し解除ボタン =========
+  function setupHoldReleaseBtn() {
+    const btn = document.getElementById('holdReleaseBtn');
+    if (!btn) return;
+
+    function startHold(e) {
+      // タッチ/マウス両対応。ボタン以外の場所ではキャンセル
+      if (e.target.closest('#holdReleaseBtn') === null) return;
+      e.preventDefault();
+      beginHoldCountdown();
+    }
+
+    function endHold(e) {
+      cancelHoldCountdown();
+    }
+
+    btn.addEventListener('pointerdown', startHold);
+    btn.addEventListener('pointerup',   endHold);
+    btn.addEventListener('pointerleave', endHold);
+    btn.addEventListener('pointercancel', endHold);
+  }
+
+  function beginHoldCountdown() {
+    if (holdTimer) return; // 既に計測中
+    const btn      = document.getElementById('holdReleaseBtn');
+    const progress = document.getElementById('holdProgress');
+    const timerTxt = document.getElementById('holdTimerText');
+    const duration = Math.max(1, settings.holdDuration || 3);
+
+    // CSS変数で duration を渡す → CSSトランジションで進む
+    btn.style.setProperty('--hold-duration', duration + 's');
+
+    // プログレスバー開始
+    requestAnimationFrame(() => {
+      btn.classList.add('holding');
+    });
+
+    holdStartTime = Date.now();
+    vibrate([30]);
+
+    // カウントダウン表示
+    holdCountdownInterval = setInterval(() => {
+      const elapsed = (Date.now() - holdStartTime) / 1000;
+      const remaining = Math.max(0, duration - elapsed).toFixed(1);
+      timerTxt.textContent = `${remaining}秒 押し続けてください`;
+    }, 100);
+
+    // 完了タイマー
+    holdTimer = setTimeout(() => {
+      // 解除実行
+      clearInterval(holdCountdownInterval);
+      holdCountdownInterval = null;
+      holdTimer = null;
+      btn.classList.remove('holding');
+      progress.style.width = '0';
+      timerTxt.textContent = '押し続けてください';
+
+      isNGLocked = false;
+      playSound('ok');
+      vibrate([80, 40, 80]);
+      document.getElementById('resultOverlay').classList.remove('show');
+      startScanning(true);
+    }, duration * 1000);
+  }
+
+  function cancelHoldCountdown() {
+    if (!holdTimer && !holdCountdownInterval) return;
+    clearTimeout(holdTimer);
+    clearInterval(holdCountdownInterval);
+    holdTimer = null;
+    holdCountdownInterval = null;
+    holdStartTime = null;
+
+    const btn      = document.getElementById('holdReleaseBtn');
+    const timerTxt = document.getElementById('holdTimerText');
+    btn.classList.remove('holding');
+    timerTxt.textContent = '押し続けてください';
+  }
+
+  function updateHoldReleaseUI() {
+    const btn = document.getElementById('holdReleaseBtn');
+    const row = document.getElementById('holdDurationRow');
+    const enabled = settings.holdReleaseEnabled;
+    document.getElementById('holdReleaseToggle').className = enabled ? 'toggle-switch on' : 'toggle-switch';
+    if (row) row.style.display = enabled ? '' : 'none';
+    // NG状態ならボタン表示状態も更新
+    if (document.getElementById('adminArea').style.display !== 'none') {
+      btn.style.display = enabled ? 'block' : 'none';
+    }
+  }
+
+  function toggleHoldRelease() {
+    settings.holdReleaseEnabled = !settings.holdReleaseEnabled;
+    updateHoldReleaseUI();
+  }
+
   // ========= 設定 =========
   function loadSettings() {
     const KEY = 'qrMatchSettings_v7';
@@ -724,6 +886,8 @@
     settings.firebase.authDomain  = settings.firebase.authDomain  || "miyamaunitec-fb87a.firebaseapp.com";
     settings.firebase.databaseURL = settings.firebase.databaseURL || "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app";
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
+    if (settings.holdReleaseEnabled === undefined) settings.holdReleaseEnabled = true;
+    if (!settings.holdDuration) settings.holdDuration = 3;
     applySettingsToForm();
   }
 
@@ -756,7 +920,9 @@
     document.getElementById('fbAuthDomain').value  = settings.firebase.authDomain  || '';
     document.getElementById('fbDatabaseURL').value = settings.firebase.databaseURL || '';
     document.getElementById('fbProjectId').value   = settings.firebase.projectId   || '';
+    document.getElementById('holdDuration').value  = settings.holdDuration || 3;
     renderExtractRules();
+    updateHoldReleaseUI();
   }
 
   function escapeHtml(s){
@@ -824,6 +990,7 @@
     settings.firebase.authDomain  = document.getElementById('fbAuthDomain').value.trim();
     settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
     settings.firebase.projectId   = document.getElementById('fbProjectId').value.trim();
+    settings.holdDuration = Math.max(1, Math.min(10, parseInt(document.getElementById('holdDuration').value) || 3));
     settings.extractRules = collectExtractRules();
     localStorage.setItem('qrMatchSettings_v7', JSON.stringify(settings));
     initFirebase();
@@ -898,11 +1065,10 @@
     localStorage.setItem('qrMatchLog_v7', JSON.stringify(scanLog));
   }
 
-  // ========= 音・バイブ（プチノイズ対策済み） =========
+  // ========= 音・バイブ =========
   function initAudio() {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // 初回サイレント再生：AudioContext起動時のプチノイズを消す
     const buf = audioCtx.createBuffer(1, 1, 22050);
     const src = audioCtx.createBufferSource();
     src.buffer = buf;
@@ -921,8 +1087,6 @@
     const gain = audioCtx.createGain();
     osc.connect(gain);
     gain.connect(audioCtx.destination);
-
-    // ゲインは必ず0スタートでフェードイン→フェードアウト（プチノイズ防止）
     gain.gain.setValueAtTime(0, now);
 
     if (type === 'beep') {
@@ -931,10 +1095,8 @@
       gain.gain.linearRampToValueAtTime(0.5, now + 0.01);
       gain.gain.setValueAtTime(0.5, now + 0.18);
       gain.gain.linearRampToValueAtTime(0, now + 0.24);
-      osc.start(now);
-      osc.stop(now + 0.25);
+      osc.start(now); osc.stop(now + 0.25);
       vibrate([120]);
-
     } else if (type === 'ok') {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(1200, now);
@@ -942,18 +1104,15 @@
       gain.gain.linearRampToValueAtTime(0.5, now + 0.01);
       gain.gain.setValueAtTime(0.5, now + 0.20);
       gain.gain.linearRampToValueAtTime(0, now + 0.26);
-      osc.start(now);
-      osc.stop(now + 0.27);
+      osc.start(now); osc.stop(now + 0.27);
       vibrate([90, 40, 90]);
-
     } else if (type === 'ng') {
       osc.type = 'square';
       osc.frequency.setValueAtTime(280, now);
       gain.gain.linearRampToValueAtTime(0.35, now + 0.01);
       gain.gain.setValueAtTime(0.35, now + 0.38);
       gain.gain.linearRampToValueAtTime(0, now + 0.46);
-      osc.start(now);
-      osc.stop(now + 0.47);
+      osc.start(now); osc.stop(now + 0.47);
       vibrate([500]);
     }
   }
@@ -1061,6 +1220,9 @@
         <p class="label" style="margin-top:12px;">1回目QRに含まれていません</p>
       `;
       adminArea.style.display = 'block';
+      // 長押し解除ボタン表示制御
+      document.getElementById('holdReleaseBtn').style.display =
+        settings.holdReleaseEnabled ? 'block' : 'none';
       isNGLocked = true;
       playSound('ng');
       setTimeout(() => document.getElementById('adminInput').focus(), 80);
@@ -1088,6 +1250,8 @@
     document.getElementById('resultText').textContent = 'エラー状態';
     document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
     document.getElementById('adminArea').style.display = 'block';
+    document.getElementById('holdReleaseBtn').style.display =
+      settings.holdReleaseEnabled ? 'block' : 'none';
     setTimeout(() => document.getElementById('adminInput').focus(), 80);
   }
 
