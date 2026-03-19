@@ -3438,7 +3438,44 @@ function endHold(mode){
   prog.style.transition = 'width 0.2s ease';
   prog.style.width = '0%';
 }
+/* ===================== 確定音 ===================== */
+function playConfirmSound(mode) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
 
+    const playNote = (freq, startTime, duration, gain = 0.28) => {
+      const osc      = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(gain, startTime + 0.015);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      osc.start(startTime);
+      osc.stop(startTime + duration + 0.05);
+    };
+
+    const t = ctx.currentTime;
+
+    if (mode === 'in') {
+      // 入庫: 上昇チャイム ド→ミ→ソ
+      playNote(523.25, t,        0.28);
+      playNote(659.25, t + 0.13, 0.28);
+      playNote(783.99, t + 0.26, 0.45);
+    } else if (mode === 'out') {
+      // 出庫: 下降チャイム ソ→ミ→ド
+      playNote(783.99, t,        0.28);
+      playNote(659.25, t + 0.13, 0.28);
+      playNote(523.25, t + 0.26, 0.45);
+    }
+
+    setTimeout(() => { try { ctx.close(); } catch(e){} }, 2000);
+  } catch(e) {
+    console.warn('Audio playback error:', e);
+  }
+}
 /* ===================== 確定処理 ===================== */
 async function doConfirm(mode){
   if(!window.__saveShelfItem && (mode === 'in' || mode === 'out')){
@@ -3460,6 +3497,7 @@ async function doConfirm(mode){
       if(window.__addHistory){
         window.__addHistory({ type:'inbound', shelfId: shelf, productId: item, at: now, atMs: Date.now() }).catch(()=>{});
       }
+      playConfirmSound('in');   
       showToast(`✅ 入庫：${item} → 棚 ${shelf}`);
       inState = { initial: null, item: null, shelfPrefix: null, shelf: null };
       const banner = document.getElementById('in-fixed-lock-banner');
@@ -3491,6 +3529,7 @@ async function doConfirm(mode){
         window.__addHistory({ type:'outbound', shelfId: fixedShelf, productId: item, at: now, atMs: nowMs }).catch(()=>{});
         window.__addHistory({ type:'move-to-fixed', shelfId: fixedShelf, productId: item, fromShelf: sourceShelf, at: now, atMs: nowMs }).catch(()=>{});
       }
+      playConfirmSound('out');
       showToast(`✅ 出庫完了：${item}　${sourceShelf} → 定番地 ${fixedShelf}`);
       outState = { initial: null, item: null, fixedShelf: null, sourceShelf: null };
     }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
