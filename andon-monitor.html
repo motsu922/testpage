@@ -1591,43 +1591,47 @@
     // ===== リアルタイム監視 =====
     let currentFilter = 'all';
 
-    function setupRealtimeListener() {
-      const q = query(collection(db, 'quality_cases'), orderBy('createdAt', 'desc'));
+function setupRealtimeListener() {
+  const q = query(collection(db, 'quality_cases'), orderBy('createdAt', 'desc'));
 
-      onSnapshot(q, async (snapshot) => {
-        const newCases = [];
-        const newlyDetectedNormalPending = [];
+  onSnapshot(q, async (snapshot) => {
+    const newCases = [];
+    const newlyDetectedNormalPending = [];
 
-        snapshot.forEach(docSnap => {
-          const data = { _id: docSnap.id, ...docSnap.data() };
-          newCases.push(data);
-          if ((data.status || 'pending') === 'pending' && !previousCaseIds.has(docSnap.id)) {
-            if ((data.priority || 'normal') !== 'urgent') newlyDetectedNormalPending.push(docSnap.id);
-          }
-          previousCaseIds.add(docSnap.id);
-        });
+    snapshot.forEach(docSnap => {
+      const data = { _id: docSnap.id, ...docSnap.data() };
+      newCases.push(data);
+      if ((data.status || 'pending') === 'pending' && !previousCaseIds.has(docSnap.id)) {
+        if ((data.priority || 'normal') !== 'urgent') newlyDetectedNormalPending.push(docSnap.id);
+      }
+      previousCaseIds.add(docSnap.id);
+    });
 
-        casesCache = newCases.filter(isTodayCase);
+    casesCache = newCases.filter(isTodayCase);
 
-        try { await autoAssignForPendingCases(); } catch (e) { console.warn('autoAssign failed', e); }
+    // ===== アラーム判定は await より前に実行（再スナップショットの割り込み防止）=====
+    prevHasUrgentPending = hasUrgentPending;
+    hasUrgentPending = casesCache.some(c =>
+      (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending'
+    );
 
-        renderCases();
-        updateStats();
-
-        prevHasUrgentPending = hasUrgentPending;
-        hasUrgentPending = casesCache.some(c => (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending');
-
-        // 通常呼び出し新着：2秒間隔で2回鳴らす（緊急アラーム中はスキップ）
-        if (soundEnabled && audioCtx && newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
-          playChimeRepeat(2, 2000);
-        }
-
-        if (soundEnabled && audioCtx) {
-          if (!prevHasUrgentPending && hasUrgentPending) startUrgentAlarm();
-          if (prevHasUrgentPending && !hasUrgentPending) stopUrgentAlarm();
-        }
-      });
+    if (soundEnabled && audioCtx) {
+      // 通常呼び出し新着：2秒間隔で2回
+      if (newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
+        playChimeRepeat(2, 2000);
+      }
+      // 緊急アラーム状態遷移
+      if (!prevHasUrgentPending && hasUrgentPending) startUrgentAlarm();
+      if (prevHasUrgentPending && !hasUrgentPending) stopUrgentAlarm();
     }
+    // ===========================================================================
+
+    try { await autoAssignForPendingCases(); } catch (e) { console.warn('autoAssign failed', e); }
+
+    renderCases();
+    updateStats();
+  });
+}
 
     // ===== 自動割当 =====
     function getBusyResponderNameSet() {
