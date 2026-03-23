@@ -1,5 +1,4 @@
 
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -884,7 +883,7 @@
     import {
       getFirestore,
       collection, onSnapshot, query, orderBy,
-      addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc, runTransaction, arrayUnion
+      addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp, runTransaction, arrayUnion
     } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
 
     const firebaseConfig = {
@@ -906,7 +905,6 @@
     let casesCache = [];
     let currentCompleteCase = null;
     let modalMode = 'complete';
-
 
     function getTodayStart() {
       const d = new Date();
@@ -954,8 +952,8 @@
     const soundPatternSel  = document.getElementById('soundPatternSelect');
     const testSoundBtn     = document.getElementById('testSoundBtn');
 
-    soundCheckbox.checked   = soundEnabled;
-    soundPatternSel.value   = String(soundPattern);
+    soundCheckbox.checked  = soundEnabled;
+    soundPatternSel.value  = String(soundPattern);
 
     let previousCaseIds = new Set();
     let urgentAlarmTimer = null;
@@ -965,6 +963,7 @@
 
     let audioCtx = null;
 
+    // ----- AudioContext 解錠 -----
     async function unlockAudio() {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return false;
@@ -983,15 +982,30 @@
       }
     }
 
+    // ----- 初回ユーザー操作で自動解錠 -----
+    // ページリロード後、soundEnabled=true でも audioCtx は null のまま。
+    // ブラウザポリシー上、ユーザー操作なしに AudioContext は作れないため、
+    // 最初のクリック／タッチを捉えて解錠し、アラーム状態を再評価する。
+    function setupAutoUnlock() {
+      if (!soundEnabled) return;            // 音声OFF時は不要
+      const handler = async () => {
+        if (audioCtx) return;              // 既に解錠済みなら何もしない
+        const ok = await unlockAudio();
+        if (ok) updateUrgentAlarmState();  // 解錠成功後にアラーム状態を復元
+        document.removeEventListener('click',      handler, true);
+        document.removeEventListener('touchstart', handler, true);
+      };
+      document.addEventListener('click',      handler, true);
+      document.addEventListener('touchstart', handler, true);
+    }
+    setupAutoUnlock();  // ページ読み込み時に即登録
+
     // ============================================================
     //  10種類のアラーム音パターン（本格版・長め）
-    //  通常: 3〜4秒、緊急: 4〜5秒、各パターンは明確に区別できる音
     // ============================================================
-
     const PATTERNS = {
 
-      // ① ウェストミンスターチャイム（鐘の音・長）
-      // 4音の本格的なチャイム。緊急は2回繰り返し
+      // ① ウェストミンスターチャイム
       1: (ctx, t0, isUrgent) => {
         const reps = isUrgent ? 2 : 1;
         const noteFreqs = [659.25, 523.25, 587.33, 392.00];
@@ -1004,7 +1018,6 @@
             const s = t0 + r * (noteFreqs.length * gap + 0.3) + i * gap;
             const noteDur = isUrgent ? 0.95 : 1.35;
 
-            // 基音（鐘の本体）
             const o1 = ctx.createOscillator(), g1 = ctx.createGain();
             o1.type = 'sine'; o1.frequency.setValueAtTime(freq, s);
             g1.gain.setValueAtTime(0, s);
@@ -1012,7 +1025,6 @@
             g1.gain.exponentialRampToValueAtTime(0.001, s + noteDur);
             o1.connect(g1); g1.connect(master); o1.start(s); o1.stop(s + noteDur + 0.1);
 
-            // 非整数倍音（鐘らしい響き）
             const o2 = ctx.createOscillator(), g2 = ctx.createGain();
             o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 2.756, s);
             g2.gain.setValueAtTime(0, s);
@@ -1020,7 +1032,6 @@
             g2.gain.exponentialRampToValueAtTime(0.001, s + noteDur * 0.32);
             o2.connect(g2); g2.connect(master); o2.start(s); o2.stop(s + noteDur * 0.38);
 
-            // 低音胴鳴り
             const o3 = ctx.createOscillator(), g3 = ctx.createGain();
             o3.type = 'sine'; o3.frequency.setValueAtTime(freq * 0.5, s);
             g3.gain.setValueAtTime(0, s);
@@ -1031,8 +1042,7 @@
         }
       },
 
-      // ② 工場サイレン（ウェーリング・長）
-      // ウーーーンと上下するサイレン音。通常3回、緊急5回
+      // ② 工場サイレン（ウェーリング）
       2: (ctx, t0, isUrgent) => {
         const cycles = isUrgent ? 5 : 3;
         const cycleDur = 0.85;
@@ -1057,7 +1067,6 @@
           o.connect(filt); filt.connect(g); g.connect(master);
           o.start(s); o.stop(s + cycleDur + 0.05);
 
-          // 低音副振動（ずっしり感）
           const o2 = ctx.createOscillator(), g2 = ctx.createGain();
           o2.type = 'sine';
           o2.frequency.setValueAtTime(loF * 0.5, s);
@@ -1072,7 +1081,6 @@
       },
 
       // ③ パトカーサイレン（ハイロー交互）
-      // 高音・低音が交互に切り替わるサイレン。通常4ペア、緊急7ペア
       3: (ctx, t0, isUrgent) => {
         const pairs = isUrgent ? 7 : 4;
         const pairDur = isUrgent ? 0.55 : 0.70;
@@ -1083,7 +1091,6 @@
           const s = t0 + i * pairDur;
           const hiF = isUrgent ? 980 : 780, loF = isUrgent ? 740 : 580;
 
-          // Hi音
           const oHi = ctx.createOscillator(), gHi = ctx.createGain();
           oHi.type = 'square'; oHi.frequency.setValueAtTime(hiF, s);
           gHi.gain.setValueAtTime(0, s);
@@ -1095,7 +1102,6 @@
           oHi.connect(fHi); fHi.connect(gHi); gHi.connect(master);
           oHi.start(s); oHi.stop(s + pairDur * 0.52);
 
-          // Lo音
           const oLo = ctx.createOscillator(), gLo = ctx.createGain();
           oLo.type = 'square'; oLo.frequency.setValueAtTime(loF, s + pairDur * 0.5);
           gLo.gain.setValueAtTime(0, s + pairDur * 0.5);
@@ -1109,8 +1115,7 @@
         }
       },
 
-      // ④ 緊急ブザー（強パルス・長）
-      // ブッ・ブッ・ブッと繰り返す強力なブザー。通常5回、緊急9回
+      // ④ 緊急ブザー（強パルス）
       4: (ctx, t0, isUrgent) => {
         const pulses = isUrgent ? 9 : 5;
         const onD = isUrgent ? 0.22 : 0.30, offD = isUrgent ? 0.14 : 0.22;
@@ -1132,7 +1137,6 @@
           o1.connect(filt); filt.connect(g1); g1.connect(master);
           o1.start(s); o1.stop(s + onD + 0.05);
 
-          // 低音で迫力追加
           const o2 = ctx.createOscillator(), g2 = ctx.createGain();
           o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 0.5, s);
           g2.gain.setValueAtTime(0, s);
@@ -1144,7 +1148,6 @@
       },
 
       // ⑤ 放送チャイム（ピンポンパン）
-      // NHK・駅放送前のチャイム風3音。緊急は折り返しあり2セット
       5: (ctx, t0, isUrgent) => {
         const sets = isUrgent ? 2 : 1;
         const setInterval = 2.5;
@@ -1168,7 +1171,6 @@
             g.gain.exponentialRampToValueAtTime(0.001, start + noteDur);
             o.connect(g); g.connect(master); o.start(start); o.stop(start + noteDur + 0.1);
 
-            // 高次倍音（輝き）
             const o2 = ctx.createOscillator(), g2 = ctx.createGain();
             o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 3.0, start);
             g2.gain.setValueAtTime(0, start);
@@ -1180,7 +1182,6 @@
       },
 
       // ⑥ エスカレート警報（ピッチ上昇）
-      // 低音からどんどん高くなるLFOパルス付き警告音
       6: (ctx, t0, isUrgent) => {
         const dur = isUrgent ? 4.5 : 3.5;
         const master = makemaster(ctx, t0, isUrgent ? 0.54 : 0.40, dur);
@@ -1200,7 +1201,6 @@
         o.connect(filt); filt.connect(g); g.connect(master);
         o.start(t0); o.stop(t0 + dur + 0.1);
 
-        // LFO（速度が増す断続感）
         const lfo = ctx.createOscillator(), lfoG = ctx.createGain();
         lfo.type = 'square';
         lfo.frequency.setValueAtTime(isUrgent ? 5 : 4, t0);
@@ -1210,8 +1210,7 @@
         lfo.start(t0); lfo.stop(t0 + dur + 0.1);
       },
 
-      // ⑦ クラクション（長いホーン）
-      // 車のクラクション風。緊急は「長・短・短・長長」パターン
+      // ⑦ クラクション（ホーン）
       7: (ctx, t0, isUrgent) => {
         const blasts = isUrgent
           ? [{dur:0.9,gap:0.18},{dur:0.3,gap:0.12},{dur:0.3,gap:0.12},{dur:1.2,gap:0}]
@@ -1223,7 +1222,6 @@
         blasts.forEach(({dur, gap}) => {
           const s = t0 + cursor;
           const baseF = isUrgent ? 230 : 195;
-          // 整数倍音を重ねて豊かなホーン音に
           [1, 1.5, 2, 3, 4].forEach((h, idx) => {
             const o = ctx.createOscillator(), g = ctx.createGain();
             o.type = 'sawtooth'; o.frequency.setValueAtTime(baseF * h, s);
@@ -1242,7 +1240,6 @@
       },
 
       // ⑧ 三連ビープ×繰り返し
-      // ピッピッピッ（間）ピッピッピッ…と繰り返す。通常4セット、緊急6セット
       8: (ctx, t0, isUrgent) => {
         const sets = isUrgent ? 6 : 4;
         const setDur = isUrgent ? 0.62 : 0.82;
@@ -1271,7 +1268,6 @@
       },
 
       // ⑨ 和音警告メロディ
-      // 短調コードが順番に鳴る重厚なメロディ警告。通常4和音、緊急5和音
       9: (ctx, t0, isUrgent) => {
         const chords = isUrgent
           ? [[220,261.63,329.63],[246.94,293.66,369.99],[261.63,311.13,392.00],[293.66,349.23,440.00],[329.63,392.00,523.25]]
@@ -1291,7 +1287,6 @@
             g.gain.exponentialRampToValueAtTime(0.001, s + chordDur + 0.5);
             o.connect(g); g.connect(master); o.start(s); o.stop(s + chordDur + 0.55);
 
-            // 高音アクセント
             const o2 = ctx.createOscillator(), g2 = ctx.createGain();
             o2.type = 'sine'; o2.frequency.setValueAtTime(freq * 2, s);
             g2.gain.setValueAtTime(0, s);
@@ -1302,14 +1297,12 @@
         });
       },
 
-      // ⑩ 最大緊急警報（EAS風・2音持続）
-      // 米国緊急放送（EAS）風の2音同時持続音＋断続パルス。最も目立つ
+      // ⑩ 最大緊急警報（EAS風）
       10: (ctx, t0, isUrgent) => {
         const dur = isUrgent ? 5.0 : 4.0;
         const master = makemaster(ctx, t0, isUrgent ? 0.62 : 0.48, dur);
         const tone1 = isUrgent ? 960 : 853, tone2 = isUrgent ? 1366 : 960;
 
-        // 2音同時持続
         [tone1, tone2].forEach(freq => {
           const o = ctx.createOscillator(), g = ctx.createGain();
           o.type = 'square'; o.frequency.setValueAtTime(freq, t0);
@@ -1323,7 +1316,6 @@
           o.start(t0); o.stop(t0 + dur + 0.1);
         });
 
-        // 断続パルス（緊急感を演出）
         const pulseCount = isUrgent ? 10 : 7;
         const pulseDur = dur / pulseCount;
         for (let i = 0; i < pulseCount; i++) {
@@ -1347,30 +1339,15 @@
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
       return g;
     }
-
-    function osc(ctx, freq, start, dur, type, vel, dest) {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = type;
-      o.frequency.setValueAtTime(freq, start);
-      g.gain.setValueAtTime(0.0001, start);
-      g.gain.exponentialRampToValueAtTime(vel, start + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
-      o.connect(g);
-      g.connect(dest);
-      o.start(start);
-      o.stop(start + dur + 0.05);
-    }
     // -------------------
 
-    async function playChime(type = 'normal') {
+    async function playChime() {
       if (!soundEnabled || !audioCtx) return;
       try {
         if (audioCtx.state === 'suspended') await audioCtx.resume();
       } catch (e) { console.warn('audioCtx resume error', e); return; }
-      const isUrgent = true;
       const fn = PATTERNS[soundPattern] || PATTERNS[1];
-      try { fn(audioCtx, audioCtx.currentTime, isUrgent); } catch (e) { console.warn('playChime error', e); }
+      try { fn(audioCtx, audioCtx.currentTime, true); } catch (e) { console.warn('playChime error', e); }
     }
 
     function stopUrgentAlarm() {
@@ -1379,10 +1356,10 @@
 
     function startUrgentAlarm() {
       if (urgentAlarmTimer) return;
-      playChime('urgent');
+      playChime();
       urgentAlarmTimer = setInterval(() => {
         if (!soundEnabled || !hasUrgentPending) { stopUrgentAlarm(); return; }
-        playChime('urgent');
+        playChime();
       }, URGENT_ALARM_INTERVAL_MS);
     }
 
@@ -1393,15 +1370,19 @@
       else stopUrgentAlarm();
     }
 
-    // 音声通知トグル
+    // ----- 音声通知トグル -----
     soundCheckbox.addEventListener('change', async (e) => {
       soundEnabled = e.target.checked;
       localStorage.setItem('sound_enabled', soundEnabled);
       if (soundEnabled) {
-        const ok = await unlockAudio();
-        if (!ok) { alert('音声再生がブロックされました。ブラウザ設定を確認してください。'); return; }
+        // チェックON操作自体がユーザー操作なので今すぐ解錠できる
+        if (!audioCtx) {
+          const ok = await unlockAudio();
+          if (!ok) { alert('音声再生がブロックされました。ブラウザ設定を確認してください。'); return; }
+        }
         updateUrgentAlarmState();
-        if (!hasUrgentPending) await playChime('urgent');
+        if (!hasUrgentPending) await playChime();
+        setupAutoUnlock(); // 次回リロード後の自動解錠ハンドラも再登録
       } else {
         stopUrgentAlarm();
       }
@@ -1634,7 +1615,7 @@
         hasUrgentPending = casesCache.some(c => (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending');
 
         if (soundEnabled && audioCtx && newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
-          playChime('urgent');
+          playChime();
         }
 
         if (soundEnabled && audioCtx) {
@@ -1833,7 +1814,6 @@
           try { await reassignToNext(c); }
           catch (err) { console.error(err); alert('割当変更に失敗しました'); }
         });
-
       });
     }
 
@@ -1983,38 +1963,6 @@
             completedContent: content,
             completedAt: serverTimestamp()
           });
-
-          try {
-            localStorage.setItem('andon_completion_data', JSON.stringify({
-              timestamp: Date.now(),
-              caseId: currentCompleteCase._id,
-              department: currentCompleteCase.department || '',
-              lineName: currentCompleteCase.lineName || '',
-              serialNo: currentCompleteCase.serialNo || '',
-              completedBy: by,
-              completedContent: content,
-              completedAt: new Date().toISOString()
-            }));
-          } catch (e) {}
-
-          try {
-            const anomalyId = currentCompleteCase._id;
-            const aRef      = doc(db, 'anomalies', anomalyId);
-            const snap      = await getDoc(aRef);
-            if (snap.exists()) {
-              const prev    = snap.data().qualityResponse || '';
-              const stampJp = new Date().toLocaleString('ja-JP');
-              const addText = `【アンドン完了】${stampJp}\n対応者: ${by}\n対応内容: ${content || '（なし）'}\n案件ID: ${anomalyId}\n`;
-              const next    = [String(prev).trim(), addText.trim()].filter(Boolean).join('\n\n');
-              await updateDoc(aRef, {
-                qualityResponse: next,
-                updatedAt: serverTimestamp(),
-                lastAndonComplete: { by, content: content || '', caseId: anomalyId, at: serverTimestamp() }
-              });
-            }
-          } catch (e) {
-            console.warn('anomalies.qualityResponse 更新失敗', e);
-          }
         }
 
         closeCompleteModal();
@@ -2079,7 +2027,7 @@
       let open = false;
       btn.addEventListener('click', () => {
         open = !open;
-        panel.style.display  = open ? 'block' : 'none';
+        panel.style.display   = open ? 'block' : 'none';
         btn.style.background  = open ? 'linear-gradient(135deg,#667eea,#764ba2)' : 'none';
         btn.style.borderColor = open ? '#667eea' : '#dee2e6';
         btn.style.color       = open ? '#fff' : '#888';
