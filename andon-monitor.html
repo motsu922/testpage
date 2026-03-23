@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -948,12 +947,12 @@
     let soundEnabled = localStorage.getItem('sound_enabled') === 'true';
     let soundPattern = Number(localStorage.getItem('sound_pattern') || '1');
 
-    const soundCheckbox    = document.getElementById('soundNotification');
-    const soundPatternSel  = document.getElementById('soundPatternSelect');
-    const testSoundBtn     = document.getElementById('testSoundBtn');
+    const soundCheckbox   = document.getElementById('soundNotification');
+    const soundPatternSel = document.getElementById('soundPatternSelect');
+    const testSoundBtn    = document.getElementById('testSoundBtn');
 
-    soundCheckbox.checked  = soundEnabled;
-    soundPatternSel.value  = String(soundPattern);
+    soundCheckbox.checked = soundEnabled;
+    soundPatternSel.value = String(soundPattern);
 
     let previousCaseIds = new Set();
     let urgentAlarmTimer = null;
@@ -983,25 +982,22 @@
     }
 
     // ----- 初回ユーザー操作で自動解錠 -----
-    // ページリロード後、soundEnabled=true でも audioCtx は null のまま。
-    // ブラウザポリシー上、ユーザー操作なしに AudioContext は作れないため、
-    // 最初のクリック／タッチを捉えて解錠し、アラーム状態を再評価する。
     function setupAutoUnlock() {
-      if (!soundEnabled) return;            // 音声OFF時は不要
+      if (!soundEnabled) return;
       const handler = async () => {
-        if (audioCtx) return;              // 既に解錠済みなら何もしない
+        if (audioCtx) return;
         const ok = await unlockAudio();
-        if (ok) updateUrgentAlarmState();  // 解錠成功後にアラーム状態を復元
+        if (ok) updateUrgentAlarmState();
         document.removeEventListener('click',      handler, true);
         document.removeEventListener('touchstart', handler, true);
       };
       document.addEventListener('click',      handler, true);
       document.addEventListener('touchstart', handler, true);
     }
-    setupAutoUnlock();  // ページ読み込み時に即登録
+    setupAutoUnlock();
 
     // ============================================================
-    //  10種類のアラーム音パターン（本格版・長め）
+    //  10種類のアラーム音パターン
     // ============================================================
     const PATTERNS = {
 
@@ -1350,6 +1346,14 @@
       try { fn(audioCtx, audioCtx.currentTime, true); } catch (e) { console.warn('playChime error', e); }
     }
 
+    // 通常呼び出し用：指定回数・間隔で繰り返し再生（fire-and-forget で呼ぶ）
+    async function playChimeRepeat(times, intervalMs) {
+      for (let i = 0; i < times; i++) {
+        await playChime();
+        if (i < times - 1) await new Promise(r => setTimeout(r, intervalMs));
+      }
+    }
+
     function stopUrgentAlarm() {
       if (urgentAlarmTimer) { clearInterval(urgentAlarmTimer); urgentAlarmTimer = null; }
     }
@@ -1375,14 +1379,13 @@
       soundEnabled = e.target.checked;
       localStorage.setItem('sound_enabled', soundEnabled);
       if (soundEnabled) {
-        // チェックON操作自体がユーザー操作なので今すぐ解錠できる
         if (!audioCtx) {
           const ok = await unlockAudio();
           if (!ok) { alert('音声再生がブロックされました。ブラウザ設定を確認してください。'); return; }
         }
         updateUrgentAlarmState();
         if (!hasUrgentPending) await playChime();
-        setupAutoUnlock(); // 次回リロード後の自動解錠ハンドラも再登録
+        setupAutoUnlock();
       } else {
         stopUrgentAlarm();
       }
@@ -1413,10 +1416,10 @@
         const delta = Number(m.penaltyDelta || 1);
         if (!until || !isFinite(orig)) continue;
         if (until > now) continue;
-        const curPr   = Number(m.priority || 0);
+        const curPr    = Number(m.priority || 0);
         const expected = orig + delta;
-        const ref = doc(db, 'qc_members', m.id);
-        const payload = { penaltyUntilMs: null, penaltyOriginalPriority: null, penaltyDelta: null, penaltyAppliedAtMs: null };
+        const ref      = doc(db, 'qc_members', m.id);
+        const payload  = { penaltyUntilMs: null, penaltyOriginalPriority: null, penaltyDelta: null, penaltyAppliedAtMs: null };
         if (curPr === expected) payload.priority = orig;
         try { await updateDoc(ref, payload); } catch (e) { /* noop */ }
       }
@@ -1614,8 +1617,9 @@
         prevHasUrgentPending = hasUrgentPending;
         hasUrgentPending = casesCache.some(c => (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending');
 
+        // 通常呼び出し新着：2秒間隔で2回鳴らす（緊急アラーム中はスキップ）
         if (soundEnabled && audioCtx && newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
-          playChime();
+          playChimeRepeat(2, 2000);
         }
 
         if (soundEnabled && audioCtx) {
