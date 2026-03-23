@@ -1,0 +1,2220 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<title>工数管理ダッシュボード</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+
+:root{
+  --bg:       #f0f4f8;
+  --surface:  #ffffff;
+  --card:     #ffffff;
+  --card2:    #f5f7fa;
+  --border:   rgba(15,30,60,.10);
+  --border2:  rgba(15,30,60,.18);
+  --win:      #00875a;
+  --win-dim:  rgba(0,135,90,.10);
+  --win-glow: rgba(0,135,90,.25);
+  --loss:     #c9252d;
+  --loss-dim: rgba(201,37,45,.10);
+  --loss-glow:rgba(201,37,45,.25);
+  --draw:     #b86800;
+  --draw-dim: rgba(184,104,0,.10);
+  --waste:    #d44800;
+  --accent:   #0052cc;
+  --accent2:  #0079bf;
+  --text:     #172b4d;
+  --muted:    #5e6c84;
+  --muted2:   #42526e;
+  --target:   #b86800;
+  --font-num: 'Rajdhani', 'Noto Sans JP', sans-serif;
+  --font-jp:  'Noto Sans JP', sans-serif;
+}
+
+body{
+  font-family:var(--font-jp);
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+}
+
+/* =========== SCROLLBAR =========== */
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:#e4e9f0;}
+::-webkit-scrollbar-thumb{background:rgba(15,30,60,.20);border-radius:3px;}
+
+/* =========== HEADER =========== */
+header{
+  background: linear-gradient(135deg, #0747a6 0%, #0052cc 60%, #1a6ed8 100%);
+  border-bottom:1px solid rgba(0,82,204,.30);
+  padding:0 28px;
+  height:64px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  position:sticky;top:0;z-index:100;
+  box-shadow: 0 2px 12px rgba(0,52,130,.18);
+}
+header::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 30% 50%, rgba(255,255,255,.08) 0%, transparent 60%);
+  pointer-events:none;
+}
+.hdr-brand{display:flex;align-items:center;gap:14px;}
+.hdr-badge{
+  font-family:var(--font-num);font-size:22px;font-weight:700;
+  letter-spacing:3px;color:#fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.3);
+}
+.hdr-sub{font-size:11px;color:rgba(255,255,255,.75);letter-spacing:1px;margin-top:1px;}
+.hdr-right{display:flex;align-items:center;gap:12px;}
+
+/* =========== FILTER STRIP =========== */
+.filter-strip{
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+  padding:10px 28px;
+  background:#ffffff;
+  border-bottom:1px solid var(--border);
+  font-size:12px;
+}
+.fl{font-weight:900;color:var(--muted);letter-spacing:.5px;}
+.month-picker-wrap{display:flex;align-items:center;gap:6px;}
+.mon-sel{
+  background:#f4f5f7;color:var(--text);
+  border:1px solid var(--border2);border-radius:8px;
+  padding:7px 10px;font-family:var(--font-jp);font-size:12px;font-weight:700;
+  outline:none;cursor:pointer;transition:border-color .15s;
+}
+.mon-sel:focus{border-color:var(--accent);}
+
+
+.btn{
+  padding:7px 16px;border-radius:8px;
+  font-family:var(--font-jp);font-size:12px;font-weight:900;
+  cursor:pointer;transition:all .15s;border:1px solid var(--border2);
+  background:#ffffff;color:var(--text);
+}
+.btn:hover{background:#e8ecf0;border-color:var(--accent);}
+.btn.primary{
+  background:var(--accent);border-color:var(--accent);color:#fff;
+  box-shadow:0 2px 12px rgba(41,121,255,.35);
+}
+.btn.primary:hover{background:#1565c0;box-shadow:0 4px 20px rgba(41,121,255,.5);}
+
+.sync-pill{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:6px 14px;border-radius:999px;font-size:11px;font-weight:700;
+}
+.sync-pill.ok {background:rgba(0,135,90,.12);border:1px solid rgba(0,135,90,.35);color:#ffffff;}
+.sync-pill.err{background:rgba(201,37,45,.20);border:1px solid rgba(201,37,45,.40);color:#ffffff;}
+.sync-dot{width:7px;height:7px;border-radius:50%;}
+.sync-dot.ok {background:#36b37e;}
+.sync-dot.err{background:#ff5630;}
+
+/* =========== MAIN =========== */
+main{
+  padding:12px 18px 16px;
+  display:flex;flex-direction:column;gap:12px;
+  max-width:1700px;width:100%;margin:0 auto;
+}
+
+/* =========== CARDS =========== */
+.card{
+  background:#ffffff;
+  border:1px solid rgba(15,30,60,.10);
+  border-radius:14px;
+  padding:18px 20px;
+  position:relative;
+  box-shadow:0 1px 4px rgba(15,30,60,.08), 0 4px 16px rgba(15,30,60,.05);
+}
+
+.card-title{
+  font-family:var(--font-num);
+  font-size:13px;font-weight:700;letter-spacing:1.2px;
+  color:var(--muted);text-transform:uppercase;
+  display:flex;align-items:center;gap:10px;
+  margin-bottom:14px;
+}
+.card-title::before{
+  content:'';width:3px;height:16px;
+  border-radius:2px;background:var(--accent);
+  flex-shrink:0;
+}
+.card-title.win-title::before{background:var(--win);}
+.card-title.loss-title::before{background:var(--loss);}
+.card-title.target-title::before{background:var(--target);}
+
+/* =========== HERO SCOREBOARD =========== */
+.scoreboard{
+  display:grid;
+  grid-template-columns:auto 1fr auto auto auto auto;
+  align-items:center;gap:0;
+  padding:0;
+  background:linear-gradient(135deg, #0c1830 0%, #0e1a2e 100%);
+  border:1px solid rgba(41,121,255,.20);
+  border-radius:18px;
+  overflow:hidden;
+  min-height:130px;
+}
+
+.sb-team{
+  padding:20px 28px;
+  display:flex;flex-direction:column;gap:4px;
+  border-right:1px solid var(--border);
+}
+.sb-team-label{font-size:11px;font-weight:900;color:var(--muted);letter-spacing:1px;text-transform:uppercase;}
+.sb-team-name{font-family:var(--font-num);font-size:28px;font-weight:700;letter-spacing:2px;color:#fff;}
+
+.sb-score-area{
+  display:flex;align-items:center;justify-content:center;
+  gap:0;padding:0 20px;
+}
+.sb-score-block{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:16px 24px;
+}
+.sb-score-num{
+  font-family:var(--font-num);font-size:56px;font-weight:700;
+  line-height:1;letter-spacing:-1px;
+}
+.sb-score-num.win-num{color:var(--win);text-shadow:0 0 24px var(--win-glow);}
+.sb-score-num.draw-num{color:var(--draw);text-shadow:0 0 18px rgba(255,171,0,.4);}
+.sb-score-num.loss-num{color:var(--loss);text-shadow:0 0 24px var(--loss-glow);}
+.sb-score-label{font-size:12px;font-weight:900;letter-spacing:2px;color:var(--muted2);text-transform:uppercase;}
+.sb-dash{
+  font-family:var(--font-num);font-size:40px;color:var(--muted);
+  padding:0 4px;line-height:1;
+}
+
+.sb-vs{
+  padding:0 20px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  border-left:1px solid var(--border);border-right:1px solid var(--border);
+}
+.sb-vs-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:900;}
+.sb-vs-text{font-family:var(--font-num);font-size:22px;font-weight:700;color:var(--muted2);letter-spacing:2px;}
+
+.sb-winrate{
+  padding:20px 28px;
+  border-left:1px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+.sb-winrate-label{font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:900;}
+.sb-winrate-num{font-family:var(--font-num);font-size:48px;font-weight:700;letter-spacing:-1px;color:var(--win);text-shadow:0 0 20px var(--win-glow);}
+.sb-winrate-unit{font-size:14px;color:var(--muted2);font-weight:700;margin-top:-4px;}
+
+.sb-kpis{
+  padding:16px 20px;
+  display:flex;flex-direction:column;gap:8px;
+  border-left:1px solid var(--border);
+}
+.sb-kpi{display:flex;align-items:center;gap:10px;}
+.sb-kpi-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.sb-kpi-label{font-size:11px;color:var(--muted2);font-weight:700;white-space:nowrap;}
+.sb-kpi-val{font-family:var(--font-num);font-size:18px;font-weight:700;color:var(--text);margin-left:auto;}
+
+/* WIN/LOSE/DRAW definition label */
+.rule-strip{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  font-size:11px;color:var(--muted);
+  padding:8px 4px 0;
+}
+.rule-badge{
+  padding:3px 10px;border-radius:999px;font-weight:900;font-size:10px;letter-spacing:.5px;
+}
+.rule-win {background:rgba(0,135,90,.10);color:var(--win);border:1px solid rgba(0,135,90,.30);}
+.rule-draw{background:rgba(184,104,0,.10);color:var(--draw);border:1px solid rgba(184,104,0,.30);}
+.rule-loss{background:rgba(201,37,45,.10);color:var(--loss);border:1px solid rgba(201,37,45,.30);}
+
+/* =========== CALENDAR =========== */
+.cal-wrap{display:flex;flex-direction:column;gap:6px;}
+.cal-weekdays{
+  display:grid;grid-template-columns:repeat(7,1fr);gap:5px;
+  font-size:13px;font-weight:900;color:var(--muted2);
+  letter-spacing:.5px;text-align:center;margin-bottom:6px;
+  padding:0 2px;
+}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;}
+.cal-cell{
+  min-height:90px;border-radius:10px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  cursor:default;position:relative;
+  border:1px solid transparent;
+  transition:transform .1s;
+  padding:8px 4px;
+  gap:4px;
+}
+.cal-cell:hover{transform:scale(1.05);z-index:2;}
+.cal-cell.empty{background:#f5f7fa;border-color:transparent;}
+.cal-cell.win {background:rgba(0,135,90,.10);border-color:rgba(0,135,90,.30);}
+.cal-cell.loss{background:rgba(201,37,45,.10);border-color:rgba(201,37,45,.28);}
+.cal-cell.draw{background:rgba(184,104,0,.10);border-color:rgba(184,104,0,.28);}
+.cal-cell.nodata{background:#f5f7fa;border-color:rgba(15,30,60,.08);}
+.cal-day{font-size:15px;font-weight:900;color:var(--muted);line-height:1;}
+.cal-result{font-family:var(--font-num);font-size:26px;font-weight:700;line-height:1;}
+.win  .cal-result{color:var(--win);}
+.loss .cal-result{color:var(--loss);}
+.draw .cal-result{color:var(--draw);}
+.cal-cell .cal-hours{font-size:12px;font-weight:700;color:var(--muted);line-height:1;}
+
+/* =========== LAYOUT GRIDS =========== */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;align-items:start;}
+@media(max-width:1100px){.grid2{grid-template-columns:1fr;}}
+@media(max-width:1400px){.grid3{grid-template-columns:1fr 1fr;}}
+@media(max-width:900px){.grid3{grid-template-columns:1fr;}}
+
+@media(orientation:landscape) and (min-width:1100px){
+  .main-layout{
+    display:grid;
+    grid-template-columns:0.85fr 1.5fr;
+    gap:18px;
+    align-items:start;
+  }
+  .main-layout .right-col{display:flex;flex-direction:column;gap:18px;}
+}
+
+/* =========== CHART CONTAINERS =========== */
+.ch{position:relative;width:100%;}
+.ch-tall{height:400px;}
+.ch-mid {height:300px;}
+.ch-short{height:250px;}
+.ch-cal {height:auto;}
+@media(orientation:landscape) and (min-width:1100px){
+  .ch-tall {height:calc(100vh - 350px);min-height:380px;max-height:560px;}
+  .ch-mid  {height:calc((100vh - 400px) / 2);min-height:240px;max-height:340px;}
+  .ch-short{height:calc(100vh - 360px);min-height:260px;max-height:400px;}
+}
+
+/* =========== LEGEND =========== */
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(15,30,60,.09);}
+.leg-chip{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:6px 12px;border-radius:999px;
+  background:#f4f5f7;border:1px solid rgba(15,30,60,.14);
+  font-size:12px;font-weight:700;color:var(--text);
+  cursor:pointer;user-select:none;transition:all .15s;
+}
+.leg-chip:hover{background:#e8ecf0;}
+.leg-chip.off{opacity:.35;text-decoration:line-through;}
+.leg-chip.waste-chip{border-color:rgba(212,72,0,.30);background:rgba(212,72,0,.07);}
+.leg-sw{width:11px;height:11px;border-radius:3px;flex-shrink:0;}
+
+/* =========== TOOLTIP STYLE =========== */
+/* applied via chart.js options */
+
+/* =========== NO DATA =========== */
+.no-data{font-size:13px;font-weight:700;color:var(--muted2);padding:6px 0 4px;}
+
+/* =========== MEMBER TABLE =========== */
+.member-table{width:100%;border-collapse:collapse;font-size:13px;}
+.member-table th{
+  font-size:11px;font-weight:900;color:var(--muted);
+  letter-spacing:.5px;text-transform:uppercase;
+  padding:8px 10px;border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.member-table td{padding:9px 10px;border-bottom:1px solid rgba(15,30,60,.06);}
+.member-table tr:hover td{background:rgba(15,30,60,.02);}
+.rank-num{font-family:var(--font-num);font-size:18px;font-weight:700;color:var(--muted);}
+.member-name{font-weight:900;}
+.badge{
+  display:inline-block;padding:3px 10px;border-radius:999px;
+  font-size:11px;font-weight:900;letter-spacing:.5px;
+}
+.badge.win {background:rgba(0,135,90,.10);color:var(--win);border:1px solid rgba(0,135,90,.30);}
+.badge.loss{background:rgba(201,37,45,.10);color:var(--loss);border:1px solid rgba(201,37,45,.30);}
+.badge.draw{background:rgba(184,104,0,.10);color:var(--draw);border:1px solid rgba(184,104,0,.30);}
+.hours-bar-wrap{display:flex;align-items:center;gap:8px;}
+.hours-bar-bg{flex:1;height:8px;background:rgba(15,30,60,.08);border-radius:4px;position:relative;overflow:visible;}
+.hours-bar-fill{height:100%;border-radius:4px;position:absolute;top:0;left:0;transition:width .6s ease;}
+.hours-bar-8h{
+  position:absolute;top:-3px;height:14px;width:2px;border-radius:1px;
+  background:var(--target);box-shadow:0 0 6px var(--target);
+}
+.hours-bar-val{font-family:var(--font-num);font-size:14px;font-weight:700;min-width:42px;text-align:right;}
+
+/* =========== THRESHOLD PANEL =========== */
+.th-panel{
+  display:flex;flex-wrap:wrap;align-items:center;gap:14px 20px;
+  padding:10px 28px;
+  background:rgba(255,171,0,.04);
+  border-bottom:1px solid rgba(255,171,0,.15);
+  font-size:12px;
+}
+.th-group{display:flex;align-items:center;gap:9px;}
+.th-label{font-weight:900;color:var(--muted2);letter-spacing:.3px;white-space:nowrap;}
+.th-badge{
+  padding:2px 9px;border-radius:999px;font-size:10px;font-weight:900;letter-spacing:.5px;
+  margin-right:2px;
+}
+.th-badge.win {background:var(--win-dim);color:var(--win);border:1px solid rgba(0,230,118,.25);}
+.th-badge.loss{background:var(--loss-dim);color:var(--loss);border:1px solid rgba(255,23,68,.25);}
+
+input[type="range"]{
+  -webkit-appearance:none;appearance:none;
+  width:110px;height:4px;border-radius:2px;
+  background:rgba(255,255,255,.12);outline:none;cursor:pointer;
+}
+input[type="range"]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:14px;height:14px;border-radius:50%;
+  border:2px solid var(--bg);cursor:pointer;
+  transition:transform .1s;
+}
+input[type="range"]:hover::-webkit-slider-thumb{transform:scale(1.2);}
+#thWinH::-webkit-slider-thumb {background:var(--win);}
+#thLossH::-webkit-slider-thumb{background:var(--loss);}
+#thWinWR::-webkit-slider-thumb {background:var(--win);}
+#thLossWR::-webkit-slider-thumb{background:var(--loss);}
+
+.th-val{
+  font-family:var(--font-num);font-size:15px;font-weight:700;
+  min-width:36px;text-align:center;letter-spacing:.5px;
+}
+#thWinH-val,#thWinWR-val  {color:var(--win);}
+#thLossH-val,#thLossWR-val{color:var(--loss);}
+
+.th-divider{width:1px;height:28px;background:rgba(255,255,255,.08);margin:0 4px;}
+@keyframes pulse{
+  0%,100%{opacity:1;}
+  50%{opacity:.6;}
+}
+.pulse{animation:pulse 2.5s ease-in-out infinite;}
+
+/* =========== FADE IN =========== */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.card{animation:fadeUp .5s ease both;}
+.card:nth-child(1){animation-delay:.05s;}
+.card:nth-child(2){animation-delay:.10s;}
+.card:nth-child(3){animation-delay:.15s;}
+.card:nth-child(4){animation-delay:.20s;}
+.scoreboard{animation:fadeUp .4s ease both;}
+/* =========== TOP ROW: scoreboard + monthly donuts =========== */
+.top-row{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:12px;
+  align-items:stretch;
+}
+@media(max-width:1000px){ .top-row{grid-template-columns:1fr;} }
+
+/* スコアボードカード */
+.sb-card{
+  display:flex;align-items:center;gap:0;
+  padding:0;overflow:hidden;
+  min-width:0;
+  background:linear-gradient(135deg,#f0f7ff 0%,#e8f0fe 100%);
+  border-color:rgba(0,82,204,.18);
+}
+.sb-inner{display:flex;align-items:center;padding:16px 20px;gap:0;}
+.sb-block{display:flex;flex-direction:column;align-items:center;gap:2px;padding:0 18px;}
+.sb-num{font-family:var(--font-num);font-size:48px;font-weight:700;line-height:1;letter-spacing:-1px;}
+.sb-num.win-num {color:var(--win);}
+.sb-num.draw-num{color:var(--draw);}
+.sb-num.loss-num{color:var(--loss);}
+.sb-lbl{font-family:var(--font-num);font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);text-transform:uppercase;}
+.sb-sep{font-family:var(--font-num);font-size:30px;color:var(--border2);line-height:1;}
+.sb-divider{width:1px;height:80%;background:rgba(15,30,60,.12);align-self:stretch;margin:0 4px;}
+.sb-donut-area{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 18px;}
+.sb-donut-label{font-size:10px;font-weight:900;color:var(--muted2);letter-spacing:1px;text-transform:uppercase;}
+.sb-kpis{display:flex;flex-direction:column;gap:8px;padding:14px 18px;}
+.sb-kpi{display:flex;align-items:center;gap:8px;}
+.sb-kpi-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.sb-kpi-label{font-size:11px;color:var(--muted);font-weight:700;white-space:nowrap;}
+.sb-kpi-val{font-family:var(--font-num);font-size:16px;font-weight:700;color:var(--text);margin-left:auto;padding-left:12px;}
+
+/* 月別ドーナツカード */
+.monthly-card{ overflow-x:auto; }
+
+/* =========== RULE STRIP =========== */
+.rule-strip{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  font-size:11px;color:var(--muted);
+  padding:6px 2px 0;
+}
+.rule-badge{padding:3px 10px;border-radius:999px;font-weight:900;font-size:10px;letter-spacing:.5px;}
+.rule-win {background:rgba(0,135,90,.10);color:var(--win);border:1px solid rgba(0,135,90,.30);}
+.rule-draw{background:rgba(184,104,0,.10);color:var(--draw);border:1px solid rgba(184,104,0,.30);}
+.rule-loss{background:rgba(201,37,45,.10);color:var(--loss);border:1px solid rgba(201,37,45,.30);}
+
+/* =========== MID ROW: calendar + charts =========== */
+.mid-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+  align-items:start;
+}
+@media(max-width:1100px){ .mid-row{grid-template-columns:1fr;} }
+.mid-right{display:flex;flex-direction:column;gap:12px;}
+
+/* =========== CHART HEIGHTS =========== */
+.ch-trend{height:210px;}
+@media(min-height:900px){.ch-trend{height:230px;}}
+
+.cal-cell.cal-clickable{ cursor:pointer; }
+.cal-cell.cal-clickable:hover{ transform:scale(1.08);z-index:2;box-shadow:0 4px 12px rgba(15,30,60,.15); }
+
+.cal-cell{min-height:68px;gap:2px;padding:5px 2px;}
+.cal-result{font-size:18px;}
+.cal-day{font-size:12px;}
+.cal-cell .cal-hours{font-size:10px;}
+
+/* =========== TASK BREAKDOWN compact =========== */
+.tb-member-block{margin-bottom:18px;}
+.tb-bar-bg{height:22px;}
+
+
+.tb-member-block{ margin-bottom:28px; }
+.tb-member-block:last-child{ margin-bottom:0; }
+.tb-member-header{
+  display:flex;align-items:center;gap:10px;
+  margin-bottom:12px;padding-bottom:8px;
+  border-bottom:1px solid var(--border);
+}
+.tb-member-name{ font-size:15px;font-weight:900;color:var(--text);font-family:var(--font-jp); }
+.tb-member-total{ font-family:var(--font-num);font-size:13px;font-weight:700;color:var(--muted2);margin-left:4px; }
+.tb-row{
+  display:grid;
+  grid-template-columns:126px 1fr 52px;
+  align-items:center;gap:10px;margin-bottom:5px;
+}
+.tb-task-label{
+  display:flex;align-items:center;gap:7px;
+  font-size:12px;font-weight:700;color:var(--muted2);
+  justify-content:flex-end;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tb-dot{ width:10px;height:10px;border-radius:3px;flex-shrink:0; }
+.tb-bar-bg{
+  position:relative;height:26px;border-radius:5px;
+  background:rgba(255,255,255,.04);overflow:hidden;
+}
+.tb-bar-fill{
+  height:100%;border-radius:5px;
+  display:flex;align-items:center;padding-left:8px;
+  transition:width .65s cubic-bezier(.4,0,.2,1);
+}
+.tb-bar-label{
+  font-family:var(--font-num);font-size:12px;font-weight:700;
+  color:rgba(255,255,255,.95);white-space:nowrap;
+}
+.tb-val{
+  font-family:var(--font-num);font-size:13px;font-weight:700;
+  color:var(--muted);text-align:right;
+}
+.tb-waste-tag{
+  display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;
+  background:rgba(201,37,45,.12);color:var(--loss);font-weight:900;
+  letter-spacing:.4px;margin-left:4px;
+}
+.reason-tag{
+  display:inline-block;font-size:10px;font-weight:700;
+  padding:2px 7px;border-radius:4px;white-space:nowrap;letter-spacing:.3px;
+}
+.reason-tag.win {background:rgba(0,230,118,.12);color:var(--win);border:1px solid rgba(0,230,118,.25);}
+.reason-tag.draw{background:rgba(255,171,0,.12);color:var(--draw);border:1px solid rgba(255,171,0,.25);}
+.reason-tag.loss{background:rgba(255,23,68,.12);color:var(--loss);border:1px solid rgba(255,23,68,.25);}
+
+/* =========== DAY DETAIL MODAL =========== */
+.day-modal-overlay{
+  display:none;position:fixed;inset:0;z-index:500;
+  background:rgba(15,30,60,.45);
+  backdrop-filter:blur(4px);
+  align-items:center;justify-content:center;
+  padding:20px;
+}
+.day-modal-overlay.open{ display:flex; }
+.day-modal-box{
+  background:#fff;
+  border-radius:18px;
+  box-shadow:0 12px 48px rgba(15,30,60,.22);
+  width:min(680px,100%);
+  max-height:80vh;
+  display:flex;flex-direction:column;
+  overflow:hidden;
+  animation:fadeUp .22s ease both;
+}
+.day-modal-header{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  padding:20px 24px 14px;
+  border-bottom:1px solid rgba(15,30,60,.09);
+  flex-shrink:0;
+}
+.day-modal-date{
+  font-family:var(--font-num);font-size:22px;font-weight:700;
+  color:var(--text);letter-spacing:.5px;
+}
+.day-modal-badge-row{ display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap; }
+.day-modal-close{
+  background:none;border:none;cursor:pointer;
+  font-size:18px;color:var(--muted);padding:4px 8px;
+  border-radius:8px;transition:background .1s;line-height:1;
+}
+.day-modal-close:hover{ background:#f0f4f8; }
+.day-modal-body{
+  overflow-y:auto;
+  padding:16px 24px 20px;
+  display:flex;flex-direction:column;gap:16px;
+}
+
+/* member row in modal */
+.dm-member{
+  background:#f8f9fb;
+  border:1px solid rgba(15,30,60,.09);
+  border-radius:12px;
+  padding:14px 16px;
+}
+.dm-member-header{
+  display:flex;align-items:center;gap:10px;
+  margin-bottom:10px;
+}
+.dm-member-name{ font-size:14px;font-weight:900;color:var(--text); }
+.dm-member-total{
+  font-family:var(--font-num);font-size:18px;font-weight:700;
+  margin-left:auto;color:var(--text);
+}
+.dm-member-result{ flex-shrink:0; }
+.dm-tasks{ display:flex;flex-direction:column;gap:5px; }
+.dm-task-row{
+  display:grid;grid-template-columns:120px 1fr 44px;
+  align-items:center;gap:8px;
+}
+.dm-task-label{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:700;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.dm-dot{ width:9px;height:9px;border-radius:3px;flex-shrink:0; }
+.dm-bar-bg{
+  height:20px;border-radius:5px;background:rgba(15,30,60,.07);
+  position:relative;overflow:hidden;
+}
+.dm-bar-fill{
+  height:100%;border-radius:5px;
+  display:flex;align-items:center;padding-left:7px;
+}
+.dm-bar-text{font-family:var(--font-num);font-size:11px;font-weight:700;color:rgba(255,255,255,.92);}
+.dm-val{font-family:var(--font-num);font-size:12px;font-weight:700;color:var(--muted);text-align:right;}
+.dm-top-task{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;font-weight:700;
+  padding:2px 8px;border-radius:999px;
+  margin-left:8px;
+}
+
+</style>
+
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="hdr-brand">
+    <div>
+      <div class="hdr-badge">工数管理ダッシュボード</div>
+      <div class="hdr-sub">定時 8H 基準による工数超過・ムダ分析</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div id="rangeLabel" style="font-size:12px;color:rgba(255,255,255,.85);font-weight:700;"></div>
+    <div id="syncStatus" class="sync-pill err"><span class="sync-dot err"></span>未接続</div>
+  </div>
+</header>
+
+<!-- FILTER STRIP -->
+<div class="filter-strip">
+  <span class="fl">対象期間</span>
+
+  <!-- 月選択ピッカー -->
+  <div class="month-picker-wrap">
+    <select id="startYear" onchange="onMonthChange()" class="mon-sel"></select>
+    <select id="startMonth" onchange="onMonthChange()" class="mon-sel"></select>
+    <span style="color:var(--muted);font-weight:900;">〜</span>
+    <select id="endYear" onchange="onMonthChange()" class="mon-sel"></select>
+    <select id="endMonth" onchange="onMonthChange()" class="mon-sel"></select>
+  </div>
+
+  <button class="btn primary" onclick="setThisMonth()">今月</button>
+  <button class="btn" onclick="setLastMonth()">先月</button>
+  <button class="btn" onclick="set3Months()">直近3か月</button>
+  <button class="btn" onclick="setThisYear()">今年度</button>
+
+  <span style="margin-left:8px;" class="fl">推移</span>
+  <select id="aggMode" onchange="renderAll()">
+    <option value="day">日次</option>
+    <option value="week" selected>週次</option>
+    <option value="month">月次</option>
+  </select>
+</div>
+
+<main>
+  <!-- ルールバー -->
+  <div class="rule-strip" id="ruleStrip">
+    <span>判定基準：</span>
+    <span class="rule-badge rule-win">WIN</span>
+    <span id="ruleWin">平均工数 ≤ 9.0h</span>
+    <span class="rule-badge rule-draw">DRAW</span>
+    <span>それ以外</span>
+    <span class="rule-badge rule-loss">LOSE</span>
+    <span id="ruleLoss">平均工数 &gt; 10.5h</span>
+  </div>
+
+  <!-- 上段：スコアボード + 月別ドーナツ -->
+  <div class="top-row">
+    <!-- スコアボード -->
+    <div class="card sb-card">
+      <div class="sb-inner">
+        <div class="sb-block">
+          <div class="sb-num win-num" id="sbWin">0</div>
+          <div class="sb-lbl">WIN</div>
+        </div>
+        <div class="sb-sep">—</div>
+        <div class="sb-block">
+          <div class="sb-num draw-num" id="sbDraw">0</div>
+          <div class="sb-lbl">DRAW</div>
+        </div>
+        <div class="sb-sep">—</div>
+        <div class="sb-block">
+          <div class="sb-num loss-num" id="sbLoss">0</div>
+          <div class="sb-lbl">LOSE</div>
+        </div>
+      </div>
+      <div class="sb-divider"></div>
+      <div class="sb-donut-area">
+        <div class="sb-donut-label">WIN RATE</div>
+        <div style="position:relative;width:90px;height:90px;">
+          <canvas id="winRateDonut"></canvas>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+            <span id="sbWinRate" style="font-family:var(--font-num);font-size:18px;font-weight:700;color:var(--win);text-shadow:0 0 10px var(--win-glow);">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="sb-divider"></div>
+      <div class="sb-kpis">
+        <div class="sb-kpi"><span class="sb-kpi-dot" style="background:var(--accent);"></span><span class="sb-kpi-label">総工数</span><span class="sb-kpi-val" id="sbTotal">-</span></div>
+        <div class="sb-kpi"><span class="sb-kpi-dot" style="background:var(--waste);"></span><span class="sb-kpi-label">ムダ工数</span><span class="sb-kpi-val" id="sbWaste" style="color:var(--waste);">-</span></div>
+        <div class="sb-kpi"><span class="sb-kpi-dot" style="background:var(--muted);"></span><span class="sb-kpi-label">ムダ率</span><span class="sb-kpi-val" id="sbWasteRate">-</span></div>
+      </div>
+    </div>
+
+    <!-- 月別ドーナツ -->
+    <div class="card monthly-card">
+      <div class="card-title" style="margin-bottom:12px;">月別 WIN/DRAW/LOSE</div>
+      <div id="monthlyDonutsWrap" style="display:flex;flex-wrap:wrap;gap:20px 28px;align-items:flex-start;"></div>
+    </div>
+  </div>
+
+  <!-- 中段：カレンダー + 推移グラフ -->
+  <div class="mid-row">
+    <div class="card">
+      <div class="card-title win-title" style="margin-bottom:10px;">日別勝敗カレンダー</div>
+      <div id="calContainer"></div>
+    </div>
+    <div class="mid-right">
+      <div class="card">
+        <div class="card-title win-title">勝敗推移</div>
+        <div id="winRateTrendNoData" class="no-data" style="display:none;">データなし</div>
+        <div class="ch ch-trend"><canvas id="winRateTrendChart"></canvas></div>
+        <div id="legend_winRateTrend" class="legend"></div>
+      </div>
+      <div class="card">
+        <div class="card-title loss-title">ムダ工数 内訳推移</div>
+        <div id="wasteNoData" class="no-data" style="display:none;">データなし</div>
+        <div class="ch ch-trend"><canvas id="wasteChart"></canvas></div>
+        <div id="legend_waste" class="legend"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 下段：タスク内訳 -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+      <div class="card-title" style="margin-bottom:0;">担当者 × 業務別 工数内訳</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;">
+        <span class="fl">集計単位</span>
+        <select id="taskMode" onchange="taskPageIndex=0;renderAll()"
+          style="background:var(--card2);color:var(--text);border:1px solid var(--border2);
+                 border-radius:8px;padding:6px 12px;font-family:var(--font-jp);font-size:12px;font-weight:700;outline:none;">
+          <option value="total" selected>期間合計</option>
+          <option value="week">週次</option>
+          <option value="day">日次</option>
+        </select>
+        <button class="btn" id="taskPrev" onclick="taskPageMove(-1)" style="padding:5px 12px;">◀</button>
+        <span id="taskPeriodLabel" style="font-weight:700;color:var(--muted2);min-width:80px;text-align:center;"></span>
+        <button class="btn" id="taskNext" onclick="taskPageMove(1)" style="padding:5px 12px;">▶</button>
+      </div>
+    </div>
+    <div id="taskBreakdownWrap"></div>
+  </div>
+</main>
+
+<!-- DAY DETAIL MODAL -->
+<div id="dayModal" class="day-modal-overlay" onclick="closeDayModal(event)">
+  <div class="day-modal-box">
+    <div class="day-modal-header">
+      <div>
+        <div class="day-modal-date" id="modalDate">—</div>
+        <div class="day-modal-badge-row" id="modalBadgeRow"></div>
+      </div>
+      <button class="day-modal-close" onclick="closeDayModal()">✕</button>
+    </div>
+    <div class="day-modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const firebaseConfig = { apiKey:"AIzaSyAwZQMhF5qIv1XSADce2JiN_qAV88TxEQ8", projectId:"qcnippo" };
+const DOC_PATH = "timeTracker/state";
+
+const TASK_COLORS = {
+  /* ムダ系 — 色相を大きく分散させて視認性確保 */
+  "不具合対応":  "#ff1744",   /* 鮮赤 */
+  "異常処置":    "#ff6d00",   /* ディープオレンジ */
+  "保留品対応":  "#ffd600",   /* 黄 */
+  "選別":        "#00e5ff",   /* シアン */
+  "修正":        "#d500f9",   /* 紫 */
+  "選別・修正":  "#76ff03",   /* ライムグリーン */
+  /* 通常業務 */
+  "朝礼":        "#ffab00",
+  "打合せ":      "#2979ff",
+  "資料作成":    "#00e676",
+  "メール":      "#29b6f6",
+  "外出":        "#1de9b6",
+  "来客対応":    "#e040fb",
+  "その他":      "#546e7a"
+};
+const WASTE_TASKS = ["異常処置","不具合対応","保留品対応","選別","修正","選別・修正"];
+const isWaste = t => {
+  if (!t) return false;
+  if (WASTE_TASKS.includes(t)) return true;
+  return t.includes("選別")||t.includes("修正")||t.includes("不具合")||t.includes("異常")||t.includes("保留");
+};
+const PALETTE = ["#2979ff","#00e676","#ffab00","#00b0ff","#e040fb","#1de9b6","#ff9100","#7c4dff","#5a6e90"];
+const taskColor = (t,i) => TASK_COLORS[t] || (isWaste(t) ? "#ff1744" : PALETTE[(i||0)%PALETTE.length]);
+
+// WIN/LOSS thresholds — UIから動的に読む（労働時間のみ）
+function getThresholds() {
+  return { winMaxH: 9.0, lossMinH: 10.5 };
+}
+const MEMBER_MIN_HOURS = 4;
+
+function getResult(avgH) {
+  const th = getThresholds();
+  if (avgH <= th.winMaxH)  return "win";
+  if (avgH >  th.lossMinH) return "loss";
+  return "draw";
+}
+
+// ============================================================
+// CHART STYLE
+// ============================================================
+const FONT = "'Rajdhani','Noto Sans JP',sans-serif";
+const FONTJP = "'Noto Sans JP',sans-serif";
+const INK = "#172b4d";
+const MUTED = "#5e6c84";
+const GRID_C = "rgba(15,30,60,.07)";
+const TARGET_C = "#b86800";
+const WIN_C = "#00875a";
+const LOSS_C = "#c9252d";
+const DRAW_C = "#b86800";
+
+Chart.defaults.color = "#5e6c84";
+Chart.defaults.font.family = FONTJP;
+Chart.defaults.animation.duration = 700;
+
+const TT_STYLE = {
+  backgroundColor:"rgba(255,255,255,.98)",
+  titleColor:"#172b4d", bodyColor:"#42526e",
+  borderColor:"rgba(15,30,60,.15)", borderWidth:1,
+  cornerRadius:10, padding:12
+};
+function axisX(extra={}) {
+  return { ticks:{color:MUTED,font:{size:12,weight:"700",family:FONTJP},maxRotation:0},
+           grid:{color:GRID_C}, border:{dash:[3,4]}, ...extra };
+}
+function axisY(title="", extra={}) {
+  return { ticks:{color:MUTED,font:{size:12,weight:"700",family:FONTJP}},
+           grid:{color:GRID_C}, border:{dash:[3,4]},
+           title:{display:!!title,text:title,color:MUTED,font:{size:12,weight:"700",family:FONTJP}},
+           ...extra };
+}
+function chartTitle(text, size=16) {
+  return { display:true, text,
+    color:INK, font:{size,weight:"700",family:FONT},
+    padding:{bottom:14} };
+}
+const fmt1 = v => (Math.round(v*10)/10).toFixed(1);
+
+// ============================================================
+// THRESHOLD SYNC
+// ============================================================
+function syncThresholds() {}
+
+
+let records=[], fbUnsub=null;
+let charts = { member:null, trend:null, waste:null, task:null, winRate:null };
+const hidden = { member:{}, trend:{"勝ち平均":false,"チーム平均":false,"定時":false},
+                 waste:{}, task:{} };
+
+function updateSync(ok, msg) {
+  const el = document.getElementById("syncStatus");
+  if (!el) return;
+  el.className = ok ? "sync-pill ok" : "sync-pill err";
+  el.innerHTML = `<span class="sync-dot ${ok?"ok":"err"}"></span>${msg}`;
+}
+
+function initFB() {
+  try {
+    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const ref = db.doc(DOC_PATH);
+    updateSync(true,"同期中");
+    if (fbUnsub) fbUnsub();
+    fbUnsub = ref.onSnapshot(snap => {
+      records = (snap.exists ? snap.data() : {}).records || [];
+      renderAll();
+    }, err => { console.error(err); updateSync(false,"通信エラー"); });
+  } catch(e) { console.error(e); updateSync(false,"接続エラー"); }
+}
+
+// ============================================================
+// DATE UTILS
+// ============================================================
+function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+function parseD(s) {
+  if (!s) return null;
+  const p=s.split("-");
+  if (p.length!==3) return null;
+  return new Date(Number(p[0]),Number(p[1])-1,Number(p[2]));
+}
+function calcH(s,e) {
+  if (!s||!e) return 0;
+  const [sh,sm]=s.split(":").map(Number),[eh,em]=e.split(":").map(Number);
+  const v=((eh||0)*60+(em||0)-((sh||0)*60+(sm||0)))/60;
+  return isFinite(v)&&v>0?v:0;
+}
+function weekStart(d) {
+  const t=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  t.setDate(t.getDate()-(t.getDay()+6)%7);
+  return t;
+}
+// ============================================================
+// MONTH PICKER
+// ============================================================
+function buildMonthSelects() {
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const years = [];
+  for (let y = thisYear - 3; y <= thisYear + 1; y++) years.push(y);
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  ['startYear','endYear'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = years.map(y => `<option value="${y}">${y}年</option>`).join('');
+    sel.value = thisYear;
+  });
+  ['startMonth','endMonth'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = months.map((m,i) => `<option value="${i+1}">${m}</option>`).join('');
+  });
+
+  // default: this month
+  document.getElementById('startYear').value  = thisYear;
+  document.getElementById('startMonth').value = now.getMonth() + 1;
+  document.getElementById('endYear').value    = thisYear;
+  document.getElementById('endMonth').value   = now.getMonth() + 1;
+}
+
+function getMonthRange() {
+  const sy = parseInt(document.getElementById('startYear')?.value  || new Date().getFullYear());
+  const sm = parseInt(document.getElementById('startMonth')?.value || 1);
+  const ey = parseInt(document.getElementById('endYear')?.value    || new Date().getFullYear());
+  const em = parseInt(document.getElementById('endMonth')?.value   || 12);
+  const start = new Date(sy, sm - 1, 1);
+  const end   = new Date(ey, em, 0);   // last day of end month
+  if (start > end) {
+    document.getElementById('endYear').value  = sy;
+    document.getElementById('endMonth').value = sm;
+    return { start, end: new Date(sy, sm, 0) };
+  }
+  start.setHours(0,0,0,0); end.setHours(23,59,59,999);
+  return { start, end };
+}
+
+function onMonthChange() {
+  const sy = parseInt(document.getElementById('startYear').value);
+  const sm = parseInt(document.getElementById('startMonth').value);
+  const ey = parseInt(document.getElementById('endYear').value);
+  const em = parseInt(document.getElementById('endMonth').value);
+  // clamp: end must be >= start
+  if (ey < sy || (ey === sy && em < sm)) {
+    document.getElementById('endYear').value  = sy;
+    document.getElementById('endMonth').value = sm;
+  }
+  renderAll();
+}
+
+function setThisMonth() {
+  const n = new Date();
+  document.getElementById('startYear').value  = n.getFullYear();
+  document.getElementById('startMonth').value = n.getMonth() + 1;
+  document.getElementById('endYear').value    = n.getFullYear();
+  document.getElementById('endMonth').value   = n.getMonth() + 1;
+  renderAll();
+}
+function setLastMonth() {
+  const n = new Date();
+  const d = new Date(n.getFullYear(), n.getMonth() - 1, 1);
+  document.getElementById('startYear').value  = d.getFullYear();
+  document.getElementById('startMonth').value = d.getMonth() + 1;
+  document.getElementById('endYear').value    = d.getFullYear();
+  document.getElementById('endMonth').value   = d.getMonth() + 1;
+  renderAll();
+}
+function set3Months() {
+  const n = new Date();
+  const s = new Date(n.getFullYear(), n.getMonth() - 2, 1);
+  document.getElementById('startYear').value  = s.getFullYear();
+  document.getElementById('startMonth').value = s.getMonth() + 1;
+  document.getElementById('endYear').value    = n.getFullYear();
+  document.getElementById('endMonth').value   = n.getMonth() + 1;
+  renderAll();
+}
+function setThisYear() {
+  const n = new Date();
+  const fy = n.getMonth() >= 3 ? n.getFullYear() : n.getFullYear() - 1;
+  document.getElementById('startYear').value  = fy;
+  document.getElementById('startMonth').value = 4;
+  document.getElementById('endYear').value    = fy + 1;
+  document.getElementById('endMonth').value   = 3;
+  renderAll();
+}
+
+function getMode() { return document.getElementById("aggMode")?.value||"week"; }
+
+// ============================================================
+// AGGREGATE
+// ============================================================
+function aggregate() {
+  const range = getMonthRange();
+  const filtered = records.filter(r => { const d=parseD(r.date); return d&&d>=range.start&&d<=range.end; });
+
+  // per-day analysis
+  const dayMap = {}; // key=dateStr, val={total, waste, memberTotal:{}, memberWaste:{}}
+  const perMember = {}; // member -> {total, waste, days, byTask}
+  const perPeriodMember = { day:{}, week:{}, month:{} };
+  const buckets = { day:{}, week:{}, month:{} };
+  const wasteBuckets = { day:{}, week:{}, month:{} };
+  const aftercareBuckets = { day:{}, week:{}, month:{} };
+
+  let totalH=0, totalW=0;
+
+  filtered.forEach(r => {
+    const d=parseD(r.date); if (!d) return;
+    const h=calcH(r.startTime,r.endTime); if (!h) return;
+    const m=r.member||"未設定", t=r.task||"未分類", iw=isWaste(t);
+
+    if (!dayMap[r.date]) dayMap[r.date]={total:0,waste:0,memberTotal:{},memberWaste:{}};
+    dayMap[r.date].total+=h;
+    if (iw) dayMap[r.date].waste+=h;
+    dayMap[r.date].memberTotal[m]=(dayMap[r.date].memberTotal[m]||0)+h;
+    if (iw) dayMap[r.date].memberWaste[m]=(dayMap[r.date].memberWaste[m]||0)+h;
+
+    if (!perMember[m]) perMember[m]={total:0,waste:0,days:new Set(),byTask:{}};
+    perMember[m].total+=h;
+    if (iw) perMember[m].waste+=h;
+    perMember[m].days.add(r.date);
+    perMember[m].byTask[t]=(perMember[m].byTask[t]||0)+h;
+
+    const ds=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+    const dK=String(ds.getTime());
+    const ws=weekStart(d), wK=String(ws.getTime());
+    const ms=new Date(d.getFullYear(),d.getMonth(),1), mK=String(ms.getTime());
+
+    // 期間別メンバータスク集計
+    ["day","week","month"].forEach((mode,i)=>{
+      const k=[dK,wK,mK][i], st=[ds,ws,ms][i];
+      if (!perPeriodMember[mode][k]) perPeriodMember[mode][k]={start:st,members:{}};
+      if (!perPeriodMember[mode][k].members[m]) perPeriodMember[mode][k].members[m]={total:0,byTask:{}};
+      perPeriodMember[mode][k].members[m].total+=h;
+      perPeriodMember[mode][k].members[m].byTask[t]=(perPeriodMember[mode][k].members[m].byTask[t]||0)+h;
+    });
+
+    ["day","week","month"].forEach((mode,i)=>{
+      const k=[dK,wK,mK][i], st=[ds,ws,ms][i];
+      if (!buckets[mode][k]) buckets[mode][k]={total:0,waste:0,start:st};
+      buckets[mode][k].total+=h;
+      if (iw) buckets[mode][k].waste+=h;
+    });
+
+    if (iw) {
+      totalW+=h;
+      ["day","week","month"].forEach((mode,i)=>{
+        const k=[dK,wK,mK][i], st=[ds,ws,ms][i];
+        if (!aftercareBuckets[mode][k]) aftercareBuckets[mode][k]={start:st,tasks:{}};
+        aftercareBuckets[mode][k].tasks[t]=(aftercareBuckets[mode][k].tasks[t]||0)+h;
+      });
+    }
+    totalH+=h;
+  });
+
+  // daily battle results
+  const dayResults = {};
+  Object.entries(dayMap).forEach(([dateStr,day]) => {
+    const mt=day.memberTotal;
+    const qualified=Object.keys(mt).filter(m=>(mt[m]||0)>=MEMBER_MIN_HOURS);
+    const n=qualified.length;
+    if (!n) return;
+    const avgH=day.total/n;
+    const wr=day.total>0?day.waste/day.total:0;
+    dayResults[dateStr]={ avgH, wasteRate:wr, result:getResult(avgH), n };
+  });
+
+  // 週次・月次ごとの勝敗集計
+  const battleBuckets = { week:{}, month:{} };
+  Object.entries(dayResults).forEach(([dateStr, dr]) => {
+    const d=parseD(dateStr); if (!d) return;
+    const ws=weekStart(d), wK=String(ws.getTime());
+    const ms=new Date(d.getFullYear(),d.getMonth(),1), mK=String(ms.getTime());
+    ["week","month"].forEach((mode,i)=>{
+      const k=[wK,mK][i], st=[ws,ms][i];
+      if (!battleBuckets[mode][k]) battleBuckets[mode][k]={start:st,win:0,draw:0,loss:0};
+      battleBuckets[mode][k][dr.result]++;
+    });
+  });
+
+  return { range, filtered, dayMap, dayResults, perMember, perPeriodMember,
+           buckets, aftercareBuckets, totalH, totalW, battleBuckets };
+}
+
+// ============================================================
+// LEGEND
+// ============================================================
+function legend(id, items, toggle) {
+  const wrap=document.getElementById(id); if (!wrap) return;
+  wrap.innerHTML="";
+  if (!items?.length) return;
+  items.forEach(it => {
+    const c=document.createElement("div");
+    c.className="leg-chip"+(it.hidden?" off":"")+(it.isWaste?" waste-chip":"");
+    c.title="クリックで切替";
+    const sw=document.createElement("span");
+    sw.className="leg-sw"; sw.style.background=it.color;
+    const nm=document.createElement("span"); nm.textContent=it.label;
+    c.append(sw,nm);
+    c.addEventListener("click",()=>{ if (typeof toggle==="function") toggle(it.key); });
+    wrap.appendChild(c);
+  });
+}
+
+// ============================================================
+// RENDER ALL
+// ============================================================
+function renderAll() {
+  const agg=aggregate();
+  lastAgg = agg;
+  const range=agg.range;
+
+  const sy=document.getElementById('startYear')?.value||'';
+  const sm=document.getElementById('startMonth')?.value||'';
+  const ey=document.getElementById('endYear')?.value||'';
+  const em=document.getElementById('endMonth')?.value||'';
+  document.getElementById("rangeLabel").textContent = `${sy}年${sm}月 〜 ${ey}年${em}月`;
+
+  // Scoreboard
+  const results=Object.values(agg.dayResults);
+  const wins=results.filter(r=>r.result==="win").length;
+  const losses=results.filter(r=>r.result==="loss").length;
+  const draws=results.filter(r=>r.result==="draw").length;
+  const total=wins+draws+losses;
+  const winRate=total>0?(wins/total*100):0;
+
+  document.getElementById("sbWin").textContent=wins;
+  document.getElementById("sbDraw").textContent=draws;
+  document.getElementById("sbLoss").textContent=losses;
+  document.getElementById("sbWinRate").textContent=(total?Math.round(winRate)+"%":"—");
+  document.getElementById("sbTotal").textContent=agg.totalH?fmt1(agg.totalH)+"h":"- h";
+  document.getElementById("sbWaste").textContent=agg.totalW?fmt1(agg.totalW)+"h":"- h";
+  document.getElementById("sbWasteRate").textContent=agg.totalH?(agg.totalW/agg.totalH*100).toFixed(0)+"%":"-%";
+
+  // ドーナツ
+  renderWinRateDonut(wins, draws, losses);
+
+  renderCalendar(agg);
+  renderMonthlyDonuts(agg);
+  renderWinRateTrend(agg);
+  renderWaste(agg);
+  renderTaskChart(agg);
+}
+
+// ============================================================
+// WIN RATE DONUT (scoreboard)
+// ============================================================
+let winRateDonutChart = null;
+function renderWinRateDonut(wins, draws, losses) {
+  const ctxEl = document.getElementById("winRateDonut");
+  if (!ctxEl) return;
+  if (winRateDonutChart) { winRateDonutChart.destroy(); winRateDonutChart=null; }
+  const total = wins+draws+losses;
+  if (!total) return;
+  winRateDonutChart = new Chart(ctxEl.getContext("2d"), {
+    type:"doughnut",
+    data:{
+      labels:["WIN","DRAW","LOSE"],
+      datasets:[{
+        data:[wins,draws,losses],
+        backgroundColor:["rgba(0,230,118,.75)","rgba(255,171,0,.65)","rgba(255,23,68,.70)"],
+        borderColor:["rgba(0,230,118,.30)","rgba(255,171,0,.30)","rgba(255,23,68,.30)"],
+        borderWidth:1.5,
+        hoverOffset:6
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true, cutout:"68%",
+      plugins:{
+        legend:{display:false},
+        datalabels:{display:false},
+        tooltip:{
+          ...TT_STYLE,
+          callbacks:{
+            label:c=>{
+              const pct=Math.round(c.parsed/total*100);
+              return `${c.label}: ${c.parsed}日 (${pct}%)`;
+            }
+          }
+        }
+      },
+      animation:{ duration:600 }
+    }
+  });
+}
+
+
+let lastAgg = null;
+
+// ============================================================
+// DAY DETAIL MODAL
+// ============================================================
+function showDayModal(dateStr) {
+  if (!lastAgg) return;
+  const d = parseD(dateStr);
+  if (!d) return;
+
+  const dayResult = lastAgg.dayResults[dateStr];
+  const ds = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dK = String(ds.getTime());
+  const periodData = lastAgg.perPeriodMember.day[dK];
+
+  // header
+  document.getElementById('modalDate').textContent =
+    `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
+
+  const badgeRow = document.getElementById('modalBadgeRow');
+  badgeRow.innerHTML = '';
+  if (dayResult) {
+    const rc = dayResult.result;
+    const label = rc==='win'?'WIN':rc==='loss'?'LOSE':'DRAW';
+    const colors = {win:'rgba(0,135,90,.12)',draw:'rgba(184,104,0,.12)',loss:'rgba(201,37,45,.12)'};
+    const textC  = {win:'var(--win)',draw:'var(--draw)',loss:'var(--loss)'};
+    const border = {win:'rgba(0,135,90,.30)',draw:'rgba(184,104,0,.30)',loss:'rgba(201,37,45,.30)'};
+    badgeRow.innerHTML =
+      `<span style="padding:3px 12px;border-radius:999px;font-size:12px;font-weight:900;
+        background:${colors[rc]};color:${textC[rc]};border:1px solid ${border[rc]};">${label}</span>
+       <span style="font-size:12px;color:var(--muted);font-weight:700;">平均 ${fmt1(dayResult.avgH)}h ／ ${dayResult.n}名</span>`;
+  } else {
+    badgeRow.innerHTML = `<span style="font-size:12px;color:var(--muted);">記録なし</span>`;
+  }
+
+  // body — per member
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '';
+
+  if (!periodData || !Object.keys(periodData.members).length) {
+    body.innerHTML = `<div class="no-data">この日のデータがありません</div>`;
+  } else {
+    const members = Object.entries(periodData.members)
+      .sort((a,b) => b[1].total - a[1].total);
+
+    // global max for bar scale
+    const allVals = members.flatMap(([,md]) => Object.values(md.byTask));
+    const maxVal = Math.max(...allVals, 1);
+
+    // consistent task index
+    const taskIdx = {};
+    let ti = 0;
+    Object.values(lastAgg.perMember).forEach(d => Object.keys(d.byTask).forEach(t => {
+      if (!(t in taskIdx)) taskIdx[t] = ti++;
+    }));
+
+    members.forEach(([name, md]) => {
+      const total = md.total;
+      const waste = Object.entries(md.byTask)
+        .filter(([t]) => isWaste(t))
+        .reduce((s,[,v])=>s+v, 0);
+      const wr = total > 0 ? waste/total : 0;
+      const result = getResult(total); // single day = same threshold
+      const rc = result;
+      const textC = {win:'var(--win)',draw:'var(--draw)',loss:'var(--loss)'};
+
+      // top task
+      const topTask = Object.entries(md.byTask).sort((a,b)=>b[1]-a[1])[0];
+      const topColor = topTask ? taskColor(topTask[0], taskIdx[topTask[0]]??0) : '#999';
+
+      // task rows sorted desc
+      const taskRows = Object.entries(md.byTask).sort((a,b)=>b[1]-a[1]);
+
+      const div = document.createElement('div');
+      div.className = 'dm-member';
+      div.innerHTML = `
+        <div class="dm-member-header">
+          <span style="font-size:16px;">👤</span>
+          <span class="dm-member-name">${name}</span>
+          ${topTask ? `<span class="dm-top-task" style="background:${topColor}20;color:${topColor};border:1px solid ${topColor}40;">
+            <span style="width:8px;height:8px;border-radius:2px;background:${topColor};display:inline-block;flex-shrink:0;"></span>
+            ${topTask[0]} 主
+          </span>` : ''}
+          <span class="dm-member-total" style="color:${textC[rc] || 'var(--text)'};">${fmt1(total)}h</span>
+        </div>
+        <div class="dm-tasks">
+          ${taskRows.map(([task, val]) => {
+            const color = taskColor(task, taskIdx[task]??ti++);
+            const pct   = Math.max(val/maxVal*100, 1);
+            const waste = isWaste(task);
+            return `<div class="dm-task-row">
+              <div class="dm-task-label">
+                <span class="dm-dot" style="background:${color};"></span>
+                <span>${task}${waste?`<span style="font-size:9px;background:rgba(201,37,45,.12);color:var(--loss);border-radius:3px;padding:1px 4px;margin-left:4px;font-weight:900;">ムダ</span>`:''}</span>
+              </div>
+              <div class="dm-bar-bg">
+                <div class="dm-bar-fill" style="width:${pct}%;background:${color};">
+                  ${val>=0.3?`<span class="dm-bar-text">${fmt1(val)}h</span>`:''}
+                </div>
+              </div>
+              <div class="dm-val">${fmt1(val)}h</div>
+            </div>`;
+          }).join('')}
+        </div>`;
+      body.appendChild(div);
+    });
+  }
+
+  document.getElementById('dayModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDayModal(e) {
+  if (e && e.target !== document.getElementById('dayModal')) return;
+  document.getElementById('dayModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDayModal();
+});
+
+
+let monthlyDonutCharts = [];
+
+function renderMonthlyDonuts(agg) {
+  const wrap = document.getElementById("monthlyDonutsWrap");
+  if (!wrap) return;
+
+  monthlyDonutCharts.forEach(c => { try{ c.destroy(); }catch(e){} });
+  monthlyDonutCharts = [];
+
+  const months = Object.values(agg.battleBuckets.month).sort((a,b) => a.start - b.start);
+  if (!months.length) { wrap.innerHTML = "<div class='no-data'>データなし</div>"; return; }
+
+  wrap.innerHTML = "";
+
+  months.forEach(m => {
+    const total = m.win + m.draw + m.loss;
+    const s = m.start;
+    const label = `${s.getFullYear()}年${s.getMonth()+1}月`;
+    const winRate = total > 0 ? Math.round(m.win / total * 100) : 0;
+
+    const box = document.createElement("div");
+    box.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:8px;min-width:150px;";
+
+    const lbl = document.createElement("div");
+    lbl.style.cssText = "font-family:var(--font-num);font-size:13px;font-weight:700;color:var(--muted2);letter-spacing:1px;";
+    lbl.textContent = label;
+    box.appendChild(lbl);
+
+    const donutWrap = document.createElement("div");
+    donutWrap.style.cssText = "position:relative;width:130px;height:130px;";
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 130; canvas.height = 130;
+    donutWrap.appendChild(canvas);
+
+    const center = document.createElement("div");
+    center.style.cssText = "position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;";
+    center.innerHTML = `
+      <span style="font-family:var(--font-num);font-size:24px;font-weight:700;color:${winRate>=50?"var(--win)":"var(--loss)"};text-shadow:0 0 10px ${winRate>=50?"var(--win-glow)":"var(--loss-glow)"};">${winRate}%</span>
+      <span style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:.5px;">WIN RATE</span>`;
+    donutWrap.appendChild(center);
+    box.appendChild(donutWrap);
+
+    const stats = document.createElement("div");
+    stats.style.cssText = "display:flex;gap:6px;font-size:11px;font-weight:700;";
+    stats.innerHTML = `
+      <span style="color:var(--win);">W&nbsp;${m.win}</span>
+      <span style="color:var(--muted);">/</span>
+      <span style="color:var(--draw);">D&nbsp;${m.draw}</span>
+      <span style="color:var(--muted);">/</span>
+      <span style="color:var(--loss);">L&nbsp;${m.loss}</span>`;
+    box.appendChild(stats);
+
+    wrap.appendChild(box);
+
+    const chart = new Chart(canvas.getContext("2d"), {
+      type:"doughnut",
+      data:{
+        labels:["WIN","DRAW","LOSE"],
+        datasets:[{
+          data: total ? [m.win, m.draw, m.loss] : [1],
+          backgroundColor: total
+            ? ["rgba(0,230,118,.75)","rgba(255,171,0,.65)","rgba(255,23,68,.70)"]
+            : ["rgba(255,255,255,.06)"],
+          borderColor: total
+            ? ["rgba(0,230,118,.20)","rgba(255,171,0,.20)","rgba(255,23,68,.20)"]
+            : ["transparent"],
+          borderWidth:1.5, hoverOffset:8
+        }]
+      },
+      options:{
+        responsive:false, cutout:"62%",
+        plugins:{
+          legend:{display:false},
+          datalabels:{display:false},
+          tooltip:{
+            ...TT_STYLE,
+            callbacks:{
+              label:c=>{
+                if (!total) return "データなし";
+                return `${c.label}: ${c.parsed}日 (${Math.round(c.parsed/total*100)}%)`;
+              }
+            }
+          }
+        },
+        animation:{duration:500}
+      }
+    });
+    monthlyDonutCharts.push(chart);
+  });
+}
+
+
+function renderCalendar(agg) {
+  const range = agg.range;
+  const container = document.getElementById("calContainer");
+  if (!container) return;
+
+  // build all days in range
+  const days = [];
+  const cur = new Date(range.start);
+  while (cur <= range.end) {
+    days.push(fmtDate(cur));
+    cur.setDate(cur.getDate()+1);
+  }
+
+  if (!days.length) { container.innerHTML="<div class='no-data'>データなし</div>"; return; }
+
+  // group by month
+  const months = {};
+  days.forEach(ds => {
+    const d=parseD(ds);
+    const mk=`${d.getFullYear()}-${d.getMonth()}`;
+    if (!months[mk]) months[mk]={year:d.getFullYear(),month:d.getMonth(),days:[]};
+    months[mk].days.push(ds);
+  });
+
+  let html = "";
+  const WD = ["月","火","水","木","金","土","日"];
+
+  Object.values(months).reverse().forEach(({year,month,days:mdays}) => {
+    const firstD = new Date(year,month,1);
+    const lastD  = new Date(year,month+1,0);
+    const firstDow = (firstD.getDay()+6)%7; // 0=Mon
+
+    html += `<div style="margin-bottom:16px;">
+      <div style="font-family:var(--font-num);font-size:14px;font-weight:700;color:var(--muted2);letter-spacing:1px;margin-bottom:8px;">${year}年 ${month+1}月</div>
+      <div class="cal-wrap">
+        <div class="cal-weekdays">${WD.map(w=>`<div>${w}</div>`).join("")}</div>
+        <div class="cal-grid">`;
+
+    // empty cells before month start
+    for (let i=0;i<firstDow;i++) html+=`<div class="cal-cell empty"></div>`;
+
+    for (let day=1;day<=lastD.getDate();day++) {
+      const ds=`${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+      const r=agg.dayResults[ds];
+      if (r) {
+        const cls=r.result;
+        const label=cls==="win"?"W":cls==="loss"?"L":"D";
+        const hoursText=fmt1(r.avgH)+"h";
+        html+=`<div class="cal-cell ${cls} cal-clickable" onclick="showDayModal('${ds}')" title="クリックで詳細を表示">
+          <div class="cal-day">${day}</div>
+          <div class="cal-result">${label}</div>
+          <div class="cal-hours">${hoursText}</div>
+        </div>`;
+      } else {
+        const d2=parseD(ds);
+        if (d2&&d2>=range.start&&d2<=range.end) {
+          html+=`<div class="cal-cell nodata cal-clickable" onclick="showDayModal('${ds}')" title="クリックで詳細を表示"><div class="cal-day">${day}</div></div>`;
+        } else {
+          html+=`<div class="cal-cell empty"></div>`;
+        }
+      }
+    }
+    // fill remaining cells
+    const total=(firstDow+lastD.getDate());
+    const rem=(7-total%7)%7;
+    for (let i=0;i<rem;i++) html+=`<div class="cal-cell empty"></div>`;
+
+    html+=`</div></div></div>`;
+  });
+
+  container.innerHTML=html;
+}
+
+// ============================================================
+// ② MEMBER BATTLE CHART
+// ============================================================
+function renderMemberBattle(agg) {
+  const noEl=document.getElementById("memberBattleNoData");
+  const ctxEl=document.getElementById("memberBattleChart");
+  if (charts.member){ charts.member.destroy(); charts.member=null; }
+
+  const entries=Object.entries(agg.perMember);
+  if (!entries.length){ noEl.style.display="block"; return; }
+  noEl.style.display="none";
+
+  // Per member: average daily hours
+  const memberAvg = entries.map(([name,data]) => {
+    const n=data.days.size||1;
+    const avgH=data.total/n;
+    const wr=data.total>0?data.waste/data.total:0;
+    const result=getResult(avgH);
+    return { name, avgH, wasteH:data.waste/n, otherH:(data.total-data.waste)/n, total:data.total, wr, result, n };
+  }).sort((a,b)=>b.avgH-a.avgH);
+
+  const labels=memberAvg.map(m=>m.name);
+  const barColorsOther=memberAvg.map(m=>m.result==="win"?"rgba(0,230,118,.20)":m.result==="loss"?"rgba(255,23,68,.18)":"rgba(255,171,0,.18)");
+  const barColorsWaste=memberAvg.map(m=>m.result==="win"?"rgba(0,230,118,.55)":m.result==="loss"?"rgba(255,23,68,.70)":"rgba(255,171,0,.55)");
+  const borderColors=memberAvg.map(m=>m.result==="win"?WIN_C:m.result==="loss"?LOSS_C:DRAW_C);
+
+  charts.member=new Chart(ctxEl.getContext("2d"),{
+    type:"bar",
+    data:{
+      labels,
+      datasets:[
+        {
+          type:"bar",
+          label:"有効時間（平均）",
+          data:memberAvg.map(m=>m.otherH),
+          backgroundColor:barColorsOther,
+          borderColor:borderColors,
+          borderWidth:1.5,
+          borderSkipped:false,
+          stack:"avg",
+          yAxisID:"yH"
+        },
+        {
+          type:"bar",
+          label:"ムダ時間（平均）",
+          data:memberAvg.map(m=>m.wasteH),
+          backgroundColor:barColorsWaste,
+          borderColor:borderColors,
+          borderWidth:1.5,
+          borderSkipped:false,
+          stack:"avg",
+          yAxisID:"yH"
+        },
+        {
+          type:"line",
+          label:"定時 8H",
+          data:labels.map(()=>8),
+          borderColor:TARGET_C,
+          borderWidth:2.5,
+          borderDash:[6,4],
+          pointRadius:0,
+          tension:0,
+          yAxisID:"yH",
+          stack:undefined
+        },
+        {
+          type:"line",
+          label:"ムダ率",
+          data:memberAvg.map(m=>Math.round(m.wr*100)),
+          borderColor:"rgba(255,109,0,.90)",
+          borderWidth:2.5,
+          pointRadius:6,
+          pointBackgroundColor:memberAvg.map(m=>m.result==="win"?WIN_C:m.result==="loss"?LOSS_C:DRAW_C),
+          pointBorderColor:"rgba(255,109,0,.8)",
+          pointBorderWidth:2,
+          tension:0,
+          yAxisID:"yWR",
+          stack:undefined,
+          datalabels:{ display:true }
+        }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, indexAxis:"y",
+      layout:{ padding:{top:6, right:60, bottom:6, left:6} },
+      plugins:{
+        legend:{display:false},
+        title:chartTitle("メンバー別 平均日工数 vs 定時 8H  /  ムダ率"),
+        tooltip:{
+          ...TT_STYLE,
+          callbacks:{
+            title:items=>{
+              const m=memberAvg[items[0].dataIndex];
+              if (!m) return "";
+              const res=m.result==="win"?"WIN":m.result==="loss"?"LOSE":"DRAW";
+              return `${m.name}  [${res}]`;
+            },
+            label:c=>{
+              const m=memberAvg[c.dataIndex];
+              if (!m) return "";
+              if (c.dataset.label==="定時 8H")     return "定時: 8.0 h";
+              if (c.dataset.label==="ムダ率")       return `ムダ率: ${Math.round(m.wr*100)}%`;
+              if (c.dataset.label.includes("ムダ")) return `ムダ平均: ${fmt1(m.wasteH)} h`;
+              return `有効平均: ${fmt1(m.otherH)} h`;
+            },
+            afterLabel:c=>{
+              const m=memberAvg[c.dataIndex];
+              if (!m||c.dataset.label==="定時 8H"||c.dataset.label==="ムダ率") return "";
+              return `合計平均: ${fmt1(m.avgH)} h`;
+            }
+          }
+        },
+        datalabels:{
+          color:ctx=>{
+            if (ctx.dataset.label==="ムダ率") return "rgba(255,109,0,.95)";
+            if (ctx.dataset.label==="定時 8H") return "transparent";
+            const m=memberAvg[ctx.dataIndex];
+            return m&&m.result==="win"?WIN_C:m&&m.result==="loss"?LOSS_C:DRAW_C;
+          },
+          anchor:ctx=>ctx.dataset.label==="ムダ率"?"center":"end",
+          align:ctx=>ctx.dataset.label==="ムダ率"?"right":"end",
+          offset:ctx=>ctx.dataset.label==="ムダ率"?10:6,
+          clamp:false,
+          formatter:(v,ctx)=>{
+            if (ctx.dataset.label==="定時 8H") return "";
+            if (ctx.dataset.label==="ムダ率") return v+"%";
+            const m=memberAvg[ctx.dataIndex];
+            if (!m||ctx.dataset.label.includes("ムダ")) return "";
+            return `${fmt1(m.avgH)}h`;
+          },
+          font:ctx=>({
+            size: ctx.dataset.label==="ムダ率"?12:13,
+            weight:"700", family:FONT
+          })
+        }
+      },
+      scales:{
+        yH:{
+          stacked:true,
+          axis:"x",
+          position:"bottom",
+          ...axisX(),
+          title:{display:true,text:"平均工数 [h/日]",color:MUTED,font:{size:12,weight:"700",family:FONTJP}},
+        },
+        yWR:{
+          axis:"x",
+          position:"top",
+          beginAtZero:true, max:100,
+          ticks:{
+            color:"rgba(255,109,0,.8)",
+            font:{size:11,weight:"700",family:FONTJP},
+            callback:v=>v+"%"
+          },
+          grid:{ display:false },
+          border:{ display:false },
+          title:{display:true,text:"ムダ率 [%]",color:"rgba(255,109,0,.8)",font:{size:11,weight:"700",family:FONTJP}}
+        },
+        x:{
+          stacked:true,
+          ...axisY(),
+          ticks:{color:INK,font:{size:13,weight:"700",family:FONTJP}}
+        }
+      }
+    }
+  });
+
+  legend("legend_memberBattle",[
+    {key:"v",label:"有効時間（平均）",color:"rgba(0,230,118,.40)",hidden:false,isWaste:false},
+    {key:"w",label:"ムダ時間（平均）",color:"rgba(255,23,68,.60)",hidden:false,isWaste:true},
+    {key:"t",label:"定時 8H ライン",color:TARGET_C,hidden:false,isWaste:false},
+    {key:"r",label:"ムダ率",color:"rgba(255,109,0,.90)",hidden:false,isWaste:true}
+  ], ()=>{});
+}
+
+// ============================================================
+// ③ TREND CHART
+// ============================================================
+function renderTrend(agg) {
+  const noEl=document.getElementById("trendNoData");
+  const ctxEl=document.getElementById("trendChart");
+  if (charts.trend){ charts.trend.destroy(); charts.trend=null; }
+
+  const mode=getMode();
+  const bk=agg.buckets[mode==="day"?"day":mode==="month"?"month":"week"];
+  const entries=Object.values(bk).sort((a,b)=>a.start-b.start);
+  if (!entries.length){ noEl.style.display="block"; document.getElementById("legend_trend").innerHTML=""; return; }
+  noEl.style.display="none";
+
+  const range=agg.range;
+  const startMs=range.start.getTime(), endMs=range.end.getTime();
+  const days=(endMs-startMs)/(1000*86400)+1;
+  const weeksCount=Math.ceil(days/7);
+  const monthsCount=Math.ceil(days/30);
+  const denom=mode==="day"?1:mode==="week"?weeksCount:monthsCount;
+  const memberCount=Math.max(1,Object.keys(agg.perMember).length);
+
+  const labels=entries.map((e,i)=>{
+    const s=e.start;
+    return mode==="day"?(s.getMonth()+1)+"/"+s.getDate():mode==="month"?s.getFullYear()+"/"+(s.getMonth()+1):"W"+(i+1);
+  });
+  const avgData=entries.map(e=>e.total/memberCount);
+  const wasteData=entries.map(e=>e.waste/memberCount);
+  const otherData=entries.map(e=>(e.total-e.waste)/memberCount);
+
+  const hTA=!!hidden.trend["チーム平均"], hW=!!hidden.trend["ムダ平均"], hL=!!hidden.trend["定時"];
+
+  charts.trend=new Chart(ctxEl.getContext("2d"),{
+    type:"line",
+    data:{
+      labels,
+      datasets:[
+        {
+          label:"チーム平均",
+          data:avgData,
+          borderColor:"rgba(0,176,255,.80)",
+          backgroundColor:"rgba(0,176,255,.08)",
+          borderWidth:2.5, tension:0.25,
+          pointRadius:4, pointBackgroundColor:"#00b0ff", pointBorderColor:"#070b14", pointBorderWidth:2,
+          fill:true, hidden:hTA
+        },
+        {
+          label:"ムダ平均",
+          data:wasteData,
+          borderColor:"rgba(255,23,68,.85)",
+          backgroundColor:"rgba(255,23,68,.10)",
+          borderWidth:2.5, tension:0.25,
+          pointRadius:4, pointBackgroundColor:LOSS_C, pointBorderColor:"#070b14", pointBorderWidth:2,
+          fill:true, hidden:hW
+        },
+        {
+          label:"定時",
+          data:labels.map(()=>8),
+          borderColor:TARGET_C,
+          borderWidth:2, borderDash:[6,4],
+          pointRadius:0, tension:0, hidden:hL,
+          fill:false
+        }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      layout:{ padding:{top:20,right:16,bottom:4} },
+      plugins:{
+        legend:{display:false},
+        title:chartTitle("平均工数推移 vs 定時 8H"),
+        tooltip:{
+          ...TT_STYLE,
+          callbacks:{
+            label:c=>{
+              if (c.dataset.label==="定時") return "定時: 8.0 h";
+              const v=c.parsed.y||0, i=c.dataIndex;
+              const avg=avgData[i]||0, w=wasteData[i]||0;
+              const diff=avg-8;
+              if (c.dataset.label==="チーム平均")
+                return `チーム平均: ${fmt1(v)} h（定時比 ${diff>=0?"+":""}${fmt1(diff)}h）`;
+              return `ムダ平均: ${fmt1(v)} h（${avg>0?(v/avg*100).toFixed(0):"0"}%）`;
+            }
+          }
+        },
+        datalabels:{
+          color:ctx=>ctx.dataset.label==="チーム平均"?"#00b0ff":ctx.dataset.label==="ムダ平均"?LOSS_C:"transparent",
+          anchor:"top", align:"top", offset:4, clamp:true,
+          formatter:(v,ctx)=>{
+            if (ctx.dataset.label==="定時") return "";
+            return Number(v)>=0.5?fmt1(v):"";
+          },
+          font:{size:11,weight:"700",family:FONT}
+        }
+      },
+      scales:{
+        x:{ ...axisX() },
+        y:{ ...axisY("工数 [h]"), beginAtZero:true,
+            afterFit:s=>{s.paddingTop=24;} }
+      }
+    }
+  });
+
+  legend("legend_trend",[
+    {key:"チーム平均",label:"チーム平均",color:"#00b0ff",hidden:hTA,isWaste:false},
+    {key:"ムダ平均",label:"ムダ平均",color:LOSS_C,hidden:hW,isWaste:true},
+    {key:"定時",label:"定時 8H",color:TARGET_C,hidden:hL,isWaste:false}
+  ], k=>{ hidden.trend[k]=!hidden.trend[k]; renderAll(); });
+}
+
+// ============================================================
+// WIN RATE TREND
+// ============================================================
+function renderWinRateTrend(agg) {
+  const noEl = document.getElementById("winRateTrendNoData");
+  const ctxEl = document.getElementById("winRateTrendChart");
+  if (charts.winRate){ charts.winRate.destroy(); charts.winRate=null; }
+
+  const mode = getMode();
+  const bk = agg.battleBuckets[mode==="month" ? "month" : "week"];
+  const entries = Object.values(bk).sort((a,b) => a.start - b.start);
+
+  if (!entries.length) {
+    if (noEl) noEl.style.display="block";
+    return;
+  }
+  if (noEl) noEl.style.display="none";
+
+  const labels = entries.map((e,i) => {
+    const s=e.start;
+    return mode==="month"
+      ? s.getFullYear()+"/"+(s.getMonth()+1)
+      : "W"+(i+1);
+  });
+
+  const winData  = entries.map(e => e.win);
+  const drawData = entries.map(e => e.draw);
+  const lossData = entries.map(e => e.loss);
+  const totalData= entries.map(e => e.win+e.draw+e.loss);
+  const winRateLine = entries.map(e => {
+    const t=e.win+e.draw+e.loss;
+    return t>0 ? Math.round(e.win/t*100) : 0;
+  });
+
+  charts.winRate = new Chart(ctxEl.getContext("2d"), {
+    type:"bar",
+    data:{
+      labels,
+      datasets:[
+        {
+          type:"bar", label:"WIN",
+          data:winData,
+          backgroundColor:"rgba(0,230,118,.70)",
+          borderColor:"rgba(0,230,118,.90)", borderWidth:1,
+          stack:"result"
+        },
+        {
+          type:"bar", label:"DRAW",
+          data:drawData,
+          backgroundColor:"rgba(255,171,0,.60)",
+          borderColor:"rgba(255,171,0,.80)", borderWidth:1,
+          stack:"result"
+        },
+        {
+          type:"bar", label:"LOSE",
+          data:lossData,
+          backgroundColor:"rgba(255,23,68,.65)",
+          borderColor:"rgba(255,23,68,.85)", borderWidth:1,
+          stack:"result"
+        },
+        {
+          type:"line", label:"WIN RATE",
+          data:winRateLine,
+          borderColor:"#ffffff",
+          borderWidth:2.2,
+          pointRadius:4,
+          pointBackgroundColor:"#fff",
+          pointBorderColor:"rgba(0,230,118,.8)",
+          pointBorderWidth:2,
+          tension:0.3,
+          yAxisID:"yRate",
+          stack:undefined,
+          datalabels:{ display:true }
+        }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      layout:{ padding:{ top:18, right:14, bottom:2 } },
+      plugins:{
+        legend:{ display:false },
+        title: chartTitle("勝敗推移（WIN / DRAW / LOSE）& WIN RATE", 14),
+        tooltip:{
+          ...TT_STYLE,
+          callbacks:{
+            label: c => {
+              if (c.dataset.label==="WIN RATE") return `WIN RATE: ${c.parsed.y}%`;
+              const i=c.dataIndex;
+              const t=totalData[i]||1;
+              const v=c.parsed.y||0;
+              return `${c.dataset.label}: ${v}日（${Math.round(v/t*100)}%）`;
+            }
+          }
+        },
+        datalabels:{
+          color: ctx => ctx.dataset.label==="WIN RATE" ? "#fff" : "transparent",
+          anchor:"top", align:"top", offset:3,
+          formatter: v => v+"%",
+          font:{ size:11, weight:"700", family:FONT }
+        }
+      },
+      scales:{
+        x:{ stacked:true, ...axisX() },
+        y:{
+          stacked:true, beginAtZero:true,
+          ...axisY("日数"),
+          ticks:{ stepSize:1, color:MUTED, font:{size:11,weight:"700",family:FONTJP} }
+        },
+        yRate:{
+          position:"right",
+          beginAtZero:true, max:100,
+          ticks:{ color:MUTED, font:{size:11,weight:"700",family:FONTJP}, callback: v => v+"%" },
+          grid:{ display:false },
+          title:{ display:true, text:"WIN RATE [%]", color:MUTED, font:{size:11,weight:"700",family:FONTJP} }
+        }
+      }
+    }
+  });
+
+  legend("legend_winRateTrend",[
+    {key:"WIN", label:"WIN", color:"rgba(0,230,118,.70)", hidden:false, isWaste:false},
+    {key:"DRAW", label:"DRAW", color:"rgba(255,171,0,.60)", hidden:false, isWaste:false},
+    {key:"LOSE", label:"LOSE", color:"rgba(255,23,68,.65)", hidden:false, isWaste:true},
+    {key:"WIN RATE", label:"WIN RATE ライン", color:"#fff", hidden:false, isWaste:false}
+  ], ()=>{});
+}
+
+
+function renderWaste(agg) {
+  const noEl=document.getElementById("wasteNoData");
+  const ctxEl=document.getElementById("wasteChart");
+  if (charts.waste){ charts.waste.destroy(); charts.waste=null; }
+
+  const mode=getMode();
+  const acKey=mode==="day"?"day":mode==="month"?"month":"week";
+  const ac=agg.aftercareBuckets[acKey];
+  const totalBk=agg.buckets[acKey];
+  const entries=Object.values(ac).sort((a,b)=>a.start-b.start);
+  if (!entries.length){ noEl.style.display="block"; document.getElementById("legend_waste").innerHTML=""; return; }
+  noEl.style.display="none";
+
+  const labels=entries.map((e,i)=>{
+    const s=e.start;
+    return mode==="day"?(s.getMonth()+1)+"/"+s.getDate():mode==="month"?s.getFullYear()+"/"+(s.getMonth()+1):"W"+(i+1);
+  });
+
+  // 合計工数（該当バケットから）
+  const totalLine=entries.map(e=>{
+    const k=String(e.start.getTime());
+    return totalBk[k]?.total||0;
+  });
+
+  const tSet={};
+  entries.forEach(e=>Object.keys(e.tasks||{}).forEach(t=>{ if (isWaste(t)) tSet[t]=true; }));
+  const series=Object.keys(tSet).sort();
+
+  charts.waste=new Chart(ctxEl.getContext("2d"),{
+    type:"bar",
+    data:{
+      labels,
+      datasets:[
+        ...series.map((t,i)=>({
+          type:"bar",
+          label:t,
+          data:entries.map(e=>(e.tasks&&e.tasks[t])||0),
+          backgroundColor:taskColor(t,i),
+          borderColor:"transparent",
+          stack:"waste",
+          hidden:!!hidden.waste[t],
+          yAxisID:"yLeft"
+        })),
+        {
+          type:"line",
+          label:"合計工数",
+          data:totalLine,
+          borderColor:"rgba(255,255,255,.70)",
+          borderWidth:2.5,
+          borderDash:[5,3],
+          pointRadius:4,
+          pointBackgroundColor:"#fff",
+          pointBorderColor:"rgba(255,255,255,.5)",
+          pointBorderWidth:1.5,
+          tension:0.3,
+          yAxisID:"yRight",
+          stack:undefined,
+          datalabels:{ display:true }
+        }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      layout:{padding:{top:20,right:16,bottom:4}},
+      plugins:{
+        legend:{display:false},
+        title:chartTitle("ムダ工数内訳（積み上げ）＋ 合計工数"),
+        tooltip:{
+          ...TT_STYLE,
+          callbacks:{
+            label:c=>{
+              if (c.dataset.label==="合計工数") return `合計工数: ${fmt1(c.parsed.y||0)} h`;
+              return `${c.dataset.label}: ${fmt1(c.parsed.y||0)} h`;
+            }
+          }
+        },
+        datalabels:{
+          color:(ctx)=>ctx.dataset.label==="合計工数"?"rgba(255,255,255,.90)":"rgba(255,255,255,.85)",
+          anchor:(ctx)=>ctx.dataset.label==="合計工数"?"end":"center",
+          align:(ctx)=>ctx.dataset.label==="合計工数"?"top":"center",
+          offset:(ctx)=>ctx.dataset.label==="合計工数"?5:0,
+          clamp:true,
+          formatter:(v,ctx)=>{
+            const n=Number(v)||0;
+            if (ctx.dataset.label==="合計工数") return n<0.1?"":fmt1(n)+"h";
+            return n<0.7?"":fmt1(n);
+          },
+          font:(ctx)=>ctx.dataset.label==="合計工数"
+            ?{size:12,weight:"700",family:FONT}
+            :{size:11,weight:"700",family:FONT}
+        }
+      },
+      scales:{
+        x:{ stacked:true, ...axisX() },
+        yLeft:{ stacked:true, beginAtZero:true, ...axisY("ムダ工数 [h]"), position:"left" },
+        yRight:{
+          position:"right",
+          beginAtZero:true,
+          ticks:{ color:MUTED, font:{size:11,weight:"700",family:FONTJP}, callback:v=>v+"h" },
+          grid:{ display:false },
+          title:{ display:true, text:"合計工数 [h]", color:MUTED, font:{size:11,weight:"700",family:FONTJP} }
+        }
+      }
+    }
+  });
+
+  legend("legend_waste",
+    [
+      ...series.map((t,i)=>({key:t,label:t,color:taskColor(t,i),hidden:!!hidden.waste[t],isWaste:true})),
+      {key:"合計工数",label:"合計工数",color:"rgba(255,255,255,.70)",hidden:false,isWaste:false}
+    ],
+    k=>{ hidden.waste[k]=!hidden.waste[k]; renderAll(); }
+  );
+}
+
+// ============================================================
+// ⑤ TASK BREAKDOWN — HTML per-member bars (with period select)
+// ============================================================
+let taskPageIndex = 0; // current page index within periods
+
+function taskPageMove(dir) {
+  taskPageIndex += dir;
+  renderAll();
+}
+
+function getTaskPeriods(agg) {
+  const mode = document.getElementById("taskMode")?.value || "total";
+  if (mode === "total") return [{ label:"期間合計", data: agg.perMember }];
+
+  // Build per-period perMember maps
+  const filtered = agg.filtered;
+  const periodMap = {}; // key -> { label, start, members:{name:{total,waste,byTask}} }
+
+  filtered.forEach(r => {
+    const d = parseD(r.date); if (!d) return;
+    const h = calcH(r.startTime, r.endTime); if (!h) return;
+    const m = r.member||"未設定", t = r.task||"未分類", iw = isWaste(t);
+
+    let k, label, start;
+    if (mode === "week") {
+      const ws = weekStart(d);
+      k = String(ws.getTime());
+      start = ws;
+      label = `${ws.getMonth()+1}/${ws.getDate()}週`;
+    } else {
+      const ds = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      k = String(ds.getTime());
+      start = ds;
+      label = `${d.getMonth()+1}/${d.getDate()}`;
+    }
+
+    if (!periodMap[k]) periodMap[k] = { label, start, members:{} };
+    const pm = periodMap[k].members;
+    if (!pm[m]) pm[m] = { total:0, waste:0, days:new Set(), byTask:{} };
+    pm[m].total += h;
+    if (iw) pm[m].waste += h;
+    pm[m].days.add(r.date);
+    pm[m].byTask[t] = (pm[m].byTask[t]||0) + h;
+  });
+
+  return Object.values(periodMap)
+    .sort((a,b) => a.start - b.start)
+    .map(p => ({ label: p.label, data: p.members }));
+}
+
+function renderTaskChart(agg) {
+  const wrap = document.getElementById("taskBreakdownWrap");
+  if (!wrap) return;
+
+  const periods = getTaskPeriods(agg);
+  if (!periods.length) { wrap.innerHTML = "<div class='no-data'>データなし</div>"; return; }
+
+  // clamp page index
+  taskPageIndex = Math.max(0, Math.min(taskPageIndex, periods.length - 1));
+  const period = periods[taskPageIndex];
+
+  // update nav UI
+  const modeVal = document.getElementById("taskMode")?.value || "total";
+  const periodLabel = document.getElementById("taskPeriodLabel");
+  const prevBtn = document.getElementById("taskPrev");
+  const nextBtn = document.getElementById("taskNext");
+  if (periodLabel) periodLabel.textContent = period.label;
+  if (prevBtn) prevBtn.disabled = (taskPageIndex === 0);
+  if (nextBtn) nextBtn.disabled = (taskPageIndex === periods.length - 1);
+  if (prevBtn) prevBtn.style.opacity = taskPageIndex === 0 ? ".3" : "1";
+  if (nextBtn) nextBtn.style.opacity = taskPageIndex === periods.length-1 ? ".3" : "1";
+  // hide nav in total mode
+  const isTotal = modeVal === "total";
+  [prevBtn, nextBtn, periodLabel].forEach(el => { if (el) el.style.display = isTotal ? "none" : ""; });
+
+  const entries = Object.entries(period.data).sort((a,b) => b[1].total - a[1].total);
+  if (!entries.length) { wrap.innerHTML = "<div class='no-data'>データなし</div>"; return; }
+
+  // consistent color index across all periods
+  const taskIndexMap = {};
+  let ti = 0;
+  // Use full agg for consistent colors
+  Object.values(agg.perMember).forEach(d => Object.keys(d.byTask).forEach(t => {
+    if (!(t in taskIndexMap)) taskIndexMap[t] = ti++;
+  }));
+
+  const allVals = [];
+  entries.forEach(([,d]) => Object.values(d.byTask).forEach(v => allVals.push(v)));
+  const maxVal = Math.max(...allVals, 1);
+
+  let html = "";
+  entries.forEach(([name, data]) => {
+    const total = data.total;
+    const rows = Object.entries(data.byTask).sort((a,b) => b[1] - a[1]);
+
+    html += `<div class="tb-member-block">
+      <div class="tb-member-header">
+        <span style="font-size:16px;">👤</span>
+        <span class="tb-member-name">${name}</span>
+        <span class="tb-member-total">合計: ${fmt1(total)}h</span>
+      </div>`;
+
+    rows.forEach(([task, val]) => {
+      const color = taskColor(task, taskIndexMap[task] ?? ti++);
+      const pct   = Math.max((val / maxVal) * 100, 1);
+      const waste = isWaste(task);
+      const labelInBar = val >= 0.4;
+
+      html += `<div class="tb-row">
+        <div class="tb-task-label">
+          <span class="tb-dot" style="background:${color};"></span>
+          <span>${task}${waste ? '<span class="tb-waste-tag">ムダ</span>' : ""}</span>
+        </div>
+        <div class="tb-bar-bg">
+          <div class="tb-bar-fill" style="width:${pct}%;background:${color};">
+            ${labelInBar ? `<span class="tb-bar-label">${fmt1(val)}h</span>` : ""}
+          </div>
+        </div>
+        <div class="tb-val">${fmt1(val)}h</div>
+      </div>`;
+    });
+
+    html += `</div>`;
+  });
+
+  wrap.innerHTML = html;
+}
+
+// ============================================================
+// ⑥ MEMBER WASTE TABLE
+// ============================================================
+function renderMemberTable(agg) {
+  const wrap=document.getElementById("memberTableWrap");
+  if (!wrap) return;
+  const entries=Object.entries(agg.perMember);
+  if (!entries.length){ wrap.innerHTML="<div class='no-data'>データなし</div>"; return; }
+
+  const memberAvg=entries.map(([name,data])=>{
+    const n=data.days.size||1;
+    const avgH=data.total/n;
+    const wr=data.total>0?data.waste/data.total:0;
+    return { name, avgH, wasteH:data.waste/n, total:data.total, wasteTotal:data.waste, wr, result:getResult(avgH), days:n };
+  }).sort((a,b)=>b.wr-a.wr);
+
+  const maxAvgH=Math.max(...memberAvg.map(m=>m.avgH),1);
+
+  let html=`<table class="member-table">
+    <thead><tr>
+      <th>#</th>
+      <th>メンバー</th>
+      <th>判定</th>
+      <th>平均工数 vs 8H</th>
+      <th>ムダ率</th>
+      <th>ムダ合計</th>
+    </tr></thead><tbody>`;
+
+  memberAvg.forEach((m,i)=>{
+    const bc=m.result==="win"?WIN_C:m.result==="loss"?LOSS_C:DRAW_C;
+    const bpct=Math.min((m.avgH/maxAvgH)*100,100);
+    const pct8=Math.min((8/maxAvgH)*100,100);
+    const th=getThresholds();
+
+    html+=`<tr>
+      <td><div class="rank-num">${i+1}</div></td>
+      <td><div class="member-name">${m.name}</div><div style="font-size:10px;color:var(--muted);margin-top:2px;">${m.days}日勤務</div></td>
+      <td><span class="badge ${m.result}">${m.result==="win"?"WIN":m.result==="loss"?"LOSE":"DRAW"}</span></td>
+      <td>
+        <div class="hours-bar-wrap">
+          <div class="hours-bar-bg" style="position:relative;flex:1;height:10px;background:rgba(255,255,255,.06);border-radius:5px;overflow:visible;">
+            <div class="hours-bar-fill" style="width:${bpct}%;background:${bc}30;border-radius:5px;height:100%;"></div>
+            <div class="hours-bar-8h" style="left:${pct8}%;"></div>
+          </div>
+          <div class="hours-bar-val" style="color:${bc};">${fmt1(m.avgH)}h</div>
+        </div>
+      </td>
+      <td style="font-family:var(--font-num);font-size:15px;font-weight:700;color:${m.wr>=th.lossMinWR?LOSS_C:m.wr>=th.winMaxWR?DRAW_C:WIN_C};">${(m.wr*100).toFixed(0)}%</td>
+      <td style="font-family:var(--font-num);font-size:14px;font-weight:700;color:var(--waste);">${fmt1(m.wasteTotal)}h</td>
+    </tr>`;
+  });
+
+  html+="</tbody></table>";
+  wrap.innerHTML=html;
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener("DOMContentLoaded",()=>{
+  Chart.register(ChartDataLabels);
+  buildMonthSelects();
+  syncThresholds();
+  initFB();
+});
+</script>
+</body>
+</html>
