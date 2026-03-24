@@ -708,8 +708,8 @@
         <div class="settings-card">
           <div class="settings-card-title">📐 品番抽出ルール（レンジ + prefix対応）</div>
           <p style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;">
-            2回目QR（正規化後）の文字数レンジ(min〜max)でルールを選び、開始位置(startPos)からcharCount文字を品番として抽出します。<br>
-            prefix（開始文字列）を指定すると、<b>文字数レンジAND prefix</b> の両方が一致したルールが優先されます。<br>
+            <b>1回目QR（正規化後）</b>の文字数レンジ(min〜max)とprefixでルールを選び、2回目QRの開始位置(startPos)からcharCount文字を品番として抽出します。<br>
+            prefix（開始文字列）を指定すると、<b>文字数レンジAND prefix</b> の両方が1回目QRに一致したルールが優先されます。<br>
             1回目QR（正規化後）にこの品番が含まれていれば一致(○)です。
           </p>
           <div id="extractRulesContainer"></div>
@@ -895,6 +895,10 @@
   function normalizeQR(str){
     return String(str ?? '')
       .normalize('NFKC')
+      // ゼロ幅文字・BOM除去
+      .replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/g, '')
+      // 各種ハイフン・ダッシュ類を半角ハイフン(U+002D)に統一
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63]/g, '-')
       .replace(/\u00A0/g, ' ')
       .replace(/[\r\n]+/g, ' ')
       .replace(/\s+/g, ' ')
@@ -1714,8 +1718,8 @@
             <input type="text" class="rule-prefix" data-index="${index}" value="${escapeHtml(rule.prefix || '')}" placeholder="例: :G / VB / なし"></div>
         </div>
         <div style="font-size: 11px; color: #666; line-height:1.4;">
-          例：${rule.minLen}〜${rule.maxLen}文字 ${rule.prefix ? `かつ prefix="${escapeHtml(rule.prefix)}"` : ''} の場合 →
-          ${rule.startPos}文字目から${rule.charCount}文字を品番として抽出
+          例：1回目QRが ${rule.minLen}〜${rule.maxLen}文字 ${rule.prefix ? `かつ prefix="${escapeHtml(rule.prefix)}"` : ''} の場合 →
+          2回目QRの${rule.startPos}文字目から${rule.charCount}文字を品番として抽出
         </div>
       </div>
     `).join('');
@@ -1939,7 +1943,7 @@
     if (!rule) return { part: qr2, rule: null, totalLen, start0: 0, note: 'no_rule_full' };
     const start0 = rule.startPos - 1;
     if (start0 < 0 || start0 >= qr2.length) return { part: qr2, rule, totalLen, start0, note: 'bad_start_full' };
-    const part = qr2.substring(start0, start0 + rule.charCount);
+    const part = qr2.substring(start0, start0 + rule.charCount).trim();  // 前後スペース除去
     let note = '';
     if (part.length < rule.charCount) note = 'short_extract';
     return { part, rule, totalLen, start0, note };
@@ -1972,6 +1976,7 @@
       qr1_raw: value1, qr2_raw: value2,
       qr1: v1, qr2: v2,
       partNumber,
+      qr1Length: v1.length,
       qr2Length: v2.length,
       matchedRule: ex.rule ? {
         minLen: ex.rule.minLen, maxLen: ex.rule.maxLen,
@@ -2132,7 +2137,7 @@
         <div class="log-item ${cls}">
           <div class="log-time">${t}</div>
           <div class="log-result">${label}</div>
-          <div class="log-values">品番: ${escapeHtml(l.partNumber)} / len:${l.qr2Length} / ${escapeHtml(rule)}${escapeHtml(note)}</div>
+          <div class="log-values">品番: ${escapeHtml(l.partNumber)} / QR1:${l.qr1Length ?? '-'} QR2:${l.qr2Length} / ${escapeHtml(rule)}${escapeHtml(note)}</div>
         </div>
       `;
     }).join('');
@@ -2150,14 +2155,14 @@
 
   function exportLog() {
     if (scanLog.length === 0) return alert('履歴がありません');
-    const headers = ['日時','結果','重複フラグ','1回目QR(raw)','2回目QR(raw)','1回目QR(norm)','2回目QR(norm)','抽出品番','2回目文字数','ルール','note'];
+    const headers = ['日時','結果','重複フラグ','1回目QR(raw)','2回目QR(raw)','1回目QR(norm)','2回目QR(norm)','抽出品番','1回目文字数','2回目文字数','ルール','note'];
     const rows = scanLog.map(l => [
       new Date(l.timestamp).toLocaleString('ja-JP'),
       l.result,
       l.isDuplicate ? '重複' : '',
       l.qr1_raw ?? '', l.qr2_raw ?? '',
       l.qr1 ?? '', l.qr2 ?? '', l.partNumber ?? '',
-      l.qr2Length ?? '',
+      l.qr1Length ?? '', l.qr2Length ?? '',
       l.matchedRule ? JSON.stringify(l.matchedRule) : '',
       l.extractNote ?? ''
     ]);
