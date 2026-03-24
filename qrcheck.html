@@ -967,37 +967,82 @@
   }
 
   // ========= Firebase =========
+  // 現在初期化済みの Firebase config を記憶（再初期化判定用）
+  let _currentFbConfig = null;
+
   function initFirebase() {
     if (!settings.firebase.apiKey || !settings.firebase.databaseURL) {
       updateFirebaseStatus('disconnected', '🔌 Firebase未設定');
       return;
     }
+
+    const newConfig = {
+      apiKey:      settings.firebase.apiKey,
+      authDomain:  settings.firebase.authDomain,
+      databaseURL: settings.firebase.databaseURL,
+      projectId:   settings.firebase.projectId
+    };
+
+    const configChanged = !_currentFbConfig
+      || _currentFbConfig.apiKey      !== newConfig.apiKey
+      || _currentFbConfig.databaseURL !== newConfig.databaseURL;
+
+    if (configChanged) {
+      // Firebase 設定が変わった場合のみアプリを再作成
+      _initFirebaseApp(newConfig);
+    } else {
+      // 設定が同じ場合は logsRef だけ更新
+      _updateLogsRef();
+    }
+  }
+
+  function _initFirebaseApp(config) {
     try {
-      const firebaseConfig = {
-        apiKey: settings.firebase.apiKey,
-        authDomain: settings.firebase.authDomain,
-        databaseURL: settings.firebase.databaseURL,
-        projectId: settings.firebase.projectId
-      };
-      try { if (firebaseApp) firebaseApp.delete(); } catch(e){}
-      firebaseApp = firebase.initializeApp(firebaseConfig);
-      database = firebase.database();
-      logsRef = database.ref('qr_match_logs/' + (activeCompanyId || 'default'));
-      database.ref('.info/connected').on('value', (snapshot) => {
-        if (snapshot.val() === true) {
-          updateFirebaseStatus('connected', '🟢 Firebase接続中');
-          setupRealtimeSync();
-          initCompaniesRef();
-        } else {
-          updateFirebaseStatus('disconnected', '🔌 Firebase未接続');
-          companiesRef = null;
-          setSyncBadge('offline');
+      // 既存アプリを削除してから再作成
+      const deleteAndInit = () => {
+        try {
+          firebaseApp = firebase.initializeApp(config);
+        } catch(e) {
+          // 同名アプリが存在する場合は既存を取得
+          firebaseApp = firebase.app();
         }
-      });
+        _currentFbConfig = config;
+        database = firebase.database();
+        _setupConnectionListener();
+      };
+
+      if (firebaseApp) {
+        firebaseApp.delete().then(deleteAndInit).catch(deleteAndInit);
+      } else {
+        deleteAndInit();
+      }
     } catch (error) {
       console.error('Firebase初期化エラー:', error);
       updateFirebaseStatus('error', '❌ Firebase接続エラー');
     }
+  }
+
+  function _setupConnectionListener() {
+    if (!database) return;
+    database.ref('.info/connected').on('value', (snapshot) => {
+      if (snapshot.val() === true) {
+        updateFirebaseStatus('connected', '🟢 Firebase接続中');
+        _updateLogsRef();
+        setupRealtimeSync();
+        initCompaniesRef();
+      } else {
+        updateFirebaseStatus('disconnected', '🔌 Firebase未接続');
+        companiesRef = null;
+        setSyncBadge('offline');
+      }
+    });
+  }
+
+  /** 会社切替時など、Firebase アプリはそのまま logsRef だけ更新 */
+  function _updateLogsRef() {
+    if (!database) return;
+    logsRef = database.ref('qr_match_logs/' + (activeCompanyId || 'default'));
+    setupRealtimeSync();
   }
 
   function setupRealtimeSync() {
@@ -1020,10 +1065,11 @@
   }
 
   function testFirebaseConnection() {
-    settings.firebase.apiKey = document.getElementById('fbApiKey').value.trim();
-    settings.firebase.authDomain = document.getElementById('fbAuthDomain').value.trim();
+    settings.firebase.apiKey      = document.getElementById('fbApiKey').value.trim();
+    settings.firebase.authDomain  = document.getElementById('fbAuthDomain').value.trim();
     settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
-    settings.firebase.projectId = document.getElementById('fbProjectId').value.trim();
+    settings.firebase.projectId   = document.getElementById('fbProjectId').value.trim();
+    _currentFbConfig = null;   // 強制再初期化
     initFirebase();
     alert('接続テストを実行しました。上部のステータスを確認してください。');
   }
@@ -1685,11 +1731,11 @@
         updateDupStats();
       }, err => {
         console.warn('switchCompany設定取得エラー:', err);
-        initFirebase();
+        _updateLogsRef();
         setSyncBadge('offline');
       });
     } else {
-      initFirebase();
+      _updateLogsRef();
     }
   }
 
