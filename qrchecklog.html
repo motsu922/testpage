@@ -1,0 +1,963 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR照合ログビューア</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #f5f7fa;
+      --bg2:      #ffffff;
+      --bg3:      #f0f2f5;
+      --bg4:      #e8eaed;
+      --border:   #e2e6ea;
+      --border2:  #cbd0d8;
+      --text:     #1a202c;
+      --text2:    #4a5568;
+      --text3:    #9aa3b0;
+      --accent:   #0077cc;
+      --accent2:  #005fa3;
+      --ok:       #2e7d32;
+      --ok-bg:    #f0faf0;
+      --ok-dim:   #d4edda;
+      --ng:       #c62828;
+      --ng-bg:    #fff5f5;
+      --ng-dim:   #fde0e0;
+      --dup:      #e65100;
+      --dup-bg:   #fff8f0;
+      --dup-dim:  #ffe0c2;
+      --mono:     'IBM Plex Mono', monospace;
+      --sans:     'IBM Plex Sans JP', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f0f2f5;
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── ヘッダー ── */
+    .header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-logo {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: .08em;
+      white-space: nowrap;
+    }
+    .header-logo span { color: var(--text2); font-weight: 400; }
+    .fb-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #444;
+      flex-shrink: 0;
+      transition: background .3s;
+    }
+    .fb-dot.connected { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+    .fb-dot.error     { background: var(--ng); }
+    .fb-status-text {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--mono);
+    }
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+    /* ── レイアウト ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: calc(100vh - 56px);
+    }
+
+    /* ── サイドバー ── */
+    .sidebar {
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      padding: 16px 0;
+      position: sticky;
+      top: 56px;
+      height: calc(100vh - 56px);
+      overflow-y: auto;
+    }
+    .sidebar-section {
+      padding: 0 12px;
+      margin-bottom: 20px;
+    }
+    .sidebar-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      color: var(--text3);
+      text-transform: uppercase;
+      padding: 0 4px;
+      margin-bottom: 8px;
+    }
+    .company-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .15s;
+      font-size: 13px;
+      color: var(--text2);
+      margin-bottom: 2px;
+    }
+    .company-item:hover { background: var(--bg3); color: var(--text); }
+    .company-item.active {
+      background: rgba(79,195,247,.12);
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .company-item .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--border2);
+      flex-shrink: 0;
+    }
+    .company-item.active .dot { background: var(--accent); }
+    .company-item .cmp-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .company-loading {
+      padding: 12px;
+      font-size: 12px;
+      color: var(--text3);
+      font-family: var(--mono);
+    }
+
+    /* ── メインコンテンツ ── */
+    .main {
+      padding: 24px;
+      max-width: 1100px;
+    }
+
+    /* ── フィルターバー ── */
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 20px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .filter-label {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+    .filter-select, .filter-input {
+      background: #f0f2f5;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: var(--mono);
+      outline: none;
+      transition: border-color .2s;
+    }
+    .filter-select:focus, .filter-input:focus { border-color: var(--accent); }
+    .filter-input { width: 140px; }
+    .filter-btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #f7f9fc;
+      color: var(--text2);
+      font-size: 12px;
+      font-family: var(--mono);
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .filter-btn.primary {
+      background: var(--accent2);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 600;
+    }
+    .filter-btn.primary:hover { background: var(--accent); }
+    .filter-sep { width: 1px; height: 24px; background: var(--border); margin: 0 2px; }
+
+    /* ── サマリーカード ── */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .summary-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      position: relative;
+      overflow: hidden;
+    }
+    .summary-card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 3px;
+    }
+    .summary-card.total::before  { background: var(--accent); }
+    .summary-card.ok::before     { background: var(--ok); }
+    .summary-card.ng::before     { background: var(--ng); }
+    .summary-card.dup::before    { background: var(--dup); }
+    .summary-card.rate::before   { background: #7c3aed; }
+    .summary-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      color: var(--text3);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      font-family: var(--mono);
+    }
+    .summary-value {
+      font-size: 28px;
+      font-weight: 700;
+      font-family: var(--mono);
+      line-height: 1;
+    }
+    .summary-card.total .summary-value  { color: var(--accent); }
+    .summary-card.ok    .summary-value  { color: var(--ok); }
+    .summary-card.ng    .summary-value  { color: var(--ng); }
+    .summary-card.dup   .summary-value  { color: var(--dup); }
+    .summary-card.rate  .summary-value  { color: #7c3aed; }
+    .summary-sub {
+      font-size: 10px;
+      color: var(--text3);
+      margin-top: 4px;
+      font-family: var(--mono);
+    }
+
+    /* ── ログテーブル ── */
+    .table-wrap {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .table-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .table-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--mono);
+    }
+    .table-count {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--mono);
+      background: #f7f9fc;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+    thead th {
+      background: #f7f9fc;
+      padding: 9px 14px;
+      text-align: left;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      color: var(--text3);
+      text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+      cursor: pointer;
+    }
+    tbody tr:hover { background: #eef4fb; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody td {
+      padding: 10px 14px;
+      vertical-align: middle;
+      color: var(--text2);
+    }
+    .td-time { color: var(--text3); white-space: nowrap; font-size: 11px; }
+    .td-part { color: var(--text); font-weight: 600; font-size: 13px; }
+    .td-qr   { color: var(--text3); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .result-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .result-badge.ok  { background: var(--ok-dim);  color: #2e7d32; border: 1px solid #a8d5aa; }
+    .result-badge.ng  { background: var(--ng-dim);  color: #c62828; border: 1px solid #f5a8a8; }
+    .result-badge.dup { background: var(--dup-dim); color: #e65100; border: 1px solid #ffbe8a; }
+
+    .rule-text {
+      font-size: 10px;
+      color: var(--text3);
+      background: #f0f2f5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    /* ── 詳細モーダル ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(30,40,60,.55);
+      z-index: 500;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--bg2);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 24px;
+      width: 100%;
+      max-width: 600px;
+      max-height: 80vh;
+      overflow-y: auto;
+      animation: modalIn .2s ease;
+    }
+    @keyframes modalIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+    .modal-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .modal-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 10px;
+      align-items: flex-start;
+    }
+    .modal-key {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--mono);
+      width: 120px;
+      flex-shrink: 0;
+      padding-top: 2px;
+    }
+    .modal-val {
+      font-size: 12px;
+      color: var(--text);
+      font-family: var(--mono);
+      word-break: break-all;
+      flex: 1;
+    }
+    .modal-close {
+      width: 100%;
+      margin-top: 16px;
+      padding: 10px;
+      background: #f7f9fc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text2);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .modal-close:hover { background: var(--bg4); }
+
+    /* ── 空・ローディング ── */
+    .empty-state {
+      padding: 60px 20px;
+      text-align: center;
+      color: var(--text3);
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; font-family: var(--mono); }
+    .loading-row td {
+      text-align: center;
+      padding: 40px;
+      color: var(--text3);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    /* ── ページネーション ── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text3);
+    }
+    .pagination-btns { display: flex; gap: 6px; }
+    .page-btn {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #f7f9fc;
+      color: var(--text2);
+      font-size: 11px;
+      font-family: var(--mono);
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .page-btn:disabled { opacity: .35; cursor: default; }
+    .page-btn.active { background: var(--accent2); border-color: var(--accent); color: #fff; }
+
+    /* ── スクロールバー ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f0f2f5; }
+    ::-webkit-scrollbar-thumb { background: #c0c8d4; border-radius: 3px; }
+
+    @media (max-width: 768px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+      .summary-grid { grid-template-columns: repeat(3, 1fr); }
+      .main { padding: 16px; }
+    }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<!-- ヘッダー -->
+<div class="header">
+  <div class="header-logo">QR<span>/</span>LOG<span> VIEWER</span></div>
+  <div class="fb-dot" id="fbDot"></div>
+  <div class="fb-status-text" id="fbStatusText">接続中...</div>
+  <div class="header-right">
+    <button class="filter-btn primary" onclick="exportCSV()">📥 CSV出力</button>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- サイドバー：会社一覧 -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">仕入先 / 会社</div>
+      <div id="companyList">
+        <div class="company-loading">接続中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- メイン -->
+  <div class="main">
+
+    <!-- フィルターバー -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">結果</span>
+        <select class="filter-select" id="filterResult" onchange="applyFilter()">
+          <option value="all">すべて</option>
+          <option value="OK">✅ OK</option>
+          <option value="NG">❌ NG</option>
+          <option value="DUP">⚠️ 重複</option>
+        </select>
+      </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">日付 From</span>
+        <input type="date" class="filter-input" id="filterDateFrom" onchange="applyFilter()">
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">To</span>
+        <input type="date" class="filter-input" id="filterDateTo" onchange="applyFilter()">
+      </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">品番</span>
+        <input type="text" class="filter-input" id="filterPart" placeholder="検索..." oninput="applyFilter()">
+      </div>
+      <button class="filter-btn" onclick="resetFilter()">リセット</button>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">表示件数</span>
+        <select class="filter-select" id="perPageSelect" onchange="changePerPage()">
+          <option value="50">50件</option>
+          <option value="100" selected>100件</option>
+          <option value="200">200件</option>
+          <option value="500">500件</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- サマリー -->
+    <div class="summary-grid">
+      <div class="summary-card total">
+        <div class="summary-label">TOTAL</div>
+        <div class="summary-value" id="sumTotal">—</div>
+        <div class="summary-sub" id="sumDateRange">—</div>
+      </div>
+      <div class="summary-card ok">
+        <div class="summary-label">OK</div>
+        <div class="summary-value" id="sumOK">—</div>
+      </div>
+      <div class="summary-card ng">
+        <div class="summary-label">NG</div>
+        <div class="summary-value" id="sumNG">—</div>
+      </div>
+      <div class="summary-card dup">
+        <div class="summary-label">DUP</div>
+        <div class="summary-value" id="sumDUP">—</div>
+      </div>
+      <div class="summary-card rate">
+        <div class="summary-label">OK RATE</div>
+        <div class="summary-value" id="sumRate">—</div>
+        <div class="summary-sub">フィルタ適用後</div>
+      </div>
+    </div>
+
+    <!-- テーブル -->
+    <div class="table-wrap">
+      <div class="table-header">
+        <div class="table-title" id="tableTitle">— ログ</div>
+        <div class="table-count" id="tableCount">0件</div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>日時</th>
+              <th>結果</th>
+              <th>品番</th>
+              <th>QR1（正規化）</th>
+              <th>QR2（正規化）</th>
+              <th>QR1文字数</th>
+              <th>ルール</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody">
+            <tr class="loading-row"><td colspan="7">会社を選択してください</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination" style="display:none;">
+        <span id="pageInfo">— / —</span>
+        <div class="pagination-btns" id="pageBtns"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 詳細モーダル -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOnBg(event)">
+  <div class="modal" id="modalPanel">
+    <div class="modal-title" id="modalTitle">照合詳細</div>
+    <div id="modalBody"></div>
+    <button class="modal-close" onclick="closeModal()">✕ 閉じる</button>
+  </div>
+</div>
+
+<script>
+  // ── Firebase 設定（QR照合システムと同じプロジェクト） ──
+  const FIREBASE_CONFIG = {
+    apiKey:      "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+    authDomain:  "miyamaunitec-fb87a.firebaseapp.com",
+    databaseURL: "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId:   "miyamaunitec-fb87a"
+  };
+
+  let database      = null;
+  let allLogs       = [];      // 現在選択中の会社の全ログ
+  let filteredLogs  = [];      // フィルタ後
+  let companies     = [];
+  let activeCompany = null;
+  let currentPage   = 1;
+  let perPage       = 100;
+
+  // ── 初期化 ──
+  window.addEventListener('DOMContentLoaded', () => {
+    initFirebase();
+    // 今日の日付をデフォルトセット
+    const today = new Date().toISOString().slice(0,10);
+    document.getElementById('filterDateTo').value = today;
+    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+    document.getElementById('filterDateFrom').value = weekAgo;
+  });
+
+  function initFirebase() {
+    try {
+      const app = firebase.initializeApp(FIREBASE_CONFIG);
+      database = firebase.database();
+      database.ref('.info/connected').on('value', snap => {
+        const on = snap.val() === true;
+        document.getElementById('fbDot').className = 'fb-dot ' + (on ? 'connected' : '');
+        document.getElementById('fbStatusText').textContent = on ? '接続中' : '未接続';
+        if (on) loadCompanies();
+      });
+    } catch(e) {
+      console.error(e);
+      document.getElementById('fbStatusText').textContent = 'エラー';
+      document.getElementById('fbDot').className = 'fb-dot error';
+    }
+  }
+
+  // ── 会社一覧 ──
+  function loadCompanies() {
+    database.ref('qr_match_companies/profiles').once('value', snap => {
+      const data = snap.val();
+      if (!data) {
+        document.getElementById('companyList').innerHTML =
+          '<div class="company-loading">会社データなし</div>';
+        return;
+      }
+      companies = Object.values(data).sort((a,b) => a.name.localeCompare(b.name, 'ja'));
+      renderCompanyList();
+      if (companies.length > 0) selectCompany(companies[0]);
+    });
+  }
+
+  function renderCompanyList() {
+    document.getElementById('companyList').innerHTML = companies.map(c => `
+      <div class="company-item ${c.id === (activeCompany?.id) ? 'active' : ''}"
+           onclick="selectCompany(${JSON.stringify(c).replace(/"/g,'&quot;')})">
+        <div class="dot"></div>
+        <div class="cmp-name">${escHtml(c.name)}</div>
+      </div>
+    `).join('');
+  }
+
+  function selectCompany(company) {
+    activeCompany = company;
+    renderCompanyList();
+    document.getElementById('tableTitle').textContent = company.name + ' ログ';
+    loadLogs(company.id);
+  }
+
+  // ── ログ読み込み ──
+  function loadLogs(companyId) {
+    document.getElementById('logTableBody').innerHTML =
+      '<tr class="loading-row"><td colspan="7">読み込み中...</td></tr>';
+    resetSummary();
+
+    database.ref('qr_match_logs/' + companyId)
+      .orderByChild('timestamp')
+      .once('value', snap => {
+        const data = snap.val();
+        if (!data) {
+          allLogs = [];
+          applyFilter();
+          return;
+        }
+        allLogs = Object.entries(data)
+          .map(([key, val]) => ({ ...val, _key: key }))
+          .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+        applyFilter();
+      }, err => {
+        console.error(err);
+        document.getElementById('logTableBody').innerHTML =
+          '<tr class="loading-row"><td colspan="7">読み込みエラー: ' + escHtml(err.message) + '</td></tr>';
+      });
+  }
+
+  // ── フィルタ ──
+  function applyFilter() {
+    const result   = document.getElementById('filterResult').value;
+    const dateFrom = document.getElementById('filterDateFrom').value;
+    const dateTo   = document.getElementById('filterDateTo').value;
+    const part     = document.getElementById('filterPart').value.trim().toLowerCase();
+
+    filteredLogs = allLogs.filter(l => {
+      if (result !== 'all') {
+        const isDup = l.result === 'DUP' || l.isDuplicate;
+        if (result === 'DUP' && !isDup) return false;
+        if (result === 'OK' && (isDup || l.result !== 'OK')) return false;
+        if (result === 'NG' && (isDup || l.result !== 'NG')) return false;
+      }
+      if (dateFrom) {
+        if (new Date(l.timestamp) < new Date(dateFrom + 'T00:00:00')) return false;
+      }
+      if (dateTo) {
+        if (new Date(l.timestamp) > new Date(dateTo + 'T23:59:59')) return false;
+      }
+      if (part) {
+        const pn = (l.partNumber || '').toLowerCase();
+        const q1 = (l.qr1 || '').toLowerCase();
+        if (!pn.includes(part) && !q1.includes(part)) return false;
+      }
+      return true;
+    });
+
+    currentPage = 1;
+    updateSummary();
+    renderTable();
+  }
+
+  function resetFilter() {
+    document.getElementById('filterResult').value   = 'all';
+    document.getElementById('filterPart').value     = '';
+    const today   = new Date().toISOString().slice(0,10);
+    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+    document.getElementById('filterDateFrom').value = weekAgo;
+    document.getElementById('filterDateTo').value   = today;
+    applyFilter();
+  }
+
+  function changePerPage() {
+    perPage = parseInt(document.getElementById('perPageSelect').value);
+    currentPage = 1;
+    renderTable();
+  }
+
+  // ── サマリー ──
+  function updateSummary() {
+    const total = filteredLogs.length;
+    let ok = 0, ng = 0, dup = 0;
+    filteredLogs.forEach(l => {
+      if (l.result === 'DUP' || l.isDuplicate) dup++;
+      else if (l.result === 'OK') ok++;
+      else ng++;
+    });
+    const rate = total > 0 ? Math.round(ok / total * 1000) / 10 : 0;
+
+    document.getElementById('sumTotal').textContent = total.toLocaleString();
+    document.getElementById('sumOK').textContent    = ok.toLocaleString();
+    document.getElementById('sumNG').textContent    = ng.toLocaleString();
+    document.getElementById('sumDUP').textContent   = dup.toLocaleString();
+    document.getElementById('sumRate').textContent  = total > 0 ? rate + '%' : '—';
+
+    if (filteredLogs.length > 0) {
+      const oldest = new Date(filteredLogs[filteredLogs.length-1].timestamp).toLocaleDateString('ja-JP');
+      const newest = new Date(filteredLogs[0].timestamp).toLocaleDateString('ja-JP');
+      document.getElementById('sumDateRange').textContent =
+        oldest === newest ? oldest : oldest + ' 〜 ' + newest;
+    } else {
+      document.getElementById('sumDateRange').textContent = '—';
+    }
+  }
+
+  function resetSummary() {
+    ['sumTotal','sumOK','sumNG','sumDUP','sumRate'].forEach(id => {
+      document.getElementById(id).textContent = '—';
+    });
+    document.getElementById('sumDateRange').textContent = '—';
+  }
+
+  // ── テーブル描画 ──
+  function renderTable() {
+    const total    = filteredLogs.length;
+    const totalPages = Math.max(1, Math.ceil(total / perPage));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    const start = (currentPage - 1) * perPage;
+    const slice = filteredLogs.slice(start, start + perPage);
+
+    document.getElementById('tableCount').textContent = total.toLocaleString() + '件';
+
+    if (total === 0) {
+      document.getElementById('logTableBody').innerHTML =
+        '<tr class="loading-row"><td colspan="7">' +
+        (allLogs.length === 0 ? 'データがありません' : 'フィルタ条件に一致するログがありません') +
+        '</td></tr>';
+      document.getElementById('pagination').style.display = 'none';
+      return;
+    }
+
+    document.getElementById('logTableBody').innerHTML = slice.map((l, i) => {
+      const isDup = l.result === 'DUP' || l.isDuplicate;
+      const resClass = isDup ? 'dup' : (l.result === 'OK' ? 'ok' : 'ng');
+      const resLabel = isDup ? '⚠ DUP' : (l.result === 'OK' ? '✓ OK' : '✕ NG');
+      const t = new Date(l.timestamp).toLocaleString('ja-JP', {
+        month:'2-digit', day:'2-digit',
+        hour:'2-digit', minute:'2-digit', second:'2-digit'
+      });
+      const rule = l.matchedRule
+        ? `[${l.matchedRule.minLen}-${l.matchedRule.maxLen}] s${l.matchedRule.startPos} c${l.matchedRule.charCount}${l.matchedRule.prefix ? ' p:'+l.matchedRule.prefix : ''}`
+        : '—';
+      const qr1short = (l.qr1 || '').slice(0, 30) + ((l.qr1||'').length > 30 ? '…' : '');
+      const qr2short = (l.qr2 || '').slice(0, 30) + ((l.qr2||'').length > 30 ? '…' : '');
+      return `
+        <tr onclick="openModal(${start + i})">
+          <td class="td-time">${t}</td>
+          <td><span class="result-badge ${resClass}">${resLabel}</span></td>
+          <td class="td-part">${escHtml(l.partNumber || '—')}</td>
+          <td class="td-qr">${escHtml(qr1short)}</td>
+          <td class="td-qr">${escHtml(qr2short)}</td>
+          <td style="color:var(--text3)">${l.qr1Length ?? l.qr2Length ?? '—'}</td>
+          <td><span class="rule-text">${escHtml(rule)}</span></td>
+        </tr>`;
+    }).join('');
+
+    // ページネーション
+    const pag = document.getElementById('pagination');
+    pag.style.display = 'flex';
+    document.getElementById('pageInfo').textContent =
+      `${start+1}–${Math.min(start+perPage, total)} / ${total}件`;
+
+    const btns = document.getElementById('pageBtns');
+    const pages = buildPageNums(currentPage, totalPages);
+    btns.innerHTML = [
+      `<button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage<=1?'disabled':''}>‹</button>`,
+      ...pages.map(p => p === '…'
+        ? `<span style="color:var(--text3);padding:0 4px">…</span>`
+        : `<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`
+      ),
+      `<button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage>=totalPages?'disabled':''}>›</button>`
+    ].join('');
+  }
+
+  function buildPageNums(cur, total) {
+    if (total <= 7) return Array.from({length:total},(_,i)=>i+1);
+    const pages = [];
+    if (cur <= 4) {
+      pages.push(1,2,3,4,5,'…',total);
+    } else if (cur >= total-3) {
+      pages.push(1,'…',total-4,total-3,total-2,total-1,total);
+    } else {
+      pages.push(1,'…',cur-1,cur,cur+1,'…',total);
+    }
+    return pages;
+  }
+
+  function goPage(p) {
+    const total = Math.ceil(filteredLogs.length / perPage);
+    if (p < 1 || p > total) return;
+    currentPage = p;
+    renderTable();
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  // ── 詳細モーダル ──
+  function openModal(idx) {
+    const l = filteredLogs[idx];
+    if (!l) return;
+    const isDup = l.result === 'DUP' || l.isDuplicate;
+    const resClass = isDup ? 'dup' : (l.result === 'OK' ? 'ok' : 'ng');
+    const resLabel = isDup ? '⚠ DUP' : (l.result === 'OK' ? '✓ OK' : '✕ NG');
+
+    document.getElementById('modalTitle').innerHTML =
+      `照合詳細 <span class="result-badge ${resClass}">${resLabel}</span>`;
+
+    const rule = l.matchedRule
+      ? `[${l.matchedRule.minLen}-${l.matchedRule.maxLen}] start=${l.matchedRule.startPos} count=${l.matchedRule.charCount}${l.matchedRule.prefix ? ' prefix="'+l.matchedRule.prefix+'"' : ''}`
+      : '(ルールなし)';
+
+    const rows = [
+      ['日時',         new Date(l.timestamp).toLocaleString('ja-JP')],
+      ['抽出品番',     l.partNumber || '—'],
+      ['1回目QR(raw)', l.qr1_raw || '—'],
+      ['2回目QR(raw)', l.qr2_raw || '—'],
+      ['1回目QR(正規化)', l.qr1 || '—'],
+      ['2回目QR(正規化)', l.qr2 || '—'],
+      ['QR1文字数',    l.qr1Length ?? '—'],
+      ['QR2文字数',    l.qr2Length ?? '—'],
+      ['適用ルール',   rule],
+      ['note',         l.extractNote || '—'],
+      ['重複タイプ',   l.dupType || '—'],
+    ];
+
+    document.getElementById('modalBody').innerHTML = rows.map(([k,v]) => `
+      <div class="modal-row">
+        <div class="modal-key">${escHtml(k)}</div>
+        <div class="modal-val">${escHtml(String(v))}</div>
+      </div>
+    `).join('');
+
+    document.getElementById('modalOverlay').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('show');
+  }
+  function closeModalOnBg(e) {
+    if (e.target === document.getElementById('modalOverlay')) closeModal();
+  }
+
+  // ── CSV出力 ──
+  function exportCSV() {
+    if (!activeCompany) { alert('会社を選択してください'); return; }
+    if (filteredLogs.length === 0) { alert('出力するデータがありません'); return; }
+
+    const headers = ['日時','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note'];
+    const rows = filteredLogs.map(l => {
+      const isDup = l.result === 'DUP' || l.isDuplicate;
+      const rule = l.matchedRule ? JSON.stringify(l.matchedRule) : '';
+      return [
+        new Date(l.timestamp).toLocaleString('ja-JP'),
+        isDup ? 'DUP' : (l.result || ''),
+        isDup ? (l.dupType || '重複') : '',
+        l.partNumber ?? '',
+        l.qr1_raw ?? '', l.qr2_raw ?? '',
+        l.qr1 ?? '', l.qr2 ?? '',
+        l.qr1Length ?? '', l.qr2Length ?? '',
+        rule, l.extractNote ?? ''
+      ];
+    });
+
+    const csv = [headers, ...rows]
+      .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
+      .join('\n');
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type:'text/csv' }));
+    a.download = `QR照合ログ_${activeCompany.name}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, m =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+</script>
+</body>
+</html>
