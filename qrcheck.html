@@ -426,48 +426,6 @@
     .numpad-btn.del { font-size: clamp(14px, 3.5vw, 19px); background: rgba(255,255,255,0.08); }
     /* ==================== */
 
-    /* ===== 長押し解除ボタン ===== */
-    .hold-release-btn {
-      position: relative;
-      margin-top: 10px;
-      width: min(300px, 86vw);
-      padding: clamp(10px, 2.5vh, 16px) 16px;
-      background: rgba(255,255,255,0.12);
-      border: 2px solid rgba(255,255,255,0.35);
-      border-radius: 12px;
-      color: white;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      overflow: hidden;
-      -webkit-user-select: none;
-      user-select: none;
-      touch-action: none;
-      letter-spacing: 0.03em;
-    }
-    .hold-release-btn .btn-label { position: relative; z-index: 1; pointer-events: none; }
-    .hold-release-btn .hold-progress {
-      position: absolute;
-      inset: 0;
-      width: 0%;
-      background: rgba(255,255,255,0.28);
-      transition: none;
-      border-radius: 10px;
-      z-index: 0;
-    }
-    .hold-release-btn.holding .hold-progress {
-      transition: width var(--hold-duration, 3s) linear;
-      width: 100%;
-    }
-    .hold-release-btn .hold-timer-text {
-      position: relative;
-      z-index: 1;
-      font-size: 12px;
-      font-weight: 400;
-      opacity: 0.75;
-      margin-top: 4px;
-      pointer-events: none;
-    }
     /* ============================= */
 
 
@@ -770,14 +728,6 @@
                    placeholder="0000" maxlength="4" min="0" max="9999"
                    style="width:120px; text-align:center; font-size:22px; letter-spacing:6px;">
           </div>
-          <div class="setting-row">
-            <span class="setting-label">長押し解除を有効にする</span>
-            <div class="toggle-switch on" id="holdReleaseToggle" onclick="toggleHoldRelease()"></div>
-          </div>
-          <div class="setting-row" style="flex-direction: column; align-items: flex-start;" id="holdDurationRow">
-            <span class="setting-label">長押し時間（秒）</span>
-            <input type="number" class="setting-input" id="holdDuration" value="3" min="1" max="10" step="1" style="width:120px; margin-top:8px; text-align:center;">
-          </div>
         </div>
 
         <!-- ★ 重複監視設定カード -->
@@ -848,13 +798,6 @@
         <button class="numpad-btn" onclick="pinInput('0')">0</button>
         <button class="numpad-btn del" onclick="pinClear()">C</button>
       </div>
-      <!-- 長押し解除ボタン（holdReleaseEnabled時のみ表示） -->
-      <button class="hold-release-btn" id="holdReleaseBtn" style="display:none;"
-              oncontextmenu="return false;">
-        <div class="hold-progress" id="holdProgress"></div>
-        <div class="btn-label">🔓 長押しで強制解除</div>
-        <div class="hold-timer-text" id="holdTimerText">押し続けてください</div>
-      </button>
     </div>
   </div>
 
@@ -882,19 +825,12 @@
   let database = null;
   let logsRef = null;
 
-  // ===== 長押し解除 状態 =====
-  let holdTimer = null;
-  let holdCountdownInterval = null;
-  let holdStartTime = null;
-  // ===========================
 
   let settings = {
     adminPassword: 'admin',
     releasePIN: '0000',
     soundEnabled: true,
     vibrationEnabled: true,
-    holdReleaseEnabled: true,
-    holdDuration: 3,
     duplicateCheckEnabled: false,   // ★ 重複監視モード
     firebase: {
       apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
@@ -916,7 +852,6 @@
     initFirebase();
     startScanning(true);
     setupFocusKeeper();
-    setupHoldReleaseBtn();
     cleanOldDuplicates();        // ★ 古い日付の重複リストを削除
     updateDupBadge();
     updateDupStats();
@@ -1177,89 +1112,6 @@
   function resetPinUI() {
     pinBuffer = '';
     updatePinDots();
-  }
-
-  // ========= 長押し解除ボタン =========
-  function setupHoldReleaseBtn() {
-    const btn = document.getElementById('holdReleaseBtn');
-    if (!btn) return;
-
-    function startHold(e) {
-      if (e.target.closest('#holdReleaseBtn') === null) return;
-      e.preventDefault();
-      beginHoldCountdown();
-    }
-    function endHold(e) { cancelHoldCountdown(); }
-
-    btn.addEventListener('pointerdown', startHold);
-    btn.addEventListener('pointerup',    endHold);
-    btn.addEventListener('pointerleave', endHold);
-    btn.addEventListener('pointercancel', endHold);
-  }
-
-  function beginHoldCountdown() {
-    if (holdTimer) return;
-    const btn      = document.getElementById('holdReleaseBtn');
-    const progress = document.getElementById('holdProgress');
-    const timerTxt = document.getElementById('holdTimerText');
-    const duration = Math.max(1, settings.holdDuration || 3);
-
-    btn.style.setProperty('--hold-duration', duration + 's');
-    requestAnimationFrame(() => { btn.classList.add('holding'); });
-
-    holdStartTime = Date.now();
-    vibrate([30]);
-
-    holdCountdownInterval = setInterval(() => {
-      const elapsed = (Date.now() - holdStartTime) / 1000;
-      const remaining = Math.max(0, duration - elapsed).toFixed(1);
-      timerTxt.textContent = `${remaining}秒 押し続けてください`;
-    }, 100);
-
-    holdTimer = setTimeout(() => {
-      clearInterval(holdCountdownInterval);
-      holdCountdownInterval = null;
-      holdTimer = null;
-      btn.classList.remove('holding');
-      progress.style.width = '0';
-      timerTxt.textContent = '押し続けてください';
-
-      isNGLocked = false;
-      playSound('ok');
-      vibrate([80, 40, 80]);
-      document.getElementById('resultOverlay').classList.remove('show');
-      startScanning(true);
-    }, duration * 1000);
-  }
-
-  function cancelHoldCountdown() {
-    if (!holdTimer && !holdCountdownInterval) return;
-    clearTimeout(holdTimer);
-    clearInterval(holdCountdownInterval);
-    holdTimer = null;
-    holdCountdownInterval = null;
-    holdStartTime = null;
-
-    const btn      = document.getElementById('holdReleaseBtn');
-    const timerTxt = document.getElementById('holdTimerText');
-    btn.classList.remove('holding');
-    timerTxt.textContent = '押し続けてください';
-  }
-
-  function updateHoldReleaseUI() {
-    const btn = document.getElementById('holdReleaseBtn');
-    const row = document.getElementById('holdDurationRow');
-    const enabled = settings.holdReleaseEnabled;
-    document.getElementById('holdReleaseToggle').className = enabled ? 'toggle-switch on' : 'toggle-switch';
-    if (row) row.style.display = enabled ? '' : 'none';
-    if (document.getElementById('adminArea').style.display !== 'none') {
-      btn.style.display = enabled ? 'block' : 'none';
-    }
-  }
-
-  function toggleHoldRelease() {
-    settings.holdReleaseEnabled = !settings.holdReleaseEnabled;
-    updateHoldReleaseUI();
   }
 
   // ========= 重複監視 =========
@@ -1792,8 +1644,6 @@
     settings.firebase.authDomain  = settings.firebase.authDomain  || "miyamaunitec-fb87a.firebaseapp.com";
     settings.firebase.databaseURL = settings.firebase.databaseURL || "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app";
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
-    if (settings.holdReleaseEnabled === undefined) settings.holdReleaseEnabled = true;
-    if (!settings.holdDuration) settings.holdDuration = 3;
     if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;
     if (!settings.releasePIN) settings.releasePIN = '0000';
     // 旧 adminQR 設定からマイグレーション
@@ -1833,7 +1683,6 @@
     document.getElementById('fbAuthDomain').value  = settings.firebase.authDomain  || '';
     document.getElementById('fbDatabaseURL').value = settings.firebase.databaseURL || '';
     document.getElementById('fbProjectId').value   = settings.firebase.projectId   || '';
-    document.getElementById('holdDuration').value  = settings.holdDuration || 3;
     // ★ 重複監視トグル
     document.getElementById('dupCheckToggle').className =
       settings.duplicateCheckEnabled ? 'toggle-switch dup-on' : 'toggle-switch';
@@ -1908,7 +1757,6 @@
     settings.firebase.authDomain  = document.getElementById('fbAuthDomain').value.trim();
     settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
     settings.firebase.projectId   = document.getElementById('fbProjectId').value.trim();
-    settings.holdDuration = Math.max(1, Math.min(10, parseInt(document.getElementById('holdDuration').value) || 3));
     settings.extractRules = collectExtractRules();
     // ★ duplicateCheckEnabled はトグル操作で既に settings に反映済み
     const saveKey = getSettingsKey(activeCompanyId);
@@ -2075,19 +1923,20 @@
   }
 
   // ========= 抽出ルール =========
-  function pickRule(qr2Norm) {
-    const totalLen = qr2Norm.length;
+  function pickRule(qr1Norm) {
+    const totalLen = qr1Norm.length;
     const withPrefix = (settings.extractRules || [])
-      .filter(r => r.prefix && qr2Norm.startsWith(r.prefix))
+      .filter(r => r.prefix && qr1Norm.startsWith(r.prefix))
       .find(r => totalLen >= r.minLen && totalLen <= r.maxLen);
     if (withPrefix) return withPrefix;
     return (settings.extractRules || []).find(r => totalLen >= r.minLen && totalLen <= r.maxLen) || null;
   }
 
-  function extractPartNumberWithMeta(qr2Raw) {
-    const qr2 = normalizeQR(qr2Raw);
-    const totalLen = qr2.length;
-    const rule = pickRule(qr2);
+  function extractPartNumberWithMeta(qr2Raw, qr1Raw) {
+    const qr1 = normalizeQR(qr1Raw);   // ルール選択はQR1で行う
+    const qr2 = normalizeQR(qr2Raw);   // 品番抽出はQR2から行う
+    const totalLen = qr1.length;       // QR1の文字数でルール判定
+    const rule = pickRule(qr1);
     if (!rule) return { part: qr2, rule: null, totalLen, start0: 0, note: 'no_rule_full' };
     const start0 = rule.startPos - 1;
     if (start0 < 0 || start0 >= qr2.length) return { part: qr2, rule, totalLen, start0, note: 'bad_start_full' };
@@ -2101,7 +1950,7 @@
   function doMatch() {
     const v1 = normalizeQR(value1);
     const v2 = normalizeQR(value2);
-    const ex = extractPartNumberWithMeta(v2);
+    const ex = extractPartNumberWithMeta(v2, v1);   // ルール選択はQR1で行う
     const partNumber = ex.part;
 
     // ① 品番一致チェック
@@ -2195,8 +2044,6 @@
       `;
       adminArea.style.display = 'block';
       document.getElementById('adminAreaMsg').textContent = '⚠️ 重複のため照合NG　暗証番号で解除';
-      document.getElementById('holdReleaseBtn').style.display =
-        settings.holdReleaseEnabled ? 'block' : 'none';
       isNGLocked = true;
       playSound('dup');
       resetPinUI();
@@ -2214,8 +2061,6 @@
       `;
       adminArea.style.display = 'block';
       document.getElementById('adminAreaMsg').textContent = '⚠️ 管理者QRで解除してください';
-      document.getElementById('holdReleaseBtn').style.display =
-        settings.holdReleaseEnabled ? 'block' : 'none';
       isNGLocked = true;
       playSound('ng');
       resetPinUI();
@@ -2244,8 +2089,6 @@
     document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
     document.getElementById('adminArea').style.display = 'block';
     document.getElementById('adminAreaMsg').textContent = '⚠️ 管理者QRで解除してください';
-    document.getElementById('holdReleaseBtn').style.display =
-      settings.holdReleaseEnabled ? 'block' : 'none';
     resetPinUI();
   }
 
