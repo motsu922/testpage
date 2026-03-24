@@ -361,18 +361,50 @@
       max-width: 92vw;
     }
     .admin-area p { color: white; font-size: 13px; margin-bottom: 10px; }
-    .admin-input-group { display: flex; gap: 8px; justify-content: center; }
-    .admin-input {
-      padding: 12px;
-      border: none;
-      border-radius: 8px;
-      font-size: 16px;
-      width: min(320px, 86vw);
-      text-align: center;
-      background: rgba(255,255,255,0.9);
-      color: #000;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+    /* ===== テンキー ===== */
+    .pin-dots {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin: 10px 0 16px;
     }
+    .pin-dot {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.6);
+      background: transparent;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .pin-dot.filled { background: white; transform: scale(1.15); }
+    .pin-dot.error  { border-color: #ff5252; background: #ff5252; animation: pinShake 0.35s ease; }
+    @keyframes pinShake {
+      0%,100% { transform: translateX(0) scale(1.1); }
+      25%      { transform: translateX(-6px) scale(1.1); }
+      75%      { transform: translateX(6px) scale(1.1); }
+    }
+    .numpad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      width: min(280px, 82vw);
+      margin: 0 auto;
+    }
+    .numpad-btn {
+      padding: 16px 0;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 10px;
+      color: white;
+      font-size: 22px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.12s, transform 0.08s;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .numpad-btn:active { background: rgba(255,255,255,0.35); transform: scale(0.94); }
+    .numpad-btn.del { font-size: 18px; background: rgba(255,255,255,0.08); }
+    /* ==================== */
 
     /* ===== 長押し解除ボタン ===== */
     .hold-release-btn {
@@ -525,8 +557,10 @@
             <input type="password" class="setting-input" id="adminPassword" placeholder="新しいパスワード" style="width:100%;">
           </div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
-            <span class="setting-label">管理者QR（エラー解除用）</span>
-            <input type="text" class="setting-input" id="adminQR" placeholder="QRの値" style="width:100%;">
+            <span class="setting-label">解除暗証番号（4桁）</span>
+            <input type="number" class="setting-input" id="releasePIN"
+                   placeholder="0000" maxlength="4" min="0" max="9999"
+                   style="width:120px; text-align:center; font-size:22px; letter-spacing:6px;">
           </div>
           <div class="setting-row">
             <span class="setting-label">長押し解除を有効にする</span>
@@ -585,16 +619,29 @@
     <div class="result-detail" id="resultDetail"></div>
     <button style="display:none;" id="okBtn" onclick="closeAndContinue()">次の照合へ</button>
     <div class="admin-area" id="adminArea" style="display:none;">
-      <p id="adminAreaMsg">⚠️ 管理者QRで解除してください</p>
-      <div class="admin-input-group">
-        <input type="text" class="admin-input" id="adminInput"
-               placeholder="管理者QRを読み取り"
-               inputmode="latin"
-               autocapitalize="none"
-               spellcheck="false">
+      <p id="adminAreaMsg">🔐 暗証番号を入力してください</p>
+      <div class="pin-dots">
+        <div class="pin-dot" id="pinDot0"></div>
+        <div class="pin-dot" id="pinDot1"></div>
+        <div class="pin-dot" id="pinDot2"></div>
+        <div class="pin-dot" id="pinDot3"></div>
+      </div>
+      <div class="numpad">
+        <button class="numpad-btn" onclick="pinInput('1')">1</button>
+        <button class="numpad-btn" onclick="pinInput('2')">2</button>
+        <button class="numpad-btn" onclick="pinInput('3')">3</button>
+        <button class="numpad-btn" onclick="pinInput('4')">4</button>
+        <button class="numpad-btn" onclick="pinInput('5')">5</button>
+        <button class="numpad-btn" onclick="pinInput('6')">6</button>
+        <button class="numpad-btn" onclick="pinInput('7')">7</button>
+        <button class="numpad-btn" onclick="pinInput('8')">8</button>
+        <button class="numpad-btn" onclick="pinInput('9')">9</button>
+        <button class="numpad-btn del" onclick="pinDelete()">⌫</button>
+        <button class="numpad-btn" onclick="pinInput('0')">0</button>
+        <button class="numpad-btn del" onclick="pinClear()">C</button>
       </div>
       <!-- 長押し解除ボタン（holdReleaseEnabled時のみ表示） -->
-      <button class="hold-release-btn" id="holdReleaseBtn" style="display:none;"
+      <button class="hold-release-btn" id="holdReleaseBtn" style="display:none;margin-top:16px;"
               oncontextmenu="return false;">
         <div class="hold-progress" id="holdProgress"></div>
         <div class="btn-label">🔓 長押しで強制解除</div>
@@ -633,7 +680,7 @@
 
   let settings = {
     adminPassword: 'admin',
-    adminQR: 'ADMIN123',
+    releasePIN: '0000',
     soundEnabled: true,
     vibrationEnabled: true,
     holdReleaseEnabled: true,
@@ -686,7 +733,6 @@
     const scanInput = document.getElementById('scanInput');
     if (!scanInput) return;
     if (document.activeElement === scanInput) return;
-    if (document.activeElement === document.getElementById('adminInput')) return;
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.id !== 'scanInput') return;
     scanInput.focus({ preventScroll: true });
@@ -781,21 +827,12 @@
   // ========= 入力リスナー =========
   function setupInputListeners() {
     const scanInput = document.getElementById('scanInput');
-    const adminInput = document.getElementById('adminInput');
 
     scanInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         const value = normalizeQR(scanInput.value);
         if (value) { handleScan(value); scanInput.value = ''; }
-      }
-    });
-
-    adminInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const value = normalizeQR(adminInput.value);
-        if (value) { handleAdminScan(value); adminInput.value = ''; }
       }
     });
 
@@ -819,18 +856,66 @@
     }
   }
 
-  function handleAdminScan(value) {
-    if (value === settings.adminQR) {
+  // ========= テンキーPIN解除 =========
+  let pinBuffer = '';
+
+  function pinInput(digit) {
+    if (pinBuffer.length >= 4) return;
+    pinBuffer += digit;
+    updatePinDots();
+    if (pinBuffer.length === 4) {
+      setTimeout(checkPIN, 80); // ドット反映後に判定
+    }
+  }
+
+  function pinDelete() {
+    if (!pinBuffer.length) return;
+    pinBuffer = pinBuffer.slice(0, -1);
+    updatePinDots();
+  }
+
+  function pinClear() {
+    pinBuffer = '';
+    updatePinDots();
+  }
+
+  function updatePinDots() {
+    for (let i = 0; i < 4; i++) {
+      const dot = document.getElementById('pinDot' + i);
+      if (!dot) continue;
+      dot.classList.remove('filled', 'error');
+      if (i < pinBuffer.length) dot.classList.add('filled');
+    }
+  }
+
+  function checkPIN() {
+    const expected = String(settings.releasePIN).padStart(4, '0');
+    if (pinBuffer === expected) {
       isNGLocked = false;
       playSound('ok');
+      vibrate([80, 40, 80]);
+      pinBuffer = '';
+      updatePinDots();
       document.getElementById('resultOverlay').classList.remove('show');
       startScanning(true);
-      alert('✅ エラー解除しました');
     } else {
+      // エラー表示：ドットを赤くして振動
+      for (let i = 0; i < 4; i++) {
+        const dot = document.getElementById('pinDot' + i);
+        if (dot) { dot.classList.remove('filled'); dot.classList.add('error'); }
+      }
       playSound('ng');
-      alert('❌ 管理者QRが一致しません');
-      document.getElementById('adminInput').focus();
+      vibrate([400]);
+      setTimeout(() => {
+        pinBuffer = '';
+        updatePinDots();
+      }, 700);
     }
+  }
+
+  function resetPinUI() {
+    pinBuffer = '';
+    updatePinDots();
   }
 
   // ========= 長押し解除ボタン =========
@@ -1017,7 +1102,13 @@
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
     if (settings.holdReleaseEnabled === undefined) settings.holdReleaseEnabled = true;
     if (!settings.holdDuration) settings.holdDuration = 3;
-    if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;  // ★
+    if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;
+    if (!settings.releasePIN) settings.releasePIN = '0000';
+    // 旧 adminQR 設定からマイグレーション
+    if (settings.adminQR && !localStorage.getItem('pinMigrated')) {
+      delete settings.adminQR;
+      localStorage.setItem('pinMigrated', '1');
+    }
     applySettingsToForm();
   }
 
@@ -1043,7 +1134,7 @@
   }
 
   function applySettingsToForm() {
-    document.getElementById('adminQR').value = settings.adminQR;
+    document.getElementById('releasePIN').value = String(settings.releasePIN || '0000').padStart(4,'0');
     document.getElementById('soundToggle').className     = settings.soundEnabled     ? 'toggle-switch on' : 'toggle-switch';
     document.getElementById('vibrationToggle').className = settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
     document.getElementById('fbApiKey').value      = settings.firebase.apiKey      || '';
@@ -1119,7 +1210,8 @@
   function saveAllSettings() {
     const newPassword = document.getElementById('adminPassword').value.trim();
     if (newPassword) settings.adminPassword = newPassword;
-    settings.adminQR           = normalizeQR(document.getElementById('adminQR').value) || 'ADMIN123';
+    const rawPIN = document.getElementById('releasePIN').value.replace(/\D/g,'').slice(0,4);
+    settings.releasePIN = rawPIN.padStart(4, '0');
     settings.firebase.apiKey   = document.getElementById('fbApiKey').value.trim();
     settings.firebase.authDomain  = document.getElementById('fbAuthDomain').value.trim();
     settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
@@ -1302,13 +1394,13 @@
     // ① 品番一致チェック
     const isQROK = v1.includes(partNumber);
 
-    // ② 重複チェック（一致している場合のみ）
-    const isDup = isQROK && settings.duplicateCheckEnabled && isDuplicateToday(v2);
+    // ② 重複チェック（QR2の全体値で判定 ／ 品番一致とは独立）
+    const isDup = settings.duplicateCheckEnabled && isDuplicateToday(v2);
 
     // 最終判定
     const isOK = isQROK && !isDup;
 
-    // 一致 & 非重複 → 本日スキャン済みリストに追加
+    // 品番一致 かつ 非重複 → 本日スキャン済みリストに追加（QR2全体値で登録）
     if (isOK) {
       addTodayScanned(v2);
     }
@@ -1378,8 +1470,7 @@
       text.textContent = '重複スキャン';
       detail.innerHTML = `
         <p class="label">この2回目QRは本日すでにスキャン済みです</p>
-        <p style="margin-top:8px;">${escapeHtml(partNumber)}</p>
-        <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
+        <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(logEntry.qr2)}</p>
       `;
       adminArea.style.display = 'block';
       document.getElementById('adminAreaMsg').textContent = '⚠️ 重複のため照合NG　管理者QRで解除';
@@ -1387,7 +1478,7 @@
         settings.holdReleaseEnabled ? 'block' : 'none';
       isNGLocked = true;
       playSound('dup');
-      setTimeout(() => document.getElementById('adminInput').focus(), 80);
+      resetPinUI();
 
     } else {
       // 通常NG
@@ -1406,7 +1497,7 @@
         settings.holdReleaseEnabled ? 'block' : 'none';
       isNGLocked = true;
       playSound('ng');
-      setTimeout(() => document.getElementById('adminInput').focus(), 80);
+      resetPinUI();
     }
   }
 
@@ -1434,7 +1525,7 @@
     document.getElementById('adminAreaMsg').textContent = '⚠️ 管理者QRで解除してください';
     document.getElementById('holdReleaseBtn').style.display =
       settings.holdReleaseEnabled ? 'block' : 'none';
-    setTimeout(() => document.getElementById('adminInput').focus(), 80);
+    resetPinUI();
   }
 
   function updateScanUI() {
