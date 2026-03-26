@@ -1,0 +1,722 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>RACK WMS — 入出庫分析</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+:root {
+  --bg:      #f4f6f9;
+  --surface: #ffffff;
+  --card:    #ffffff;
+  --border:  #e2e8f0;
+  --border2: #cbd5e1;
+  --accent:  #e8920a;
+  --green:   #16a34a;
+  --red:     #dc2626;
+  --blue:    #2563eb;
+  --purple:  #7c3aed;
+  --text:    #1e293b;
+  --muted:   #64748b;
+  --shadow:  0 1px 4px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.04);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg);min-height:100vh}
+body{background:var(--bg);color:var(--text);font-family:'Noto Sans JP',sans-serif;min-height:100vh}
+button,input,select{font-family:'Noto Sans JP',sans-serif;font-size:inherit}
+
+.header{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  box-shadow:0 1px 6px rgba(0,0,0,0.06);
+  padding:12px 24px;display:flex;align-items:center;gap:10px;
+  position:sticky;top:0;z-index:100;
+}
+.header-logo{font-size:22px}
+.header-title{font-family:'Rajdhani',sans-serif;font-size:21px;font-weight:700;color:var(--accent);letter-spacing:2px}
+.header-sub{font-size:11px;color:var(--muted);margin-left:6px}
+.header-status{margin-left:auto;font-size:11px;color:var(--muted)}
+
+.main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
+
+.kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:20px}
+.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.kpi-label{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px}
+.kpi-value{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:var(--accent);line-height:1}
+.kpi-value.g{color:var(--green)}
+.kpi-value.b{color:var(--blue)}
+.kpi-value.p{color:var(--purple)}
+.kpi-sub{font-size:10px;color:var(--muted);margin-top:3px}
+
+.section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:var(--shadow)}
+.section-header{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.section-title{font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:700;color:var(--text);letter-spacing:0.8px}
+.section-sub{font-size:10px;color:var(--muted)}
+
+.filter-bar{
+  display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:12px 14px;box-shadow:var(--shadow);
+}
+.filter-group{display:flex;flex-direction:column;gap:3px;min-width:120px}
+.filter-label{font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+input[type=date],select.filter-select{
+  background:var(--bg);border:1.5px solid var(--border2);border-radius:8px;
+  color:var(--text);font-size:13px;font-weight:500;padding:7px 10px;min-height:36px;
+  outline:none;transition:border-color 0.2s;-webkit-appearance:none;appearance:none;cursor:pointer;
+}
+input[type=date]:focus,select.filter-select:focus{border-color:var(--accent);background:#fff}
+.apply-btn{
+  align-self:flex-end;background:var(--accent);color:#fff;
+  border:none;border-radius:8px;font-weight:700;font-size:13px;
+  padding:7px 20px;min-height:36px;cursor:pointer;white-space:nowrap;
+  transition:opacity 0.2s;box-shadow:0 2px 6px rgba(232,146,10,0.3);
+}
+.apply-btn:hover{opacity:0.88}
+.reset-btn{
+  align-self:flex-end;background:#fff;color:var(--muted);
+  border:1.5px solid var(--border2);border-radius:8px;font-weight:700;font-size:13px;
+  padding:7px 14px;min-height:36px;cursor:pointer;transition:border-color 0.2s;
+}
+.reset-btn:hover{border-color:var(--muted)}
+
+.chart-wrap{position:relative;width:100%;height:280px}
+@media(min-width:640px){.chart-wrap{height:320px}}
+
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{
+  background:#f8fafc;color:var(--muted);
+  padding:9px 12px;text-align:left;font-size:10px;letter-spacing:0.8px;font-weight:700;
+  border-bottom:2px solid var(--border);white-space:nowrap;position:sticky;top:0;
+}
+.data-table th.num{text-align:right}
+.data-table td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+.data-table td.num{text-align:right;font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:700}
+.data-table td.num.g{color:var(--green)}
+.data-table td.num.b{color:var(--blue)}
+.data-table td.num.m{color:var(--muted)}
+.data-table tbody tr:hover{background:#f8fafc}
+.data-table td .rank{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:50%;
+  font-family:'Rajdhani',sans-serif;font-size:11px;font-weight:700;
+  margin-right:6px;flex-shrink:0;
+}
+.rank-1{background:var(--accent);color:#fff}
+.rank-2{background:#94a3b8;color:#fff}
+.rank-3{background:#b8956a;color:#fff}
+.rank-n{background:var(--border);color:var(--muted)}
+.scroll-table{max-height:340px;overflow-y:auto;border-radius:8px;border:1px solid var(--border)}
+
+.chart-tabs{display:flex;gap:4px}
+.chart-tab{
+  padding:5px 14px;border-radius:7px;border:1.5px solid var(--border2);
+  background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;
+  transition:all 0.15s;min-height:32px;
+}
+.chart-tab.active{background:#eff6ff;border-color:var(--blue);color:var(--blue)}
+
+.csv-btn{
+  background:#f0fdf4;border:1.5px solid #86efac;color:var(--green);
+  border-radius:8px;font-weight:700;font-size:12px;padding:5px 14px;
+  cursor:pointer;min-height:32px;transition:opacity 0.2s;
+}
+.csv-btn:hover{opacity:0.8}
+
+.empty{text-align:center;color:var(--muted);font-size:12px;padding:28px}
+
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--green);color:#fff;
+  font-weight:700;font-size:13px;padding:10px 24px;border-radius:24px;
+  opacity:0;pointer-events:none;transition:all 0.3s;z-index:2000;
+  white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.15);
+}
+.toast.err{background:var(--red)}
+.toast.show{opacity:1}
+
+.trace-status{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px}
+.trace-status.shipped{background:#eff6ff;color:var(--blue);border:1px solid #bfdbfe}
+.trace-status.instock{background:#f0fdf4;color:var(--green);border:1px solid #86efac}
+.trace-days{font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:700}
+.trace-days.fast{color:var(--green)}
+.trace-days.mid{color:var(--accent)}
+.trace-days.slow{color:var(--red)}
+.trace-days.none{color:var(--muted)}
+
+.peak-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  border-radius:6px;padding:3px 10px;
+  font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:700;
+}
+.peak-badge.in-badge{background:#fff7ed;border:1px solid #fed7aa;color:var(--accent)}
+.peak-badge.out-badge{background:#eff6ff;border:1px solid #bfdbfe;color:var(--blue)}
+.hourly-mode-tabs{display:flex;gap:4px}
+.hourly-mode-tab{
+  padding:4px 12px;border-radius:7px;border:1.5px solid var(--border2);
+  background:#fff;color:var(--muted);font-size:12px;font-weight:700;
+  cursor:pointer;transition:all 0.15s;min-height:30px;
+}
+.hourly-mode-tab.active{background:#fff7ed;border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span class="header-logo">📊</span>
+  <span class="header-title">RACK WMS</span>
+  <span class="header-sub">入出庫 分析ダッシュボード</span>
+  <span class="header-status" id="status">Firebase: 接続中...</span>
+</div>
+
+<div class="main">
+
+  <div class="filter-bar">
+    <div class="filter-group">
+      <div class="filter-label">開始日</div>
+      <input type="date" id="date-from">
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">終了日</div>
+      <input type="date" id="date-to">
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">品番フィルター</div>
+      <select class="filter-select" id="product-filter" style="min-width:130px">
+        <option value="">すべての品番</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">操作種別</div>
+      <select class="filter-select" id="type-filter">
+        <option value="">すべて</option>
+        <option value="inbound">入庫のみ</option>
+        <option value="outbound">出庫のみ</option>
+      </select>
+    </div>
+    <button class="apply-btn" onclick="applyFilter()">▶ 集計</button>
+    <button class="reset-btn" onclick="resetFilter()">リセット</button>
+  </div>
+
+  <div class="kpi-strip">
+    <div class="kpi-card"><div class="kpi-label">総レコード数</div><div class="kpi-value" id="kpi-total">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">入庫件数</div><div class="kpi-value g" id="kpi-in">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">出庫件数</div><div class="kpi-value b" id="kpi-out">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">品番種類</div><div class="kpi-value p" id="kpi-prods">—</div></div>
+    <div class="kpi-card"><div class="kpi-label">分析期間</div><div class="kpi-value" style="font-size:16px;margin-top:4px" id="kpi-range">—</div><div class="kpi-sub" id="kpi-days"></div></div>
+  </div>
+
+  <!-- 日別グラフ -->
+  <div class="section">
+    <div class="section-header">
+      <span>📅</span>
+      <div>
+        <div class="section-title">日別 入出庫件数</div>
+        <div class="section-sub">指定期間の日単位集計</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <div class="chart-tabs">
+          <button class="chart-tab active" id="ctab-bar" onclick="switchChartType('bar')">棒グラフ</button>
+          <button class="chart-tab" id="ctab-line" onclick="switchChartType('line')">折れ線</button>
+        </div>
+        <button class="csv-btn" onclick="exportDailyCSV()">📥 CSV</button>
+      </div>
+    </div>
+    <div class="chart-wrap"><canvas id="daily-chart"></canvas></div>
+    <div id="daily-empty" class="empty" style="display:none">データがありません</div>
+  </div>
+
+  <!-- 時間帯別 -->
+  <div class="section">
+    <div class="section-header">
+      <span>⏱️</span>
+      <div>
+        <div class="section-title">時間帯別 入出庫分布</div>
+        <div class="section-sub">0〜23時の時間帯ごとの操作集計</div>
+      </div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div id="hourly-peak-in"  class="peak-badge in-badge"  style="display:none"></div>
+        <div id="hourly-peak-out" class="peak-badge out-badge" style="display:none"></div>
+        <div class="hourly-mode-tabs">
+          <button class="hourly-mode-tab active" id="htab-grouped" onclick="switchHourlyMode('grouped')">グループ</button>
+          <button class="hourly-mode-tab" id="htab-stacked"        onclick="switchHourlyMode('stacked')">積み上げ</button>
+          <button class="hourly-mode-tab" id="htab-line"           onclick="switchHourlyMode('line')">折れ線</button>
+        </div>
+        <button class="csv-btn" onclick="exportHourlyCSV()">📥 CSV</button>
+      </div>
+    </div>
+    <div class="chart-wrap" style="height:260px"><canvas id="hourly-chart"></canvas></div>
+    <div id="hourly-empty" class="empty" style="display:none">データがありません</div>
+    <div id="hourly-summary" style="margin-top:16px;display:none">
+      <div style="font-size:9px;font-weight:700;color:var(--muted);letter-spacing:1.5px;margin-bottom:8px">TIME SLOT SUMMARY</div>
+      <div style="overflow-x:auto">
+        <table class="data-table" style="min-width:500px">
+          <thead><tr><th>時間帯</th><th class="num">入庫</th><th class="num">出庫</th><th class="num">合計</th><th class="num">割合</th></tr></thead>
+          <tbody id="hourly-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 品番別 -->
+  <div class="section">
+    <div class="section-header">
+      <span>📦</span>
+      <div>
+        <div class="section-title">品番別 集計</div>
+        <div class="section-sub">入出庫回数ランキング</div>
+      </div>
+      <button class="csv-btn" style="margin-left:auto" onclick="exportProductCSV()">📥 CSV</button>
+    </div>
+    <div class="scroll-table">
+      <table class="data-table">
+        <thead><tr><th>品番</th><th class="num">入庫</th><th class="num">出庫</th><th class="num">合計</th><th class="num">最終操作</th></tr></thead>
+        <tbody id="product-tbody"><tr><td colspan="5" class="empty">読み込み中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 入庫日トレース -->
+  <div class="section">
+    <div class="section-header">
+      <span>🔍</span>
+      <div>
+        <div class="section-title">入庫日トレース</div>
+        <div class="section-sub">指定日に入庫した品番が、いつ出庫されたかを追跡</div>
+      </div>
+      <button class="csv-btn" style="margin-left:auto" onclick="exportTraceCSV()">📥 CSV</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:16px">
+      <div class="filter-group">
+        <div class="filter-label">入庫日</div>
+        <input type="date" id="trace-date" min="2026-03-18">
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">品番（任意）</div>
+        <select class="filter-select" id="trace-product" style="min-width:140px">
+          <option value="">すべての品番</option>
+        </select>
+      </div>
+      <button class="apply-btn" onclick="runTrace()">🔍 追跡</button>
+    </div>
+    <div id="trace-result"><div class="empty">入庫日を選択して「追跡」を押してください</div></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+import { getFirestore, collection, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
+  authDomain: "miyamaunitec-fb87a.firebaseapp.com",
+  projectId: "miyamaunitec-fb87a",
+  storageBucket: "miyamaunitec-fb87a.firebasestorage.app",
+  messagingSenderId: "495316649507",
+  appId: "1:495316649507:web:1f98ee3dd851474fa39396"
+};
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+let allHistory=[], filteredHistory=[];
+let chartType='bar', dailyChartInst=null, hourlyChartInst=null, hourlyMode='grouped';
+const DATA_START_MS = new Date('2026-03-18T00:00:00').getTime();
+
+function esc(s){ return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function fmtDateInput(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function fmtTime(ms){
+  if(!ms) return '-';
+  const d=new Date(ms);
+  return `${d.getMonth()+1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+function showToast(msg,err=false){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className=`toast${err?' err':''} show`;
+  setTimeout(()=>{ t.className='toast'; },2200);
+}
+function setStatus(text,color=''){
+  const el=document.getElementById('status');
+  el.textContent=`Firebase: ${text}`; el.style.color=color;
+}
+
+try { await signInAnonymously(auth); setStatus('接続済み','#16a34a'); }
+catch(e){ setStatus('未接続','#dc2626'); showToast('Firebase接続エラー',true); }
+
+const today=new Date();
+const d30=new Date(today); d30.setDate(today.getDate()-29);
+const fromDefault=new Date(Math.max(d30.getTime(),DATA_START_MS));
+document.getElementById('date-from').value=fmtDateInput(fromDefault);
+document.getElementById('date-from').min='2026-03-18';
+document.getElementById('date-to').value=fmtDateInput(today);
+document.getElementById('date-to').min='2026-03-18';
+
+await loadHistory();
+
+async function loadHistory(){
+  try{
+    const q=query(collection(db,'shelfHistory'),orderBy('atMs','desc'),limit(2000));
+    const snap=await getDocs(q);
+    allHistory=snap.docs.map(d=>d.data());
+    setStatus(`接続済み（${allHistory.length}件）`,'#16a34a');
+    buildProductFilter(); applyFilter();
+  }catch(e){
+    console.error(e); setStatus('読み込みエラー','#dc2626'); showToast('データ読み込みエラー',true);
+  }
+}
+
+function buildProductFilter(){
+  const products=[...new Set(allHistory.map(h=>h.productId).filter(Boolean))].sort();
+  const opts='<option value="">すべての品番</option>'+products.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  document.getElementById('product-filter').innerHTML=opts;
+  document.getElementById('trace-product').innerHTML=opts;
+}
+
+function applyFilter(){
+  const from=document.getElementById('date-from').value;
+  const to=document.getElementById('date-to').value;
+  const prod=document.getElementById('product-filter').value;
+  const type=document.getElementById('type-filter').value;
+  const fromMs=Math.max(from?new Date(from+'T00:00:00').getTime():0, DATA_START_MS);
+  const toMs=to?new Date(to+'T23:59:59').getTime():Infinity;
+  filteredHistory=allHistory.filter(h=>{
+    if((h.atMs||0)<fromMs||(h.atMs||0)>toMs) return false;
+    if(prod&&h.productId!==prod) return false;
+    if(type&&h.type!==type) return false;
+    return true;
+  });
+  renderKPI(from,to); renderDailyChart(fromMs,toMs); renderHourlyChart(); renderProductTable();
+}
+
+function resetFilter(){
+  const today2=new Date();
+  const d30b=new Date(today2); d30b.setDate(today2.getDate()-29);
+  const fromReset=new Date(Math.max(d30b.getTime(),DATA_START_MS));
+  document.getElementById('date-from').value=fmtDateInput(fromReset);
+  document.getElementById('date-to').value=fmtDateInput(today2);
+  document.getElementById('product-filter').value='';
+  document.getElementById('type-filter').value='';
+  applyFilter();
+}
+
+function renderKPI(from,to){
+  const inCnt=filteredHistory.filter(h=>h.type==='inbound').length;
+  const outCnt=filteredHistory.filter(h=>h.type==='outbound'||h.type==='move-to-fixed').length;
+  const prods=new Set(filteredHistory.map(h=>h.productId).filter(Boolean)).size;
+  document.getElementById('kpi-total').textContent=filteredHistory.length;
+  document.getElementById('kpi-in').textContent=inCnt;
+  document.getElementById('kpi-out').textContent=outCnt;
+  document.getElementById('kpi-prods').textContent=prods;
+  if(from&&to){
+    const days=Math.round((new Date(to)-new Date(from))/86400000)+1;
+    document.getElementById('kpi-range').textContent=`${from.slice(5)} ～ ${to.slice(5)}`;
+    document.getElementById('kpi-days').textContent=`${days}日間`;
+  }else{
+    document.getElementById('kpi-range').textContent='すべて';
+    document.getElementById('kpi-days').textContent='';
+  }
+}
+
+function renderDailyChart(fromMs,toMs){
+  const dm={};
+  for(const h of filteredHistory){
+    const d=new Date(h.atMs||0);
+    const k=`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    if(!dm[k]) dm[k]={in:0,out:0};
+    if(h.type==='inbound') dm[k].in++;
+    else if(h.type==='outbound'||h.type==='move-to-fixed') dm[k].out++;
+  }
+  const dr=[];
+  if(fromMs>0&&toMs<Infinity){
+    const cur=new Date(fromMs),end=new Date(toMs);
+    while(cur<=end){ dr.push(`${cur.getFullYear()}-${pad2(cur.getMonth()+1)}-${pad2(cur.getDate())}`); cur.setDate(cur.getDate()+1); }
+  } else { for(const k of Object.keys(dm).sort()) dr.push(k); }
+  const hasData=dr.some(d=>dm[d]?.in||dm[d]?.out);
+  document.getElementById('daily-chart').style.display=hasData?'':'none';
+  document.getElementById('daily-empty').style.display=hasData?'none':'';
+  if(dailyChartInst){dailyChartInst.destroy();dailyChartInst=null;}
+  if(!hasData) return;
+  const isLine=chartType==='line';
+  const ctx=document.getElementById('daily-chart').getContext('2d');
+  dailyChartInst=new Chart(ctx,{
+    type:chartType,
+    data:{
+      labels:dr.map(d=>d.slice(5)),
+      datasets:[
+        {label:'入庫',data:dr.map(d=>dm[d]?.in||0),backgroundColor:'rgba(22,163,74,0.5)',borderColor:'#16a34a',borderWidth:isLine?2:0,pointRadius:isLine?3:0,fill:isLine,tension:0.3},
+        {label:'出庫',data:dr.map(d=>dm[d]?.out||0),backgroundColor:'rgba(37,99,235,0.5)',borderColor:'#2563eb',borderWidth:isLine?2:0,pointRadius:isLine?3:0,fill:false,tension:0.3},
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:{duration:400},
+      plugins:{
+        legend:{labels:{color:'#64748b',font:{family:"'Noto Sans JP'",size:11}}},
+        tooltip:{backgroundColor:'#fff',borderColor:'#e2e8f0',borderWidth:1,titleColor:'#1e293b',bodyColor:'#64748b',padding:10}
+      },
+      scales:{
+        x:{stacked:!isLine,ticks:{color:'#94a3b8',font:{size:10},maxRotation:45},grid:{color:'rgba(226,232,240,0.8)'}},
+        y:{stacked:!isLine,ticks:{color:'#94a3b8',font:{size:11},stepSize:1},grid:{color:'rgba(226,232,240,0.8)'}}
+      }
+    }
+  });
+}
+
+function switchChartType(type){
+  chartType=type;
+  document.getElementById('ctab-bar').classList.toggle('active',type==='bar');
+  document.getElementById('ctab-line').classList.toggle('active',type==='line');
+  const from=document.getElementById('date-from').value;
+  const to=document.getElementById('date-to').value;
+  renderDailyChart(Math.max(from?new Date(from+'T00:00:00').getTime():0,DATA_START_MS),to?new Date(to+'T23:59:59').getTime():Infinity);
+}
+
+function buildHourlyData(){
+  const inArr=Array(24).fill(0),outArr=Array(24).fill(0);
+  for(const h of filteredHistory){
+    const hr=new Date(h.atMs||0).getHours();
+    if(h.type==='inbound') inArr[hr]++;
+    else if(h.type==='outbound'||h.type==='move-to-fixed') outArr[hr]++;
+  }
+  return {inArr,outArr};
+}
+
+function renderHourlyChart(){
+  const {inArr,outArr}=buildHourlyData();
+  const total=inArr.reduce((s,v)=>s+v,0)+outArr.reduce((s,v)=>s+v,0);
+  const hasData=total>0;
+  document.getElementById('hourly-chart').style.display=hasData?'':'none';
+  document.getElementById('hourly-empty').style.display=hasData?'none':'';
+  document.getElementById('hourly-summary').style.display=hasData?'':'none';
+  if(hourlyChartInst){hourlyChartInst.destroy();hourlyChartInst=null;}
+  const piEl=document.getElementById('hourly-peak-in');
+  const poEl=document.getElementById('hourly-peak-out');
+  if(!hasData){piEl.style.display='none';poEl.style.display='none';return;}
+  const peakInHour=inArr.indexOf(Math.max(...inArr));
+  const peakOutHour=outArr.indexOf(Math.max(...outArr));
+  if(Math.max(...inArr)>0){piEl.textContent=`📦 入庫ピーク: ${pad2(peakInHour)}:00〜 (${inArr[peakInHour]}件)`;piEl.style.display='';}else piEl.style.display='none';
+  if(Math.max(...outArr)>0){poEl.textContent=`🚛 出庫ピーク: ${pad2(peakOutHour)}:00〜 (${outArr[peakOutHour]}件)`;poEl.style.display='';}else poEl.style.display='none';
+  const labels=Array.from({length:24},(_,i)=>pad2(i));
+  const isLine=hourlyMode==='line',isStacked=hourlyMode==='stacked';
+  const peakPlugin={
+    id:'peakHighlight',
+    beforeDatasetsDraw(chart){
+      const {ctx,chartArea:{top,bottom},scales:{x}}=chart;if(!x)return;
+      const hrs=new Set();
+      if(Math.max(...inArr)>0) hrs.add(peakInHour);
+      if(Math.max(...outArr)>0) hrs.add(peakOutHour);
+      hrs.forEach(hr=>{
+        const xp=x.getPixelForValue(hr),bw=x.width/24;
+        ctx.save();ctx.fillStyle='rgba(232,146,10,0.08)';
+        ctx.fillRect(xp-bw/2,top,bw,bottom-top);ctx.restore();
+      });
+    }
+  };
+  const ctx=document.getElementById('hourly-chart').getContext('2d');
+  hourlyChartInst=new Chart(ctx,{
+    type:isLine?'line':'bar',
+    data:{labels,datasets:[
+      {label:'入庫',data:inArr,backgroundColor:isLine?'rgba(22,163,74,0.1)':'rgba(22,163,74,0.55)',borderColor:'#16a34a',borderWidth:isLine?2:0,pointRadius:isLine?3:0,pointHoverRadius:isLine?5:0,fill:isLine,tension:0.35,stack:isStacked?'s':undefined},
+      {label:'出庫',data:outArr,backgroundColor:isLine?'rgba(37,99,235,0.1)':'rgba(37,99,235,0.55)',borderColor:'#2563eb',borderWidth:isLine?2:0,pointRadius:isLine?3:0,pointHoverRadius:isLine?5:0,fill:false,tension:0.35,stack:isStacked?'s':undefined},
+    ]},
+    plugins:[peakPlugin],
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:{duration:350},
+      plugins:{
+        legend:{labels:{color:'#64748b',font:{family:"'Noto Sans JP'",size:11}}},
+        tooltip:{backgroundColor:'#fff',borderColor:'#e2e8f0',borderWidth:1,titleColor:'#1e293b',bodyColor:'#64748b',padding:10,
+          callbacks:{title:items=>`${items[0].label}:00 〜 ${items[0].label}:59`}}
+      },
+      scales:{
+        x:{stacked:isStacked,ticks:{color:'#94a3b8',font:{size:10},callback:(v,i)=>i%3===0?pad2(i)+':00':'',maxRotation:0},grid:{color:'rgba(226,232,240,0.8)'},
+          title:{display:true,text:'時刻 (時)',color:'#94a3b8',font:{size:10}}},
+        y:{stacked:isStacked,ticks:{color:'#94a3b8',font:{size:11},stepSize:1},grid:{color:'rgba(226,232,240,0.8)'},
+          title:{display:true,text:'件数',color:'#94a3b8',font:{size:10}}}
+      }
+    }
+  });
+  renderHourlySummary(inArr,outArr,total);
+}
+
+function renderHourlySummary(inArr,outArr,total){
+  const maxVal=Math.max(...inArr.map((v,i)=>v+outArr[i]));
+  const rows=[];
+  for(let h=0;h<24;h++){
+    const t=inArr[h]+outArr[h]; if(!t) continue;
+    const pct=total>0?((t/total)*100).toFixed(1):'0.0';
+    const bar='█'.repeat(Math.max(1,Math.round(t/maxVal*8)));
+    rows.push(`<tr>
+      <td><span style="font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700">${pad2(h)}:00</span>
+          <span style="font-size:9px;color:var(--muted);margin-left:4px">〜 ${pad2(h)}:59</span></td>
+      <td class="num g">${inArr[h]||'—'}</td>
+      <td class="num b">${outArr[h]||'—'}</td>
+      <td class="num">${t}</td>
+      <td class="num" style="font-size:11px;color:var(--muted);font-family:'Noto Sans JP'">
+        <span style="color:var(--accent)">${bar}</span><span style="margin-left:4px">${pct}%</span>
+      </td>
+    </tr>`);
+  }
+  document.getElementById('hourly-tbody').innerHTML=rows.join('')||'<tr><td colspan="5" class="empty">—</td></tr>';
+}
+
+function switchHourlyMode(mode){
+  hourlyMode=mode;
+  ['grouped','stacked','line'].forEach(m=>document.getElementById(`htab-${m}`).classList.toggle('active',m===mode));
+  renderHourlyChart();
+}
+
+function renderProductTable(){
+  const map={};
+  for(const h of filteredHistory){
+    const p=h.productId;if(!p)continue;
+    if(!map[p]) map[p]={in:0,out:0,lastMs:0};
+    if(h.type==='inbound') map[p].in++;
+    else if(h.type==='outbound'||h.type==='move-to-fixed') map[p].out++;
+    if((h.atMs||0)>map[p].lastMs) map[p].lastMs=h.atMs;
+  }
+  const rows=Object.entries(map).map(([p,d])=>({p,in:d.in,out:d.out,total:d.in+d.out,lastMs:d.lastMs})).sort((a,b)=>b.total-a.total);
+  const tbody=document.getElementById('product-tbody');
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="5" class="empty">データがありません</td></tr>';return;}
+  tbody.innerHTML=rows.map((r,i)=>{
+    const rc=i<3?`rank-${i+1}`:'rank-n';
+    return `<tr>
+      <td><span class="rank ${rc}">${i+1}</span><strong>${esc(r.p)}</strong></td>
+      <td class="num g">${r.in}</td><td class="num b">${r.out}</td><td class="num">${r.total}</td>
+      <td class="num m" style="font-size:11px;font-family:'Noto Sans JP'">${fmtTime(r.lastMs)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function exportDailyCSV(){
+  const from=document.getElementById('date-from').value,to=document.getElementById('date-to').value;
+  const dm={};
+  for(const h of filteredHistory){
+    const d=new Date(h.atMs||0),k=`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    if(!dm[k])dm[k]={in:0,out:0};
+    if(h.type==='inbound')dm[k].in++;
+    else if(h.type==='outbound'||h.type==='move-to-fixed')dm[k].out++;
+  }
+  const rows=[['日付','入庫','出庫','合計']];
+  for(const [d,v] of Object.entries(dm).sort()) rows.push([d,v.in,v.out,v.in+v.out]);
+  downloadCSV(rows,`入出庫_日別_${from}_${to}.csv`);
+}
+
+function exportHourlyCSV(){
+  const {inArr,outArr}=buildHourlyData();
+  const from=document.getElementById('date-from').value,to=document.getElementById('date-to').value;
+  const rows=[['時間帯','入庫','出庫','合計']];
+  for(let h=0;h<24;h++) rows.push([`${pad2(h)}:00-${pad2(h)}:59`,inArr[h],outArr[h],inArr[h]+outArr[h]]);
+  downloadCSV(rows,`入出庫_時間帯別_${from}_${to}.csv`);
+}
+
+function exportProductCSV(){
+  const from=document.getElementById('date-from').value,to=document.getElementById('date-to').value;
+  const map={};
+  for(const h of filteredHistory){
+    const p=h.productId;if(!p)continue;
+    if(!map[p])map[p]={in:0,out:0,lastMs:0};
+    if(h.type==='inbound')map[p].in++;
+    else if(h.type==='outbound'||h.type==='move-to-fixed')map[p].out++;
+    if((h.atMs||0)>map[p].lastMs)map[p].lastMs=h.atMs;
+  }
+  const rows=[['品番','入庫','出庫','合計','最終操作日時']];
+  for(const [p,d] of Object.entries(map).sort((a,b)=>(b[1].in+b[1].out)-(a[1].in+a[1].out)))
+    rows.push([p,d.in,d.out,d.in+d.out,fmtTime(d.lastMs)]);
+  downloadCSV(rows,`入出庫_品番別_${from}_${to}.csv`);
+}
+
+function downloadCSV(rows,filename){
+  const csv='\uFEFF'+rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  a.download=filename;a.click();
+  showToast('📥 CSVを出力しました');
+}
+
+let traceResults=[];
+
+function runTrace(){
+  const dateVal=document.getElementById('trace-date').value;
+  const prodVal=document.getElementById('trace-product').value;
+  const el=document.getElementById('trace-result');
+  if(!dateVal){el.innerHTML='<div class="empty">入庫日を選択してください</div>';return;}
+  const fromMs=new Date(dateVal+'T00:00:00').getTime();
+  const toMs=new Date(dateVal+'T23:59:59').getTime();
+  const inbounds=allHistory.filter(h=>h.type==='inbound'&&(h.atMs||0)>=fromMs&&(h.atMs||0)<=toMs&&(!prodVal||h.productId===prodVal));
+  if(!inbounds.length){el.innerHTML=`<div class="empty">📭 ${dateVal} に入庫レコードがありません</div>`;traceResults=[];return;}
+  const outbounds=allHistory.filter(h=>h.type==='outbound'||h.type==='move-to-fixed');
+  traceResults=inbounds.map(ib=>{
+    const matched=outbounds.filter(ob=>{
+      if(ob.productId!==ib.productId)return false;
+      if((ob.atMs||0)<=(ib.atMs||0))return false;
+      if(ob.type==='move-to-fixed')return ob.fromShelf===ib.shelfId;
+      return ob.type==='outbound';
+    }).sort((a,b)=>(a.atMs||0)-(b.atMs||0));
+    const ob=matched[0]||null;
+    return{productId:ib.productId||'—',inShelf:ib.shelfId||'—',inAtMs:ib.atMs||0,
+      outAtMs:ob?.atMs||null,outShelf:ob?.shelfId||null,fromShelf:ob?.fromShelf||null,
+      stockDays:ob?parseFloat(((ob.atMs-ib.atMs)/86400000).toFixed(1)):null,
+      status:ob?'shipped':'instock'};
+  }).sort((a,b)=>a.inAtMs-b.inAtMs);
+  renderTrace();
+}
+
+function renderTrace(){
+  const el=document.getElementById('trace-result');
+  if(!traceResults.length){el.innerHTML='<div class="empty">データなし</div>';return;}
+  const shippedCnt=traceResults.filter(r=>r.status==='shipped').length;
+  const instockCnt=traceResults.length-shippedCnt;
+  const vd=traceResults.filter(r=>r.stockDays!==null);
+  const avgDays=vd.length?(vd.reduce((s,r)=>s+r.stockDays,0)/vd.length).toFixed(1):'—';
+  const summary=`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+    <div class="kpi-card" style="flex:1;min-width:100px;padding:10px 12px;border-left:3px solid var(--accent)">
+      <div class="kpi-label">入庫件数</div><div class="kpi-value" style="font-size:22px">${traceResults.length}</div></div>
+    <div class="kpi-card" style="flex:1;min-width:100px;padding:10px 12px;border-left:3px solid var(--blue)">
+      <div class="kpi-label">出庫済</div><div class="kpi-value b" style="font-size:22px">${shippedCnt}</div></div>
+    <div class="kpi-card" style="flex:1;min-width:100px;padding:10px 12px;border-left:3px solid var(--green)">
+      <div class="kpi-label">在庫中</div><div class="kpi-value g" style="font-size:22px">${instockCnt}</div></div>
+    <div class="kpi-card" style="flex:1;min-width:100px;padding:10px 12px;border-left:3px solid var(--purple)">
+      <div class="kpi-label">平均在庫日数</div><div class="kpi-value p" style="font-size:22px">${avgDays}<span style="font-size:12px;margin-left:2px">日</span></div></div>
+  </div>`;
+  const rows=traceResults.map(r=>{
+    const dc=r.stockDays===null?'none':r.stockDays<=3?'fast':r.stockDays<=7?'mid':'slow';
+    const dd=r.stockDays===null?'在庫中':`${r.stockDays}日`;
+    const st=r.status==='shipped'?'<span class="trace-status shipped">出庫済</span>':'<span class="trace-status instock">在庫中</span>';
+    return`<tr>
+      <td><strong>${esc(r.productId)}</strong></td><td>${esc(r.inShelf)}</td>
+      <td style="white-space:nowrap">${fmtTime(r.inAtMs)}</td>
+      <td style="white-space:nowrap">${r.outAtMs?fmtTime(r.outAtMs):'<span style="color:var(--muted)">—</span>'}</td>
+      <td>${r.outShelf?(r.fromShelf?`<span style="color:var(--muted)">${esc(r.fromShelf)}</span> → ${esc(r.outShelf)}`:esc(r.outShelf)):'<span style="color:var(--muted)">—</span>'}</td>
+      <td><span class="trace-days ${dc}">${dd}</span></td><td>${st}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=summary+`<div class="scroll-table"><table class="data-table">
+    <thead><tr><th>品番</th><th>入庫棚</th><th>入庫日時</th><th>出庫日時</th><th>出庫棚</th><th class="num">在庫日数</th><th>ステータス</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function exportTraceCSV(){
+  if(!traceResults.length){showToast('先に追跡を実行してください',true);return;}
+  const dateVal=document.getElementById('trace-date').value;
+  const rows=[['品番','入庫棚','入庫日時','出庫日時','出庫棚','在庫日数','ステータス']];
+  for(const r of traceResults)
+    rows.push([r.productId,r.inShelf,fmtTime(r.inAtMs),r.outAtMs?fmtTime(r.outAtMs):'',
+      r.outShelf?(r.fromShelf?`${r.fromShelf}→${r.outShelf}`:r.outShelf):'',
+      r.stockDays!==null?r.stockDays:'',r.status==='shipped'?'出庫済':'在庫中']);
+  downloadCSV(rows,`入庫日トレース_${dateVal}.csv`);
+}
+
+window.applyFilter=applyFilter;window.resetFilter=resetFilter;
+window.switchChartType=switchChartType;window.switchHourlyMode=switchHourlyMode;
+window.exportDailyCSV=exportDailyCSV;window.exportHourlyCSV=exportHourlyCSV;
+window.exportProductCSV=exportProductCSV;window.runTrace=runTrace;window.exportTraceCSV=exportTraceCSV;
+</script>
+</body>
+</html>
