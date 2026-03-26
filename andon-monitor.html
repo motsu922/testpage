@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -630,29 +631,24 @@
     }
     .responder-btn:hover {
       border-color: #667eea;
-      background: #eef2ff;
-      color: #3949ab;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 10px rgba(102,126,234,0.18);
-    }
-    .responder-btn.selected {
-      border-color: #667eea;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: #fff;
-      box-shadow: 0 4px 14px rgba(102,126,234,0.35);
       transform: translateY(-2px);
+      box-shadow: 0 4px 14px rgba(102,126,234,0.35);
+    }
+    /* ホバー時にイニシャルバッジの色を反転 */
+    .responder-btn:hover .r-initial {
+      background: rgba(255,255,255,0.3);
+      color: #fff;
     }
     .responder-btn .r-initial {
       width: 28px; height: 28px;
       border-radius: 50%;
-      background: rgba(255,255,255,0.25);
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
       display: flex; align-items: center; justify-content: center;
       font-size: 13px; font-weight: 900;
       flex-shrink: 0;
-    }
-    .responder-btn:not(.selected) .r-initial {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #fff;
     }
     .responder-empty {
       color: #aaa;
@@ -812,27 +808,22 @@
 
     <div id="casesContainer" class="cases-container"></div>
 
-    <!-- 対応モーダル -->
+    <!-- 対応モーダル：担当者を選ぶだけで即実行 -->
     <div id="completeModal" class="modal">
       <div class="modal-content">
-        <h3 id="completeModalTitle">対応完了</h3>
+        <h3 id="completeModalTitle">対応開始</h3>
+
+        <p style="margin-bottom:14px;color:#555;font-size:0.95rem;">担当者を選択すると即時に反映されます。</p>
 
         <div style="margin-bottom:16px;">
-          <label style="display:block;font-weight:800;margin-bottom:8px;">担当者 *</label>
-          <div id="completeByBtns" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+          <div id="completeByBtns" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
           <input type="hidden" id="completeBySelect">
-          <div style="margin-top:8px;color:#888;font-size:.82rem;">
+          <div style="margin-top:10px;color:#888;font-size:.82rem;">
             ※ QCメンバー（enabled=true）から読み込みます
           </div>
         </div>
 
-        <div>
-          <label style="display:block;font-weight:800;margin-bottom:8px;">対応内容（任意）</label>
-          <textarea id="completeMessage" placeholder="実施した対応内容を入力してください"></textarea>
-        </div>
-
         <div class="modal-actions">
-          <button class="btn btn-save" id="confirmComplete">保存</button>
           <button class="btn btn-cancel" id="cancelComplete">キャンセル</button>
         </div>
       </div>
@@ -903,7 +894,7 @@
 
     let casesCache = [];
     let currentCompleteCase = null;
-    let modalMode = 'complete';
+    let modalMode = 'inprogress';
 
     function getTodayStart() {
       const d = new Date();
@@ -1439,7 +1430,7 @@
         checkAndRevertPenalties();
         renderQcMembers();
         renderQcQuickBar();
-        renderResponderSelect();
+        renderResponderButtons();
       });
     }
 
@@ -1553,30 +1544,68 @@
       catch (err) { console.error(err); alert('削除に失敗しました'); }
     });
 
-    function renderResponderSelect() {
-      const hidden = document.getElementById('completeBySelect');
-      const wrap   = document.getElementById('completeByBtns');
-      if (!hidden || !wrap) return;
-      const prev = hidden.value || '';
-      const responders = qcMembers.filter(m => !!m.enabled).map(m => String(m.name || '').trim()).filter(Boolean);
+    // ===== 担当者ボタンを描画（モーダル用） =====
+    // モーダルが開かれるたびに呼ぶ。クリックで即実行。
+    function renderResponderButtons() {
+      const wrap = document.getElementById('completeByBtns');
+      if (!wrap) return;
+
+      const responders = qcMembers
+        .filter(m => !!m.enabled)
+        .map(m => String(m.name || '').trim())
+        .filter(Boolean);
+
       if (responders.length === 0) {
         wrap.innerHTML = '<div class="responder-empty">メンバーが登録されていません</div>';
         return;
       }
-      wrap.innerHTML = responders.map(n => {
-        const sel = (prev === n) ? ' selected' : '';
-        return `<button type="button" class="responder-btn${sel}" data-responder="${escapeAttr(n)}">
+
+      wrap.innerHTML = responders.map(n => `
+        <button type="button" class="responder-btn" data-responder="${escapeAttr(n)}">
           <span class="r-initial">${escapeHtml(makeInitials(n))}</span>
           ${escapeHtml(n)}
-        </button>`;
-      }).join('');
+        </button>
+      `).join('');
+
       wrap.querySelectorAll('.responder-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          wrap.querySelectorAll('.responder-btn').forEach(b => b.classList.remove('selected'));
-          btn.classList.add('selected');
-          hidden.value = btn.getAttribute('data-responder');
+          const name = btn.getAttribute('data-responder');
+          executeModalAction(name);
         });
       });
+    }
+
+    // ===== モーダルアクション実行（担当者名を受け取って即保存） =====
+    async function executeModalAction(byName) {
+      if (!currentCompleteCase || !byName) return;
+
+      // ボタンを無効化して二重送信防止
+      const wrap = document.getElementById('completeByBtns');
+      wrap?.querySelectorAll('.responder-btn').forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
+
+      try {
+        if (modalMode === 'inprogress') {
+          // 対応開始
+          await updateDoc(doc(db, 'quality_cases', currentCompleteCase._id), {
+            status: 'inprogress',
+            respondedBy: byName,
+            respondedAt: serverTimestamp()
+          });
+        } else {
+          // 対応完了
+          await updateDoc(doc(db, 'quality_cases', currentCompleteCase._id), {
+            status: 'completed',
+            completedBy: byName,
+            completedAt: serverTimestamp()
+          });
+        }
+        closeCompleteModal();
+      } catch (error) {
+        console.error('Error:', error);
+        alert('更新に失敗しました: ' + (error.message || error));
+        // 失敗時はボタンを再有効化
+        wrap?.querySelectorAll('.responder-btn').forEach(b => { b.disabled = false; b.style.opacity = ''; });
+      }
     }
 
     // ===== ログアウト =====
@@ -1591,47 +1620,43 @@
     // ===== リアルタイム監視 =====
     let currentFilter = 'all';
 
-function setupRealtimeListener() {
-  const q = query(collection(db, 'quality_cases'), orderBy('createdAt', 'desc'));
+    function setupRealtimeListener() {
+      const q = query(collection(db, 'quality_cases'), orderBy('createdAt', 'desc'));
 
-  onSnapshot(q, async (snapshot) => {
-    const newCases = [];
-    const newlyDetectedNormalPending = [];
+      onSnapshot(q, async (snapshot) => {
+        const newCases = [];
+        const newlyDetectedNormalPending = [];
 
-    snapshot.forEach(docSnap => {
-      const data = { _id: docSnap.id, ...docSnap.data() };
-      newCases.push(data);
-      if ((data.status || 'pending') === 'pending' && !previousCaseIds.has(docSnap.id)) {
-        if ((data.priority || 'normal') !== 'urgent') newlyDetectedNormalPending.push(docSnap.id);
-      }
-      previousCaseIds.add(docSnap.id);
-    });
+        snapshot.forEach(docSnap => {
+          const data = { _id: docSnap.id, ...docSnap.data() };
+          newCases.push(data);
+          if ((data.status || 'pending') === 'pending' && !previousCaseIds.has(docSnap.id)) {
+            if ((data.priority || 'normal') !== 'urgent') newlyDetectedNormalPending.push(docSnap.id);
+          }
+          previousCaseIds.add(docSnap.id);
+        });
 
-    casesCache = newCases.filter(isTodayCase);
+        casesCache = newCases.filter(isTodayCase);
 
-    // ===== アラーム判定は await より前に実行（再スナップショットの割り込み防止）=====
-    prevHasUrgentPending = hasUrgentPending;
-    hasUrgentPending = casesCache.some(c =>
-      (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending'
-    );
+        prevHasUrgentPending = hasUrgentPending;
+        hasUrgentPending = casesCache.some(c =>
+          (c.priority || 'normal') === 'urgent' && (c.status || 'pending') === 'pending'
+        );
 
-    if (soundEnabled && audioCtx) {
-      // 通常呼び出し新着：2秒間隔で2回
-      if (newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
-        playChimeRepeat(2, 2000);
-      }
-      // 緊急アラーム状態遷移
-      if (!prevHasUrgentPending && hasUrgentPending) startUrgentAlarm();
-      if (prevHasUrgentPending && !hasUrgentPending) stopUrgentAlarm();
+        if (soundEnabled && audioCtx) {
+          if (newlyDetectedNormalPending.length > 0 && !hasUrgentPending) {
+            playChimeRepeat(2, 2000);
+          }
+          if (!prevHasUrgentPending && hasUrgentPending) startUrgentAlarm();
+          if (prevHasUrgentPending && !hasUrgentPending) stopUrgentAlarm();
+        }
+
+        try { await autoAssignForPendingCases(); } catch (e) { console.warn('autoAssign failed', e); }
+
+        renderCases();
+        updateStats();
+      });
     }
-    // ===========================================================================
-
-    try { await autoAssignForPendingCases(); } catch (e) { console.warn('autoAssign failed', e); }
-
-    renderCases();
-    updateStats();
-  });
-}
 
     // ===== 自動割当 =====
     function getBusyResponderNameSet() {
@@ -1914,22 +1939,11 @@ function setupRealtimeListener() {
       currentCompleteCase = caseData || {};
       modalMode = (mode === 'complete' || mode === 'completed') ? 'complete' : 'inprogress';
 
-      document.getElementById('completeModalTitle').textContent = modalMode === 'inprogress' ? '対応開始' : '対応完了';
-      document.getElementById('confirmComplete').textContent    = modalMode === 'inprogress' ? '開始する' : '完了する';
+      document.getElementById('completeModalTitle').textContent =
+        modalMode === 'inprogress' ? '👤 対応開始 — 担当者を選択' : '✅ 対応完了 — 担当者を選択';
 
-      const hidden = document.getElementById('completeBySelect');
-      const presel = ((caseData.assignedTo || caseData.completedBy || '') || '').trim();
-      if (hidden) hidden.value = presel;
-      const wrap = document.getElementById('completeByBtns');
-      if (wrap) {
-        wrap.querySelectorAll('.responder-btn').forEach(btn => {
-          const match = btn.getAttribute('data-responder') === presel;
-          btn.classList.toggle('selected', match);
-        });
-      }
-
-      const msgEl = document.getElementById('completeMessage');
-      if (msgEl) msgEl.value = (caseData.completedMessage || '') || '';
+      // ボタンを再描画（再クリックイベント登録）
+      renderResponderButtons();
 
       const modal = document.getElementById('completeModal');
       modal.style.display = 'flex';
@@ -1947,31 +1961,6 @@ function setupRealtimeListener() {
     document.getElementById('cancelComplete').addEventListener('click', closeCompleteModal);
     document.getElementById('completeModal').addEventListener('click', (e) => {
       if (e.target.id === 'completeModal') closeCompleteModal();
-    });
-
-    document.getElementById('confirmComplete').addEventListener('click', async () => {
-      const by      = (document.getElementById('completeBySelect')?.value || '').trim();
-      const content = (document.getElementById('completeMessage')?.value  || '').trim();
-      const effectiveMode = (modalMode === 'inprogress' && content) ? 'completed' : modalMode;
-
-      if (!currentCompleteCase) return;
-      if (!by) { alert('担当者を選択してください'); return; }
-
-      try {
-        if (effectiveMode === 'inprogress') {
-          await updateDoc(doc(db, 'quality_cases', currentCompleteCase._id), {
-            status: 'inprogress',
-            respondedBy: by,
-            respondedAt: serverTimestamp()
-          });
-        }
-        // 完了時はFirebaseへ書き込まず、モーダルを閉じるだけ
-
-        closeCompleteModal();
-      } catch (error) {
-        console.error('Error:', error);
-        alert('対応開始に失敗しました');
-      }
     });
 
     // ===== 統計 =====
