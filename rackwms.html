@@ -1913,6 +1913,59 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
   margin-bottom: 8px;
   flex-shrink: 0;
 }
+/* 棚卸し プレフィックスフィルタ */
+.inv-pfx-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+.inv-pfx-btn {
+  background: var(--card) !important;
+  border: 2px solid var(--border) !important;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  user-select: none;
+}
+.inv-pfx-btn:active { transform: scale(0.93); }
+.inv-pfx-btn.active {
+  background: rgba(52,152,219,0.15) !important;
+  border-color: var(--blue) !important;
+  color: var(--blue) !important;
+  -webkit-text-fill-color: var(--blue);
+}
+.inv-pfx-btn .pfx-cnt {
+  font-size: 10px;
+  font-family: 'Noto Sans JP', sans-serif;
+  font-weight: 400;
+  opacity: 0.7;
+}
+.inv-pfx-btn .pfx-done {
+  font-size: 10px;
+  font-family: 'Noto Sans JP', sans-serif;
+  font-weight: 700;
+  color: var(--green) !important;
+  -webkit-text-fill-color: var(--green);
+}
+.inv-pfx-btn .pfx-diff {
+  font-size: 10px;
+  font-family: 'Noto Sans JP', sans-serif;
+  font-weight: 700;
+  color: var(--red) !important;
+  -webkit-text-fill-color: var(--red);
+}
 .inv-tab-btn {
   flex: 1;
   padding: 7px;
@@ -3024,6 +3077,7 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
 
               <div id="inv-shelves-view">
                 <div class="sec-label">棚番をタップ または QRスキャン <span style="font-size:9px;color:var(--blue);-webkit-text-fill-color:var(--blue)">QRスキャン可</span></div>
+                <div class="inv-pfx-filter" id="inv-pfx-filter"></div>
                 <div id="inv-shelf-grid" class="inv-shelf-grid"></div>
               </div>
 
@@ -4822,6 +4876,7 @@ let invResults = {};
 let invCurrentShelf = null;
 let invView = 'shelves';
 let invPollTimer = null;
+let invPfxFilter = null;   // 選択中のプレフィックス（null = 全表示）
 
 function invGenerateSessionId(){
   return 'INV-' + Date.now().toString(36).toUpperCase();
@@ -4883,6 +4938,7 @@ function invStartPolling(){
     if(currentTab !== 'inv') { invStopPolling(); return; }
     await invLoadResults();
     invUpdateProgress();
+    invRenderPfxFilter();
     invRenderShelfGrid();
     if(invView === 'report') invRenderReport();
   }, 5000);
@@ -4896,6 +4952,7 @@ async function renderInv(){
   await invLoadResults();
   invUpdateBanner();
   invUpdateProgress();
+  invRenderPfxFilter();
   invRenderShelfGrid();
   if(invView === 'report') invRenderReport();
   if(invSession && invSession.status === 'active') invStartPolling();
@@ -4941,13 +4998,74 @@ function invUpdateProgress(){
   if(pct)  pct.textContent  = pctVal + '%';
 }
 
+function invRenderPfxFilter(){
+  const el = document.getElementById('inv-pfx-filter');
+  if(!el) return;
+  if(!cachedShelves.length){ el.innerHTML = ''; return; }
+
+  // プレフィックス一覧（棚番の最初のハイフンまで）
+  const pfxMap = {};
+  for(const s of cachedShelves){
+    const p = getShelfPrefix(s);
+    if(!pfxMap[p]) pfxMap[p] = { total:0, done:0, diff:0 };
+    pfxMap[p].total++;
+    const r = invResults[s];
+    if(r){
+      pfxMap[p].done++;
+      if(r.status === 'discrepancy') pfxMap[p].diff++;
+    }
+  }
+  const prefixes = Object.keys(pfxMap).sort();
+
+  // プレフィックスが1種類しかなければフィルタ不要
+  if(prefixes.length <= 1){ el.innerHTML = ''; return; }
+
+  // 「全て」ボタン
+  const totalDone = Object.values(pfxMap).reduce((s,x)=>s+x.done,0);
+  const totalDiff = Object.values(pfxMap).reduce((s,x)=>s+x.diff,0);
+  const allActive = invPfxFilter === null ? 'active' : '';
+  let html = `<button class="inv-pfx-btn ${allActive}" onclick="invSetPfxFilter(null)">
+    全て<span class="pfx-cnt">${cachedShelves.length}</span>
+    ${totalDiff ? `<span class="pfx-diff">⚠️${totalDiff}</span>` : ''}
+    ${totalDone ? `<span class="pfx-done">✅${totalDone}</span>` : ''}
+  </button>`;
+
+  for(const p of prefixes){
+    const { total, done, diff } = pfxMap[p];
+    const isActive = invPfxFilter === p ? 'active' : '';
+    html += `<button class="inv-pfx-btn ${isActive}" onclick="invSetPfxFilter('${escJsSingle(p)}')">
+      ${escHtml(p)}<span class="pfx-cnt">${done}/${total}</span>
+      ${diff ? `<span class="pfx-diff">⚠️${diff}</span>` : ''}
+      ${done === total ? `<span class="pfx-done">✅</span>` : ''}
+    </button>`;
+  }
+  el.innerHTML = html;
+}
+
+function invSetPfxFilter(pfx){
+  invPfxFilter = pfx;
+  invRenderPfxFilter();
+  invRenderShelfGrid();
+}
+
 function invRenderShelfGrid(){
   const grid = document.getElementById('inv-shelf-grid');
   if(!grid) return;
   if(!cachedShelves.length){
     grid.innerHTML = '<div class="empty">棚番が未登録です</div>'; return;
   }
-  grid.innerHTML = cachedShelves.map(shelf => {
+
+  // プレフィックスでフィルタ
+  const shelves = invPfxFilter
+    ? cachedShelves.filter(s => getShelfPrefix(s) === invPfxFilter)
+    : cachedShelves;
+
+  // フィルタ後に0件（あり得ないが念のため）
+  if(!shelves.length){
+    grid.innerHTML = '<div class="empty">該当する棚がありません</div>'; return;
+  }
+
+  grid.innerHTML = shelves.map(shelf => {
     const r = invResults[shelf];
     let stClass = 'st-unchecked';
     let icon = '⬜';
@@ -5138,9 +5256,14 @@ async function invSaveResult(shelfId, sysProduct, forceEmpty){
     await window.__invSaveResult(invSession.sessionId, shelfId, resultData);
     invResults[shelfId] = resultData;
     invUpdateProgress();
+    invRenderPfxFilter();
     invCloseEntry();
     invRenderShelfGrid();
-    const nextShelf = cachedShelves.find(s => !invResults[s]);
+    // フィルタ中は同じプレフィックス内の未確認棚へ優先ジャンプ
+    const pool = invPfxFilter
+      ? cachedShelves.filter(s => getShelfPrefix(s) === invPfxFilter)
+      : cachedShelves;
+    const nextShelf = pool.find(s => !invResults[s]);
     if(nextShelf) setTimeout(() => invSelectShelf(nextShelf), 300);
   }catch(e){ console.error(e); showToast('保存エラー', 'error'); }
 }
