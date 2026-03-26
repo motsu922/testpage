@@ -2062,16 +2062,34 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
   border: 2px solid var(--border) !important;
   border-radius: 10px;
   text-align: right;
+  padding: 8px 16px 6px;
+  margin-bottom: 10px;
+  min-height: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.numpad-display-expr {
   font-family: 'Rajdhani', sans-serif;
   font-size: 36px;
   font-weight: 700;
   color: var(--text) !important;
   -webkit-text-fill-color: var(--text);
-  padding: 8px 16px;
-  margin-bottom: 10px;
   letter-spacing: 2px;
-  min-height: 60px;
-  line-height: 1.2;
+  line-height: 1.1;
+  word-break: break-all;
+}
+.numpad-display-preview {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent);
+  letter-spacing: 1px;
+  min-height: 18px;
+  line-height: 1;
 }
 .numpad-label {
   font-size: 10px;
@@ -2084,7 +2102,7 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
 }
 .numpad-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 7px;
   margin-bottom: 8px;
 }
@@ -2112,7 +2130,15 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
   -webkit-text-fill-color: var(--red);
   font-size: 18px;
 }
-.numpad-key.zero { grid-column: span 2; }
+.numpad-key.op {
+  background: rgba(245,166,35,0.12) !important;
+  border-color: rgba(245,166,35,0.45) !important;
+  color: var(--accent) !important;
+  -webkit-text-fill-color: var(--accent);
+  font-size: 22px;
+}
+.numpad-key.op:active { background: rgba(245,166,35,0.25) !important; }
+.numpad-key.zero { grid-column: span 3; }
 .numpad-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 7px; }
 .numpad-cancel {
   background: var(--surface) !important;
@@ -3598,19 +3624,24 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
 <div class="numpad-modal" id="numpadModal" onclick="numpadClose(false)">
   <div class="numpad-card" onclick="event.stopPropagation()">
     <div class="numpad-label" id="numpad-label">数量を入力</div>
-    <div class="numpad-display" id="numpad-display">0</div>
+    <div class="numpad-display" id="numpad-display">
+      <div class="numpad-display-preview" id="numpad-preview"></div>
+      <div class="numpad-display-expr" id="numpad-expr">0</div>
+    </div>
     <div class="numpad-grid">
       <button class="numpad-key" onclick="numpadKey('7')">7</button>
       <button class="numpad-key" onclick="numpadKey('8')">8</button>
       <button class="numpad-key" onclick="numpadKey('9')">9</button>
+      <button class="numpad-key op" onclick="numpadKey('×')">×</button>
       <button class="numpad-key" onclick="numpadKey('4')">4</button>
       <button class="numpad-key" onclick="numpadKey('5')">5</button>
       <button class="numpad-key" onclick="numpadKey('6')">6</button>
+      <button class="numpad-key op" onclick="numpadKey('+')">＋</button>
       <button class="numpad-key" onclick="numpadKey('1')">1</button>
       <button class="numpad-key" onclick="numpadKey('2')">2</button>
       <button class="numpad-key" onclick="numpadKey('3')">3</button>
-      <button class="numpad-key zero" onclick="numpadKey('0')">0</button>
       <button class="numpad-key del" onclick="numpadKey('del')">⌫</button>
+      <button class="numpad-key zero" onclick="numpadKey('0')">0</button>
     </div>
     <div class="numpad-actions">
       <button class="numpad-cancel" onclick="numpadClose(false)">キャンセル</button>
@@ -4694,13 +4725,45 @@ async function removeStock(shelfId){
 
 /* ===================== テンキーモーダル ===================== */
 let _numpadCb   = null;
-let _numpadVal  = '0';
+let _numpadExpr = '0';   // 現在の式文字列 例: "5" "12+3" "4×6"
+
+/* 式を評価して整数を返す（+ と × のみ対応、左から一つのみ） */
+function numpadEval(expr){
+  const s = String(expr || '0');
+  // 末尾が演算子なら演算子を除いた左辺だけを評価
+  const trimmed = s.replace(/[+×]$/, '');
+  if(trimmed.includes('×')){
+    const p = trimmed.split('×');
+    return Math.max(0, (parseInt(p[0]) || 0) * (parseInt(p[1]) || 0));
+  }
+  if(trimmed.includes('+')){
+    const p = trimmed.split('+');
+    return Math.max(0, (parseInt(p[0]) || 0) + (parseInt(p[1]) || 0));
+  }
+  return Math.max(0, parseInt(trimmed) || 0);
+}
+
+function numpadUpdateDisplay(){
+  const exprEl    = document.getElementById('numpad-expr');
+  const previewEl = document.getElementById('numpad-preview');
+  if(exprEl) exprEl.textContent = _numpadExpr;
+  // 演算子が含まれていてかつ右辺が入力済みの場合のみ = 結果をプレビュー
+  const hasOp = /[+×](?=\d)/.test(_numpadExpr);
+  if(previewEl){
+    if(hasOp){
+      const result = numpadEval(_numpadExpr);
+      previewEl.textContent = '= ' + result;
+    } else {
+      previewEl.textContent = '';
+    }
+  }
+}
 
 function numpadOpen(currentVal, label, callback){
-  _numpadVal = String(parseInt(currentVal) >= 0 ? parseInt(currentVal) : 0);
+  _numpadExpr = String(parseInt(currentVal) >= 0 ? parseInt(currentVal) : 0);
   _numpadCb  = callback;
-  document.getElementById('numpad-display').textContent = _numpadVal;
-  document.getElementById('numpad-label').textContent   = label || '数量を入力';
+  numpadUpdateDisplay();
+  document.getElementById('numpad-label').textContent = label || '数量を入力';
   document.getElementById('numpadModal').classList.add('show');
   document.body.style.overflow = 'hidden';
   document.body.style.position = 'fixed';
@@ -4708,19 +4771,48 @@ function numpadOpen(currentVal, label, callback){
 }
 function numpadKey(k){
   if(k === 'del'){
-    _numpadVal = _numpadVal.length > 1 ? _numpadVal.slice(0, -1) : '0';
+    // 1文字削除。1文字以下なら 0 に戻す
+    _numpadExpr = _numpadExpr.length > 1 ? _numpadExpr.slice(0, -1) : '0';
+  } else if(k === '+' || k === '×'){
+    // 末尾が既に演算子なら置き換え
+    if(/[+×]$/.test(_numpadExpr)){
+      _numpadExpr = _numpadExpr.slice(0, -1) + k;
+    } else {
+      // 既に演算子が含まれている（左辺+演算子+右辺）なら先に評価してから次の演算子
+      const alreadyHasOp = /[+×]/.test(_numpadExpr);
+      if(alreadyHasOp){
+        _numpadExpr = String(numpadEval(_numpadExpr)) + k;
+      } else {
+        _numpadExpr += k;
+      }
+    }
   } else {
-    if(_numpadVal === '0') _numpadVal = k;
-    else if(_numpadVal.length < 5) _numpadVal += k;
+    // 数字キー
+    if(/[+×]$/.test(_numpadExpr)){
+      // 演算子の直後 — 右辺の入力開始
+      _numpadExpr += k;
+    } else if(/[+×]/.test(_numpadExpr)){
+      // 右辺に追加（右辺は5桁まで）
+      const parts = _numpadExpr.split(/([+×])/);
+      const rhs   = parts[parts.length - 1];
+      if(rhs.length < 5) _numpadExpr += k;
+    } else {
+      // 左辺のみ（5桁まで）
+      if(_numpadExpr === '0') _numpadExpr = k;
+      else if(_numpadExpr.length < 5) _numpadExpr += k;
+    }
   }
-  document.getElementById('numpad-display').textContent = _numpadVal;
+  numpadUpdateDisplay();
 }
 function numpadClose(confirm){
   document.getElementById('numpadModal').classList.remove('show');
   document.body.style.overflow = '';
   document.body.style.position = '';
   document.body.style.width    = '';
-  if(confirm && _numpadCb){ const v = parseInt(_numpadVal); _numpadCb(isNaN(v) ? 0 : v); }
+  if(confirm && _numpadCb){
+    const v = numpadEval(_numpadExpr);
+    _numpadCb(v);
+  }
   _numpadCb = null;
 }
 
