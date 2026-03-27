@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -916,7 +917,9 @@
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
-  let nModeQR2Count = 0;   // 1対Nモード：現QR1に対してOK済みのQR2枚数
+  let nModeQR2Count = 0;       // 1対Nモード：現QR1に対してOK済みのQR2枚数
+  let nModePartNumber = '';    // 1対Nモード：QR1から切り出した品番（固定）
+  let nModeEx = null;          // 1対Nモード：QR1の抽出メタ情報（ログ用）
 
 
   let settings = {
@@ -1141,6 +1144,12 @@
     if (currentStep === 1) {
       value1 = decoded;
       playSound('step1');  // ★ 1枚目読み込み完了：軽い通知音
+      // ★ 1対Nモード：QR1スキャン時点で品番を切り出して固定
+      if (settings.scanMode === '1toN') {
+        const v1 = normalizeQR(value1);
+        nModeEx = extractPartNumberWithMeta(v1, v1);  // QR1から切り出し（QR1でルール選択）
+        nModePartNumber = nModeEx.part;
+      }
       currentStep = 2;
       updateScanUI();
       focusScanInputSoon();
@@ -2079,11 +2088,20 @@
   function doMatch() {
     const v1 = normalizeQR(value1);
     const v2 = normalizeQR(value2);
-    const ex = extractPartNumberWithMeta(v2, v1);   // ルール選択はQR1で行う
-    const partNumber = ex.part;
 
-    // ① 品番一致チェック
-    const isQROK = v1.includes(partNumber);
+    let ex, partNumber, isQROK;
+
+    if (settings.scanMode === '1toN') {
+      // ★ 1対Nモード：QR1から切り出した品番（固定済み）がQR2に含まれているか
+      ex = nModeEx || extractPartNumberWithMeta(v1, v1);
+      partNumber = nModePartNumber || ex.part;
+      isQROK = v2.includes(partNumber);
+    } else {
+      // 1対1モード（従来）：QR2から切り出した品番がQR1に含まれているか
+      ex = extractPartNumberWithMeta(v2, v1);   // ルール選択はQR1で行う
+      partNumber = ex.part;
+      isQROK = v1.includes(partNumber);
+    }
 
     // ② 重複チェック（QR1単体・QR2単体・QR1+QR2ペアの3種すべて監視）
     const dupType = isDuplicateToday(v1, v2); // null / 'qr1' / 'qr2' / 'pair'
@@ -2145,11 +2163,20 @@
       overlay.className = 'result-overlay show ok';
       symbol.textContent = '○';
       text.textContent = '一致';
-      detail.innerHTML = `
-        <p class="label">抽出品番</p><p>${escapeHtml(partNumber)}</p>
-        <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
-        ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
-      `;
+      if (settings.scanMode === '1toN') {
+        detail.innerHTML = `
+          <p class="label">QR1切り出し品番</p><p>${escapeHtml(partNumber)}</p>
+          <p class="label" style="margin-top:10px;">QR2にこの品番が含まれていました</p>
+          <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
+          ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
+        `;
+      } else {
+        detail.innerHTML = `
+          <p class="label">抽出品番</p><p>${escapeHtml(partNumber)}</p>
+          <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
+          ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
+        `;
+      }
       adminArea.style.display = 'none';
       playSound('ok');
       okAutoTimer = setTimeout(() => {
@@ -2188,12 +2215,21 @@
       overlay.className = 'result-overlay show ng ng-locked';
       symbol.textContent = '×';
       text.textContent = '不一致';
-      detail.innerHTML = `
-        <p class="label">抽出した品番</p><p>${escapeHtml(partNumber)}</p>
-        <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
-        ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
-        <p class="label" style="margin-top:12px;">1回目QRに含まれていません</p>
-      `;
+      if (settings.scanMode === '1toN') {
+        detail.innerHTML = `
+          <p class="label">QR1切り出し品番</p><p>${escapeHtml(partNumber)}</p>
+          <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
+          ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
+          <p class="label" style="margin-top:12px;">2回目QRにこの品番が含まれていません</p>
+        `;
+      } else {
+        detail.innerHTML = `
+          <p class="label">抽出した品番</p><p>${escapeHtml(partNumber)}</p>
+          <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
+          ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
+          <p class="label" style="margin-top:12px;">1回目QRに含まれていません</p>
+        `;
+      }
       adminArea.style.display = 'block';
       document.getElementById('adminAreaMsg').textContent = '⚠️ 管理者QRで解除してください';
       isNGLocked = true;
@@ -2206,6 +2242,8 @@
     if (isNGLocked) { showNGOverlay(); return; }
     value1 = ''; value2 = '';
     nModeQR2Count = 0;
+    nModePartNumber = '';
+    nModeEx = null;
     currentStep = 1;
     updateScanUI();
     if (!boot) playSound('beep');
@@ -2232,6 +2270,8 @@
     isNGLocked = false;
     value1 = ''; value2 = '';
     nModeQR2Count = 0;
+    nModePartNumber = '';
+    nModeEx = null;
     currentStep = 1;
     document.getElementById('resultOverlay').classList.remove('show');
     updateScanUI();
@@ -2297,7 +2337,11 @@
         if (panel) {
           panel.style.display = 'block';
           const valEl = document.getElementById('qr1InfoValue');
-          if (valEl) valEl.textContent = value1.length > 30 ? value1.substring(0, 30) + '…' : value1;
+          if (valEl) {
+            const disp = value1.length > 30 ? value1.substring(0, 30) + '…' : value1;
+            const pn   = nModePartNumber ? `<span style="color:#7c9eff;">→ 品番: ${escapeHtml(nModePartNumber)}</span>` : '';
+            valEl.innerHTML = escapeHtml(disp) + (pn ? '<br>' + pn : '');
+          }
           const cntEl = document.getElementById('qr1InfoCount');
           if (cntEl) cntEl.textContent = `照合済み: ${nModeQR2Count}件`;
         }
