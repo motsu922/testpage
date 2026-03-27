@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>QR照合システム v8</title>
+  <title>QR照合システム v9</title>
   <meta name="format-detection" content="telephone=no">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -76,10 +76,72 @@
       font-weight: 700;
       padding: 3px 10px;
       border-radius: 20px;
-      margin-bottom: 14px;
+      margin-bottom: 6px;
     }
     .dup-badge.on  { background: #ff6f00; color: #fff; }
     .dup-badge.off { background: #2a2a2a; color: #666; }
+
+    /* モードバッジ */
+    .mode-badge-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 14px; }
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1.5px solid transparent;
+    }
+    .mode-badge.mode-1to1 { background: #1a2a1a; color: #4caf50; border-color: #2a4a2a; }
+    .mode-badge.mode-1toN { background: #1a1a3a; color: #7c9eff; border-color: #2a2a6a; }
+    .mode-badge:active { opacity: 0.7; }
+
+    /* 1対N モード QR1 情報パネル */
+    .qr1-info-box {
+      width: 100%;
+      background: #0e1e2e;
+      border: 1.5px solid #2a4a6a;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    .qr1-info-label {
+      font-size: 10px;
+      color: #4fc3f7;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .qr1-info-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+      font-size: 12px;
+      color: #e0e0e0;
+      word-break: break-all;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+    .qr1-info-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .qr1-info-count { font-size: 11px; color: #7c9eff; font-weight: 700; }
+    .qr1-change-btn {
+      padding: 5px 12px;
+      background: #2a2a4a;
+      color: #7c9eff;
+      border: 1px solid #3a3a7a;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .qr1-change-btn:active { background: #3a3a6a; }
     .scan-step { font-size: 16px; color: #888; margin-bottom: 8px; }
     .scan-message { font-size: 26px; font-weight: 700; color: #4fc3f7; margin-bottom: 24px; }
     .scan-message.step2 { color: #ffb74d; }
@@ -620,8 +682,20 @@
           <span id="companyBadgeArrow"> ▼</span>
           <span class="sync-badge offline" id="companySyncBadge">offline</span>
         </div>
-        <!-- 重複監視バッジ -->
-        <div id="dupBadge" class="dup-badge off">🔁 重複監視 OFF</div>
+        <!-- バッジ行 -->
+        <div class="mode-badge-row">
+          <div id="dupBadge" class="dup-badge off">🔁 重複監視 OFF</div>
+          <div id="modeBadge" class="mode-badge mode-1to1" onclick="toggleScanMode()" title="タップでモード切替">🔗 1対1</div>
+        </div>
+        <!-- 1対N モード QR1 情報パネル -->
+        <div id="qr1InfoPanel" class="qr1-info-box" style="display:none;">
+          <div class="qr1-info-label">📌 マスターQR（固定中）</div>
+          <div class="qr1-info-value" id="qr1InfoValue">---</div>
+          <div class="qr1-info-footer">
+            <div class="qr1-info-count" id="qr1InfoCount">照合済み: 0件</div>
+            <button class="qr1-change-btn" onclick="resetToStep1()">🔄 QR1を変更</button>
+          </div>
+        </div>
         <div class="scan-step" id="scanStep">STEP 1 / 2</div>
         <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
         <div class="scan-input-area">
@@ -713,6 +787,25 @@
           </p>
           <div id="extractRulesContainer"></div>
           <button class="log-btn" style="width:100%; margin-top:12px;" onclick="addExtractRule()">➕ ルールを追加</button>
+        </div>
+
+        <!-- ★ スキャンモード設定カード -->
+        <div class="settings-card">
+          <div class="settings-card-title">🔀 スキャンモード</div>
+          <p style="font-size:12px; color:#888; margin-bottom:12px; line-height:1.6;">
+            <b>1対1モード（デフォルト）</b>: QR1→QR2→判定→リセット の繰り返し。<br>
+            <b>1対Nモード</b>: QR1（マスター）を読み取った後、QR2を何枚でも連続照合。「QR1を変更」ボタンで再スキャン可能。
+          </p>
+          <div class="setting-row">
+            <span class="setting-label">
+              1対Nモードを有効にする
+              <small>QR1固定で複数のQR2を連続照合</small>
+            </span>
+            <div class="toggle-switch" id="scanModeToggle" onclick="toggleScanModeSettings()"></div>
+          </div>
+          <div style="margin-top:10px; padding:10px; background:#0a0a0a; border-radius:8px; border:1px solid #333; font-size:12px; color:#888; line-height:1.5;">
+            ※ スキャン画面の <b>🔗 1対1 / 🔀 1対N</b> バッジをタップしても即時切替できます。
+          </div>
         </div>
 
         <div class="settings-card">
@@ -823,6 +916,7 @@
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
+  let nModeQR2Count = 0;   // 1対Nモード：現QR1に対してOK済みのQR2枚数
 
 
   let settings = {
@@ -831,6 +925,7 @@
     soundEnabled: true,
     vibrationEnabled: true,
     duplicateCheckEnabled: false,   // ★ 重複監視モード
+    scanMode: '1to1',               // ★ '1to1' | '1toN'
     firebase: {
       apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
       authDomain: "miyamaunitec-fb87a.firebaseapp.com",
@@ -854,6 +949,7 @@
     cleanOldDuplicates();        // ★ 古い日付の重複リストを削除
     updateDupBadge();
     updateDupStats();
+    updateModeBadge();           // ★ モードバッジ初期化
   });
 
   function applyScanOnlyModeUI(){
@@ -1096,7 +1192,14 @@
       pinBuffer = '';
       updatePinDots();
       document.getElementById('resultOverlay').classList.remove('show');
-      startScanning(true);
+      // ★ 1対Nモード：QR1を保持してQR2スキャンに戻る
+      if (settings.scanMode === '1toN' && currentStep === 2) {
+        value2 = '';
+        updateScanUI();
+        focusScanInputSoon();
+      } else {
+        startScanning(true);
+      }
     } else {
       // エラー表示：ドットを赤くして振動
       for (let i = 0; i < 4; i++) {
@@ -1205,6 +1308,14 @@
       settings.duplicateCheckEnabled ? 'toggle-switch dup-on' : 'toggle-switch';
     updateDupBadge();
     updateDupStats();
+  }
+
+  // ★ 設定画面のスキャンモードトグル
+  function toggleScanModeSettings() {
+    settings.scanMode = settings.scanMode === '1toN' ? '1to1' : '1toN';
+    const tog = document.getElementById('scanModeToggle');
+    if (tog) tog.className = settings.scanMode === '1toN' ? 'toggle-switch on' : 'toggle-switch';
+    updateModeBadge();
   }
 
 
@@ -1648,6 +1759,7 @@
     settings.firebase.databaseURL = settings.firebase.databaseURL || "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app";
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
     if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;
+    if (!settings.scanMode) settings.scanMode = '1to1';
     if (!settings.releasePIN) settings.releasePIN = '0000';
     // 旧 adminQR 設定からマイグレーション
     if (settings.adminQR && !localStorage.getItem('pinMigrated')) {
@@ -1689,8 +1801,12 @@
     // ★ 重複監視トグル
     document.getElementById('dupCheckToggle').className =
       settings.duplicateCheckEnabled ? 'toggle-switch dup-on' : 'toggle-switch';
+    // ★ スキャンモードトグル
+    const smToggle = document.getElementById('scanModeToggle');
+    if (smToggle) smToggle.className = settings.scanMode === '1toN' ? 'toggle-switch on' : 'toggle-switch';
     renderExtractRules();
     updateDupBadge();
+    updateModeBadge();
   }
 
   function escapeHtml(s){
@@ -1760,6 +1876,7 @@
     settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
     settings.firebase.projectId   = document.getElementById('fbProjectId').value.trim();
     settings.extractRules = collectExtractRules();
+    // ★ scanMode は toggleScanModeSettings() で既に settings に反映済み
     // ★ duplicateCheckEnabled はトグル操作で既に settings に反映済み
     const saveKey = getSettingsKey(activeCompanyId);
     localStorage.setItem(saveKey, JSON.stringify(settings));
@@ -1987,6 +2104,7 @@
       partNumber,
       qr1Length: v1.length,
       qr2Length: v2.length,
+      scanMode: settings.scanMode || '1to1',
       matchedRule: ex.rule ? {
         minLen: ex.rule.minLen, maxLen: ex.rule.maxLen,
         startPos: ex.rule.startPos, charCount: ex.rule.charCount,
@@ -2036,7 +2154,11 @@
       playSound('ok');
       okAutoTimer = setTimeout(() => {
         overlay.classList.remove('show');
-        startScanning(true);
+        if (settings.scanMode === '1toN') {
+          continueNMode();   // ★ 1対Nモード：QR1を保持したままQR2待ちへ
+        } else {
+          startScanning(true);
+        }
         okAutoTimer = null;
       }, 400);
 
@@ -2083,6 +2205,7 @@
   function startScanning(boot=false) {
     if (isNGLocked) { showNGOverlay(); return; }
     value1 = ''; value2 = '';
+    nModeQR2Count = 0;
     currentStep = 1;
     updateScanUI();
     if (!boot) playSound('beep');
@@ -2092,6 +2215,52 @@
   function stopAndReset() {
     currentStep = 0; value1 = ''; value2 = '';
     startScanning(true);
+  }
+
+  // ★ 1対Nモード：QR1を保持したままQR2スキャン待ちに戻る
+  function continueNMode() {
+    if (isNGLocked) { showNGOverlay(); return; }
+    value2 = '';
+    currentStep = 2;
+    nModeQR2Count++;
+    updateScanUI();
+    focusScanInputSoon();
+  }
+
+  // ★ 1対Nモード：QR1を変更（step1へ完全リセット）
+  function resetToStep1() {
+    isNGLocked = false;
+    value1 = ''; value2 = '';
+    nModeQR2Count = 0;
+    currentStep = 1;
+    document.getElementById('resultOverlay').classList.remove('show');
+    updateScanUI();
+    focusScanInputSoon();
+  }
+
+  // ★ モードトグル（スキャン画面バッジのタップ）
+  function toggleScanMode() {
+    const newMode = settings.scanMode === '1toN' ? '1to1' : '1toN';
+    if (currentStep === 2) {
+      const modeLabel = newMode === '1toN' ? '1対Nモード' : '1対1モード';
+      if (!confirm(`モードを変更するとスキャン状態がリセットされます。\n${modeLabel}に切り替えますか？`)) return;
+    }
+    settings.scanMode = newMode;
+    updateModeBadge();
+    startScanning(true);
+  }
+
+  // ★ モードバッジ表示更新
+  function updateModeBadge() {
+    const badge = document.getElementById('modeBadge');
+    if (!badge) return;
+    if (settings.scanMode === '1toN') {
+      badge.className = 'mode-badge mode-1toN';
+      badge.textContent = '🔀 1対N';
+    } else {
+      badge.className = 'mode-badge mode-1to1';
+      badge.textContent = '🔗 1対1';
+    }
   }
 
   function showNGOverlay() {
@@ -2106,21 +2275,40 @@
   }
 
   function updateScanUI() {
+    const isNMode = settings.scanMode === '1toN';
     const step    = document.getElementById('scanStep');
     const message = document.getElementById('scanMessage');
     const input   = document.getElementById('scanInput');
+    const panel   = document.getElementById('qr1InfoPanel');
     if (currentStep === 1) {
-      step.textContent = 'STEP 1 / 2';
-      message.textContent = '1回目を読み取ってください';
-      message.className = 'scan-message';
-      input.className = 'scan-input';
-      input.placeholder = 'QRリーダーで読み取り';
+      step.textContent    = isNMode ? '1対Nモード｜STEP 1' : 'STEP 1 / 2';
+      message.textContent = isNMode ? 'マスターQRを読み取ってください' : '1回目を読み取ってください';
+      message.className   = 'scan-message';
+      input.className     = 'scan-input';
+      input.placeholder   = 'QRリーダーで読み取り';
+      if (panel) panel.style.display = 'none';
     } else if (currentStep === 2) {
-      step.textContent = 'STEP 2 / 2';
-      message.textContent = '2回目を読み取ってください';
-      message.className = 'scan-message step2';
-      input.className = 'scan-input step2';
-      input.placeholder = 'QRリーダーで読み取り';
+      if (isNMode) {
+        step.textContent    = `1対Nモード｜照合 ${nModeQR2Count + 1}枚目`;
+        message.textContent = '照合するQRを読み取ってください';
+        message.className   = 'scan-message step2';
+        input.className     = 'scan-input step2';
+        input.placeholder   = 'QRリーダーで読み取り';
+        if (panel) {
+          panel.style.display = 'block';
+          const valEl = document.getElementById('qr1InfoValue');
+          if (valEl) valEl.textContent = value1.length > 30 ? value1.substring(0, 30) + '…' : value1;
+          const cntEl = document.getElementById('qr1InfoCount');
+          if (cntEl) cntEl.textContent = `照合済み: ${nModeQR2Count}件`;
+        }
+      } else {
+        step.textContent    = 'STEP 2 / 2';
+        message.textContent = '2回目を読み取ってください';
+        message.className   = 'scan-message step2';
+        input.className     = 'scan-input step2';
+        input.placeholder   = 'QRリーダーで読み取り';
+        if (panel) panel.style.display = 'none';
+      }
     }
   }
 
@@ -2142,9 +2330,10 @@
       const cls   = isDup ? 'dup' : String(l.result).toLowerCase();
       const dupLabels2 = { qr1:'⚠️ QR1重複', qr2:'⚠️ QR2重複', vs:'⚠️ QR1=QR2' };
       const label = isDup ? (dupLabels2[l.dupType] || '⚠️ 重複') : (l.result === 'OK' ? '✅ OK' : '❌ NG');
+      const modeIcon = l.scanMode === '1toN' ? '🔀' : '';
       return `
         <div class="log-item ${cls}">
-          <div class="log-time">${t}</div>
+          <div class="log-time">${t} ${modeIcon}</div>
           <div class="log-result">${label}</div>
           <div class="log-values">品番: ${escapeHtml(l.partNumber)} / QR1:${l.qr1Length ?? '-'} QR2:${l.qr2Length} / ${escapeHtml(rule)}${escapeHtml(note)}</div>
         </div>
@@ -2164,11 +2353,12 @@
 
   function exportLog() {
     if (scanLog.length === 0) return alert('履歴がありません');
-    const headers = ['日時','結果','重複フラグ','1回目QR(raw)','2回目QR(raw)','1回目QR(norm)','2回目QR(norm)','抽出品番','1回目文字数','2回目文字数','ルール','note'];
+    const headers = ['日時','結果','重複フラグ','スキャンモード','1回目QR(raw)','2回目QR(raw)','1回目QR(norm)','2回目QR(norm)','抽出品番','1回目文字数','2回目文字数','ルール','note'];
     const rows = scanLog.map(l => [
       new Date(l.timestamp).toLocaleString('ja-JP'),
       l.result,
       l.isDuplicate ? '重複' : '',
+      l.scanMode || '1to1',
       l.qr1_raw ?? '', l.qr2_raw ?? '',
       l.qr1 ?? '', l.qr2 ?? '', l.partNumber ?? '',
       l.qr1Length ?? '', l.qr2Length ?? '',
