@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -3851,7 +3852,7 @@ async function loadCache(){
       window.__getAllHolds        ? window.__getAllHolds()        : Promise.resolve([])
     ]);
     cachedItems   = (items || []).map(i => i.itemId).filter(Boolean).sort();
-    cachedShelves = (shelves || []).map(s => s.shelfId).filter(Boolean).sort();
+    cachedShelves = (shelves || []).map(s => s.shelfId).filter(Boolean).sort(compareShelfId);
     cachedStock   = (stock || []).filter(s => s && s.status === 'occupied');
     cachedHolds   = (holds || []);
     const fixedList = window.__getAllFixedGroups ? await window.__getAllFixedGroups() : [];
@@ -3894,6 +3895,35 @@ function scrollToEl(targetId, areaId){
     area.scrollTop += (targetTop - areaTop) - 8;
   }, 50);
 }
+/* ===== 棚番ソート用比較関数 =====
+   書式: {ラック名}-{縦列番号}{横列記号}  例: C1A-2A, C1A-10B
+   優先順: ① ラック名（自然順） ② 縦列番号（数値） ③ 横列記号（アルファベット）
+============================================ */
+function compareShelfId(a, b){
+  const parse = s => {
+    // ハイフン区切り: ラック名-数字+記号  例: C1A-2A
+    const m = String(s).match(/^(.*?)-(\d+)([A-Za-z]*)(.*)$/);
+    if(m) return { rack: m[1], col: parseInt(m[2], 10), row: m[3].toUpperCase(), rest: m[4] };
+    // ハイフンなし: 末尾の数字+記号を抽出
+    const m2 = String(s).match(/^(.*?)(\d+)([A-Za-z]*)$/);
+    if(m2) return { rack: m2[1], col: parseInt(m2[2], 10), row: m2[3].toUpperCase(), rest: '' };
+    return { rack: String(s), col: 0, row: '', rest: '' };
+  };
+  const pa = parse(a), pb = parse(b);
+  // ① ラック名（辞書順）
+  if(pa.rack < pb.rack) return -1;
+  if(pa.rack > pb.rack) return  1;
+  // ② 縦列番号（数値比較）
+  if(pa.col !== pb.col) return pa.col - pb.col;
+  // ③ 横列記号（アルファベット順）
+  if(pa.row < pb.row) return -1;
+  if(pa.row > pb.row) return  1;
+  // ④ 残余部分（念のため文字列比較）
+  if(pa.rest < pb.rest) return -1;
+  if(pa.rest > pb.rest) return  1;
+  return 0;
+}
+
 function getShelfPrefix(shelfId){
   const m = String(shelfId).match(/^(.+?)-/);
   return m ? m[1] : String(shelfId).charAt(0);
@@ -5082,9 +5112,11 @@ function invRenderShelfGrid(){
       sub = sysItem ? sysItem.productId : '空き';
     }
     const activeClass = invCurrentShelf === shelf ? 'st-active' : '';
+    // プレフィックスフィルター中はハイフン以降のみ表示
+    const dispId = invPfxFilter ? shelf.slice(invPfxFilter.length + 1) || shelf : shelf;
     return `<button class="inv-shelf-btn ${stClass} ${activeClass}" onclick="invSelectShelf('${escJsSingle(shelf)}')">
       <span class="inv-shelf-status-icon">${icon}</span>
-      <span class="inv-shelf-id">${escHtml(shelf)}</span>
+      <span class="inv-shelf-id">${escHtml(dispId)}</span>
       <span class="inv-shelf-product">${escHtml(sub)}</span>
     </button>`;
   }).join('');
@@ -5336,7 +5368,7 @@ function invExportCSV(){
   if(!invSession){ showToast('セッションがありません', 'error'); return; }
   const statusLabel = { 'ok':'一致', 'discrepancy':'差異', 'empty-ok':'空き確認済み' };
   const rows = [['棚番','品番','実数量','システム在庫品番','ステータス','確認日時']];
-  for(const shelf of [...cachedShelves].sort()){
+  for(const shelf of [...cachedShelves].sort(compareShelfId)){
     const r = invResults[shelf];
     if(!r){
       const sysItems = cachedStock.filter(s => s.shelfId === shelf).map(s => s.productId).join('/');
@@ -5589,7 +5621,7 @@ document.getElementById('new-shelf').addEventListener('keydown', e => { if(e.key
     if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
   });
   onSnapshot(collection(db, SHM), snap => {
-    cachedShelves = snap.docs.map(d => d.data()).map(s => s.shelfId).filter(Boolean).sort();
+    cachedShelves = snap.docs.map(d => d.data()).map(s => s.shelfId).filter(Boolean).sort(compareShelfId);
     if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
   });
   onSnapshot(collection(db, ITM), snap => {
