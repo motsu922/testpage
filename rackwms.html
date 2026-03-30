@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -1683,6 +1682,31 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   -webkit-text-fill-color: var(--blue);
   font-size: 12px;
 }
+.inv-time-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted);
+}
+.inv-time-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.inv-time-item span {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text);
+}
+.inv-time-sep {
+  color: var(--border) !important;
+  -webkit-text-fill-color: var(--border);
+}
 .inv-shelf-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -3062,6 +3086,11 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
                 <div class="inv-progress-track" style="margin:4px 0 0">
                   <div class="inv-progress-fill" id="inv-progress-fill" style="width:0%"></div>
                 </div>
+                <div class="inv-time-row">
+                  <span class="inv-time-item">⏱ <span id="inv-elapsed">00:00</span></span>
+                  <span class="inv-time-sep">｜</span>
+                  <span class="inv-time-item">🏁 <span id="inv-eta">—</span></span>
+                </div>
               </div>
               <button class="inv-btn-end" id="inv-btn-end" onclick="invEndSession()">終了</button>
             </div>
@@ -3838,6 +3867,7 @@ function switchTab(tab, el){
   if(tab === 'master')  { renderMaster(); }
   if(tab !== 'inv') { invStopPolling(); }
   if(tab === 'inv')     { renderInv(); }
+  else                  { invStopElapsedTimer(); }
 
   setTimeout(focusScanInput, 50);
 }
@@ -4907,6 +4937,52 @@ let invCurrentShelf = null;
 let invView = 'shelves';
 let invPollTimer = null;
 let invPfxFilter = null;   // 選択中のプレフィックス（null = 全表示）
+let invElapsedTimer = null;
+
+/* 経過時間を "HH:MM:SS" 形式に変換 */
+function invFmtElapsed(ms){
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+}
+
+/* 経過時間と完了予想をリアルタイム更新（1秒毎） */
+function invTickElapsed(){
+  if(!invSession || invSession.status !== 'active') return;
+  const elapsedMs = Date.now() - (invSession.startedAtMs || Date.now());
+  const elEl = document.getElementById('inv-elapsed');
+  const etEl = document.getElementById('inv-eta');
+  if(elEl) elEl.textContent = invFmtElapsed(elapsedMs);
+
+  // 完了予想：進捗率から残り時間を計算
+  if(etEl){
+    const total = cachedShelves.length;
+    const done  = Object.keys(invResults).length;
+    if(done > 0 && total > done){
+      const rate    = elapsedMs / done;            // 1棚あたりの平均ms
+      const remainMs = rate * (total - done);
+      const eta     = new Date(Date.now() + remainMs);
+      const h = eta.getHours(), mi = eta.getMinutes();
+      etEl.textContent = `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')} 完了予想`;
+    } else if(done === total && total > 0){
+      etEl.textContent = '全棚 完了！';
+    } else {
+      etEl.textContent = '計算中…';
+    }
+  }
+}
+
+function invStartElapsedTimer(){
+  invStopElapsedTimer();
+  invTickElapsed();  // 即時表示
+  invElapsedTimer = setInterval(invTickElapsed, 1000);
+}
+function invStopElapsedTimer(){
+  if(invElapsedTimer){ clearInterval(invElapsedTimer); invElapsedTimer = null; }
+}
 
 function invGenerateSessionId(){
   return 'INV-' + Date.now().toString(36).toUpperCase();
@@ -4928,6 +5004,7 @@ async function invStartSession(){
     await invLoadResults();
     renderInv();
     invStartPolling();
+    invStartElapsedTimer();
   }catch(e){ console.error(e); showToast('開始エラー', 'error'); }
 }
 
@@ -4935,10 +5012,17 @@ async function invEndSession(){
   if(!invSession) return;
   if(!confirm('棚卸しを終了しますか？')) return;
   try{
-    await window.__invSaveSession(invSession.sessionId, { ...invSession, status: 'completed', completedAt: new Date().toISOString() });
+    const endMs = Date.now();
+    const durMs = endMs - (invSession.startedAtMs || endMs);
+    const durH  = Math.floor(durMs / 3600000);
+    const durM  = Math.floor((durMs % 3600000) / 60000);
+    const durLabel = durH > 0 ? `${durH}時間${durM}分` : `${durM}分`;
+    await window.__invSaveSession(invSession.sessionId, { ...invSession, status: 'completed', completedAt: new Date().toISOString(), durationMs: durMs });
     invSession.status = 'completed';
+    invSession.durationMs = durMs;
     invStopPolling();
-    showToast('🏁 棚卸し終了しました');
+    invStopElapsedTimer();
+    showToast(`🏁 棚卸し完了！　所要時間 ${durLabel}`, 'success');
     invSwitchView('report');
     renderInv();
   }catch(e){ console.error(e); showToast('終了エラー', 'error'); }
@@ -4985,7 +5069,12 @@ async function renderInv(){
   invRenderPfxFilter();
   invRenderShelfGrid();
   if(invView === 'report') invRenderReport();
-  if(invSession && invSession.status === 'active') invStartPolling();
+  if(invSession && invSession.status === 'active'){
+    invStartPolling();
+    invStartElapsedTimer();
+  } else {
+    invStopElapsedTimer();
+  }
 }
 
 function invUpdateBanner(){
@@ -5009,7 +5098,15 @@ function invUpdateBanner(){
       if(btnStart) btnStart.textContent = '▶ 開始';
     } else {
       if(title)    title.textContent = `📋 ${invSession.sessionId}`;
-      if(meta)     meta.textContent  = `完了：${formatTime(invSession.startedAtMs)}　全${cachedShelves.length}棚`;
+      const durLabel = (() => {
+        if(invSession.durationMs){
+          const dh = Math.floor(invSession.durationMs / 3600000);
+          const dm = Math.floor((invSession.durationMs % 3600000) / 60000);
+          return dh > 0 ? `　所要 ${dh}時間${dm}分` : `　所要 ${dm}分`;
+        }
+        return '';
+      })();
+      if(meta)     meta.textContent  = `完了：${formatTime(invSession.startedAtMs)}　全${cachedShelves.length}棚${durLabel}`;
       if(btnStart) btnStart.textContent = '▶ 新規開始';
     }
   }
