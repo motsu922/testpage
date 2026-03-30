@@ -2,6 +2,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -4077,8 +4078,18 @@ const base = {
   changePointContent: changePointContent
 };
 
-    const docRef = await addDoc(collection(db, 'anomalies'), base);
-       // 変化点がある場合、changepointsコレクションにも記録
+    // アンドン呼び出し時に draft が作られていればそれを上書き、なければ新規作成
+    const draftId = state.anomalyId;
+    let docRef;
+    if (draftId) {
+      await setDoc(doc(db, 'anomalies', draftId), base);
+      docRef = { id: draftId };
+      state.anomalyId = null; // 使い終わったらリセット
+    } else {
+      docRef = await addDoc(collection(db, 'anomalies'), base);
+    }
+
+    // 変化点がある場合、changepointsコレクションにも記録（upsert）
     if (hasChangePoint && changePointCategory) {
       const changepointData = {
         type: 'sudden',
@@ -4092,21 +4103,32 @@ const base = {
         relatedAnomalyId: docRef.id,
         createdAt: serverTimestamp()
       };
-      await addDoc(collection(db, 'changepoints'), changepointData);
+      const existingCPSnap = await getDocs(query(
+        collection(db, 'changepoints'),
+        where('relatedAnomalyId', '==', docRef.id)
+      ));
+      if (existingCPSnap.docs.length > 0) {
+        await updateDoc(doc(db, 'changepoints', existingCPSnap.docs[0].id), changepointData);
+      } else {
+        await addDoc(collection(db, 'changepoints'), changepointData);
+      }
     }
     if (mfgPhotos.length > 0) {
       submitBtn.textContent = `画像アップロード中... (${mfgPhotos.length}枚)`;
       const photoUrls = await uploadPhotos(docRef.id, 'mfg', mfgPhotos);
       await updateDoc(doc(db, 'anomalies', docRef.id), { mfgPhotoUrls: photoUrls });
       
+      // draft を上書きした場合はキャッシュ内の既存エントリを更新、新規の場合は先頭追加
       const newDoc = { _id: docRef.id, ...base, mfgPhotoUrls: photoUrls };
-      anomalyCache.unshift(newDoc);
-      filteredCache = [newDoc, ...filteredCache];
+      const existIdx = anomalyCache.findIndex(x => x._id === docRef.id);
+      if (existIdx !== -1) { anomalyCache[existIdx] = newDoc; } else { anomalyCache.unshift(newDoc); }
+      filteredCache = [...anomalyCache];
       renderHistory();
     } else {
       const newDoc = { _id: docRef.id, ...base };
-      anomalyCache.unshift(newDoc);
-      filteredCache = [newDoc, ...filteredCache];
+      const existIdx = anomalyCache.findIndex(x => x._id === docRef.id);
+      if (existIdx !== -1) { anomalyCache[existIdx] = newDoc; } else { anomalyCache.unshift(newDoc); }
+      filteredCache = [...anomalyCache];
       renderHistory();
     }
     
@@ -4211,7 +4233,7 @@ if (rootText.trim()) {
     }
     
     await updateDoc(doc(db, 'anomalies', id), updates);
-      // 変化点がある場合、changepointsコレクションにも記録
+      // 変化点がある場合、changepointsコレクションにも記録（upsert）
     if (hasChangePoint && changePointCategory) {
       const existingItem = anomalyCache.find(x => x._id === id);
       const changepointData = {
@@ -4226,7 +4248,16 @@ if (rootText.trim()) {
         relatedAnomalyId: id,
         createdAt: serverTimestamp()
       };
-      await addDoc(collection(db, 'changepoints'), changepointData);
+      // 同一案件の変化点が既にあれば更新、なければ新規作成
+      const existingCPSnap = await getDocs(query(
+        collection(db, 'changepoints'),
+        where('relatedAnomalyId', '==', id)
+      ));
+      if (existingCPSnap.docs.length > 0) {
+        await updateDoc(doc(db, 'changepoints', existingCPSnap.docs[0].id), changepointData);
+      } else {
+        await addDoc(collection(db, 'changepoints'), changepointData);
+      }
     }
     const cacheIndex = anomalyCache.findIndex(x => x._id === id);
     if (cacheIndex !== -1) {
@@ -5248,16 +5279,14 @@ if (editCurrentTab === 'tech' && finalRecurrence === '再発' && !finalMeasureSt
   return; // ← ここで保存中断
 }
 
-// 2) 編集モーダルで「処置内容」または「変化点」が入ったら status を完了に切替（ダウングレードはしない）
-const finalRootCauseAction =
-  ('rootCauseAction' in updates) ? (updates.rootCauseAction || '') : (item.rootCauseAction || '');
-
-const finalChangePointCategory =
-  ('changePointCategory' in updates) ? (updates.changePointCategory || '') : (item.changePointCategory || '');
-
-// どちらかが入っていれば完了化
-if (finalRootCauseAction.trim() || finalChangePointCategory.trim()) {
-  updates.status = 'complete';
+// 2) 技術タブ保存時のみ: 処置内容または変化点が入ったら status を完了化（ダウングレードはしない）
+//    ※ mfgタブ保存では status を変更しない（発信部署側の変化点で誤完了になるバグを防止）
+if (editCurrentTab === 'tech') {
+  const finalRootCauseAction = (updates.rootCauseAction || '').trim();
+  const finalTechChangePoint  = (updates.changePointCategory || '').trim();
+  if (finalRootCauseAction || finalTechChangePoint) {
+    updates.status = 'complete';
+  }
 }
 
 
