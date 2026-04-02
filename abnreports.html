@@ -3,6 +3,8 @@
 
 
 
+
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -643,6 +645,55 @@
   justify-content:flex-end;
 }
 
+/* ===== 待ち状況インライン表示（呼び出しボタン横） ===== */
+.wait-inline{
+  display:inline-flex;align-items:center;gap:6px;
+  background:#fff8ee;
+  border:1.5px solid #f59e0b;
+  border-radius:8px;
+  padding:6px 12px;
+  min-width:90px;
+  transition:all .35s;
+  vertical-align:middle;
+}
+.wait-inline.no-pending{
+  background:#f1f3f5;
+  border-color:#ced4da;
+}
+.wait-inline-icon{
+  font-size:1.15rem;
+  flex-shrink:0;
+  line-height:1;
+}
+.wait-inline:not(.no-pending) .wait-inline-icon{
+  animation:wobble-inline 2s infinite;
+}
+@keyframes wobble-inline{
+  0%,100%{transform:rotate(0);}
+  20%{transform:rotate(-14deg);}
+  40%{transform:rotate(11deg);}
+  60%{transform:rotate(-7deg);}
+  80%{transform:rotate(4deg);}
+}
+.wait-inline-body{
+  display:flex;flex-direction:column;gap:1px;line-height:1.2;
+}
+.wait-inline-count{
+  font-size:.78rem;font-weight:700;color:#6c757d;white-space:nowrap;
+}
+.wait-inline:not(.no-pending) .wait-inline-count{color:#b45309;}
+.wait-inline-count em{
+  font-size:1.05rem;font-style:normal;margin-right:2px;
+}
+.wait-inline-msg{
+  font-size:.68rem;color:#adb5bd;white-space:nowrap;
+}
+.wait-inline:not(.no-pending) .wait-inline-msg{
+  color:#d97706;
+  animation:blink-msg .8s step-start infinite;
+}
+@keyframes blink-msg{0%,100%{opacity:1;}50%{opacity:.5;}}
+
 </style>
 </head>
 <body>
@@ -706,6 +757,7 @@
     <!-- 発信部署入力 -->
     <div id="manufacturing" class="tab-content active">
       <h2 style="margin-bottom:16px;color:#667eea;">異常報告</h2>
+
       <form id="manufacturingForm">
         <div style="background:#f0f7ff;padding:15px;border-radius:6px;margin-bottom:14px;">
           <h3 style="color:#667eea;margin-bottom:12px;font-size:1.05rem;">📅 いつ</h3>
@@ -823,6 +875,13 @@
     <div class="andon-btns">
       <button type="button" class="andon-btn urgent" id="btnCallUrgentFromAnomaly">🚨 緊急呼び出し</button>
       <button type="button" class="andon-btn normal" id="btnCallNormalFromAnomaly">🔔 通常呼び出し</button>
+      <div class="wait-inline no-pending" id="waitStatusBar">
+        <span class="wait-inline-icon">🕐</span>
+        <span class="wait-inline-body">
+          <span class="wait-inline-count"><em id="waitBarCount">0</em>件待ち</span>
+          <span class="wait-inline-msg" id="waitBarMsg">待ちなし</span>
+        </span>
+      </div>
     </div>
   </div>
 
@@ -2778,8 +2837,40 @@ ${item.traceback ? `
     initAndonLaunchButton();
     initAndonCompletionBridge();
     checkAndonPrefillData();
+    startWaitingListener();
 
   }
+
+// ===== 待ち件数リアルタイム監視（quality_cases） =====
+function startWaitingListener(){
+  const q = query(
+    collection(db, 'quality_cases'),
+    orderBy('createdAt', 'desc')
+  );
+  onSnapshot(q, snap => {
+    const cases = snap.docs.map(d => d.data());
+    const pendingCount    = cases.filter(c => (c.status || 'pending') === 'pending').length;
+    const inprogressCount = cases.filter(c => c.status === 'inprogress').length;
+    const total = pendingCount + inprogressCount;
+
+    const bar     = document.getElementById('waitStatusBar');
+    const countEl = document.getElementById('waitBarCount');
+    const msgEl   = document.getElementById('waitBarMsg');
+    if (!bar) return;
+
+    countEl.textContent = total;
+    if (total > 0) {
+      bar.classList.remove('no-pending');
+      const parts = [];
+      if (pendingCount    > 0) parts.push(`未対応 ${pendingCount}件`);
+      if (inprogressCount > 0) parts.push(`対応中 ${inprogressCount}件`);
+      msgEl.textContent = parts.join('　') + '　少々お待ちください';
+    } else {
+      bar.classList.add('no-pending');
+      msgEl.textContent = '現在の待ち呼び出しはありません';
+    }
+  }, err => console.error('waitingListener error', err));
+}
 
 function checkAndonPrefillData() {
   const prefillDataStr = localStorage.getItem('anomaly_prefill_data');
