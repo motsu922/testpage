@@ -1,10 +1,3 @@
-
-
-
-
-
-
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -2784,18 +2777,44 @@ ${item.traceback ? `
     }
   }
 
-  function renderTechTargetSelect(){
+  async function renderTechTargetSelect(){
     const sel = document.getElementById('selectSerialNo');
-    sel.innerHTML = '<option value="">整理Noを選択してください</option>';
-    anomalyCache
-      .filter(x=>x.status==='pending' && x.techRequest==='要請')
-      .sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''))
-      .forEach(x=>{
-        const o=document.createElement('option');
+    sel.innerHTML = '<option value="">読み込み中...</option>';
+    try {
+      const q = query(
+        collection(db, 'anomalies'),
+        where('status', '==', 'pending')
+      );
+      const snap = await getDocs(q);
+      const items = [];
+      snap.forEach(d => {
+        const x = { _id: d.id, ...d.data() };
+        if (!anomalyCache.some(c => c._id === x._id)) {
+          anomalyCache.push(x);
+        }
+        items.push(x);
+      });
+      items.sort((a,b) => (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''));
+      sel.innerHTML = '<option value="">整理Noを選択してください</option>';
+      items.forEach(x => {
+        const o = document.createElement('option');
         o.value = x._id;
         o.textContent = `[${x.serialNo}] ${x.occurrenceDate} - ${x.anomalyContent?.slice(0,30)||''}...`;
         sel.appendChild(o);
       });
+    } catch(e) {
+      console.error('renderTechTargetSelect error:', e);
+      sel.innerHTML = '<option value="">整理Noを選択してください</option>';
+      anomalyCache
+        .filter(x=>x.status==='pending')
+        .sort((a,b)=> (b.occurrenceDate||'').localeCompare(a.occurrenceDate||''))
+        .forEach(x=>{
+          const o=document.createElement('option');
+          o.value = x._id;
+          o.textContent = `[${x.serialNo}] ${x.occurrenceDate} - ${x.anomalyContent?.slice(0,30)||''}...`;
+          sel.appendChild(o);
+        });
+    }
   }
 
   document.querySelectorAll('.tab').forEach(tab => {
