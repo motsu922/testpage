@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>品質呼び出しモニター</title>
+  <title>品質呼び出しモニター 完成版</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Segoe UI', 'Yu Gothic', 'Hiragino Sans', sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 24px; line-height: 1.6; }
@@ -244,8 +245,11 @@
       <div style="text-align:center;color:#aaa;font-size:13px;padding:20px 0;">読み込み中...</div>
     </div>
     <div style="padding:12px;border-top:1px solid #eee;background:#fff;">
-      <select id="chatSenderSelect" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:8px;color:#333;background:#fff;">
+      <select id="chatSenderSelect" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;margin-bottom:6px;color:#333;background:#fff;">
         <option value="">-- 送信者を選択 --</option>
+      </select>
+      <select id="chatCaseSelect" style="width:100%;padding:8px;border:1.5px solid #667eea;border-radius:8px;font-family:inherit;font-size:12px;margin-bottom:8px;color:#333;background:#eef2ff;">
+        <option value="">📋 案件を引用しない</option>
       </select>
       <div style="display:flex;gap:8px;">
         <textarea id="chatInput" placeholder="メッセージを入力... (Enterで送信)" rows="2"
@@ -374,7 +378,7 @@
 
     // ===== リアルタイム監視 =====
     let currentFilter='all';
-    function setupRealtimeListener(){const q=query(collection(db,'quality_cases'),orderBy('createdAt','desc'));onSnapshot(q,async(snapshot)=>{const newCases=[];const newlyNormal=[];snapshot.forEach(docSnap=>{const data={_id:docSnap.id,...docSnap.data()};newCases.push(data);if((data.status||'pending')==='pending'&&!previousCaseIds.has(docSnap.id)){if((data.priority||'normal')!=='urgent')newlyNormal.push(docSnap.id);}previousCaseIds.add(docSnap.id);});casesCache=newCases.filter(isTodayCase);prevHasUrgentPending=hasUrgentPending;hasUrgentPending=casesCache.some(c=>(c.priority||'normal')==='urgent'&&(c.status||'pending')==='pending');if(soundEnabled&&audioCtx){if(newlyNormal.length>0&&!hasUrgentPending)playChimeRepeat(2,2000);if(!prevHasUrgentPending&&hasUrgentPending)startUrgentAlarm();if(prevHasUrgentPending&&!hasUrgentPending)stopUrgentAlarm();}try{await autoAssignForPendingCases();}catch(e){}renderCases();updateStats();});}
+    function setupRealtimeListener(){const q=query(collection(db,'quality_cases'),orderBy('createdAt','desc'));onSnapshot(q,async(snapshot)=>{const newCases=[];const newlyNormal=[];snapshot.forEach(docSnap=>{const data={_id:docSnap.id,...docSnap.data()};newCases.push(data);if((data.status||'pending')==='pending'&&!previousCaseIds.has(docSnap.id)){if((data.priority||'normal')!=='urgent')newlyNormal.push(docSnap.id);}previousCaseIds.add(docSnap.id);});casesCache=newCases.filter(isTodayCase);prevHasUrgentPending=hasUrgentPending;hasUrgentPending=casesCache.some(c=>(c.priority||'normal')==='urgent'&&(c.status||'pending')==='pending');if(soundEnabled&&audioCtx){if(newlyNormal.length>0&&!hasUrgentPending)playChimeRepeat(2,2000);if(!prevHasUrgentPending&&hasUrgentPending)startUrgentAlarm();if(prevHasUrgentPending&&!hasUrgentPending)stopUrgentAlarm();}try{await autoAssignForPendingCases();}catch(e){}renderCases();updateStats();updateChatCaseSelect();});}
 
     // ===== 自動割当 =====
     function getBusyResponderNameSet(){const busy=new Set();casesCache.forEach(c=>{if((c.status||'pending')==='inprogress'&&c.respondedBy)busy.add(String(c.respondedBy).trim());});return busy;}
@@ -455,6 +459,9 @@
       if(msgs.length===0){el.innerHTML='<div style="text-align:center;color:#aaa;font-size:13px;padding:20px 0;">まだメッセージがありません</div>';return;}
       el.innerHTML=msgs.map(m=>{
         const initials=makeInitials(m.senderName||'?');
+        const caseTag = m.caseRef
+          ? `<div style="background:#eef2ff;border-left:3px solid #667eea;border-radius:6px;padding:4px 8px;font-size:11px;color:#3949ab;margin-bottom:4px;font-weight:700;">📋 ${escapeHtml(m.caseRef)}</div>`
+          : '';
         return `<div style="display:flex;gap:8px;align-items:flex-start;">
           <div style="width:32px;height:32px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;">${escapeHtml(initials)}</div>
           <div style="flex:1;min-width:0;">
@@ -462,6 +469,7 @@
               <span style="font-weight:800;font-size:12px;color:#333;">${escapeHtml(m.senderName||'?')}</span>
               <span style="font-size:11px;color:#aaa;">${formatChatTime(m.createdAt)}</span>
             </div>
+            ${caseTag}
             <div style="background:#fff;border:1px solid #e8e8e8;border-radius:0 10px 10px 10px;padding:8px 12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word;">${escapeHtml(m.text||'')}</div>
           </div>
         </div>`;
@@ -493,25 +501,57 @@
 
     document.getElementById('chatSenderSelect')?.addEventListener('change',(e)=>{localStorage.setItem('chat_sender',e.target.value);});
 
+    function updateChatCaseSelect(){
+      const sel=document.getElementById('chatCaseSelect');
+      if(!sel)return;
+      const activeCases=casesCache.filter(c=>{
+        const s=c.status||'pending';
+        return s==='pending'||s==='inprogress';
+      }).sort((a,b)=>{
+        const oa=(a.status||'pending')==='inprogress'?0:1;
+        const ob=(b.status||'pending')==='inprogress'?0:1;
+        if(oa!==ob)return oa-ob;
+        const ta=a.createdAt?.toDate?a.createdAt.toDate().getTime():0;
+        const tb=b.createdAt?.toDate?b.createdAt.toDate().getTime():0;
+        return tb-ta;
+      });
+      sel.innerHTML='<option value="">📋 案件を引用しない</option>'+activeCases.map(c=>{
+        const status=(c.status||'pending')==='inprogress'?'対応中':'未対応';
+        const line=c.lineName||c.department||'';
+        const serial=c.serialNo||'';
+        const priority=(c.priority||'normal')==='urgent'?'🚨':'⚠️';
+        const label=`${priority}[${status}] ${line}${serial?` No.${serial}`:''}`;
+        return `<option value="${escapeAttr(label)}">${escapeHtml(label)}</option>`;
+      }).join('');
+    }
+
     window.sendQuickReply=async function(text){
       const selEl=document.getElementById('chatSenderSelect');
+      const caseSelEl=document.getElementById('chatCaseSelect');
       const sender=selEl?.value?.trim();
+      const caseRef=caseSelEl?.value?.trim()||'';
       if(!sender){alert('送信者を選択してください');return;}
+      const payload={text,senderName:sender,createdAt:serverTimestamp()};
+      if(caseRef)payload.caseRef=caseRef;
       try{
-        await addDoc(collection(db,'chat_messages'),{text,senderName:sender,createdAt:serverTimestamp()});
+        await addDoc(collection(db,'chat_messages'),payload);
       }catch(err){console.error(err);alert('送信に失敗しました: '+err.message);}
     };
 
     window.sendChatMessage=async function(){
       const input=document.getElementById('chatInput');
       const selEl=document.getElementById('chatSenderSelect');
+      const caseSelEl=document.getElementById('chatCaseSelect');
       const text=input?.value?.trim();
       const sender=selEl?.value?.trim();
+      const caseRef=caseSelEl?.value?.trim()||'';
       if(!sender){alert('送信者を選択してください');return;}
       if(!text)return;
       input.value='';
+      const payload={text,senderName:sender,createdAt:serverTimestamp()};
+      if(caseRef)payload.caseRef=caseRef;
       try{
-        await addDoc(collection(db,'chat_messages'),{text,senderName:sender,createdAt:serverTimestamp()});
+        await addDoc(collection(db,'chat_messages'),payload);
       }catch(err){console.error(err);alert('送信に失敗しました: '+err.message);}
     };
 
