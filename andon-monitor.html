@@ -419,22 +419,20 @@
     @media (max-width: 768px) {
       .main-layout {
         grid-template-columns: 1fr;
-        grid-template-rows: auto auto 1fr auto;
+        grid-template-rows: auto auto 1fr;
         height: auto;
       }
       .stats-area { grid-column: 1; grid-row: 1; }
-      .filter-area { grid-column: 1; grid-row: 2; }
       .cases-area  { grid-column: 1; grid-row: 3; height: auto; overflow: visible; }
-      .chat-sidebar {
-        grid-column: 1; grid-row: 4;
-        position: static;
-        height: 420px;
-        border-left: none;
-        border-top: 2px solid #667eea;
-      }
+      /* モバイルではサイドバー非表示 → フローティングパネルで代替 */
+      .chat-sidebar { display: none !important; }
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .cases-container { grid-template-columns: 1fr; }
-      .chat-input-area select { font-size: 13px; }
+    }
+
+    /* モバイル用フローティングチャット */
+    @media (min-width: 769px) {
+      #chatFab, #chatFloatPanel { display: none !important; }
     }
   </style>
 </head>
@@ -630,7 +628,7 @@
     let authHandled = false;
     onAuthStateChanged(auth, async (user) => {
       if (authHandled) return;
-      if (user) { authHandled = true; setupQcMembersListener(); setupRealtimeListener(); setupChatListener(); }
+      if (user) { authHandled = true; setupQcMembersListener(); setupRealtimeListener(); setupChatListenerWithFloat(); }
       else { try { await signInAnonymously(auth); } catch (e) { authHandled = true; alert('接続に失敗しました。再読み込みしてください。'); } }
     });
 
@@ -751,15 +749,11 @@
 
     // チャットエリアをクリックしたら既読に
     document.addEventListener('DOMContentLoaded',()=>{
+      // PC：チャットエリアクリックで既読
       const chatArea=document.getElementById('chatMessages');
       if(chatArea){
         chatArea.addEventListener('click',()=>{
           if(chatUnread>0) markChatAsRead();
-        });
-        chatArea.addEventListener('scroll',()=>{
-          const el=chatArea;
-          const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
-          if(atBottom&&chatUnread>0) markChatAsRead();
         });
       }
       const sendBtn=document.getElementById('btnSendChat');
@@ -919,6 +913,218 @@
       }catch(err){console.error(err);alert('送信に失敗しました: '+err.message);}
     };
 
-  </script>
+  
+    // ===== モバイル用フローティングチャット =====
+    function isMobile(){ return window.innerWidth <= 768; }
+
+    let floatChatOpen = false;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const fab = document.getElementById('chatFab');
+      const closeBtn = document.getElementById('chatFloatClose');
+      if(fab) fab.addEventListener('click', toggleFloatChat);
+      if(closeBtn) closeBtn.addEventListener('click', toggleFloatChat);
+
+      const floatSender = document.getElementById('chatFloatSenderSelect');
+      if(floatSender){
+        floatSender.addEventListener('change', (e) => {
+          localStorage.setItem('chat_sender', e.target.value);
+          const desk = document.getElementById('chatSenderSelect');
+          if(desk) desk.value = e.target.value;
+        });
+      }
+    });
+
+    function toggleFloatChat(){
+      floatChatOpen = !floatChatOpen;
+      const panel = document.getElementById('chatFloatPanel');
+      const fab   = document.getElementById('chatFab');
+      const icon  = document.getElementById('chatFabIcon');
+      if(panel) panel.style.display = floatChatOpen ? 'flex' : 'none';
+      if(fab)   fab.style.background = floatChatOpen
+        ? 'linear-gradient(135deg,#43a047,#2e7d32)'
+        : 'linear-gradient(135deg,#667eea,#764ba2)';
+      if(icon)  icon.textContent = floatChatOpen ? '✕' : '💬';
+      if(floatChatOpen){
+        // アイコンクリックで既読にする
+        localStorage.setItem('chat_last_read', Date.now().toString());
+        chatUnread = 0;
+        updateChatBadge();
+        updateChatBadgeFloat();
+        renderFloatMessages(chatMsgsCache);
+        setTimeout(() => {
+          const el = document.getElementById('chatFloatMessages');
+          if(el) el.scrollTop = el.scrollHeight;
+        }, 80);
+      }
+    }
+
+    function renderFloatMessages(msgs){
+      if(!isMobile()) return;
+      const el = document.getElementById('chatFloatMessages');
+      if(!el) return;
+      const lastRead = getLastReadTime();
+      if(msgs.length === 0){
+        el.innerHTML = '<div style="text-align:center;color:#aaa;font-size:13px;padding:16px 0;">まだメッセージがありません</div>';
+        return;
+      }
+      let unreadDividerAdded = false;
+      el.innerHTML = msgs.map(m => {
+        const initials = makeInitials(m.senderName || '?');
+        const ts = m.createdAt?.toDate ? m.createdAt.toDate().getTime() : 0;
+        const isUnread = ts > lastRead && chatUnread > 0;
+        let divider = '';
+        if(isUnread && !unreadDividerAdded){
+          unreadDividerAdded = true;
+          divider = '<div style="display:flex;align-items:center;gap:6px;margin:6px 0;"><div style="flex:1;height:1px;background:#ef5350;"></div><span style="font-size:10px;color:#ef5350;font-weight:800;white-space:nowrap;">ここから未読</span><div style="flex:1;height:1px;background:#ef5350;"></div></div>';
+        }
+        const caseTag = m.caseRef
+          ? '<div style="background:#eef2ff;border-left:3px solid #667eea;border-radius:5px;padding:3px 7px;font-size:10px;color:#3949ab;margin-bottom:3px;font-weight:700;">📋 '+escapeHtml(m.caseRef)+'</div>'
+          : '';
+        const bgColor = isUnread ? '#fff8e1' : '#f8f9fa';
+        return divider + '<div style="display:flex;gap:6px;align-items:flex-start;background:'+bgColor+';border-radius:8px;padding:3px;">'
+          +'<div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:11px;">'+escapeHtml(initials)+'</div>'
+          +'<div style="flex:1;min-width:0;">'
+          +'<div style="display:flex;align-items:baseline;gap:5px;margin-bottom:2px;">'
+          +'<span style="font-weight:800;font-size:11px;color:#333;">'+escapeHtml(m.senderName||'?')+'</span>'
+          +'<span style="font-size:10px;color:#aaa;">'+formatChatTime(m.createdAt)+'</span>'
+          +(isUnread?'<span style="font-size:9px;background:#ef5350;color:#fff;border-radius:3px;padding:1px 4px;font-weight:800;">NEW</span>':'')
+          +'</div>'
+          +caseTag
+          +'<div style="background:#fff;border:1px solid '+(isUnread?'#ffa726':'#e8e8e8')+';border-radius:0 8px 8px 8px;padding:6px 10px;font-size:12px;line-height:1.4;white-space:pre-wrap;word-break:break-word;">'+escapeHtml(m.text||'')+'</div>'
+          +'</div></div>';
+      }).join('');
+    }
+
+    function updateChatBadgeFloat(){
+      const badge = document.getElementById('chatBadge');
+      if(!badge) return;
+      if(chatUnread > 0){
+        badge.style.display = 'flex';
+        badge.textContent = chatUnread > 99 ? '99+' : chatUnread;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    window.sendChatMessageFloat = async function(){
+      const input   = document.getElementById('chatFloatInput');
+      const selEl   = document.getElementById('chatFloatSenderSelect');
+      const caseEl  = document.getElementById('chatFloatCaseSelect');
+      const text    = input?.value?.trim();
+      const sender  = selEl?.value?.trim();
+      const caseRef = caseEl?.value?.trim() || '';
+      if(!sender){ alert('送信者を選択してください'); return; }
+      if(!text) return;
+      input.value = '';
+      const payload = { text, senderName: sender, createdAt: serverTimestamp() };
+      if(caseRef) payload.caseRef = caseRef;
+      try { await addDoc(collection(db, 'chat_messages'), payload); }
+      catch(err){ console.error(err); alert('送信に失敗しました: ' + err.message); }
+    };
+
+    window.sendQuickReplyFloat = async function(text){
+      const selEl  = document.getElementById('chatFloatSenderSelect');
+      const caseEl = document.getElementById('chatFloatCaseSelect');
+      const sender  = selEl?.value?.trim();
+      const caseRef = caseEl?.value?.trim() || '';
+      if(!sender){ alert('送信者を選択してください'); return; }
+      const payload = { text, senderName: sender, createdAt: serverTimestamp() };
+      if(caseRef) payload.caseRef = caseRef;
+      try { await addDoc(collection(db, 'chat_messages'), payload); }
+      catch(err){ console.error(err); alert('送信に失敗しました: ' + err.message); }
+    };
+
+    // チャットメッセージ更新時にフローティングも更新
+    const _origSetupChat = setupChatListener;
+    function setupChatListenerWithFloat(){
+      const q = query(collection(db,'chat_messages'), orderBy('createdAt','asc'), limit(100));
+      onSnapshot(q, (snap) => {
+        const prevLen = chatMsgsCache.length;
+        chatMsgsCache = snap.docs.map(d => ({id:d.id,...d.data()}));
+        renderChatMessages(chatMsgsCache);
+        renderFloatMessages(chatMsgsCache);
+        chatUnread = calcUnread(chatMsgsCache);
+        updateChatBadge();
+        updateChatBadgeFloat();
+      });
+    }
+
+    // QCメンバー同期
+    function syncFloatSelects(){
+      const saved = localStorage.getItem('chat_sender') || '';
+      const floatSel = document.getElementById('chatFloatSenderSelect');
+      if(floatSel && qcMembers.length > 0){
+        const options = qcMembers.filter(m=>!!m.enabled).map(m=>String(m.name||'').trim()).filter(Boolean);
+        floatSel.innerHTML = '<option value="">-- 送信者を選択 --</option>' +
+          options.map(n=>'<option value="'+escapeAttr(n)+'" '+(n===saved?'selected':'')+'>'+escapeHtml(n)+'</option>').join('');
+      }
+      // ケースセレクト同期
+      const desk  = document.getElementById('chatCaseSelect');
+      const float = document.getElementById('chatFloatCaseSelect');
+      if(desk && float) float.innerHTML = desk.innerHTML;
+    }
+
+    </script>
+
+  <!-- モバイル用フローティングチャットボタン -->
+  <button id="chatFab" type="button"
+    style="position:fixed;bottom:24px;right:24px;z-index:900;width:58px;height:58px;border-radius:50%;border:none;
+           background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;font-size:1.5rem;cursor:pointer;
+           box-shadow:0 6px 20px rgba(102,126,234,0.5);display:flex;align-items:center;justify-content:center;
+           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+    <span id="chatFabIcon">💬</span>
+    <span id="chatBadge" style="display:none;position:absolute;top:3px;right:3px;background:#ef5350;color:#fff;
+          border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:900;
+          align-items:center;justify-content:center;">0</span>
+  </button>
+
+  <!-- モバイル用フローティングチャットパネル -->
+  <div id="chatFloatPanel" style="display:none;position:fixed;bottom:90px;right:16px;left:16px;z-index:901;
+       background:#fff;border-radius:18px;box-shadow:0 12px 48px rgba(0,0,0,0.25);
+       flex-direction:column;overflow:hidden;border:1px solid #e8e8e8;max-height:70vh;">
+    <div style="background:linear-gradient(135deg,#667eea,#764ba2);padding:13px 16px;color:#fff;
+                display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+      <span style="font-weight:800;font-size:0.95rem;">💬 グループチャット</span>
+      <button id="chatFloatClose" type="button"
+        style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:8px;
+               padding:4px 10px;cursor:pointer;font-size:1rem;
+               -webkit-tap-highlight-color:transparent;touch-action:manipulation;">✕</button>
+    </div>
+    <div id="chatFloatMessages" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+         padding:10px;display:flex;flex-direction:column;gap:8px;
+         min-height:180px;max-height:calc(70vh - 220px);background:#f8f9fa;">
+      <div style="text-align:center;color:#aaa;font-size:13px;padding:16px 0;">読み込み中...</div>
+    </div>
+    <div style="padding:10px;border-top:1px solid #eee;background:#fff;flex-shrink:0;">
+      <select id="chatFloatSenderSelect"
+        style="width:100%;padding:7px;border:1.5px solid #ddd;border-radius:8px;
+               font-family:inherit;font-size:13px;margin-bottom:5px;color:#333;background:#fff;">
+        <option value="">-- 送信者を選択 --</option>
+      </select>
+      <select id="chatFloatCaseSelect"
+        style="width:100%;padding:7px;border:1.5px solid #667eea;border-radius:8px;
+               font-family:inherit;font-size:12px;margin-bottom:7px;color:#3949ab;background:#eef2ff;">
+        <option value="">📋 案件を引用しない</option>
+      </select>
+      <div style="display:flex;gap:6px;margin-bottom:6px;">
+        <textarea id="chatFloatInput" placeholder="メッセージ入力... (Enterで送信)" rows="2"
+          style="flex:1;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;resize:none;outline:none;"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChatMessageFloat();}"></textarea>
+        <button onclick="sendChatMessageFloat()" type="button"
+          style="padding:8px 12px;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;
+                 border-radius:8px;font-weight:800;cursor:pointer;font-size:1rem;align-self:flex-end;
+                 -webkit-tap-highlight-color:transparent;touch-action:manipulation;">➤</button>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button onclick="sendQuickReplyFloat('対応します')" type="button"
+          style="padding:4px 10px;border-radius:20px;border:1.5px solid #43a047;background:#e8f5e9;color:#2e7d32;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;">✅ 対応します</button>
+        <button onclick="sendQuickReplyFloat('対応できません')" type="button"
+          style="padding:4px 10px;border-radius:20px;border:1.5px solid #ef5350;background:#ffebee;color:#c62828;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;">❌ 対応できません</button>
+        <button onclick="sendQuickReplyFloat('応援が必要です')" type="button"
+          style="padding:4px 10px;border-radius:20px;border:1.5px solid #ffa726;background:#fff3e0;color:#e65100;font-size:11px;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;">🆘 応援が必要</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
