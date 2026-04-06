@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -925,6 +926,42 @@ input[type=text]::placeholder { color: var(--muted) !important; -webkit-text-fil
   align-items: center;
   justify-content: center;
 }
+
+/* ===== 品番マスター インライン編集 ===== */
+input.item-info-input {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 5px;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text);
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 12px;
+  padding: 4px 6px;
+  outline: none;
+  min-height: 32px;
+  transition: border-color 0.15s;
+}
+input.item-info-input:focus { border-color: var(--accent) !important; }
+input[type=number] {
+  -webkit-appearance: none;
+  background: var(--surface) !important;
+  border: 2px solid var(--border) !important;
+  border-radius: 8px;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text);
+  font-size: 14px;
+  padding: 9px 11px;
+  outline: none;
+  min-height: 44px;
+  flex: 1;
+  transition: border-color 0.2s;
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+input[type=number]:focus { border-color: var(--accent) !important; }
+input[type=number].item-info-input { -moz-appearance: textfield; flex: none; }
+input[type=number].item-info-input::-webkit-inner-spin-button,
+input[type=number].item-info-input::-webkit-outer-spin-button { -webkit-appearance: none; }
 
 /* ===== STOCK TABLE ===== */
 .stock-table { width: 100%; border-collapse: collapse; font-size: 11px; }
@@ -3016,12 +3053,14 @@ input.inv-qty:focus { border-color: var(--accent) !important; }
       <div class="section" id="sec-master">
         <div class="scroll-area">
           <div class="master-card">
-            <div class="master-title">📋 品番マスター</div>
-            <div class="input-row">
-              <input type="text" id="new-item" placeholder="品番を入力（例：SK012）" autocapitalize="characters">
+            <div class="master-title">📋 品番マスター <span style="font-size:10px;font-weight:400;color:var(--muted);-webkit-text-fill-color:var(--muted);letter-spacing:0">収容数・工程コードを設定可能</span></div>
+            <div class="input-row" style="flex-wrap:wrap;">
+              <input type="text" id="new-item" placeholder="品番（例：SK012）" autocapitalize="characters" style="flex:2;min-width:80px">
+              <input type="number" id="new-item-qty" class="item-info-input" placeholder="収容数" min="1" style="flex:1;min-width:58px;max-width:80px">
+              <input type="text" id="new-item-proc" placeholder="工程CD" autocapitalize="characters" style="flex:1;min-width:58px;max-width:90px">
               <button class="add-btn" onclick="addItem()">追加</button>
             </div>
-            <div class="list-chips" id="item-list"></div>
+            <div id="item-list"></div>
           </div>
 
           <div class="master-card">
@@ -3745,6 +3784,7 @@ let holdTimer = null;
 let currentTab = 'in';
 
 let cachedItems   = [];
+let cachedItemMasters = {}; // itemId → { boxQty, processCode, ... }
 let cachedShelves = [];
 let cachedStock   = [];
 let cachedHolds   = [];
@@ -3882,6 +3922,8 @@ async function loadCache(){
       window.__getAllHolds        ? window.__getAllHolds()        : Promise.resolve([])
     ]);
     cachedItems   = (items || []).map(i => i.itemId).filter(Boolean).sort();
+    cachedItemMasters = {};
+    for(const i of (items||[])){ if(i.itemId) cachedItemMasters[i.itemId] = i; }
     cachedShelves = (shelves || []).map(s => s.shelfId).filter(Boolean).sort(compareShelfId);
     cachedStock   = (stock || []).filter(s => s && s.status === 'occupied');
     cachedHolds   = (holds || []);
@@ -4765,9 +4807,28 @@ function renderMaster(){
   if(!cachedItems.length){
     il.innerHTML = '<span style="color:var(--muted);font-size:11px">未登録</span>';
   } else {
-    il.innerHTML = cachedItems.map(item =>
-      `<div class="list-chip">${escHtml(item)}<button class="del-btn" onclick="removeItem('${escJsSingle(item)}')">✕</button></div>`
-    ).join('');
+    il.innerHTML = `<div class="scroll-list" style="max-height:320px">
+      <table class="stock-table">
+        <thead>
+          <tr>
+            <th>品番</th>
+            <th>収容数/箱</th>
+            <th>工程コード</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${cachedItems.map(item => {
+          const m = cachedItemMasters[item] || {};
+          return `<tr>
+            <td><strong style="font-family:'Rajdhani',sans-serif;font-size:14px;letter-spacing:1px">${escHtml(item)}</strong></td>
+            <td><input type="number" class="item-info-input" value="${escHtml(String(m.boxQty??''))}" min="1" placeholder="—" style="width:62px"
+              onchange="updateItemInfo('${escJsSingle(item)}','boxQty',this.value)"></td>
+            <td><input type="text" class="item-info-input" value="${escHtml(String(m.processCode??''))}" placeholder="—" style="width:82px"
+              onchange="updateItemInfo('${escJsSingle(item)}','processCode',this.value)"></td>
+            <td><button class="del-row-btn" onclick="removeItem('${escJsSingle(item)}')">削除</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
   }
   const sl = document.getElementById('shelf-list');
   if(!cachedShelves.length){
@@ -4798,11 +4859,33 @@ async function addItem(){
   const val = (el.value || '').trim().toUpperCase();
   if(!val){ showToast('品番を入力してください', 'error'); return; }
   if(cachedItems.includes(val)){ showToast('既に登録済みです', 'error'); return; }
+  const qtyRaw = (document.getElementById('new-item-qty')?.value || '').trim();
+  const proc   = (document.getElementById('new-item-proc')?.value || '').trim().toUpperCase();
+  const extra  = {};
+  if(qtyRaw && parseInt(qtyRaw) > 0) extra.boxQty = parseInt(qtyRaw);
+  if(proc) extra.processCode = proc;
   try{
-    await window.__saveItemMaster(val);
+    await window.__saveItemMaster(val, extra);
     el.value = '';
+    const qtyEl  = document.getElementById('new-item-qty');
+    const procEl = document.getElementById('new-item-proc');
+    if(qtyEl)  qtyEl.value  = '';
+    if(procEl) procEl.value = '';
     showToast(`✅ 品番 ${val} を登録しました`);
   }catch(e){ console.error(e); showToast('登録エラー', 'error'); }
+}
+async function updateItemInfo(itemId, field, rawVal){
+  const data = {};
+  if(field === 'boxQty'){
+    const n = parseInt(rawVal);
+    data.boxQty = isNaN(n) || n <= 0 ? null : n;
+  } else {
+    data[field] = (rawVal || '').trim().toUpperCase() || null;
+  }
+  try{
+    await window.__updateItemMasterInfo(itemId, data);
+    showToast(`✅ ${itemId} を更新しました`);
+  }catch(e){ console.error(e); showToast('更新エラー', 'error'); }
 }
 async function removeItem(item){
   if(!confirm(`「${item}」を削除しますか？`)) return;
@@ -5508,11 +5591,14 @@ function invExportProductCSV(){
     }
   }
   const allProducts = new Set([...Object.keys(totals), ...cachedStock.map(s => s.productId).filter(Boolean)]);
-  const rows = [['品番', '実棚数量', '実棚場所']];
+  const rows = [['品番', '実棚数量', '実棚場所', '収容数/箱', '工程コード']];
   for(const prod of [...allProducts].sort()){
-    const actual = totals[prod]?.actual ?? 0;
+    const actual  = totals[prod]?.actual ?? 0;
     const shelves = totals[prod]?.shelves.join('/') ?? '';
-    rows.push([prod, actual, shelves]);
+    const m       = cachedItemMasters[prod] || {};
+    const boxQty  = m.boxQty  != null ? m.boxQty  : '';
+    const proc    = m.processCode != null ? m.processCode : '';
+    rows.push([prod, actual, shelves, boxQty, proc]);
   }
   const csv = '\uFEFF' + rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g,'""')}"`).join(',')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -5628,8 +5714,17 @@ document.getElementById('new-shelf').addEventListener('keydown', e => { if(e.key
     const snap = await getDocs(collection(db, ITM));
     return snap.docs.map(d => d.data());
   };
-  window.__saveItemMaster = async (itemId) => {
-    await setDoc(doc(db, ITM, String(itemId)), { itemId: String(itemId), createdAt: serverTimestamp() });
+  window.__saveItemMaster = async (itemId, extra={}) => {
+    await setDoc(doc(db, ITM, String(itemId)),
+      { itemId: String(itemId), ...extra, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+  };
+  window.__updateItemMasterInfo = async (itemId, data) => {
+    await setDoc(doc(db, ITM, String(itemId)),
+      { ...data, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
   };
   window.__deleteItemMaster = async (itemId) => {
     await deleteDoc(doc(db, ITM, String(itemId)));
@@ -5722,7 +5817,10 @@ document.getElementById('new-shelf').addEventListener('keydown', e => { if(e.key
     if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
   });
   onSnapshot(collection(db, ITM), snap => {
-    cachedItems = snap.docs.map(d => d.data()).map(i => i.itemId).filter(Boolean).sort();
+    const _docs = snap.docs.map(d => d.data());
+    cachedItems = _docs.map(i => i.itemId).filter(Boolean).sort();
+    cachedItemMasters = {};
+    for(const d of _docs){ if(d.itemId) cachedItemMasters[d.itemId] = d; }
     if(++_listenersReady === LISTENER_COUNT) _onAllReady(); else if(_listenersReady > LISTENER_COUNT) _rerender();
   });
   onSnapshot(collection(db, HLD), snap => {
