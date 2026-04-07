@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -70,25 +69,28 @@ function toHHMM(s){
   const p=s.trim().split(':');
   return p.length>=2?p[0].padStart(2,'0')+':'+p[1].padStart(2,'0'):s;
 }
-function parseExcel(text,line){
-  const rows=text.split('\n').map(r=>r.split('\t').map(c=>c.trim())).filter(c=>c.some(v=>v));
-  // ヘッダー行を自動スキップ（最初のセルが時刻でない場合）
-  const start=rows.findIndex(r=>/^\d+:/.test(r[0])||/^\d+:/.test(r[3]));
-  const data=start>=0?rows.slice(start):rows;
-  const num=(x)=>parseInt(x)||0;
-  return data.map(cols=>{
-    const[k,o,r,s,p,mb,hn,hc,fr,kw,w,v,vm,fb,ow]=cols;
-    if(!s||(!k&&!o))return null;
-    return{line,seiban:s,
-      kakeTime:toHHMM(k),orosiTime:toHHMM(o),reqTime:toHHMM(r),
-      products:num(p),materialBoxes:num(mb),
-      hangerName:hn||'',hangers:num(hc),fraction:num(fr),
-      kakeWorkers:num(kw),width:num(w),
-      voltage:num(v),voltageMax:num(vm),
-      finishedBoxes:num(fb),orosiWorkers:num(ow)};
-  }).filter(Boolean);
+const isTime=s=>s&&/^\d{1,2}:\d{2}/.test(s.trim());
+function mkItem(line,cols,offset=0){
+  const num=x=>parseInt(x)||0;
+  const[k,o,r,s,p,mb,hn,hc,fr,kw,w,v,vm,fb,ow]=cols.slice(offset,offset+15);
+  if(!s||!isTime(k))return null;
+  return{line,seiban:s,kakeTime:toHHMM(k),orosiTime:toHHMM(o),reqTime:toHHMM(r),
+    products:num(p),materialBoxes:num(mb),hangerName:hn||'',hangers:num(hc),fraction:num(fr),
+    kakeWorkers:num(kw),width:num(w),voltage:num(v),voltageMax:num(vm),
+    finishedBoxes:num(fb),orosiWorkers:num(ow)};
 }
-
+/* 15列→selectedLine単独、16列目以降に時刻があればA+B合算 */
+function parseExcel(text,selectedLine){
+  const rows=text.split('\n').map(r=>r.split('\t').map(c=>c.trim())).filter(r=>r.some(v=>v));
+  const items=[];
+  rows.forEach(cols=>{
+    const combined=cols.length>=16&&isTime(cols[15]);
+    const a=mkItem(combined?'A':selectedLine,cols,0);
+    if(a)items.push(a);
+    if(combined){const b=mkItem('B',cols,15);if(b)items.push(b);}
+  });
+  return items;
+}
 function getFields(role,item,master){
   const f=[];
   const add=(l,v)=>f.push([l,(v==null||v===''||v===0||v==='0')?'—':String(v)]);
