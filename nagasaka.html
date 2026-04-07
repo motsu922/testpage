@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>長坂コーテング 生産管理</title>
 <script src="https://unpkg.com/firebase@8.10.1/firebase-app.js"></script>
@@ -65,35 +66,56 @@ const RL={"製品段取り":"#E6F1FB","ハンガー段取り":"#EEEDFE","掛け"
 
 function parseExcel(text,line){
   return text.split('\n').map(r=>r.split('\t').map(c=>c.trim())).filter(c=>c.some(v=>v)).map(cols=>{
-    const[k,o,r,s,p]=cols;if(!s||!k)return null;
-    const prods=parseInt(p)||0;
-    return{line,seiban:s,kakeTime:k,orosiTime:o||'',reqTime:r||'',products:prods,boxes:Math.ceil(prods/12)};
+    const[k,o,r,s,p,mb,hn,hc,fr,kw,w,v,vm,fb,ow]=cols;
+    if(!s||!k)return null;
+    const num=(x)=>parseInt(x)||0;
+    return{line,seiban:s,kakeTime:k,orosiTime:o||'',reqTime:r||'',
+      products:num(p),materialBoxes:num(mb),
+      hangerName:hn||'',hangers:num(hc),fraction:num(fr),
+      kakeWorkers:num(kw),width:num(w),
+      voltage:num(v),voltageMax:num(vm),
+      finishedBoxes:num(fb),orosiWorkers:num(ow)};
   }).filter(Boolean);
 }
 
 function getFields(role,item,master){
-  const m=master[item.seiban]||{};const f=[];
-  const add=(l,v)=>f.push([l,v==null||v===''?'—':String(v)]);
-  if(!["降ろし検査","出荷"].includes(role))add("掛け時間",item.kakeTime);else add("降ろし時間",item.orosiTime||"—");
+  const f=[];
+  const add=(l,v)=>f.push([l,(v==null||v===''||v===0||v==='0')?'—':String(v)]);
+  if(!["降ろし検査","出荷"].includes(role))add("掛け時間",item.kakeTime);else add("降ろし時間",item.orosiTime||'—');
   add("所要時間",item.reqTime);
-  if(["製品段取り","降ろし検査","リフトマン"].includes(role))add("製品数",item.products+"個");
-  if(["製品段取り","リフトマン"].includes(role))add("素材箱数",item.boxes+"箱");
-  if(["ハンガー段取り","掛け","リフトマン"].includes(role)){add("ハンガー名称",m.hangerName||"—");add("ハンガー本数",m.hangers?m.hangers+"本":"—");}
-  if(["製品段取り","掛け","降ろし検査"].includes(role))add("ハンガー内端数予定",m.fraction?m.fraction+"個":"—");
-  if(role==="ハンガー段取り"){add("設定電圧",m.voltage?m.voltage+"V":"—");add("段替え空フック数",m.emptyHooks?m.emptyHooks+"個":"—");add("ハンガー連続本数",m.continuous?m.continuous+"本":"—");}
-  if(role==="掛け"){add("掛け人数",m.workers?m.workers+"人":"—");add("掛幅",m.width?m.width+"mm":"—");add("掛け数",m.count?m.count+"個":"—");}
-  if(role==="降ろし検査")add("降ろし人数",m.workers?m.workers+"人":"—");
-  if(["出荷","リフトマン"].includes(role))add("完成品箱数",item.boxes+"箱");
-  if(role==="リフトマン"&&m.width)add("掛幅",m.width+"mm");
+  if(["製品段取り","降ろし検査","リフトマン"].includes(role))add("製品数",item.products?item.products+"個":"—");
+  if(["製品段取り","リフトマン"].includes(role))add("素材箱数",item.materialBoxes?item.materialBoxes+"箱":"—");
+  if(["ハンガー段取り","掛け","リフトマン"].includes(role)){
+    add("ハンガー名称",item.hangerName||"—");
+    add("ハンガー本数",item.hangers?item.hangers+"本":"—");
+  }
+  if(["製品段取り","掛け","降ろし検査"].includes(role))add("ハンガー内端数予定",item.fraction?item.fraction+"個":"—");
+  if(role==="ハンガー段取り"){
+    add("設定電圧",item.voltage?item.voltage+"V":"—");
+    if(item.voltageMax)add("電圧上限",item.voltageMax+"V");
+  }
+  if(role==="掛け"){
+    add("掛け人数",item.kakeWorkers?item.kakeWorkers+"人":"—");
+    add("掛幅",item.width?item.width+"mm":"—");
+  }
+  if(role==="降ろし検査")add("降ろし人数",item.orosiWorkers?item.orosiWorkers+"人":"—");
+  if(["出荷","リフトマン"].includes(role))add("完成品箱数",item.finishedBoxes?item.finishedBoxes+"箱":"—");
+  if(role==="リフトマン"&&item.width)add("掛幅",item.width+"mm");
   return f;
 }
 
 function QRCode({value,size=120}){
   const ref=useRef(null);
   useEffect(()=>{
-    if(!ref.current||!window.QRCode)return;
-    ref.current.innerHTML='';
-    new window.QRCode(ref.current,{text:value,width:size,height:size,correctLevel:window.QRCode.CorrectLevel.M});
+    if(!ref.current)return;
+    const gen=()=>{
+      if(!window.QRCode){setTimeout(gen,300);return;}
+      try{
+        ref.current.innerHTML='';
+        new window.QRCode(ref.current,{text:value,width:size,height:size,correctLevel:0});
+      }catch(e){console.warn('QR:',e);}
+    };
+    gen();
   },[value,size]);
   return <div ref={ref} style={{display:'inline-block',lineHeight:0}}/>;
 }
@@ -343,8 +365,8 @@ function AdminRegister({plans,master,onRegister}){
           <button key={l} onClick={()=>{setLine(l);setPrev(null);setMsg(null);}} style={{minHeight:44,padding:'0 24px',borderRadius:10,fontSize:15,fontWeight:600,border:`2px solid ${line===l?'#185FA5':'#C0BEB5'}`,background:line===l?'#E6F1FB':'#fff',color:line===l?'#185FA5':'#888'}}>{l}ライン</button>
         ))}
       </div>
-      <div style={{fontSize:12,color:'#888',marginBottom:8,lineHeight:1.6}}>ExcelのA〜E列（掛け時間・降ろし時間・所要時間・背番号・品数）をコピーして貼り付け</div>
-      <textarea value={text} onChange={e=>{setText(e.target.value);setPrev(null);setMsg(null);}} placeholder={"08:05\t09:07\t01:02\tUD365\t120\n08:08\t09:11\t01:03\tUD72\t144"} style={{width:'100%',height:120,fontFamily:'monospace',fontSize:12,resize:'vertical',marginBottom:10}}/>
+      <div style={{fontSize:12,color:'#888',marginBottom:8,lineHeight:1.6}}>Excel 15列をそのままコピー＆ペースト（掛け時間／降ろし時間／所要時間／背番号／製品数／素材箱数／ハンガー名称／ハンガー本数／ハンガー内端数予定／掛け人数／掛幅／設定電圧／電圧上限／完成品箱数／降ろし人数）</div>
+      <textarea value={text} onChange={e=>{setText(e.target.value);setPrev(null);setMsg(null);}} placeholder={"08:05\t09:07\t01:02\tUD365\t120\t10\tH-360A\t12\t3\t3\t450\t200\t220\t10\t2\n08:08\t09:11\t01:03\tUD72\t144\t12\tH-72B\t8\t2\t2\t380\t185\t205\t12\t2"} style={{width:'100%',height:120,fontFamily:'monospace',fontSize:12,resize:'vertical',marginBottom:10}}/>
       <div style={{display:'flex',gap:10,marginBottom:14,flexWrap:'wrap'}}>
         <button onClick={doParse} disabled={!text.trim()} style={{minHeight:48,padding:'0 24px',borderRadius:10,border:'1px solid #C0BEB5',background:'#fff',fontSize:15}}>読み込み</button>
         {prev?.length>0&&<button onClick={doReg} disabled={loading} style={{minHeight:48,padding:'0 24px',borderRadius:10,border:'none',background:loading?'#B4B2A9':'#185FA5',color:'#fff',fontSize:15,fontWeight:600}}>{loading?'登録中...':'登録確定（'+prev.length+'件）'}</button>}
@@ -355,7 +377,7 @@ function AdminRegister({plans,master,onRegister}){
           <div style={{fontSize:14,fontWeight:600,color:'#555',marginBottom:10}}>プレビュー — {line}ライン（{prev.length}件）</div>
           <div style={{overflowX:'auto',border:'1px solid #E0DED8',borderRadius:12}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-              <thead><tr style={{background:'#F8F7F4'}}>{['','背番号','掛け時間','降ろし時間','品数','マスター'].map(h=><th key={h} style={{padding:'10px 8px',textAlign:'left',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+              <thead><tr style={{background:'#F8F7F4'}}>{['','背番号','掛け時間','降ろし時間','製品数','ハンガー名称','設定電圧','マスター'].map(h=><th key={h} style={{padding:'10px 8px',textAlign:'left',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
               <tbody>
                 {prev.map((item,i)=>{const img=master[item.seiban]?.imageUrl;return(
                   <tr key={i} style={{borderBottom:'1px solid #F0EEE8'}}>
@@ -364,7 +386,9 @@ function AdminRegister({plans,master,onRegister}){
                     <td style={{padding:'8px',color:'#333'}}>{item.kakeTime}</td>
                     <td style={{padding:'8px',color:'#333'}}>{item.orosiTime}</td>
                     <td style={{padding:'8px',color:'#333'}}>{item.products}</td>
-                    <td style={{padding:'8px'}}><span style={{fontSize:11,padding:'3px 8px',borderRadius:6,fontWeight:600,background:master[item.seiban]?'#EAF3DE':'#FAEEDA',color:master[item.seiban]?'#27500A':'#854F0B'}}>{master[item.seiban]?'登録済':'未登録'}</span></td>
+                    <td style={{padding:'8px',color:'#333'}}>{item.hangerName||'—'}</td>
+                    <td style={{padding:'8px',color:'#333'}}>{item.voltage?item.voltage+'V':'—'}</td>
+                    <td style={{padding:'8px'}}><span style={{fontSize:11,padding:'3px 8px',borderRadius:6,fontWeight:600,background:master[item.seiban]?'#EAF3DE':'#FAEEDA',color:master[item.seiban]?'#27500A':'#854F0B'}}>{master[item.seiban]?'画像あり':'画像なし'}</span></td>
                   </tr>
                 );})}
               </tbody>
@@ -594,7 +618,8 @@ function App(){
 
   useEffect(()=>{
     let unsubM,unsubP;
-    auth.signInAnonymously()
+    auth.setPersistence(firebase.auth.Auth.Persistence.NONE)
+      .then(()=>auth.signInAnonymously())
       .then(()=>{
         unsubM=db.collection('master').onSnapshot(snap=>{
           const m={};snap.forEach(doc=>{m[doc.id]={...doc.data()};});setMaster(m);
@@ -629,7 +654,16 @@ function App(){
     ex.forEach(doc=>{if(doc.data().line===line)batch.delete(doc.ref);});
     items.forEach(item=>{
       const ref=db.collection('plans').doc();
-      batch.set(ref,{date:TODAY,line:item.line,seiban:item.seiban,kakeTime:item.kakeTime,orosiTime:item.orosiTime,reqTime:item.reqTime,products:item.products,boxes:item.boxes,completions:{},actualFraction:'',createdAt:firebase.firestore.FieldValue.serverTimestamp(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      batch.set(ref,{date:TODAY,line:item.line,seiban:item.seiban,
+        kakeTime:item.kakeTime,orosiTime:item.orosiTime,reqTime:item.reqTime,
+        products:item.products,materialBoxes:item.materialBoxes,
+        hangerName:item.hangerName,hangers:item.hangers,fraction:item.fraction,
+        kakeWorkers:item.kakeWorkers,width:item.width,
+        voltage:item.voltage,voltageMax:item.voltageMax,
+        finishedBoxes:item.finishedBoxes,orosiWorkers:item.orosiWorkers,
+        completions:{},actualFraction:'',
+        createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
     });
     await batch.commit();
   }
