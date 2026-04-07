@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>長坂コーテング 生産管理</title>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-app.js"></script>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-auth.js"></script>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-firestore.js"></script>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-storage.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;background:#F1EFE8;min-height:100vh}
+button{touch-action:manipulation;font-family:inherit;cursor:pointer;-webkit-appearance:none}
+input,textarea{font-family:inherit;font-size:16px;border:1px solid #C0BEB5;border-radius:10px;padding:10px 12px;background:#fff;color:#111;outline:none;width:100%}
+input:focus,textarea:focus{border-color:#185FA5;box-shadow:0 0 0 3px rgba(24,95,165,.15)}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-thumb{background:#C0BEB5;border-radius:2px}
+.card{background:#fff;border-radius:16px;border:1px solid #E0DED8;overflow:hidden}
+.btn-ghost{background:#fff;border:1px solid #C0BEB5;border-radius:10px;padding:8px 14px;font-size:13px;color:#5F5E5A}
+.btn-ghost:active{background:#F1EFE8}
+.screen{max-width:540px;margin:0 auto;padding-bottom:48px;min-height:100vh}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ── Firebase init ── */
+var firebaseConfig={apiKey:"AIzaSyDxl5a__1aGS-19zn4cQNn6FutP7-q_mag",authDomain:"personal-60023.firebaseapp.com",projectId:"personal-60023",storageBucket:"personal-60023.firebasestorage.app",messagingSenderId:"920380998275",appId:"1:920380998275:web:1ac685f50fe5f14de191b6"};
+firebase.initializeApp(firebaseConfig);
+var db=firebase.firestore();
+var stor=firebase.storage();
+var auth=firebase.auth();
+function todayStr(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+var TODAY=todayStr();
+var MASTER_DEFAULT={
+  "UD365":{hangerName:"H-360A",hangers:12,fraction:3,width:450,voltage:200,emptyHooks:5,continuous:8,workers:3,count:24},
+  "UD72":{hangerName:"H-72B",hangers:8,fraction:2,width:380,voltage:185,emptyHooks:3,continuous:6,workers:2,count:18},
+  "UD56":{hangerName:"H-56C",hangers:10,fraction:4,width:420,voltage:195,emptyHooks:4,continuous:7,workers:3,count:20},
+  "7685":{hangerName:"H-78D",hangers:6,fraction:1,width:360,voltage:180,emptyHooks:2,continuous:5,workers:2,count:15},
+  "7614":{hangerName:"H-76E",hangers:9,fraction:2,width:400,voltage:190,emptyHooks:3,continuous:7,workers:2,count:18},
+  "7657":{hangerName:"H-76F",hangers:11,fraction:5,width:440,voltage:200,emptyHooks:4,continuous:8,workers:4,count:30},
+  "N0004":{hangerName:"H-N0A",hangers:7,fraction:2,width:370,voltage:185,emptyHooks:3,continuous:6,workers:2,count:16},
+  "N0001":{hangerName:"H-N1B",hangers:8,fraction:3,width:390,voltage:192,emptyHooks:2,continuous:5,workers:2,count:17},
+  "A426":{hangerName:"H-A4A",hangers:5,fraction:1,width:340,voltage:178,emptyHooks:2,continuous:4,workers:2,count:12},
+  "N0005":{hangerName:"H-N5A",hangers:9,fraction:3,width:400,voltage:190,emptyHooks:3,continuous:6,workers:3,count:20}
+};
+</script>
+
+<script type="text/babel">
+const{useState,useEffect,useRef}=React;
+const ROLES=["製品段取り","ハンガー段取り","掛け","降ろし検査","出荷","リフトマン"];
+const RS={"製品段取り":"製品","ハンガー段取り":"ハン","掛け":"掛け","降ろし検査":"降ろ","出荷":"出荷","リフトマン":"リフ"};
+const RA={"製品段取り":"#185FA5","ハンガー段取り":"#534AB7","掛け":"#0F6E56","降ろし検査":"#BA7517","出荷":"#993556","リフトマン":"#5F5E5A"};
+const RL={"製品段取り":"#E6F1FB","ハンガー段取り":"#EEEDFE","掛け":"#E1F5EE","降ろし検査":"#FAEEDA","出荷":"#FBEAF0","リフトマン":"#F1EFE8"};
+
+function parseExcel(text,line){
+  return text.split('\n').map(r=>r.split('\t').map(c=>c.trim())).filter(c=>c.some(v=>v)).map(cols=>{
+    const[k,o,r,s,p]=cols;if(!s||!k)return null;
+    const prods=parseInt(p)||0;
+    return{line,seiban:s,kakeTime:k,orosiTime:o||'',reqTime:r||'',products:prods,boxes:Math.ceil(prods/12)};
+  }).filter(Boolean);
+}
+
+function getFields(role,item,master){
+  const m=master[item.seiban]||{};const f=[];
+  const add=(l,v)=>f.push([l,v==null||v===''?'—':String(v)]);
+  if(!["降ろし検査","出荷"].includes(role))add("掛け時間",item.kakeTime);else add("降ろし時間",item.orosiTime||"—");
+  add("所要時間",item.reqTime);
+  if(["製品段取り","降ろし検査","リフトマン"].includes(role))add("製品数",item.products+"個");
+  if(["製品段取り","リフトマン"].includes(role))add("素材箱数",item.boxes+"箱");
+  if(["ハンガー段取り","掛け","リフトマン"].includes(role)){add("ハンガー名称",m.hangerName||"—");add("ハンガー本数",m.hangers?m.hangers+"本":"—");}
+  if(["製品段取り","掛け","降ろし検査"].includes(role))add("ハンガー内端数予定",m.fraction?m.fraction+"個":"—");
+  if(role==="ハンガー段取り"){add("設定電圧",m.voltage?m.voltage+"V":"—");add("段替え空フック数",m.emptyHooks?m.emptyHooks+"個":"—");add("ハンガー連続本数",m.continuous?m.continuous+"本":"—");}
+  if(role==="掛け"){add("掛け人数",m.workers?m.workers+"人":"—");add("掛幅",m.width?m.width+"mm":"—");add("掛け数",m.count?m.count+"個":"—");}
+  if(role==="降ろし検査")add("降ろし人数",m.workers?m.workers+"人":"—");
+  if(["出荷","リフトマン"].includes(role))add("完成品箱数",item.boxes+"箱");
+  if(role==="リフトマン"&&m.width)add("掛幅",m.width+"mm");
+  return f;
+}
+
+function QRCode({value,size=120}){
+  const ref=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!window.QRCode)return;
+    ref.current.innerHTML='';
+    new window.QRCode(ref.current,{text:value,width:size,height:size,correctLevel:window.QRCode.CorrectLevel.M});
+  },[value,size]);
+  return <div ref={ref} style={{display:'inline-block',lineHeight:0}}/>;
+}
+
+function ImageModal({src,onClose}){
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
+      <img src={src} style={{maxWidth:'95vw',maxHeight:'92vh',borderRadius:12,objectFit:'contain'}} onClick={e=>e.stopPropagation()}/>
+      <button onClick={onClose} style={{position:'fixed',top:16,right:16,width:44,height:44,borderRadius:'50%',background:'rgba(255,255,255,.2)',border:'none',color:'#fff',fontSize:24,lineHeight:'44px',padding:0}}>×</button>
+    </div>
+  );
+}
+
+function Spinner(){return <div style={{width:36,height:36,border:'3px solid #E0DED8',borderTopColor:'#185FA5',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>;}
+
+function LoadingScreen(){
+  return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:16}}>
+      <Spinner/>
+      <div style={{fontSize:14,color:'#888'}}>Firebase に接続中...</div>
+    </div>
+  );
+}
+
+function ErrorScreen({error,onRetry}){
+  return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:16,padding:24}}>
+      <div style={{fontSize:15,color:'#E24B4A',fontWeight:600,textAlign:'center'}}>接続に失敗しました</div>
+      <div style={{fontSize:12,color:'#888',textAlign:'center',lineHeight:1.7,maxWidth:300}}>{error}</div>
+      <button onClick={onRetry} style={{minHeight:48,padding:'0 32px',borderRadius:12,border:'none',background:'#185FA5',color:'#fff',fontSize:15,fontWeight:600}}>再試行</button>
+    </div>
+  );
+}
+
+function NavBar({title,sub,onBack,right}){
+  return(
+    <div style={{display:'flex',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid #E0DED8',background:'#fff',position:'sticky',top:0,zIndex:20}}>
+      {onBack&&<button className="btn-ghost" onClick={onBack} style={{marginRight:12,minWidth:64,minHeight:44}}>← 戻る</button>}
+      <div style={{flex:1}}><div style={{fontSize:16,fontWeight:600,color:'#111'}}>{title}</div>{sub&&<div style={{fontSize:12,color:'#888',marginTop:1}}>{sub}</div>}</div>
+      {right}
+    </div>
+  );
+}
+
+function HomeScreen({onRole,onAdmin}){
+  return(
+    <div className="screen">
+      <div style={{padding:'24px 16px 16px'}}>
+        <div style={{fontSize:11,color:'#888',marginBottom:4}}>ミヤマ工業 / 長坂コーテング</div>
+        <div style={{fontSize:22,fontWeight:700,color:'#111'}}>生産管理システム</div>
+      </div>
+      <div style={{padding:'0 16px 24px'}}>
+        <div style={{fontSize:11,fontWeight:600,color:'#888',letterSpacing:1.5,marginBottom:12,textTransform:'uppercase'}}>作業者ログイン</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+          {ROLES.map(r=>(
+            <button key={r} onClick={()=>onRole(r)} style={{padding:'20px 8px 18px',background:'#fff',border:`1px solid ${RA[r]}33`,borderRadius:16,textAlign:'center',minHeight:100}}
+              onTouchStart={e=>e.currentTarget.style.background=RL[r]} onTouchEnd={e=>e.currentTarget.style.background='#fff'}>
+              <div style={{width:44,height:44,borderRadius:'50%',background:RL[r],border:`2px solid ${RA[r]}`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 10px',fontSize:11,fontWeight:700,color:RA[r]}}>{RS[r]}</div>
+              <div style={{fontSize:12,color:'#111',lineHeight:1.5,fontWeight:500}}>{r}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:'0 16px'}}>
+        <div style={{fontSize:11,fontWeight:600,color:'#888',letterSpacing:1.5,marginBottom:12,textTransform:'uppercase'}}>管理者</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          {[{id:'admin',t:'計画・進捗管理',s:'登録・リアルタイム確認'},{id:'master',t:'マスター管理',s:'画像・QRコード登録'}].map(item=>(
+            <button key={item.id} onClick={()=>onAdmin(item.id)} style={{padding:'18px 14px',textAlign:'left',background:'#fff',border:'1px solid #E0DED8',borderRadius:16,minHeight:80}}
+              onTouchStart={e=>e.currentTarget.style.background='#F8F7F4'} onTouchEnd={e=>e.currentTarget.style.background='#fff'}>
+              <div style={{fontSize:14,fontWeight:600,color:'#111',marginBottom:4}}>{item.t}</div>
+              <div style={{fontSize:11,color:'#888'}}>{item.s}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LineSelectScreen({role,onLine,onBack}){
+  const a=RA[role],l=RL[role];
+  return(
+    <div className="screen">
+      <NavBar title={role} onBack={onBack}/>
+      <div style={{padding:'32px 20px'}}>
+        <div style={{fontSize:15,color:'#555',textAlign:'center',marginBottom:28}}>担当ラインを選択してください</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+          {['A','B'].map(ln=>(
+            <button key={ln} onClick={()=>onLine(ln)} style={{height:160,fontWeight:700,background:l,border:`2px solid ${a}`,borderRadius:20,color:a,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:8}}
+              onTouchStart={e=>{e.currentTarget.style.background=a;e.currentTarget.style.color='#fff';}} onTouchEnd={e=>{e.currentTarget.style.background=l;e.currentTarget.style.color=a;}}>
+              <span style={{fontSize:48,fontWeight:700,lineHeight:1}}>{ln}</span>
+              <span style={{fontSize:16}}>ライン</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkerScreen({role,line,plans,master,onComplete,onUndo,onBack}){
+  const a=RA[role],l=RL[role];
+  const[frac,setFrac]=useState('');
+  const[flash,setFlash]=useState(false);
+  const[modalImg,setModalImg]=useState(null);
+  const[lastDone,setLastDone]=useState(null);
+  const[saving,setSaving]=useState(false);
+  const ll=role==='リフトマン'?null:line;
+  const items=plans.filter(p=>ll?p.line===ll:true).sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
+  const done=items.filter(p=>p.completions?.[role]?.done);
+  const pend=items.filter(p=>!p.completions?.[role]?.done);
+  const cur=pend[0]||null,nxt=pend[1]||null;
+  const pct=items.length?Math.round(done.length/items.length*100):0;
+  const needsFrac=["掛け","降ろし検査"].includes(role);
+  const curImg=cur?master[cur.seiban]?.imageUrl:null;
+  const nxtImg=nxt?master[nxt.seiban]?.imageUrl:null;
+  const fields=cur?getFields(role,cur,master):[];
+  useEffect(()=>setFrac(''),[cur?.id]);
+
+  async function handleComplete(){
+    if(!cur||saving)return;
+    setSaving(true);
+    try{
+      await onComplete(cur.id,role,needsFrac?frac:'');
+      setLastDone({id:cur.id,role});
+      setFlash(true);setTimeout(()=>setFlash(false),350);
+    }catch(e){alert('保存に失敗: '+e.message);}
+    finally{setSaving(false);}
+  }
+  async function handleUndo(){
+    if(!lastDone||saving)return;
+    setSaving(true);
+    try{await onUndo(lastDone.id,lastDone.role);setLastDone(null);}
+    catch(e){alert('取り消しに失敗: '+e.message);}
+    finally{setSaving(false);}
+  }
+
+  return(
+    <div className="screen" style={{background:flash?l:'#F1EFE8',transition:'background .35s'}}>
+      {modalImg&&<ImageModal src={modalImg} onClose={()=>setModalImg(null)}/>}
+      <NavBar title={role} sub={ll?ll+'ライン 担当':undefined} onBack={onBack}
+        right={lastDone&&<button className="btn-ghost" onClick={handleUndo} style={{minHeight:44,minWidth:72}}>取り消し</button>}/>
+      <div style={{padding:'12px 16px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#888',marginBottom:5}}>
+          <span>本日の進捗</span><span style={{fontWeight:600,color:'#111'}}>{done.length}/{items.length}件　{pct}%</span>
+        </div>
+        <div style={{height:8,background:'#E0DED8',borderRadius:4,marginBottom:16,overflow:'hidden'}}>
+          <div style={{height:'100%',background:a,borderRadius:4,width:pct+'%',transition:'width .5s'}}/>
+        </div>
+        {!cur?(
+          <div style={{textAlign:'center',padding:'64px 0'}}>
+            <div style={{width:80,height:80,borderRadius:'50%',background:l,border:`3px solid ${a}`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:28,fontWeight:700,color:a}}>完</div>
+            <div style={{fontSize:22,fontWeight:700,color:'#111',marginBottom:10}}>全作業完了</div>
+            <div style={{fontSize:15,color:'#888'}}>本日の作業はすべて完了しました</div>
+          </div>
+        ):(
+          <>
+            <div className="card" style={{border:`2px solid ${a}`,marginBottom:12}}>
+              <div style={{background:a,padding:'8px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:12,fontWeight:600,color:'#fff'}}>現在の作業</span>
+                <span style={{fontSize:12,color:'rgba(255,255,255,.8)'}}>{cur.line}ライン</span>
+              </div>
+              <div style={{padding:'16px'}}>
+                <div style={{display:'flex',gap:12,marginBottom:18,alignItems:'flex-start'}}>
+                  <div style={{flex:1}}><div style={{fontSize:38,fontWeight:700,color:a,letterSpacing:3,lineHeight:1}}>{cur.seiban}</div></div>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+                    <div style={{background:'#fff',border:'1px solid #E0DED8',borderRadius:8,padding:4}}><QRCode value={cur.seiban} size={80}/></div>
+                    <span style={{fontSize:9,color:'#aaa'}}>QR</span>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+                    {curImg?(
+                      <button onClick={()=>setModalImg(curImg)} style={{border:'1px solid #E0DED8',borderRadius:8,padding:0,background:'none',overflow:'hidden',width:80,height:80}}>
+                        <img src={curImg} style={{width:80,height:80,objectFit:'cover',display:'block'}}/>
+                      </button>
+                    ):(
+                      <div style={{width:80,height:80,border:'1px dashed #D0CEC8',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:'#FAFAF8'}}>
+                        <span style={{fontSize:10,color:'#CCC',textAlign:'center',lineHeight:1.4}}>画像<br/>未登録</span>
+                      </div>
+                    )}
+                    <span style={{fontSize:9,color:'#aaa'}}>製品画像</span>
+                  </div>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'14px 20px'}}>
+                  {fields.map(([lb,v])=>(
+                    <div key={lb}><div style={{fontSize:11,color:'#999',marginBottom:3}}>{lb}</div><div style={{fontSize:18,fontWeight:600,color:'#111'}}>{v}</div></div>
+                  ))}
+                </div>
+                {needsFrac&&(
+                  <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid #F0EEE8'}}>
+                    <div style={{fontSize:12,color:'#888',marginBottom:8,fontWeight:500}}>ハンガー内端数実績（入力）</div>
+                    <input type="number" inputMode="numeric" value={frac} onChange={e=>setFrac(e.target.value)} placeholder="個数を入力..."/>
+                  </div>
+                )}
+              </div>
+            </div>
+            {nxt&&(
+              <div className="card" style={{marginBottom:16}}>
+                <div style={{padding:'12px 16px'}}>
+                  <div style={{fontSize:11,color:'#aaa',marginBottom:6}}>次の作業</div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+                    <div style={{fontSize:26,fontWeight:700,color:'#999'}}>{nxt.seiban}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:10}}>
+                      {nxtImg&&<img src={nxtImg} style={{width:40,height:40,objectFit:'cover',borderRadius:6,border:'1px solid #E0DED8'}}/>}
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontSize:14,color:'#aaa'}}>{nxt.kakeTime}</div>
+                        <div style={{fontSize:12,color:'#bbb'}}>{nxt.products}個</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <button onClick={handleComplete} disabled={saving} style={{width:'100%',padding:'24px',background:saving?'#B4B2A9':a,color:'#fff',border:'none',borderRadius:20,fontSize:saving?18:26,fontWeight:700,letterSpacing:saving?1:3,minHeight:80,transition:'all .15s',boxShadow:saving?'none':'0 4px 16px '+a+'88'}}
+              onTouchStart={e=>{if(!saving){e.currentTarget.style.transform='scale(.97)';e.currentTarget.style.boxShadow='none';}}}
+              onTouchEnd={e=>{e.currentTarget.style.transform='scale(1)';if(!saving)e.currentTarget.style.boxShadow='0 4px 16px '+a+'88';}}>
+              {saving?'Firestore に保存中...':'完　了'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdminRegister({plans,master,onRegister}){
+  const[text,setText]=useState('');
+  const[line,setLine]=useState('A');
+  const[prev,setPrev]=useState(null);
+  const[loading,setLoading]=useState(false);
+  const[msg,setMsg]=useState(null);
+  function doParse(){setPrev(parseExcel(text,line));setMsg(null);}
+  async function doReg(){
+    if(!prev?.length||loading)return;
+    setLoading(true);setMsg(null);
+    try{
+      await onRegister(prev,line);
+      setMsg({ok:true,t:`${line}ラインに ${prev.length}件 登録しました`});
+      setPrev(null);setText('');
+    }catch(e){setMsg({ok:false,t:'登録に失敗: '+e.message});}
+    finally{setLoading(false);}
+  }
+  return(
+    <div>
+      <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center'}}>
+        <span style={{fontSize:14,color:'#555',fontWeight:500}}>ライン：</span>
+        {['A','B'].map(l=>(
+          <button key={l} onClick={()=>{setLine(l);setPrev(null);setMsg(null);}} style={{minHeight:44,padding:'0 24px',borderRadius:10,fontSize:15,fontWeight:600,border:`2px solid ${line===l?'#185FA5':'#C0BEB5'}`,background:line===l?'#E6F1FB':'#fff',color:line===l?'#185FA5':'#888'}}>{l}ライン</button>
+        ))}
+      </div>
+      <div style={{fontSize:12,color:'#888',marginBottom:8,lineHeight:1.6}}>ExcelのA〜E列（掛け時間・降ろし時間・所要時間・背番号・品数）をコピーして貼り付け</div>
+      <textarea value={text} onChange={e=>{setText(e.target.value);setPrev(null);setMsg(null);}} placeholder={"08:05\t09:07\t01:02\tUD365\t120\n08:08\t09:11\t01:03\tUD72\t144"} style={{width:'100%',height:120,fontFamily:'monospace',fontSize:12,resize:'vertical',marginBottom:10}}/>
+      <div style={{display:'flex',gap:10,marginBottom:14,flexWrap:'wrap'}}>
+        <button onClick={doParse} disabled={!text.trim()} style={{minHeight:48,padding:'0 24px',borderRadius:10,border:'1px solid #C0BEB5',background:'#fff',fontSize:15}}>読み込み</button>
+        {prev?.length>0&&<button onClick={doReg} disabled={loading} style={{minHeight:48,padding:'0 24px',borderRadius:10,border:'none',background:loading?'#B4B2A9':'#185FA5',color:'#fff',fontSize:15,fontWeight:600}}>{loading?'登録中...':'登録確定（'+prev.length+'件）'}</button>}
+      </div>
+      {msg&&<div style={{padding:'12px 14px',background:msg.ok?'#EAF3DE':'#FCEBEB',border:`1px solid ${msg.ok?'#3B6D11':'#A32D2D'}`,borderRadius:10,color:msg.ok?'#27500A':'#501313',fontSize:14,fontWeight:500,marginBottom:14}}>{msg.t}</div>}
+      {prev&&(
+        <>
+          <div style={{fontSize:14,fontWeight:600,color:'#555',marginBottom:10}}>プレビュー — {line}ライン（{prev.length}件）</div>
+          <div style={{overflowX:'auto',border:'1px solid #E0DED8',borderRadius:12}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+              <thead><tr style={{background:'#F8F7F4'}}>{['','背番号','掛け時間','降ろし時間','品数','マスター'].map(h=><th key={h} style={{padding:'10px 8px',textAlign:'left',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',whiteSpace:'nowrap'}}>{h}</th>)}</tr></thead>
+              <tbody>
+                {prev.map((item,i)=>{const img=master[item.seiban]?.imageUrl;return(
+                  <tr key={i} style={{borderBottom:'1px solid #F0EEE8'}}>
+                    <td style={{padding:'8px'}}>{img?<img src={img} style={{width:32,height:32,objectFit:'cover',borderRadius:6}}/>:<div style={{width:32,height:32,borderRadius:6,background:'#F0EEE8'}}/>}</td>
+                    <td style={{padding:'8px',fontWeight:700,color:'#111',fontSize:14}}>{item.seiban}</td>
+                    <td style={{padding:'8px',color:'#333'}}>{item.kakeTime}</td>
+                    <td style={{padding:'8px',color:'#333'}}>{item.orosiTime}</td>
+                    <td style={{padding:'8px',color:'#333'}}>{item.products}</td>
+                    <td style={{padding:'8px'}}><span style={{fontSize:11,padding:'3px 8px',borderRadius:6,fontWeight:600,background:master[item.seiban]?'#EAF3DE':'#FAEEDA',color:master[item.seiban]?'#27500A':'#854F0B'}}>{master[item.seiban]?'登録済':'未登録'}</span></td>
+                  </tr>
+                );})}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AdminProgress({plans}){
+  const now=new Date().toTimeString().slice(0,5);
+  const sorted=[...plans].sort((a,b)=>a.line.localeCompare(b.line)||a.kakeTime.localeCompare(b.kakeTime));
+  const ad=p=>ROLES.every(r=>p.completions?.[r]?.done);
+  const dl=p=>p.kakeTime<now&&!ad(p);
+  return(
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:16}}>
+        {[{l:'全体',v:plans.length,c:'#111'},{l:'完了',v:plans.filter(ad).length,c:'#3B6D11'},{l:'進行中',v:plans.filter(p=>ROLES.some(r=>p.completions?.[r]?.done)&&!ad(p)).length,c:'#BA7517'},{l:'遅延',v:plans.filter(dl).length,c:'#993556'}].map(s=>(
+          <div key={s.l} style={{background:'#fff',borderRadius:12,padding:'12px 6px',textAlign:'center',border:'1px solid #E0DED8'}}>
+            <div style={{fontSize:11,color:'#888',marginBottom:4,fontWeight:500}}>{s.l}</div>
+            <div style={{fontSize:26,fontWeight:700,color:s.c}}>{s.v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{overflowX:'auto',border:'1px solid #E0DED8',borderRadius:12}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:520}}>
+          <thead><tr style={{background:'#F8F7F4'}}>
+            <th style={{padding:'10px 6px',textAlign:'left',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',width:24}}>L</th>
+            <th style={{padding:'10px 6px',textAlign:'left',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',width:80}}>背番号</th>
+            <th style={{padding:'10px 6px',textAlign:'left',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',width:56}}>掛け時間</th>
+            {ROLES.map(r=><th key={r} style={{padding:'10px 2px',textAlign:'center',borderBottom:'1px solid #E0DED8',fontWeight:600,color:RA[r],width:40,fontSize:10}}>{RS[r]}</th>)}
+            <th style={{padding:'10px 6px',textAlign:'center',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',width:52}}>状態</th>
+          </tr></thead>
+          <tbody>
+            {sorted.map(item=>(
+              <tr key={item.id} style={{borderBottom:'1px solid #F0EEE8',background:ad(item)?'#EAF3DE55':dl(item)?'#FCEBEB55':'transparent'}}>
+                <td style={{padding:'10px 6px',color:'#888',fontWeight:700}}>{item.line}</td>
+                <td style={{padding:'10px 6px',fontWeight:700,color:'#111',fontSize:13}}>{item.seiban}</td>
+                <td style={{padding:'10px 6px',color:'#888'}}>{item.kakeTime}</td>
+                {ROLES.map(r=><td key={r} style={{padding:'10px 2px',textAlign:'center'}}>{item.completions?.[r]?.done?<span style={{color:'#3B6D11',fontWeight:700,fontSize:16}}>○</span>:<span style={{color:'#DDD',fontSize:18}}>·</span>}</td>)}
+                <td style={{padding:'10px 4px',textAlign:'center'}}>
+                  {ad(item)?<span style={{fontSize:11,padding:'3px 7px',borderRadius:6,fontWeight:600,background:'#C0DD97',color:'#27500A'}}>完了</span>
+                    :dl(item)?<span style={{fontSize:11,padding:'3px 7px',borderRadius:6,fontWeight:600,background:'#F09595',color:'#501313'}}>遅延</span>
+                    :<span style={{fontSize:11,padding:'3px 7px',borderRadius:6,fontWeight:600,background:'#FAC775',color:'#412402'}}>進行中</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AdminScreen({plans,master,onRegister,onBack}){
+  const[tab,setTab]=useState('register');
+  return(
+    <div className="screen">
+      <div style={{borderBottom:'1px solid #E0DED8',background:'#fff',position:'sticky',top:0,zIndex:20}}>
+        <div style={{display:'flex',alignItems:'center',padding:'12px 16px 0'}}>
+          <button className="btn-ghost" onClick={onBack} style={{marginRight:12,minHeight:44,minWidth:64}}>← 戻る</button>
+          <span style={{fontSize:17,fontWeight:700,color:'#111'}}>管理者</span>
+        </div>
+        <div style={{display:'flex',padding:'0 16px'}}>
+          {[['register','計画登録'],['progress','進捗確認']].map(([id,label])=>(
+            <button key={id} onClick={()=>setTab(id)} style={{padding:'14px 20px',background:'none',border:'none',fontSize:14,fontWeight:600,color:tab===id?'#185FA5':'#888',borderBottom:tab===id?'3px solid #185FA5':'3px solid transparent',minHeight:50}}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{padding:'18px 16px'}}>
+        {tab==='register'?<AdminRegister plans={plans} master={master} onRegister={onRegister}/>:<AdminProgress plans={plans}/>}
+      </div>
+    </div>
+  );
+}
+
+function MasterScreen({master,onBack}){
+  const[sel,setSel]=useState(null);
+  const[newSb,setNewSb]=useState('');
+  const[uploadPct,setUploadPct]=useState(-1);
+  const[adding,setAdding]=useState(false);
+  const[seeding,setSeeding]=useState(false);
+  const fileRef=useRef(null);
+  const seibanList=Object.keys(master).sort();
+  const selData=sel?master[sel]:null;
+  const selImg=selData?.imageUrl||null;
+
+  async function handleImg(e){
+    const file=e.target.files[0];if(!file||!sel)return;
+    if(file.size>3*1024*1024){alert('ファイルサイズは3MB以下にしてください');return;}
+    setUploadPct(0);
+    try{
+      const ref=stor.ref(`product-images/${sel}`);
+      const task=ref.put(file);
+      task.on('state_changed',snap=>setUploadPct(Math.round(snap.bytesTransferred/snap.totalBytes*100)));
+      await task;
+      const url=await ref.getDownloadURL();
+      await db.collection('master').doc(sel).set({imageUrl:url},{merge:true});
+    }catch(err){alert('アップロードに失敗しました: '+err.message);}
+    finally{setUploadPct(-1);}
+    e.target.value='';
+  }
+
+  async function handleDeleteImg(){
+    if(!sel||!selImg)return;
+    try{
+      try{await stor.ref(`product-images/${sel}`).delete();}catch(e){}
+      await db.collection('master').doc(sel).update({imageUrl:firebase.firestore.FieldValue.delete()});
+    }catch(err){alert('削除に失敗: '+err.message);}
+  }
+
+  async function handleAdd(){
+    const s=newSb.trim();if(!s)return;
+    if(master[s]){alert('すでに登録されています');return;}
+    setAdding(true);
+    try{await db.collection('master').doc(s).set({},{merge:true});setSel(s);setNewSb('');}
+    catch(err){alert('追加に失敗: '+err.message);}
+    finally{setAdding(false);}
+  }
+
+  async function handleSeed(){
+    setSeeding(true);
+    try{
+      const batch=db.batch();
+      Object.entries(MASTER_DEFAULT).forEach(([sb,data])=>{batch.set(db.collection('master').doc(sb),data,{merge:true});});
+      await batch.commit();
+    }catch(err){alert('投入に失敗: '+err.message);}
+    finally{setSeeding(false);}
+  }
+
+  return(
+    <div className="screen">
+      <NavBar title="マスター管理" sub="背番号・画像・QRコード" onBack={onBack}/>
+      <div style={{padding:'14px 16px'}}>
+        <div style={{display:'flex',gap:8,marginBottom:12}}>
+          <input value={newSb} onChange={e=>setNewSb(e.target.value)} placeholder="新しい背番号を追加..." style={{flex:1}} onKeyDown={e=>e.key==='Enter'&&handleAdd()}/>
+          <button onClick={handleAdd} disabled={!newSb.trim()||adding} style={{minHeight:48,padding:'0 16px',borderRadius:10,border:'none',background:adding?'#B4B2A9':'#185FA5',color:'#fff',fontSize:14,fontWeight:600,whiteSpace:'nowrap'}}>{adding?'追加中...':'追加'}</button>
+        </div>
+        {seibanList.length===0&&(
+          <button onClick={handleSeed} disabled={seeding} style={{width:'100%',minHeight:48,borderRadius:12,border:'2px dashed #185FA5',background:'#E6F1FB',color:'#185FA5',fontSize:14,fontWeight:600,marginBottom:14}}>
+            {seeding?'投入中...':'サンプルマスターデータを投入'}
+          </button>
+        )}
+        {seibanList.length>0&&(
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+            {seibanList.map(sb=>(
+              <button key={sb} onClick={()=>setSel(sel===sb?null:sb)} style={{padding:'10px 12px',textAlign:'left',background:sel===sb?'#E6F1FB':'#fff',border:`1px solid ${sel===sb?'#185FA5':'#E0DED8'}`,borderRadius:12}}>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  {master[sb]?.imageUrl
+                    ?<img src={master[sb].imageUrl} style={{width:36,height:36,objectFit:'cover',borderRadius:6,border:'1px solid #E0DED8',flexShrink:0}}/>
+                    :<div style={{width:36,height:36,borderRadius:6,border:'1px dashed #D0CEC8',background:'#F8F7F4',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:10,color:'#CCC'}}>IMG</span></div>
+                  }
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:700,color:'#111',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sb}</div>
+                    <div style={{fontSize:10,color:'#aaa',marginTop:2}}>{master[sb]?.imageUrl?'画像あり':'画像なし'}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        {sel&&selData!==undefined&&(
+          <div className="card">
+            <div style={{padding:'14px 16px',borderBottom:'1px solid #F0EEE8'}}>
+              <div style={{fontSize:20,fontWeight:700,color:'#111'}}>{sel}</div>
+            </div>
+            <div style={{padding:'16px'}}>
+              <div style={{display:'flex',gap:16,flexWrap:'wrap',marginBottom:16,alignItems:'flex-start'}}>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+                  <div style={{background:'#fff',border:'1px solid #E0DED8',borderRadius:10,padding:6}}><QRCode value={sel} size={130}/></div>
+                  <span style={{fontSize:11,color:'#888'}}>QRコード（背番号）</span>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,flex:1,minWidth:130}}>
+                  {selImg?(
+                    <div style={{position:'relative'}}>
+                      <img src={selImg} style={{width:130,height:130,objectFit:'cover',borderRadius:10,border:'1px solid #E0DED8',display:'block'}}/>
+                      <button onClick={handleDeleteImg} style={{position:'absolute',top:-8,right:-8,width:28,height:28,borderRadius:'50%',background:'#E24B4A',border:'none',color:'#fff',fontSize:15,fontWeight:700,lineHeight:'28px',padding:0}}>×</button>
+                    </div>
+                  ):(
+                    <div onClick={()=>uploadPct<0&&fileRef.current?.click()} style={{width:130,height:130,border:'2px dashed #D0CEC8',borderRadius:10,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#FAFAF8',cursor:'pointer',gap:8}}>
+                      {uploadPct>=0?(
+                        <>
+                          <div style={{fontSize:20,fontWeight:700,color:'#185FA5'}}>{uploadPct}%</div>
+                          <div style={{width:90,height:5,background:'#E0DED8',borderRadius:3}}>
+                            <div style={{width:uploadPct+'%',height:'100%',background:'#185FA5',borderRadius:3,transition:'width .2s'}}/>
+                          </div>
+                        </>
+                      ):(
+                        <><span style={{fontSize:32,color:'#D0CEC8'}}>+</span><span style={{fontSize:12,color:'#CCC'}}>画像を追加</span></>
+                      )}
+                    </div>
+                  )}
+                  <input type="file" accept="image/*" ref={fileRef} style={{display:'none'}} onChange={handleImg}/>
+                  <button onClick={()=>fileRef.current?.click()} disabled={uploadPct>=0} style={{minHeight:44,padding:'0 14px',borderRadius:8,border:'1px solid #C0BEB5',background:'#fff',fontSize:13,width:'100%'}}>
+                    {uploadPct>=0?`アップロード中 ${uploadPct}%`:(selImg?'画像を変更':'画像をアップロード')}
+                  </button>
+                </div>
+              </div>
+              {Object.entries(selData||{}).filter(([k])=>k!=='imageUrl'&&selData[k]).length>0&&(
+                <>
+                  <div style={{fontSize:12,fontWeight:600,color:'#888',letterSpacing:.5,marginBottom:8}}>塗装条件</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px'}}>
+                    {[['ハンガー名称',selData.hangerName],['ハンガー本数',selData.hangers?selData.hangers+'本':null],['掛幅',selData.width?selData.width+'mm':null],['設定電圧',selData.voltage?selData.voltage+'V':null],['段替え空フック数',selData.emptyHooks?selData.emptyHooks+'個':null],['ハンガー連続本数',selData.continuous?selData.continuous+'本':null]].filter(([,v])=>v).map(([l,v])=>(
+                      <div key={l}><div style={{fontSize:10,color:'#aaa',marginBottom:2}}>{l}</div><div style={{fontSize:14,fontWeight:600,color:'#111'}}>{v}</div></div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const[ready,setReady]=useState(false);
+  const[err,setErr]=useState(null);
+  const[master,setMaster]=useState({});
+  const[plans,setPlans]=useState([]);
+  const[screen,setScreen]=useState('home');
+  const[role,setRole]=useState(null);
+  const[line,setLine]=useState(null);
+
+  useEffect(()=>{
+    let unsubM,unsubP;
+    auth.signInAnonymously()
+      .then(()=>{
+        unsubM=db.collection('master').onSnapshot(snap=>{
+          const m={};snap.forEach(doc=>{m[doc.id]={...doc.data()};});setMaster(m);
+        },e=>console.error('master listener:',e));
+        unsubP=db.collection('plans').where('date','==',TODAY).onSnapshot(snap=>{
+          const p=[];snap.forEach(doc=>p.push({id:doc.id,...doc.data()}));
+          p.sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime));setPlans(p);
+        },e=>console.error('plans listener:',e));
+        setReady(true);
+      })
+      .catch(e=>setErr(e.message));
+    return()=>{unsubM&&unsubM();unsubP&&unsubP();};
+  },[]);
+
+  async function onComplete(planId,role,frac){
+    const now=new Date().toTimeString().slice(0,5);
+    const upd={[`completions.${role}`]:{done:true,time:now},updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+    if(frac!=='')upd.actualFraction=frac;
+    await db.collection('plans').doc(planId).update(upd);
+  }
+
+  async function onUndo(planId,role){
+    await db.collection('plans').doc(planId).update({
+      [`completions.${role}`]:firebase.firestore.FieldValue.delete(),
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  async function onRegister(items,line){
+    const batch=db.batch();
+    const ex=await db.collection('plans').where('date','==',TODAY).get();
+    ex.forEach(doc=>{if(doc.data().line===line)batch.delete(doc.ref);});
+    items.forEach(item=>{
+      const ref=db.collection('plans').doc();
+      batch.set(ref,{date:TODAY,line:item.line,seiban:item.seiban,kakeTime:item.kakeTime,orosiTime:item.orosiTime,reqTime:item.reqTime,products:item.products,boxes:item.boxes,completions:{},actualFraction:'',createdAt:firebase.firestore.FieldValue.serverTimestamp(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    });
+    await batch.commit();
+  }
+
+  if(err)return<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
+  if(!ready)return<LoadingScreen/>;
+
+  function selectRole(r){setRole(r);if(r==='リフトマン'){setLine(null);setScreen('worker');}else setScreen('lineSelect');}
+
+  if(screen==='home')return<HomeScreen onRole={selectRole} onAdmin={id=>setScreen(id)}/>;
+  if(screen==='lineSelect')return<LineSelectScreen role={role} onLine={l=>{setLine(l);setScreen('worker');}} onBack={()=>setScreen('home')}/>;
+  if(screen==='worker')return<WorkerScreen role={role} line={line} plans={plans} master={master} onComplete={onComplete} onUndo={onUndo} onBack={()=>setScreen('home')}/>;
+  if(screen==='admin')return<AdminScreen plans={plans} master={master} onRegister={onRegister} onBack={()=>setScreen('home')}/>;
+  if(screen==='master')return<MasterScreen master={master} onBack={()=>setScreen('home')}/>;
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
