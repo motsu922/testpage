@@ -645,6 +645,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
 function AdminRegister({plans,master,onRegister}){
   const[text,setText]=useState('');
   const[line,setLine]=useState('A');
+  const[planDate,setPlanDate]=useState(TODAY);
   const[prev,setPrev]=useState(null);
   const[loading,setLoading]=useState(false);
   const[msg,setMsg]=useState(null);
@@ -656,7 +657,7 @@ function AdminRegister({plans,master,onRegister}){
     if(!prev?.length||loading)return;
     setLoading(true);setMsg(null);
     try{
-      await onRegister(prev);
+      await onRegister(prev,planDate);
       const ac=prev.filter(i=>i.line==='A').length,bc=prev.filter(i=>i.line==='B').length;
       const desc=ac&&bc?`Aライン ${ac}件・Bライン ${bc}件`:ac?`Aライン ${ac}件`:`Bライン ${bc}件`;
       setMsg({ok:true,t:desc+' 登録しました'});
@@ -667,6 +668,11 @@ function AdminRegister({plans,master,onRegister}){
   return(
     <div style={{display:'grid',gridTemplateColumns:'360px 1fr',gap:32,alignItems:'start'}}>
       <div>
+      <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center'}}>
+        <span style={{fontSize:14,color:'#555',fontWeight:500}}>日付：</span>
+        <input type="date" value={planDate} onChange={e=>{setPlanDate(e.target.value);setPrev(null);setMsg(null);}} style={{fontSize:14,padding:'8px 12px',borderRadius:10,width:'auto',flex:'none'}}/>
+        {planDate!==TODAY&&<span style={{fontSize:12,padding:'4px 10px',borderRadius:8,background:'#FAEEDA',color:'#854F0B',fontWeight:600}}>過去・未来の日付</span>}
+      </div>
       <div style={{display:'flex',gap:10,marginBottom:14,alignItems:'center'}}>
         <span style={{fontSize:14,color:'#555',fontWeight:500}}>ライン：</span>
         {['A','B'].map(l=>(
@@ -1090,15 +1096,16 @@ function App(){
     await db.collection('anomalyTypes').doc(id).delete();
   }
 
-  async function onRegister(items){
+  async function onRegister(items,date){
     if(!items.length)return;
+    const targetDate=date||TODAY;
     const lines=[...new Set(items.map(i=>i.line))];
     const batch=db.batch();
-    const ex=await db.collection('plans').where('date','==',TODAY).get();
+    const ex=await db.collection('plans').where('date','==',targetDate).get();
     ex.forEach(doc=>{if(lines.includes(doc.data().line))batch.delete(doc.ref);});
     items.forEach(item=>{
       const ref=db.collection('plans').doc();
-      batch.set(ref,{date:TODAY,line:item.line,seiban:item.seiban,
+      batch.set(ref,{date:targetDate,line:item.line,seiban:item.seiban,
         kakeTime:item.kakeTime,orosiTime:item.orosiTime,reqTime:item.reqTime,
         products:item.products,materialBoxes:item.materialBoxes,
         hangerName:item.hangerName,hangers:item.hangers,fraction:item.fraction,
