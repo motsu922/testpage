@@ -570,7 +570,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
                   <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
                     {curImg?(
                       <button onClick={()=>setModalImg(curImg)} style={{border:'1px solid #E0DED8',borderRadius:8,padding:0,background:'none',overflow:'hidden',width:imgSize,height:imgSize,flexShrink:0}}>
-                        <img src={curImg} style={{width:imgSize,height:imgSize,objectFit:'cover',display:'block'}}/>
+                        <img src={curImg} style={{width:imgSize,height:imgSize,objectFit:'contain',display:'block'}}/>
                       </button>
                     ):(
                       <div style={{width:imgSize,height:imgSize,border:'1px dashed #D0CEC8',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:'#FAFAF8'}}>
@@ -608,7 +608,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
                     <div style={{fontSize:26,fontWeight:700,color:'#999'}}>{nxt.seiban}</div>
                     <div style={{display:'flex',alignItems:'center',gap:10}}>
-                      {nxtImg&&<img src={nxtImg} style={{width:40,height:40,objectFit:'cover',borderRadius:6,border:'1px solid #E0DED8'}}/>}
+                      {nxtImg&&<img src={nxtImg} style={{width:40,height:40,objectFit:'contain',borderRadius:6,border:'1px solid #E0DED8'}}/>}
                       <div style={{textAlign:'right'}}>
                         <div style={{fontSize:14,color:'#aaa'}}>{nxt.kakeTime}</div>
                         <div style={{fontSize:12,color:'#bbb'}}>{nxt.products}個</div>
@@ -662,7 +662,7 @@ function AdminRegister({plans,master,onRegister}){
       await onRegister(prev,planDate);
       const ac=prev.filter(i=>i.line==='A').length,bc=prev.filter(i=>i.line==='B').length;
       const desc=ac&&bc?`Aライン ${ac}件・Bライン ${bc}件`:ac?`Aライン ${ac}件`:`Bライン ${bc}件`;
-      setMsg({ok:true,t:desc+' 登録しました'});
+      setMsg({ok:true,t:desc+' 登録しました（新規背番号はマスターに自動登録されます）'});
       setPrev(null);setText('');
     }catch(e){setMsg({ok:false,t:'登録に失敗: '+e.message});}
     finally{setLoading(false);}
@@ -698,7 +698,7 @@ function AdminRegister({plans,master,onRegister}){
               <tbody>
                 {prev.map((item,i)=>{const img=master[item.seiban]?.imageUrl;return(
                   <tr key={i} style={{borderBottom:'1px solid #F0EEE8'}}>
-                    <td style={{padding:'8px'}}>{img?<img src={img} style={{width:32,height:32,objectFit:'cover',borderRadius:6}}/>:<div style={{width:32,height:32,borderRadius:6,background:'#F0EEE8'}}/>}</td>
+                    <td style={{padding:'8px'}}>{img?<img src={img} style={{width:32,height:32,objectFit:'contain',borderRadius:6}}/>:<div style={{width:32,height:32,borderRadius:6,background:'#F0EEE8'}}/>}</td>
                     <td style={{padding:'8px',fontWeight:700,color:item.line==='A'?'#185FA5':'#534AB7',fontSize:13}}>{item.line}</td>
                     <td style={{padding:'8px',fontWeight:700,color:'#111',fontSize:14}}>{item.seiban}</td>
                     <td style={{padding:'8px',color:'#333'}}>{item.kakeTime}</td>
@@ -902,6 +902,16 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     finally{setSeeding(false);}
   }
 
+  async function handleDeleteSeiban(){
+    if(!sel)return;
+    if(!window.confirm(`背番号「${sel}」をマスターから削除しますか？\n画像も削除されます。`))return;
+    try{
+      try{await stor.ref(`product-images/${sel}`).delete();}catch(e){}
+      await db.collection('master').doc(sel).delete();
+      setSel(null);
+    }catch(err){alert('削除に失敗: '+err.message);}
+  }
+
   async function handleAddAT(){
     const n=newAT.trim();if(!n||addingAT)return;
     setAddingAT(true);
@@ -955,7 +965,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                   <button key={sb} onClick={()=>setSel(sel===sb?null:sb)} style={{padding:'10px 12px',textAlign:'left',background:sel===sb?'#E6F1FB':'#fff',border:`1px solid ${sel===sb?'#185FA5':'#E0DED8'}`,borderRadius:12}}>
                     <div style={{display:'flex',gap:8,alignItems:'center'}}>
                       {master[sb]?.imageUrl
-                        ?<img src={master[sb].imageUrl} style={{width:36,height:36,objectFit:'cover',borderRadius:6,border:'1px solid #E0DED8',flexShrink:0}}/>
+                        ?<img src={master[sb].imageUrl} style={{width:36,height:36,objectFit:'contain',borderRadius:6,border:'1px solid #E0DED8',flexShrink:0}}/>
                         :<div style={{width:36,height:36,borderRadius:6,border:'1px dashed #D0CEC8',background:'#F8F7F4',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:10,color:'#CCC'}}>IMG</span></div>
                       }
                       <div style={{flex:1,minWidth:0}}>
@@ -969,8 +979,9 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
             )}
             {sel&&selData!==undefined&&(
               <div className="card">
-                <div style={{padding:'14px 16px',borderBottom:'1px solid #F0EEE8'}}>
+                <div style={{padding:'14px 16px',borderBottom:'1px solid #F0EEE8',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <div style={{fontSize:20,fontWeight:700,color:'#111'}}>{sel}</div>
+                  <button onClick={handleDeleteSeiban} style={{padding:'6px 14px',borderRadius:8,border:'1px solid #F09595',background:'#FCEBEB',fontSize:13,fontWeight:600,color:'#A32D2D'}}>削除</button>
                 </div>
                 <div style={{padding:'16px'}}>
                   <div style={{display:'flex',gap:16,flexWrap:'wrap',marginBottom:16,alignItems:'flex-start'}}>
@@ -981,7 +992,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8,flex:1,minWidth:130}}>
                       {selImg?(
                         <div style={{position:'relative'}}>
-                          <img src={selImg} style={{width:130,height:130,objectFit:'cover',borderRadius:10,border:'1px solid #E0DED8',display:'block'}}/>
+                          <img src={selImg} style={{width:130,height:130,objectFit:'contain',borderRadius:10,border:'1px solid #E0DED8',display:'block'}}/>
                           <button onClick={handleDeleteImg} style={{position:'absolute',top:-8,right:-8,width:28,height:28,borderRadius:'50%',background:'#E24B4A',border:'none',color:'#fff',fontSize:15,fontWeight:700,lineHeight:'28px',padding:0}}>×</button>
                         </div>
                       ):(
@@ -1119,6 +1130,24 @@ function App(){
         updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
     });
     await batch.commit();
+
+    // 計画内の背番号でマスター未登録のものを自動登録（in上限10件ずつチャンク処理）
+    const newSeibanList=[...new Set(items.map(i=>i.seiban))];
+    const existingIds=new Set();
+    for(let i=0;i<newSeibanList.length;i+=10){
+      const chunk=newSeibanList.slice(i,i+10);
+      const snap=await db.collection('master').where(firebase.firestore.FieldPath.documentId(),'in',chunk).get();
+      snap.docs.forEach(d=>existingIds.add(d.id));
+    }
+    const autoRegBatch=db.batch();
+    let autoCount=0;
+    newSeibanList.forEach(sb=>{
+      if(!existingIds.has(sb)){
+        autoRegBatch.set(db.collection('master').doc(sb),{autoRegistered:true,createdAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+        autoCount++;
+      }
+    });
+    if(autoCount>0)await autoRegBatch.commit();
   }
 
   if(err)return<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
