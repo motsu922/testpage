@@ -502,7 +502,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
   const[showQRScan,setShowQRScan]=useState(false);
   const[imgSize,setImgSize]=useState(()=>{try{return parseInt(localStorage.getItem('imgSize'))||120;}catch{return 120;}});
   function changeImgSize(v){const s=parseInt(v);setImgSize(s);try{localStorage.setItem('imgSize',s);}catch{}}
-  const ll=(role==='リフトマン'||role==='製品段取り'||role==='出荷')?null:line;
+  const ll=(role==='リフトマン'||role==='製品段取り'||role==='出荷'||role==='ハンガー段取り')?null:line;
   const items=plans.filter(p=>ll?p.line===ll:true).sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
   const done=items.filter(p=>p.completions?.[role]?.done);
   const pend=items.filter(p=>!p.completions?.[role]?.done);
@@ -512,6 +512,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
   const curImg=cur?master[cur.seiban]?.imageUrl:null;
   const nxtImg=nxt?master[nxt.seiban]?.imageUrl:null;
   const fields=cur?getFields(role,cur,master):[];
+  const isListRole=role==='リフトマン'||role==='ハンガー段取り';
   useEffect(()=>setFrac(''),[cur?.id]);
 
   async function handleComplete(){
@@ -531,6 +532,82 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
     catch(e){alert('取り消しに失敗: '+e.message);}
     finally{setSaving(false);}
   }
+
+  if(isListRole)return(
+    <div className="screen" style={{background:'#F1EFE8'}}>
+      <NavBar title={role} onBack={onBack}
+        right={<button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>{t('異常')}</button>}/>
+      <div style={{padding:'12px 16px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#888',marginBottom:5}}>
+          <span>本日の進捗</span><span style={{fontWeight:600,color:'#111'}}>{done.length}/{items.length}{t('件')}　{pct}%</span>
+        </div>
+        <div style={{height:8,background:'#E0DED8',borderRadius:4,marginBottom:16,overflow:'hidden'}}>
+          <div style={{height:'100%',background:a,borderRadius:4,width:pct+'%',transition:'width .5s'}}/>
+        </div>
+        {items.length===0?(
+          <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>計画が登録されていません</div>
+        ):(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            {items.map(item=>{
+              const isDone=item.completions?.[role]?.done;
+              const m=master[item.seiban]||{};
+              const hn=m.hangerName||item.hangerName||'';
+              const hc=m.hangers||item.hangers||'';
+              const lc=item.line==='A'?'#185FA5':'#534AB7';
+              const lb=item.line==='A'?'#E6F1FB':'#EEEDFE';
+              const details=[];
+              if(hn)details.push(['ハンガー名称',hn]);
+              if(hc)details.push(['ハンガー本数',hc+'本']);
+              if(role==='リフトマン'){
+                if(item.products)details.push(['製品数',item.products+'個']);
+                if(m.width||item.width)details.push(['掛幅',(m.width||item.width)+'mm']);
+              }
+              if(role==='ハンガー段取り'){
+                if(m.voltage||item.voltage)details.push(['設定電圧',(m.voltage||item.voltage)+'V']);
+                if(m.emptyHooks)details.push(['空フック数',m.emptyHooks+'個']);
+                if(m.continuous)details.push(['連続本数',m.continuous+'本']);
+              }
+              if(item.reqTime)details.push(['所要時間',item.reqTime]);
+              return(
+                <div key={item.id} style={{padding:'14px 16px',borderRadius:16,background:isDone?'#F8F7F4':'#fff',border:`2px solid ${isDone?'#E0DED8':a}`,opacity:isDone?0.55:1}}>
+                  <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:details.length?10:0}}>
+                    <span style={{fontSize:15,fontWeight:700,color:lc,background:lb,padding:'5px 12px',borderRadius:10,flexShrink:0}}>{item.line}ライン</span>
+                    <div style={{flex:1,fontSize:26,fontWeight:700,color:isDone?'#aaa':'#111'}}>{item.seiban}</div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:20,fontWeight:700,color:isDone?'#aaa':a}}>{item.kakeTime}</div>
+                      {item.reqTime&&<div style={{fontSize:12,color:'#aaa'}}>({item.reqTime})</div>}
+                    </div>
+                  </div>
+                  {details.length>0&&(
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',marginBottom:12,padding:'10px 12px',background:'#F8F7F4',borderRadius:10}}>
+                      {details.map(([lb2,v])=>(
+                        <div key={lb2}>
+                          <div style={{fontSize:11,color:'#999',marginBottom:2}}>{lb2}</div>
+                          <div style={{fontSize:17,fontWeight:600,color:'#111'}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isDone?(
+                    <div style={{textAlign:'center',padding:'10px',background:'#E8F5E1',borderRadius:10}}>
+                      <span style={{fontSize:15,fontWeight:700,color:'#3B6D11'}}>✓ 完了</span>
+                    </div>
+                  ):(
+                    <button onClick={async()=>{if(saving)return;setSaving(true);try{await onComplete(item.id,role,'');}catch(e){alert('保存に失敗: '+e.message);}finally{setSaving(false);}}}
+                      disabled={saving}
+                      style={{width:'100%',padding:'14px',background:saving?'#B4B2A9':a,color:'#fff',border:'none',borderRadius:12,fontSize:18,fontWeight:700,minHeight:52}}>
+                      {saving?'保存中...':'完　了'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {showAnomaly&&<AnomalyModal seiban={''} role={role} line={null} types={anomalyTypes} onClose={()=>setShowAnomaly(false)} onDone={()=>setShowAnomaly(false)}/>}
+    </div>
+  );
 
   return(
     <div className="screen" style={{background:flash?l:'#F1EFE8',transition:'background .35s'}}>
@@ -593,6 +670,12 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
                     <div key={lb}><div style={{fontSize:11,color:'#999',marginBottom:3}}>{t(lb)}</div><div style={{fontSize:18,fontWeight:600,color:'#111'}}>{v}</div></div>
                   ))}
                 </div>
+                {master[cur.seiban]?.note&&(
+                  <div style={{marginTop:14,padding:'10px 12px',background:'#FFFBEA',border:'1.5px solid #F5D65B',borderRadius:10}}>
+                    <div style={{fontSize:10,color:'#8A6A00',fontWeight:700,marginBottom:4}}>⚠ 注意ポイント</div>
+                    <div style={{fontSize:14,color:'#5A4000',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{master[cur.seiban].note}</div>
+                  </div>
+                )}
                 {needsFrac&&(
                   <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid #F0EEE8'}}>
                     <div style={{fontSize:12,color:'#888',marginBottom:8,fontWeight:500}}>ハンガー内端数実績（入力）</div>
@@ -628,6 +711,32 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
                 onTouchEnd={e=>{e.currentTarget.style.transform='scale(1)';if(!saving)e.currentTarget.style.boxShadow='0 4px 16px '+a+'88';}}>
                 {t(saving?'Firestore に保存中...':'完　了')}
               </button>
+            )}
+            {items.length>1&&(
+              <div style={{marginTop:24}}>
+                <div style={{fontSize:11,fontWeight:600,color:'#888',letterSpacing:1,marginBottom:10,textTransform:'uppercase'}}>本日の全作業一覧</div>
+                <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                  {items.map((item,idx)=>{
+                    const isDone=item.completions?.[role]?.done;
+                    const isCur=item.id===cur?.id;
+                    const tm=(["降ろし検査","出荷"].includes(role)&&item.orosiTime)||item.kakeTime;
+                    return(
+                      <div key={item.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',borderRadius:10,
+                        background:isCur?l:isDone?'#F8F7F4':'#fff',
+                        border:`1.5px solid ${isCur?a:'#E0DED8'}`,
+                        opacity:isDone&&!isCur?0.55:1}}>
+                        <div style={{fontSize:13,fontWeight:700,color:'#bbb',minWidth:20,textAlign:'center'}}>{idx+1}</div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:15,fontWeight:700,color:isCur?a:isDone?'#aaa':'#111'}}>{item.seiban}</div>
+                          <div style={{fontSize:11,color:'#aaa',marginTop:1}}>{item.line}ライン　{tm}{item.reqTime?' ('+item.reqTime+')':''}</div>
+                        </div>
+                        {isCur&&<span style={{fontSize:11,fontWeight:700,color:a,background:l,padding:'3px 8px',borderRadius:6}}>▶ 現在</span>}
+                        {isDone&&!isCur&&<span style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>完了</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </>
         )}
@@ -844,7 +953,10 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const selImg=selData?.imageUrl||null;
   const[qrText,setQrText]=useState('');
   const[savingQr,setSavingQr]=useState(false);
+  const[note,setNote]=useState('');
+  const[savingNote,setSavingNote]=useState(false);
   useEffect(()=>{setQrText(selData?.qrText||'');},[sel,master]);
+  useEffect(()=>{setNote(selData?.note||'');},[sel,master]);
 
   async function handleSaveQr(){
     if(!sel)return;
@@ -857,6 +969,15 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       }
     }catch(err){alert('保存に失敗: '+err.message);}
     finally{setSavingQr(false);}
+  }
+
+  async function handleSaveNote(){
+    if(!sel)return;
+    setSavingNote(true);
+    try{
+      await db.collection('master').doc(sel).set({note:note.trim()},{merge:true});
+    }catch(err){alert('保存に失敗: '+err.message);}
+    finally{setSavingNote(false);}
   }
 
   async function handleImg(e){
@@ -977,7 +1098,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                 ))}
               </div>
             )}
-            {sel&&selData!==undefined&&(
+            {sel&&(
               <div className="card">
                 <div style={{padding:'14px 16px',borderBottom:'1px solid #F0EEE8',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <div style={{fontSize:20,fontWeight:700,color:'#111'}}>{sel}</div>
@@ -1029,7 +1150,16 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                       <div style={{marginTop:8,padding:'6px 10px',background:'#E6F1FB',borderRadius:8,fontSize:11,color:'#185FA5',wordBreak:'break-all'}}>現在: {selData.qrText}</div>
                     )}
                   </div>
-                  {Object.entries(selData||{}).filter(([k])=>k!=='imageUrl'&&k!=='qrText'&&selData[k]).length>0&&(
+                  <div style={{marginTop:14}}>
+                    <div style={{fontSize:12,fontWeight:600,color:'#888',letterSpacing:.5,marginBottom:6}}>注意ポイント</div>
+                    <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="作業者に伝えたい注意事項を入力..."
+                      style={{width:'100%',height:80,fontSize:13,resize:'vertical',marginBottom:6}}/>
+                    <button onClick={handleSaveNote} disabled={savingNote} style={{minHeight:40,padding:'0 18px',borderRadius:10,border:'none',background:savingNote?'#B4B2A9':'#BA7517',color:'#fff',fontSize:13,fontWeight:600}}>
+                      {savingNote?'保存中...':'注意ポイントを保存'}
+                    </button>
+                    {selData?.note&&<div style={{marginTop:6,padding:'5px 10px',background:'#FFFBEA',borderRadius:8,fontSize:11,color:'#8A6A00',wordBreak:'break-all'}}>現在: {selData.note}</div>}
+                  </div>
+                  {Object.entries(selData||{}).filter(([k])=>k!=='imageUrl'&&k!=='qrText'&&k!=='note'&&selData[k]).length>0&&(
                     <>
                       <div style={{fontSize:12,fontWeight:600,color:'#888',letterSpacing:.5,marginBottom:8,marginTop:14}}>塗装条件</div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px'}}>
@@ -1153,7 +1283,7 @@ function App(){
   if(err)return<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
   if(!ready)return<LoadingScreen/>;
 
-  function selectRole(r){setRole(r);if(r==='リフトマン'||r==='製品段取り'||r==='出荷'){setLine(null);setScreen('worker');}else setScreen('lineSelect');}
+  function selectRole(r){setRole(r);if(r==='リフトマン'||r==='製品段取り'||r==='出荷'||r==='ハンガー段取り'){setLine(null);setScreen('worker');}else setScreen('lineSelect');}
 
   if(screen==='home')return<HomeScreen onRole={selectRole} onAdmin={id=>setScreen(id)}/>;
   if(screen==='lineSelect')return<LineSelectScreen role={role} onLine={l=>{setLine(l);setScreen('worker');}} onBack={()=>setScreen('home')}/>;
