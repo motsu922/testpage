@@ -795,10 +795,10 @@
 
         <div class="settings-card">
           <div class="settings-card-title">📐 品番抽出ルール（レンジ + prefix対応）</div>
-          <p style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;">
-            <b>1回目QR（正規化後）</b>の文字数レンジ(min〜max)とprefixでルールを選び、2回目QRの開始位置(startPos)からcharCount文字を品番として抽出します。<br>
-            prefix（開始文字列）を指定すると、<b>文字数レンジAND prefix</b> の両方が1回目QRに一致したルールが優先されます。<br>
-            1回目QR（正規化後）にこの品番が含まれていれば一致(○)です。
+          <p id="extractRulesDesc" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;">
+            <b>切り出し元QR（正規化後）</b>の文字数レンジ(min〜max)とprefixでルールを選び、そのQRの開始位置(startPos)からcharCount文字を品番として抽出します。<br>
+            prefix（開始文字列）を指定すると、<b>文字数レンジAND prefix</b> の両方が切り出し元QRに一致したルールが優先されます。<br>
+            ※ 照合方向の設定によって切り出し元が変わります。
           </p>
           <div id="extractRulesContainer"></div>
           <button class="log-btn" style="width:100%; margin-top:12px;" onclick="addExtractRule()">➕ ルールを追加</button>
@@ -820,6 +820,26 @@
           </div>
           <div style="margin-top:10px; padding:10px; background:#0a0a0a; border-radius:8px; border:1px solid #333; font-size:12px; color:#888; line-height:1.5;">
             ※ スキャン画面の <b>🔗 1対1 / 🔀 1対N</b> バッジをタップしても即時切替できます。
+          </div>
+        </div>
+
+        <!-- ★ 照合方向設定カード -->
+        <div class="settings-card">
+          <div class="settings-card-title">↔️ 照合方向（1対1モード）</div>
+          <p style="font-size:12px; color:#888; margin-bottom:12px; line-height:1.6;">
+            品番を<b>どちらのQRから切り出し</b>、どちらのQRで検索するかを選択します。<br>
+            切り出しルール（文字数・prefix）は<b>切り出される側のQR</b>に応じて判定されます。<br>
+            <span style="color:#ff9800;">※ 1対NモードはQR1切り出し→QR2検索で固定です。</span>
+          </p>
+          <div class="setting-row">
+            <span class="setting-label">
+              QR1から切り出し → QR2で検索
+              <small id="matchDirectionLabel">QR2を切り出し → QR1で検索</small>
+            </span>
+            <div class="toggle-switch" id="matchDirectionToggle" onclick="toggleMatchDirection()"></div>
+          </div>
+          <div id="matchDirectionSummary" style="margin-top:10px; padding:10px; background:#0a0a0a; border-radius:8px; border:1px solid #333; font-size:12px; color:#888; line-height:1.5;">
+            現在：<b>QR2を切り出し → QR1で検索</b>
           </div>
         </div>
 
@@ -943,6 +963,7 @@
     vibrationEnabled: true,
     duplicateCheckEnabled: false,   // ★ 重複監視モード
     scanMode: '1to1',               // ★ '1to1' | '1toN'
+    matchDirection: 'qr2_to_qr1',  // ★ 'qr2_to_qr1' | 'qr1_to_qr2'
     firebase: {
       apiKey: "AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY",
       authDomain: "miyamaunitec-fb87a.firebaseapp.com",
@@ -1160,8 +1181,7 @@
       playSound('step1');  // ★ 1枚目読み込み完了：軽い通知音
       // ★ 1対Nモード：QR1スキャン時点で品番を切り出して固定
       if (settings.scanMode === '1toN') {
-        const v1 = normalizeQR(value1);
-        nModeEx = extractPartNumberWithMeta(v1, v1);  // QR1から切り出し（QR1でルール選択）
+        nModeEx = extractPartNumberFrom(value1);  // QR1から切り出し（QR1でルール選択）
         nModePartNumber = nModeEx.part;
       }
       currentStep = 2;
@@ -1341,6 +1361,19 @@
     updateModeBadge();
   }
 
+  function toggleMatchDirection() {
+    settings.matchDirection = settings.matchDirection === 'qr1_to_qr2' ? 'qr2_to_qr1' : 'qr1_to_qr2';
+    const isQR1toQR2 = settings.matchDirection === 'qr1_to_qr2';
+    const tog = document.getElementById('matchDirectionToggle');
+    if (tog) tog.className = isQR1toQR2 ? 'toggle-switch on' : 'toggle-switch';
+    const lbl = document.getElementById('matchDirectionLabel');
+    if (lbl) lbl.textContent = isQR1toQR2 ? 'QR1を切り出し → QR2で検索' : 'QR2を切り出し → QR1で検索';
+    const sum = document.getElementById('matchDirectionSummary');
+    if (sum) sum.innerHTML = isQR1toQR2
+      ? '現在：<b>QR1を切り出し → QR2で検索</b>'
+      : '現在：<b>QR2を切り出し → QR1で検索</b>';
+    renderExtractRules(); // ルール説明文を再描画
+  }
 
   // ========= 会社プロファイル管理（Firebase同期対応） =========
   let activeCompanyId = '';
@@ -1783,6 +1816,7 @@
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
     if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;
     if (!settings.scanMode) settings.scanMode = '1to1';
+    if (!settings.matchDirection) settings.matchDirection = 'qr2_to_qr1';
     if (!settings.releasePIN) settings.releasePIN = '0000';
     // 旧 adminQR 設定からマイグレーション
     if (settings.adminQR && !localStorage.getItem('pinMigrated')) {
@@ -1827,6 +1861,17 @@
     // ★ スキャンモードトグル
     const smToggle = document.getElementById('scanModeToggle');
     if (smToggle) smToggle.className = settings.scanMode === '1toN' ? 'toggle-switch on' : 'toggle-switch';
+    // ★ 照合方向トグル
+    const mdToggle = document.getElementById('matchDirectionToggle');
+    if (mdToggle) mdToggle.className = settings.matchDirection === 'qr1_to_qr2' ? 'toggle-switch on' : 'toggle-switch';
+    const mdLabel = document.getElementById('matchDirectionLabel');
+    if (mdLabel) mdLabel.textContent = settings.matchDirection === 'qr1_to_qr2'
+      ? 'QR1を切り出し → QR2で検索'
+      : 'QR2を切り出し → QR1で検索';
+    const mdSum = document.getElementById('matchDirectionSummary');
+    if (mdSum) mdSum.innerHTML = settings.matchDirection === 'qr1_to_qr2'
+      ? '現在：<b>QR1を切り出し → QR2で検索</b>'
+      : '現在：<b>QR2を切り出し → QR1で検索</b>';
     renderExtractRules();
     updateDupBadge();
     updateModeBadge();
@@ -1838,6 +1883,17 @@
 
   function renderExtractRules() {
     const container = document.getElementById('extractRulesContainer');
+    const isQR1toQR2 = settings.matchDirection === 'qr1_to_qr2';
+    const extractFrom = isQR1toQR2 ? '1回目QR' : '2回目QR';
+    const searchIn    = isQR1toQR2 ? '2回目QR' : '1回目QR';
+    // 設定カード説明文も更新
+    const descEl = document.getElementById('extractRulesDesc');
+    if (descEl) {
+      descEl.innerHTML = `<b>${extractFrom}（正規化後）</b>の文字数レンジ(min〜max)とprefixでルールを選び、<b>${extractFrom}</b>の開始位置(startPos)からcharCount文字を品番として抽出します。<br>
+            prefix（開始文字列）を指定すると、<b>文字数レンジAND prefix</b> の両方が${extractFrom}に一致したルールが優先されます。<br>
+            ${searchIn}（正規化後）にこの品番が含まれていれば一致(○)です。<br>
+            <span style="color:#ff9800;">※ 1対NモードはQR1切り出し→QR2検索で固定</span>`;
+    }
     container.innerHTML = (settings.extractRules || []).map((rule, index) => `
       <div class="range-group">
         <button onclick="removeExtractRule(${index})"
@@ -1856,8 +1912,8 @@
             <input type="text" class="rule-prefix" data-index="${index}" value="${escapeHtml(rule.prefix || '')}" placeholder="例: :G / VB / なし"></div>
         </div>
         <div style="font-size: 11px; color: #666; line-height:1.4;">
-          例：1回目QRが ${rule.minLen}〜${rule.maxLen}文字 ${rule.prefix ? `かつ prefix="${escapeHtml(rule.prefix)}"` : ''} の場合 →
-          2回目QRの${rule.startPos}文字目から${rule.charCount}文字を品番として抽出
+          例：${extractFrom}が ${rule.minLen}〜${rule.maxLen}文字 ${rule.prefix ? `かつ prefix="${escapeHtml(rule.prefix)}"` : ''} の場合 →
+          ${extractFrom}の${rule.startPos}文字目から${rule.charCount}文字を品番として抽出し、${searchIn}で検索
         </div>
       </div>
     `).join('');
@@ -2075,27 +2131,26 @@
   }
 
   // ========= 抽出ルール =========
-  function pickRule(qr1Norm) {
-    const totalLen = qr1Norm.length;
+  function pickRule(qrNorm) {
+    const totalLen = qrNorm.length;
     const withPrefix = (settings.extractRules || [])
-      .filter(r => r.prefix && qr1Norm.startsWith(r.prefix))
+      .filter(r => r.prefix && qrNorm.startsWith(r.prefix))
       .find(r => totalLen >= r.minLen && totalLen <= r.maxLen);
     if (withPrefix) return withPrefix;
     return (settings.extractRules || []).find(r => totalLen >= r.minLen && totalLen <= r.maxLen) || null;
   }
 
-  function extractPartNumberWithMeta(qr2Raw, qr1Raw) {
-    const qr1 = normalizeQR(qr1Raw);   // ルール選択はQR1で行う
-    const qr2 = normalizeQR(qr2Raw);   // 品番抽出はQR2から行う
-    const totalLen = qr1.length;       // QR1の文字数でルール判定
-    const rule = pickRule(qr1);
-    if (!rule) return { part: qr2, rule: null, totalLen, start0: 0, note: 'no_rule_full' };
+  // ★ 切り出し元QR自身の文字数・prefixでルール判定し、そのQRから品番を切り出す
+  function extractPartNumberFrom(qrRaw) {
+    const qr = normalizeQR(qrRaw);
+    const rule = pickRule(qr);
+    if (!rule) return { part: qr, rule: null, totalLen: qr.length, start0: 0, note: 'no_rule_full' };
     const start0 = rule.startPos - 1;
-    if (start0 < 0 || start0 >= qr2.length) return { part: qr2, rule, totalLen, start0, note: 'bad_start_full' };
-    const part = qr2.substring(start0, start0 + rule.charCount).trim();  // 前後スペース除去
+    if (start0 < 0 || start0 >= qr.length) return { part: qr, rule, totalLen: qr.length, start0, note: 'bad_start_full' };
+    const part = qr.substring(start0, start0 + rule.charCount).trim();
     let note = '';
     if (part.length < rule.charCount) note = 'short_extract';
-    return { part, rule, totalLen, start0, note };
+    return { part, rule, totalLen: qr.length, start0, note };
   }
 
   // ========= 照合 =========
@@ -2107,14 +2162,22 @@
 
     if (settings.scanMode === '1toN') {
       // ★ 1対Nモード：QR1から切り出した品番（固定済み）がQR2に含まれているか
-      ex = nModeEx || extractPartNumberWithMeta(v1, v1);
+      ex = nModeEx || extractPartNumberFrom(value1);
       partNumber = nModePartNumber || ex.part;
       isQROK = v2.includes(partNumber);
     } else {
-      // 1対1モード（従来）：QR2から切り出した品番がQR1に含まれているか
-      ex = extractPartNumberWithMeta(v2, v1);   // ルール選択はQR1で行う
-      partNumber = ex.part;
-      isQROK = v1.includes(partNumber);
+      // 1対1モード：照合方向設定に従う
+      if (settings.matchDirection === 'qr1_to_qr2') {
+        // QR1から切り出し → QR2で検索
+        ex = extractPartNumberFrom(value1);
+        partNumber = ex.part;
+        isQROK = v2.includes(partNumber);
+      } else {
+        // QR2から切り出し → QR1で検索（デフォルト）
+        ex = extractPartNumberFrom(value2);
+        partNumber = ex.part;
+        isQROK = v1.includes(partNumber);
+      }
     }
 
     // ② 重複チェック（QR1単体・QR2単体・QR1+QR2ペアの3種すべて監視）
@@ -2185,8 +2248,10 @@
           ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
         `;
       } else {
+        const isQR1extract = settings.matchDirection === 'qr1_to_qr2';
         detail.innerHTML = `
-          <p class="label">抽出品番</p><p>${escapeHtml(partNumber)}</p>
+          <p class="label">抽出品番（${isQR1extract ? '1回目QR' : '2回目QR'}から）</p><p>${escapeHtml(partNumber)}</p>
+          <p class="label" style="margin-top:10px;">${isQR1extract ? '2回目QR' : '1回目QR'}にこの品番が含まれていました</p>
           <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
           ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
         `;
@@ -2237,11 +2302,12 @@
           <p class="label" style="margin-top:12px;">2回目QRにこの品番が含まれていません</p>
         `;
       } else {
+        const isQR1extract = settings.matchDirection === 'qr1_to_qr2';
         detail.innerHTML = `
-          <p class="label">抽出した品番</p><p>${escapeHtml(partNumber)}</p>
+          <p class="label">抽出した品番（${isQR1extract ? '1回目QR' : '2回目QR'}から）</p><p>${escapeHtml(partNumber)}</p>
           <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
           ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
-          <p class="label" style="margin-top:12px;">1回目QRに含まれていません</p>
+          <p class="label" style="margin-top:12px;">${isQR1extract ? '2回目QR' : '1回目QR'}に含まれていません</p>
         `;
       }
       adminArea.style.display = 'block';
