@@ -1071,7 +1071,7 @@
         </div>
 
         <div class="settings-card">
-          <div class="settings-card-title">🔊 その他</div>
+          <div class="settings-card-title">🔊 サウンド設定</div>
           <div class="setting-row">
             <span class="setting-label">照合音を鳴らす</span>
             <div class="toggle-switch on" id="soundToggle" onclick="toggleSound()"></div>
@@ -1079,6 +1079,72 @@
           <div class="setting-row">
             <span class="setting-label">バイブレーション</span>
             <div class="toggle-switch on" id="vibrationToggle" onclick="toggleVibration()"></div>
+          </div>
+          <!-- 音種別設定 -->
+          <div style="margin-top:12px; border-top:1px solid #333; padding-top:12px;">
+            <div style="font-size:12px; color:#888; margin-bottom:10px;">イベントごとの音を設定（OFF で無音）</div>
+            <style>
+              .sound-row { display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #222; }
+              .sound-row:last-child { border-bottom:none; }
+              .sound-row label { font-size:13px; color:#ccc; flex:1; }
+              .sound-select {
+                padding:6px 8px; background:#0a0a0a; color:#e0e0e0;
+                border:1.5px solid #444; border-radius:6px; font-size:13px;
+                cursor:pointer; min-width:120px;
+              }
+              .sound-select:focus { outline:none; border-color:#4fc3f7; }
+              .sound-preview-btn {
+                padding:5px 9px; margin-left:6px;
+                background:#1a2a3a; color:#7c9eff;
+                border:1px solid #3a5a9a; border-radius:6px;
+                font-size:12px; cursor:pointer;
+              }
+              .sound-preview-btn:active { background:#2a3a6a; }
+            </style>
+            <div class="sound-row">
+              <label>📟 スキャン読み取り</label>
+              <select id="soundType_scan" class="sound-select" onchange="onSoundTypeChange('scan',this.value)">
+                <option value="beep">ピッ</option>
+                <option value="piron">ピロン</option>
+                <option value="buu">ブー</option>
+                <option value="chime">チャイム</option>
+                <option value="off">OFF</option>
+              </select>
+              <button class="sound-preview-btn" onclick="previewSound('scan')">▶</button>
+            </div>
+            <div class="sound-row">
+              <label>✅ OK（一致）</label>
+              <select id="soundType_ok" class="sound-select" onchange="onSoundTypeChange('ok',this.value)">
+                <option value="beep">ピッ</option>
+                <option value="piron">ピロン</option>
+                <option value="buu">ブー</option>
+                <option value="chime">チャイム</option>
+                <option value="off">OFF</option>
+              </select>
+              <button class="sound-preview-btn" onclick="previewSound('ok')">▶</button>
+            </div>
+            <div class="sound-row">
+              <label>❌ NG（不一致）</label>
+              <select id="soundType_ng" class="sound-select" onchange="onSoundTypeChange('ng',this.value)">
+                <option value="beep">ピッ</option>
+                <option value="piron">ピロン</option>
+                <option value="buu">ブー</option>
+                <option value="chime">チャイム</option>
+                <option value="off">OFF</option>
+              </select>
+              <button class="sound-preview-btn" onclick="previewSound('ng')">▶</button>
+            </div>
+            <div class="sound-row">
+              <label>⚠️ 重複検知</label>
+              <select id="soundType_dup" class="sound-select" onchange="onSoundTypeChange('dup',this.value)">
+                <option value="beep">ピッ</option>
+                <option value="piron">ピロン</option>
+                <option value="buu">ブー</option>
+                <option value="chime">チャイム</option>
+                <option value="off">OFF</option>
+              </select>
+              <button class="sound-preview-btn" onclick="previewSound('dup')">▶</button>
+            </div>
           </div>
         </div>
 
@@ -1181,6 +1247,12 @@
     releasePIN: '0000',
     soundEnabled: true,
     vibrationEnabled: true,
+    soundConfig: {               // ★ イベントごとの音種別
+      scan: 'beep',              // スキャン読み取り
+      ok:   'piron',             // OK
+      ng:   'buu',               // NG
+      dup:  'buu'                // 重複
+    },
     duplicateCheckEnabled: false,   // ★ 重複監視モード
     scanMode: '1to1',               // ★ '1to1' | '1toN'
     matchDirection: 'qr2_to_qr1',  // ★ 'qr2_to_qr1' | 'qr1_to_qr2'
@@ -2039,6 +2111,8 @@
     if (!settings.scanMode) settings.scanMode = '1to1';
     if (!settings.matchDirection) settings.matchDirection = 'qr2_to_qr1';
     if (!settings.releasePIN) settings.releasePIN = '0000';
+    if (!settings.soundConfig) settings.soundConfig = { scan:'beep', ok:'piron', ng:'buu', dup:'buu' };
+    ['scan','ok','ng','dup'].forEach(k => { if (!settings.soundConfig[k]) settings.soundConfig[k] = {scan:'beep',ok:'piron',ng:'buu',dup:'buu'}[k]; });
     // 旧 adminQR 設定からマイグレーション
     if (settings.adminQR && !localStorage.getItem('pinMigrated')) {
       delete settings.adminQR;
@@ -2072,6 +2146,11 @@
     document.getElementById('releasePIN').value = String(settings.releasePIN || '0000').padStart(4,'0');
     document.getElementById('soundToggle').className     = settings.soundEnabled     ? 'toggle-switch on' : 'toggle-switch';
     document.getElementById('vibrationToggle').className = settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
+    // ★ 音種別セレクト
+    ['scan','ok','ng','dup'].forEach(k => {
+      const el = document.getElementById('soundType_' + k);
+      if (el) el.value = (settings.soundConfig && settings.soundConfig[k]) || {scan:'beep',ok:'piron',ng:'buu',dup:'buu'}[k];
+    });
     document.getElementById('fbApiKey').value      = settings.firebase.apiKey      || '';
     document.getElementById('fbAuthDomain').value  = settings.firebase.authDomain  || '';
     document.getElementById('fbDatabaseURL').value = settings.firebase.databaseURL || '';
@@ -2385,6 +2464,20 @@
     document.getElementById('vibrationToggle').className = settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
   }
 
+  function onSoundTypeChange(key, value) {
+    if (!settings.soundConfig) settings.soundConfig = {};
+    settings.soundConfig[key] = value;
+  }
+
+  function previewSound(key) {
+    if (!settings.soundConfig) return;
+    const kind = settings.soundConfig[key] || 'off';
+    if (kind === 'off') return;
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    _playSoundKind(kind, audioCtx.currentTime);
+  }
+
   function resetAppSettings() {
     if (!confirm('設定を初期化します。\n（VB24問題などの緊急復旧用）\nよろしいですか？')) return;
     const curKey = getSettingsKey(activeCompanyId);
@@ -2478,11 +2571,27 @@
     initAudio();
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
+    // イベント→音種別マッピング
+    const eventToKey = { beep:'scan', step1:'scan', ok:'ok', ng:'ng', dup:'dup' };
+    const cfg = settings.soundConfig || {};
+    const key = eventToKey[type] || type;
+    const kind = cfg[key] || { scan:'beep', ok:'piron', ng:'buu', dup:'buu' }[key] || 'off';
+    if (kind === 'off') return;
+
     const now = audioCtx.currentTime;
+    _playSoundKind(kind, now);
 
-    if (type === 'beep') {
-      // ピッ：高め・短くシャープなスキャン音
-      const osc  = audioCtx.createOscillator();
+    // バイブレーション
+    if (type === 'beep' || type === 'step1') vibrate([60]);
+    else if (type === 'ok')  vibrate([60, 40, 80]);
+    else if (type === 'ng')  vibrate([200, 80, 200]);
+    else if (type === 'dup') vibrate([150, 60, 150, 60, 150]);
+  }
+
+  function _playSoundKind(kind, now) {
+    if (kind === 'beep') {
+      // ピッ：高め・短くシャープ
+      const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.connect(gain); gain.connect(audioCtx.destination);
       osc.type = 'sine';
@@ -2493,46 +2602,28 @@
       gain.gain.setValueAtTime(0.45, now + 0.05);
       gain.gain.linearRampToValueAtTime(0, now + 0.10);
       osc.start(now); osc.stop(now + 0.11);
-      vibrate([60]);
 
-    } else if (type === 'step1') {
-      // ピッ（step1も同じ高めビープ）
-      const osc  = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain); gain.connect(audioCtx.destination);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(3200, now);
-      osc.frequency.linearRampToValueAtTime(3000, now + 0.06);
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.45, now + 0.008);
-      gain.gain.setValueAtTime(0.45, now + 0.05);
-      gain.gain.linearRampToValueAtTime(0, now + 0.10);
-      osc.start(now); osc.stop(now + 0.11);
-      vibrate([40]);
-
-    } else if (type === 'ok') {
-      // ピロン：ド→ミ→ソの3音で正解感
-      const notes = [523, 659, 784]; // C5 E5 G5
-      notes.forEach((freq, i) => {
-        const t   = now + i * 0.10;
-        const osc  = audioCtx.createOscillator();
+    } else if (kind === 'piron') {
+      // ピロン：ド→ミ→ソの3音
+      [523, 659, 784].forEach((freq, i) => {
+        const t = now + i * 0.10;
+        const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, t);
         gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(0.4, t + 0.01);
-        gain.gain.setValueAtTime(0.4, t + 0.07);
+        gain.gain.linearRampToValueAtTime(0.38, t + 0.01);
+        gain.gain.setValueAtTime(0.38, t + 0.07);
         gain.gain.linearRampToValueAtTime(0, t + 0.13);
         osc.start(t); osc.stop(t + 0.14);
       });
-      vibrate([60, 40, 80]);
 
-    } else if (type === 'ng') {
-      // ブー：低い矩形波を2発
+    } else if (kind === 'buu') {
+      // ブー×2：低い矩形波
       [0, 0.22].forEach(offset => {
-        const t    = now + offset;
-        const osc  = audioCtx.createOscillator();
+        const t = now + offset;
+        const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'square';
@@ -2543,24 +2634,21 @@
         gain.gain.linearRampToValueAtTime(0, t + 0.20);
         osc.start(t); osc.stop(t + 0.21);
       });
-      vibrate([200, 80, 200]);
 
-    } else if (type === 'dup') {
-      // 重複：NGより少し高めを3発
-      [0, 0.18, 0.36].forEach(offset => {
-        const t    = now + offset;
-        const osc  = audioCtx.createOscillator();
+    } else if (kind === 'chime') {
+      // チャイム：サイン波2音（やわらか通知）
+      [[880, 0], [1100, 0.15]].forEach(([freq, offset]) => {
+        const t = now + offset;
+        const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(220, t);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t);
         gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(0.28, t + 0.01);
-        gain.gain.setValueAtTime(0.28, t + 0.12);
-        gain.gain.linearRampToValueAtTime(0, t + 0.16);
-        osc.start(t); osc.stop(t + 0.17);
+        gain.gain.linearRampToValueAtTime(0.32, t + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        osc.start(t); osc.stop(t + 0.36);
       });
-      vibrate([150, 60, 150, 60, 150]);
     }
   }
 
