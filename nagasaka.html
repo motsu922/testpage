@@ -753,6 +753,105 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
   );
 }
 
+const SHEET_COLS=[
+  {key:'kakeTime',label:'掛け時間'},
+  {key:'orosiTime',label:'降ろし時間'},
+  {key:'reqTime',label:'所要時間'},
+  {key:'seiban',label:'背番号',bold:true},
+  {key:'products',label:'製品数',unit:'個'},
+  {key:'materialBoxes',label:'素材箱数',unit:'箱'},
+  {key:'hangerName',label:'ハンガー名称',ms:true},
+  {key:'hangers',label:'ハンガー本数',ms:true,unit:'本'},
+  {key:'fraction',label:'端数予定',unit:'個'},
+  {key:'actualFraction',label:'端数実績',unit:'個'},
+  {key:'kakeWorkers',label:'掛け人数',unit:'人'},
+  {key:'width',label:'掛幅',ms:true,unit:'mm'},
+  {key:'voltage',label:'設定電圧',ms:true,unit:'V'},
+  {key:'emptyHooks',label:'空フック',ms:true,unit:'個'},
+  {key:'continuous',label:'連続本数',ms:true,unit:'本'},
+  {key:'finishedBoxes',label:'完成品箱数',unit:'箱'},
+  {key:'orosiWorkers',label:'降ろし人数',unit:'人'},
+];
+const SHEET_ROLES=['製品段取り','ハンガー段取り','掛け','降ろし検査','出荷'];
+const ROLE_SHORT={'製品段取り':'製','ハンガー段取り':'ハ','掛け':'掛','降ろし検査':'降','出荷':'出'};
+const TH={padding:'7px 10px',textAlign:'left',fontSize:12,fontWeight:600,color:'#555',borderBottom:'2px solid #D8D6D0',whiteSpace:'nowrap',background:'#F4F2EC',position:'sticky',top:0};
+const TD={padding:'7px 10px',fontSize:13,whiteSpace:'nowrap',borderBottom:'1px solid #EEECE6'};
+
+function PlanSpreadsheet({plans,master}){
+  function val(col,item){
+    const m=master[item.seiban]||{};
+    const v=col.ms?(m[col.key]!=null?m[col.key]:item[col.key]):item[col.key];
+    if(v==null||v==='')return<span style={{color:'#CCC'}}>—</span>;
+    return col.unit?v+col.unit:v;
+  }
+  function renderLine(line){
+    const lc=line==='A'?'#185FA5':'#534AB7';
+    const items=plans.filter(p=>p.line===line).sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime));
+    return(
+      <div style={{marginBottom:32}}>
+        <div style={{background:lc,color:'#fff',padding:'9px 16px',fontSize:15,fontWeight:700,borderRadius:'10px 10px 0 0',display:'flex',justifyContent:'space-between'}}>
+          <span>{line}ライン</span>
+          <span style={{fontWeight:400,fontSize:13}}>{items.length}件</span>
+        </div>
+        {items.length===0?(
+          <div style={{padding:'24px',textAlign:'center',color:'#aaa',background:'#fff',border:'1px solid #E0DED8',borderTop:'none',borderRadius:'0 0 10px 10px'}}>計画データなし</div>
+        ):(
+          <div style={{overflowX:'auto',border:'1px solid #E0DED8',borderTop:'none',borderRadius:'0 0 10px 10px'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:1200}}>
+              <thead>
+                <tr>
+                  <th style={{...TH,width:36,textAlign:'center',color:'#aaa'}}>#</th>
+                  {SHEET_COLS.map(c=><th key={c.key} style={TH}>{c.label}</th>)}
+                  <th style={{...TH,minWidth:120}}>工程進捗</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item,idx)=>{
+                  const doneRoles=SHEET_ROLES.filter(r=>item.completions?.[r]?.done);
+                  const allDone=doneRoles.length===SHEET_ROLES.length;
+                  const rowBg=allDone?'#F4FAF0':idx%2===0?'#fff':'#FAFAF8';
+                  return(
+                    <tr key={item.id} style={{background:rowBg}}>
+                      <td style={{...TD,textAlign:'center',color:'#bbb',fontSize:12}}>{idx+1}</td>
+                      {SHEET_COLS.map(c=>(
+                        <td key={c.key} style={{...TD,fontWeight:c.bold?700:400,color:c.bold?lc:'#333',fontSize:c.bold?15:13}}>
+                          {val(c,item)}
+                        </td>
+                      ))}
+                      <td style={TD}>
+                        <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                          {SHEET_ROLES.map(r=>{
+                            const done=item.completions?.[r]?.done;
+                            const time=item.completions?.[r]?.time;
+                            return(
+                              <div key={r} title={r+(time?' ('+time+')':'')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
+                                <div style={{width:20,height:20,borderRadius:4,background:done?'#3B6D11':'#E0DED8',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                  <span style={{fontSize:9,color:done?'#fff':'#aaa',fontWeight:700}}>{ROLE_SHORT[r]}</span>
+                                </div>
+                                {done&&time&&<span style={{fontSize:8,color:'#888'}}>{time}</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+  return(
+    <div>
+      {renderLine('A')}
+      {renderLine('B')}
+    </div>
+  );
+}
+
 function AdminRegister({plans,master,onRegister}){
   const[text,setText]=useState('');
   const[line,setLine]=useState('A');
@@ -926,13 +1025,13 @@ function AdminScreen({plans,master,anomalies,onRegister,onBack}){
           <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>管理者</span>
         </div>
         <div style={{display:'flex',padding:'0 24px',maxWidth:1400,margin:'0 auto'}}>
-          {[['register','計画登録'],['progress','進捗確認'],['anomaly','異常履歴']].map(([id,label])=>(
+          {[['register','計画登録'],['progress','進捗確認'],['sheet','計画表'],['anomaly','異常履歴']].map(([id,label])=>(
             <button key={id} onClick={()=>setTab(id)} style={{padding:'14px 24px',background:'none',border:'none',fontSize:15,fontWeight:600,color:tab===id?'#185FA5':'#888',borderBottom:tab===id?'3px solid #185FA5':'3px solid transparent',minHeight:52}}>{label}</button>
           ))}
         </div>
       </div>
       <div style={{padding:'24px',maxWidth:1400,margin:'0 auto'}}>
-        {tab==='register'?<AdminRegister plans={plans} master={master} onRegister={onRegister}/>:tab==='progress'?<AdminProgress plans={plans}/>:<AnomalyHistory anomalies={anomalies}/>}
+        {tab==='register'?<AdminRegister plans={plans} master={master} onRegister={onRegister}/>:tab==='progress'?<AdminProgress plans={plans}/>:tab==='sheet'?<PlanSpreadsheet plans={plans} master={master}/>:<AnomalyHistory anomalies={anomalies}/>}
       </div>
     </div>
   );
