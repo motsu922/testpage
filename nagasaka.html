@@ -496,19 +496,33 @@ const LIFT_COLS=[
   {key:'seiban',label:'背番号'},
   {key:'products',label:'製品数',unit:'個'},
   {key:'materialBoxes',label:'素材箱数',unit:'箱'},
-  {key:'boxCheck',label:'箱数チェック'},
   {key:'finishedBoxes',label:'完成品箱数',unit:'箱'},
 ];
 
+function mergeTimeline(aItems,bItems){
+  const rows=[];
+  let ai=0,bi=0;
+  while(ai<aItems.length||bi<bItems.length){
+    const a=aItems[ai],b=bItems[bi];
+    if(!b){rows.push({a,b:null});ai++;}
+    else if(!a){rows.push({a:null,b});bi++;}
+    else if(a.kakeTime===b.kakeTime){rows.push({a,b});ai++;bi++;}
+    else if(a.kakeTime<b.kakeTime){rows.push({a,b:null});ai++;}
+    else{rows.push({a:null,b});bi++;}
+  }
+  return rows;
+}
+
 function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
-  const a=RA['リフトマン'];
+  const acol='#185FA5',bcol='#534AB7';
   const[saving,setSaving]=useState({});
   const[confirmItem,setConfirmItem]=useState(null);
   const[showAnomaly,setShowAnomaly]=useState(false);
+  const role='リフトマン';
 
   const itemsA=plans.filter(p=>p.line==='A').sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
   const itemsB=plans.filter(p=>p.line==='B').sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
-  const role='リフトマン';
+  const rows=mergeTimeline(itemsA,itemsB);
   const totalDone=plans.filter(p=>p.completions?.[role]?.done).length;
   const pct=plans.length?Math.round(totalDone/plans.length*100):0;
 
@@ -521,92 +535,87 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
   }
 
   function cellVal(col,item){
-    if(col.key==='boxCheck'){
-      const done=item.completions?.[role]?.done;
-      return done?'✔':'';
-    }
     const v=item[col.key];
-    if(v==null||v==='')return '—';
+    if(v==null||v==='')return'—';
     return col.unit?v+col.unit:v;
   }
 
-  function renderLine(lineItems,lineLabel,lc,lb){
-    const TH2={padding:'8px 10px',fontSize:13,fontWeight:700,color:'#fff',background:lc,whiteSpace:'nowrap',textAlign:'center',borderRight:'1px solid rgba(255,255,255,.2)'};
-    const TD2={padding:'8px 10px',fontSize:14,textAlign:'center',whiteSpace:'nowrap',borderRight:'1px solid #E8E6E0',borderBottom:'1px solid #E8E6E0'};
-    return(
-      <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column'}}>
-        <div style={{background:lc,color:'#fff',padding:'6px 14px',fontSize:15,fontWeight:700,borderRadius:'10px 10px 0 0',textAlign:'center'}}>{lineLabel}</div>
-        <div style={{flex:1,overflowY:'auto',border:`2px solid ${lc}`,borderTop:'none',borderRadius:'0 0 10px 10px',background:'#fff'}}>
-          {lineItems.length===0?(
-            <div style={{padding:32,textAlign:'center',color:'#aaa',fontSize:14}}>計画なし</div>
-          ):(
-            <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead style={{position:'sticky',top:0,zIndex:1}}>
-                <tr>
-                  {LIFT_COLS.map(c=><th key={c.key} style={TH2}>{c.label}</th>)}
-                  <th style={{...TH2,minWidth:100}}>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lineItems.map((item,idx)=>{
-                  const isDone=item.completions?.[role]?.done;
-                  const isSaving=saving[item.id];
-                  const img=master[item.seiban]?.imageUrl;
-                  return(
-                    <tr key={item.id} style={{background:isDone?'#F4FAF0':idx%2===0?'#fff':'#FAFAF8',opacity:isDone?0.6:1,height:72}}>
-                      {LIFT_COLS.map(c=>(
-                        <td key={c.key} style={{...TD2,fontWeight:c.key==='seiban'?700:400,color:c.key==='seiban'?lc:'#222',fontSize:c.key==='seiban'?18:15,verticalAlign:'middle'}}>
-                          {cellVal(c,item)}
-                        </td>
-                      ))}
-                      <td style={{...TD2,borderRight:'none',verticalAlign:'middle'}}>
-                        {isDone?(
-                          <span style={{fontSize:14,fontWeight:700,color:'#3B6D11'}}>✓完了</span>
-                        ):(
-                          <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                            <button onClick={()=>setConfirmItem({item,img,lc})}
-                              style={{padding:'8px 14px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:8,fontSize:14,fontWeight:700,whiteSpace:'nowrap',minWidth:72}}>
-                              確認
-                            </button>
-                            <button onClick={()=>handleComplete(item)} disabled={isSaving}
-                              style={{padding:'8px 14px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:8,fontSize:14,fontWeight:700,whiteSpace:'nowrap',minWidth:72}}>
-                              {isSaving?'..':'完了'}
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+  function renderSide(item,lc,lb){
+    if(!item)return LIFT_COLS.map(c=><td key={c.key} style={{padding:'8px 10px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>).concat(
+      <td key="op" style={{padding:'8px 10px',background:'#F8F8F8',borderLeft:'none'}}/>
     );
+    const isDone=item.completions?.[role]?.done;
+    const isSaving=saving[item.id];
+    const img=master[item.seiban]?.imageUrl;
+    return[
+      ...LIFT_COLS.map(c=>(
+        <td key={c.key} style={{padding:'8px 12px',fontSize:c.key==='seiban'?17:14,fontWeight:c.key==='seiban'?700:400,color:c.key==='seiban'?lc:'#222',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',whiteSpace:'nowrap',background:isDone?'#F4FAF0':'inherit',opacity:isDone?0.6:1}}>
+          {cellVal(c,item)}
+        </td>
+      )),
+      <td key="op" style={{padding:'8px 10px',textAlign:'center',verticalAlign:'middle',background:isDone?'#F4FAF0':'inherit',opacity:isDone?0.6:1}}>
+        {isDone?(
+          <span style={{fontSize:13,fontWeight:700,color:'#3B6D11'}}>✓完了</span>
+        ):(
+          <div style={{display:'flex',flexDirection:'column',gap:5}}>
+            <button onClick={()=>setConfirmItem({item,img,lc,lb})}
+              style={{padding:'7px 12px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>確認</button>
+            <button onClick={()=>handleComplete(item)} disabled={isSaving}
+              style={{padding:'7px 12px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>{isSaving?'..':'完了'}</button>
+          </div>
+        )}
+      </td>
+    ];
   }
+
+  const TH={padding:'9px 12px',fontSize:13,fontWeight:700,color:'#fff',whiteSpace:'nowrap',textAlign:'center',borderRight:'1px solid rgba(255,255,255,.25)'};
+  const colCount=LIFT_COLS.length+1;
 
   return(
     <div style={{display:'flex',flexDirection:'column',height:'100vh',background:'#F1EFE8',overflow:'hidden'}}>
-      {/* NavBar */}
       <div style={{background:'#fff',borderBottom:'1px solid #E0DED8',padding:'8px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
         <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>← 戻る</button>
         <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>リフトマン</span>
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#888'}}>
           <span>進捗</span>
           <div style={{width:120,height:8,background:'#E0DED8',borderRadius:4,overflow:'hidden'}}>
-            <div style={{height:'100%',background:a,width:pct+'%',transition:'width .5s'}}/>
+            <div style={{height:'100%',background:acol,width:pct+'%',transition:'width .5s'}}/>
           </div>
           <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{plans.length}件</span>
         </div>
         <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>異常</button>
       </div>
-      {/* 本体：A/B横並び */}
-      <div style={{flex:1,display:'flex',gap:12,padding:'12px',overflow:'hidden'}}>
-        {renderLine(itemsA,'A ライン','#185FA5','#E6F1FB')}
-        {renderLine(itemsB,'B ライン','#534AB7','#EEEDFE')}
+      <div style={{flex:1,overflowY:'auto',padding:'12px'}}>
+        {rows.length===0?(
+          <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>計画が登録されていません</div>
+        ):(
+          <div style={{borderRadius:12,overflow:'hidden',border:'1px solid #E0DED8',background:'#fff'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
+              <thead style={{position:'sticky',top:0,zIndex:1}}>
+                <tr>
+                  <th colSpan={colCount} style={{...TH,background:acol,textAlign:'center',fontSize:15,padding:'10px 16px',borderRight:'3px solid #fff'}}>A ライン</th>
+                  <th colSpan={colCount} style={{...TH,background:bcol,textAlign:'center',fontSize:15,padding:'10px 16px'}}>B ライン</th>
+                </tr>
+                <tr>
+                  {LIFT_COLS.map(c=><th key={'a-'+c.key} style={{...TH,background:acol+'DD'}}>{c.label}</th>)}
+                  <th style={{...TH,background:acol+'DD',borderRight:'3px solid #fff'}}>操作</th>
+                  {LIFT_COLS.map(c=><th key={'b-'+c.key} style={{...TH,background:bcol+'DD'}}>{c.label}</th>)}
+                  <th style={{...TH,background:bcol+'DD'}}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row,idx)=>(
+                  <tr key={idx} style={{borderBottom:'1px solid #EEECE6',background:idx%2===0?'#fff':'#FAFAF8'}}>
+                    {renderSide(row.a,acol,'#E6F1FB')}
+                    <td style={{width:3,background:'#E0DED8',padding:0}}/>
+                    {renderSide(row.b,bcol,'#EEEDFE')}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
-      {/* 確認モーダル */}
       {confirmItem&&(
         <div onClick={e=>e.target===e.currentTarget&&setConfirmItem(null)}
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
