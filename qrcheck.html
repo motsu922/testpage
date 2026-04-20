@@ -936,7 +936,7 @@
   <div class="tab-content" id="tab-settings">
     <div class="container">
       <!-- 会社選択カード（ロック前） -->
-      <div class="settings-card" style="margin-bottom:16px; border-color:#2a4a6a;">
+      <div class="settings-card" id="tenantSwitchCard" style="margin-bottom:16px; border-color:#2a4a6a;">
         <div class="settings-card-title" style="color:#4fc3f7;">🏭 仕入先 / 会社</div>
         <div style="font-size:12px; color:#888; margin-bottom:10px; line-height:1.6;">
           会社ごとに設定（抽出ルール・Firebase・暗証番号など）を個別に保存します。<br>
@@ -945,7 +945,7 @@
         <div style="display:flex; align-items:center; gap:10px; padding: 10px; background:#0a0a0a; border-radius:8px; border:1px solid #333;">
           <span style="font-size:13px; color:#888;">現在の会社:</span>
           <span style="font-size:15px; font-weight:700; color:#4fc3f7; flex:1;" id="settingsCompanyName">---</span>
-          <button id="settingsSwitchBtn" onclick="openCompanySwitcher()" style="padding:8px 14px; background:#1a2a3a; color:#4fc3f7; border:1px solid #2a4a6a; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">切替 ▼</button>
+          <button id="settingsSwitchBtn" onclick="requireCompanyAuth(()=>openCompanySwitcher())" style="padding:8px 14px; background:#1a2a3a; color:#4fc3f7; border:1px solid #2a4a6a; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">切替 ▼</button>
         </div>
         <p id="settingsCompanyNote" style="font-size:11px; color:#555; margin-top:8px;">※ 設定保存はロック解除後に各会社ごとに行ってください</p>
       </div>
@@ -953,6 +953,10 @@
       <div class="settings-locked" id="settingsLocked">
         <div class="lock-icon">🔒</div>
         <div class="lock-text">設定を変更するには<br>管理者パスワードを入力してください</div>
+        <div style="font-size:11px; color:#666; margin-bottom:12px; text-align:center; line-height:1.6;">
+          テナント管理者パスワード：会社ごとの設定を変更できます<br>
+          システム管理者パスワード：Firebase・テナント管理も可能です
+        </div>
         <div class="password-input-group">
           <input type="password" id="unlockPassword" placeholder="パスワード">
           <button onclick="unlockSettings()">解除</button>
@@ -960,10 +964,11 @@
       </div>
 
       <div class="settings-unlocked" id="settingsUnlocked">
-        <div style="text-align:center; margin-bottom:12px;">
+        <div style="text-align:center; margin-bottom:8px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
           <span class="company-settings-label">✏️ 編集中: <span id="settingsEditingCompany">---</span></span>
+          <span id="unlockLevelBadge" style="font-size:12px; padding:4px 10px; border-radius:6px; font-weight:700;"></span>
         </div>
-        <div class="settings-card">
+        <div class="settings-card" id="firebaseSettingsCard">
           <div class="settings-card-title">🔥 Firebase設定</div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
             <span class="setting-label">API Key</span>
@@ -1035,9 +1040,9 @@
         </div>
 
         <div class="settings-card">
-          <div class="settings-card-title">🔐 管理者設定</div>
+          <div class="settings-card-title">🔐 テナント管理者設定</div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
-            <span class="setting-label">管理者パスワード</span>
+            <span class="setting-label">テナント管理者パスワード<small>会社ごとに個別設定</small></span>
             <input type="password" class="setting-input" id="adminPassword" placeholder="新しいパスワード" style="width:100%;">
           </div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
@@ -1045,6 +1050,16 @@
             <input type="number" class="setting-input" id="releasePIN"
                    placeholder="0000" maxlength="4" min="0" max="9999"
                    style="width:120px; text-align:center; font-size:22px; letter-spacing:6px;">
+          </div>
+        </div>
+        <div class="settings-card" id="systemPasswordCard">
+          <div class="settings-card-title">🛡️ システム管理者設定</div>
+          <p style="font-size:12px; color:#888; margin-bottom:12px; line-height:1.6;">
+            システム管理者パスワードはFirebase・テナント切替の権限を持ちます。<br>全社共通・端末のlocalStorageに保存されます。
+          </p>
+          <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
+            <span class="setting-label">システム管理者パスワード<small>全社共通・端末ごとに保存</small></span>
+            <input type="password" class="setting-input" id="systemPassword" placeholder="新しいパスワード" style="width:100%;">
           </div>
         </div>
 
@@ -1242,8 +1257,11 @@
   let nModeEx = null;          // 1対Nモード：QR1の抽出メタ情報（ログ用）
 
 
+  let currentUnlockLevel = '';  // '' | 'tenant' | 'system'
+
   let settings = {
     adminPassword: 'admin',
+    systemPassword: 'system',
     releasePIN: '0000',
     soundEnabled: true,
     vibrationEnabled: true,
@@ -1299,12 +1317,9 @@
     setInterval(() => { requestFocus(); }, 150);
   }
 
-  function isOverlayUnlockMode(){
-    return document.getElementById('resultOverlay').classList.contains('show');
-  }
-
   function requestFocus(){
     if (currentTab !== 'scan') return;
+    if (document.getElementById('resultOverlay').classList.contains('show')) return;
     const scanInput = document.getElementById('scanInput');
     if (!scanInput) return;
     if (document.activeElement === scanInput) return;
@@ -1316,6 +1331,7 @@
   function focusScanInputSoon(){
     setTimeout(() => {
       if (currentTab !== 'scan') return;
+      if (document.getElementById('resultOverlay').classList.contains('show')) return;
       document.getElementById('scanInput')?.focus({ preventScroll: true });
     }, 20);
   }
@@ -1470,26 +1486,7 @@
   }
 
   function handleScan(decoded) {
-    if (document.getElementById('resultOverlay').classList.contains('show')) {
-      const normalized = normalizeQR(decoded).replace(/\D/g, '').slice(0, 4).padStart(4, '0');
-      const expected   = String(settings.releasePIN).padStart(4, '0');
-      if (normalized === expected) {
-        isNGLocked = false;
-        playSound('ok');
-        vibrate([80, 40, 80]);
-        pinBuffer = '';
-        updatePinDots();
-        document.getElementById('resultOverlay').classList.remove('show');
-        if (settings.scanMode === '1toN' && currentStep === 2) {
-          value2 = '';
-          updateScanUI();
-          focusScanInputSoon();
-        } else {
-          startScanning(true);
-        }
-      }
-      return;
-    }
+    if (document.getElementById('resultOverlay').classList.contains('show')) return;
     if (currentStep === 1) {
       value1 = decoded;
       playSound('step1');  // ★ 1枚目読み込み完了：軽い通知音
@@ -1973,8 +1970,8 @@
 
   /** バッジタップ：固定モードなら何もしない */
   function onCompanyBadgeTap() {
-    if (FIXED_COMPANY) return;   // 固定モード：無効
-    openCompanySwitcher();
+    if (FIXED_COMPANY) return;
+    requireCompanyAuth(() => openCompanySwitcher());
   }
 
   /** URLで会社が固定されているときのUI調整 */
@@ -2007,6 +2004,34 @@
       const el = document.getElementById(id);
       if (el) el.textContent = name;
     });
+  }
+
+  let _companyAuthCallback = null;
+
+  function requireCompanyAuth(callback) {
+    _companyAuthCallback = callback;
+    document.getElementById('companyAuthInput').value = '';
+    document.getElementById('companyAuthError').textContent = '';
+    document.getElementById('companyAuthOverlay').classList.add('show');
+    setTimeout(() => document.getElementById('companyAuthInput').focus(), 80);
+  }
+
+  function submitCompanyAuth() {
+    const input = document.getElementById('companyAuthInput').value;
+    const sysPass = localStorage.getItem('qrSystemPassword') || 'system';
+    if (input === sysPass) {
+      document.getElementById('companyAuthOverlay').classList.remove('show');
+      if (_companyAuthCallback) { _companyAuthCallback(); _companyAuthCallback = null; }
+    } else {
+      document.getElementById('companyAuthError').textContent = '❌ パスワードが違います';
+      document.getElementById('companyAuthInput').value = '';
+      document.getElementById('companyAuthInput').focus();
+    }
+  }
+
+  function closeCompanyAuth() {
+    document.getElementById('companyAuthOverlay').classList.remove('show');
+    _companyAuthCallback = null;
   }
 
   function openCompanySwitcher() {
@@ -2464,6 +2489,12 @@
     settings.extractRules = collectExtractRules();
     // ★ scanMode は toggleScanModeSettings() で既に settings に反映済み
     // ★ duplicateCheckEnabled はトグル操作で既に settings に反映済み
+    // システム管理者パスワードは端末の独立キーに保存
+    if (currentUnlockLevel === 'system') {
+      const newSysPass = document.getElementById('systemPassword').value.trim();
+      if (newSysPass) localStorage.setItem('qrSystemPassword', newSysPass);
+      document.getElementById('systemPassword').value = '';
+    }
     const saveKey = getSettingsKey(activeCompanyId);
     localStorage.setItem(saveKey, JSON.stringify(settings));
     pushSettingsToFirebase(activeCompanyId, settings);
@@ -2513,15 +2544,45 @@
 
   function unlockSettings() {
     const input = document.getElementById('unlockPassword').value;
-    if (input === settings.adminPassword) {
-      document.getElementById('settingsLocked').style.display = 'none';
-      document.getElementById('settingsUnlocked').style.display = 'block';
-      document.getElementById('unlockPassword').value = '';
-      updateDupStats();   // ★ 設定画面を開いた時に統計を更新
-    } else { alert('❌ パスワードが違います'); }
+    const sysPass = localStorage.getItem('qrSystemPassword') || 'system';
+    if (input === sysPass) {
+      currentUnlockLevel = 'system';
+    } else if (input === settings.adminPassword) {
+      currentUnlockLevel = 'tenant';
+    } else {
+      alert('❌ パスワードが違います');
+      return;
+    }
+    document.getElementById('settingsLocked').style.display = 'none';
+    document.getElementById('settingsUnlocked').style.display = 'block';
+    document.getElementById('unlockPassword').value = '';
+    applyUnlockLevelUI();
+    updateDupStats();
+  }
+
+  function applyUnlockLevelUI() {
+    const isSystem = currentUnlockLevel === 'system';
+    // Firebase設定カード
+    const fbCard = document.getElementById('firebaseSettingsCard');
+    if (fbCard) fbCard.style.display = isSystem ? '' : 'none';
+    // システム管理者パスワードカード
+    const sysCard = document.getElementById('systemPasswordCard');
+    if (sysCard) sysCard.style.display = isSystem ? '' : 'none';
+    // テナント切替カード（設定タブ上部）
+    const tenantCard = document.getElementById('tenantSwitchCard');
+    if (tenantCard) tenantCard.style.display = isSystem ? '' : 'none';
+    // 権限バッジ表示
+    const badge = document.getElementById('unlockLevelBadge');
+    if (badge) {
+      badge.textContent = isSystem ? '🛡️ システム管理者' : '🔑 テナント管理者';
+      badge.style.background = isSystem ? '#1a3a2a' : '#1a2a1a';
+      badge.style.color = isSystem ? '#66bb6a' : '#4caf50';
+      badge.style.border = isSystem ? '1px solid #2a6a3a' : '1px solid #2a4a2a';
+    }
   }
 
   function lockSettings() {
+    currentUnlockLevel = '';
     document.getElementById('settingsLocked').style.display = 'block';
     document.getElementById('settingsUnlocked').style.display = 'none';
   }
@@ -3086,6 +3147,23 @@
   </div>
 
   <!-- 会社切替モーダル -->
+  <!-- 会社切替 認証モーダル -->
+  <div class="company-modal-overlay" id="companyAuthOverlay" style="z-index:2100;" onclick="event.target===this&&closeCompanyAuth()">
+    <div class="company-modal" style="max-height:unset;">
+      <div class="company-modal-title">🛡️ システム管理者認証</div>
+      <p style="font-size:13px; color:#888; text-align:center; margin-bottom:16px;">テナント切替にはシステム管理者パスワードが必要です</p>
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <input type="password" id="companyAuthInput" placeholder="システム管理者パスワード"
+               style="flex:1; padding:12px; border:2px solid #444; border-radius:8px; font-size:16px; background:#0a0a0a; color:#fff;"
+               onkeydown="event.key==='Enter'&&submitCompanyAuth()">
+        <button onclick="submitCompanyAuth()"
+                style="padding:12px 20px; background:#4fc3f7; color:#000; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer;">解除</button>
+      </div>
+      <div id="companyAuthError" style="font-size:13px; color:#f44336; text-align:center; min-height:20px; margin-bottom:8px;"></div>
+      <button class="company-modal-close" onclick="closeCompanyAuth()">✕ キャンセル</button>
+    </div>
+  </div>
+
   <div class="company-modal-overlay" id="companyModalOverlay" onclick="closeCompanySwitcherOnBg(event)">
     <div class="company-modal" id="companyModalPanel">
       <div class="company-modal-title">🏭 仕入先 / 会社の切替</div>
