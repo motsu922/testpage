@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -445,6 +446,7 @@
       <button id="btn-refresh" class="btn-header" onclick="location.reload()" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" title="画面を更新">🔄 更新</button>
       <button id="btn-push-register" class="btn-header btn-push">🔔 通知登録</button>
       <span id="push-status" style="font-size:11px;color:rgba(255,255,255,0.8);"></span>
+      <button id="btnCallNew" class="btn-header" style="background:rgba(239,83,80,0.85);color:#fff;border:1px solid rgba(255,255,255,0.4);">📢 呼び出す</button>
       <button id="qcMembersBtn" class="btn-header btn-members">👥 QCメンバー</button>
       <button id="logoutBtn" class="btn-header btn-logout">ログアウト</button>
       <button id="settingsToggleBtn" class="btn-header btn-settings">⚙️</button>
@@ -674,6 +676,9 @@
     soundPatternSel.addEventListener('change',()=>{soundPattern=Number(soundPatternSel.value);localStorage.setItem('sound_pattern',soundPattern);});
     testSoundBtn.addEventListener('click',async()=>{const ok=await unlockAudio();if(!ok){alert('音声再生がブロックされました。');return;}const fn=PATTERNS[soundPattern]||PATTERNS[1];try{fn(audioCtx,audioCtx.currentTime,true);}catch(e){}});
 
+    // ===== 自分の名前（通知抑制用） =====
+    function getMyName(){ return localStorage.getItem('chat_sender') || ''; }
+
     // ===== QCメンバー =====
     let qcMembers = [];
     async function checkAndRevertPenalties(){const now=Date.now();for(const m of qcMembers){const until=Number(m.penaltyUntilMs||0);const orig=Number(m.penaltyOriginalPriority??NaN);const delta=Number(m.penaltyDelta||1);if(!until||!isFinite(orig))continue;if(until>now)continue;const curPr=Number(m.priority||0);const expected=orig+delta;const ref=doc(db,'qc_members',m.id);const payload={penaltyUntilMs:null,penaltyOriginalPriority:null,penaltyDelta:null,penaltyAppliedAtMs:null};if(curPr===expected)payload.priority=orig;try{await updateDoc(ref,payload);}catch(e){}}}
@@ -683,7 +688,7 @@
     document.getElementById('qcCloseBtn').addEventListener('click',closeQcMembersModal);
     document.getElementById('qcMembersModal').addEventListener('click',(e)=>{if(e.target.id==='qcMembersModal')closeQcMembersModal();});
 
-    function setupQcMembersListener(){const q=query(collection(db,'qc_members'),orderBy('name','asc'));onSnapshot(q,(snap)=>{qcMembers=snap.docs.map(d=>({id:d.id,...d.data()}));checkAndRevertPenalties();renderQcMembers();renderQcQuickBar();renderResponderButtons();updateChatSenderSelect(); syncFloatSelects(); });}
+    function setupQcMembersListener(){const q=query(collection(db,'qc_members'),orderBy('name','asc'));onSnapshot(q,(snap)=>{qcMembers=snap.docs.map(d=>({id:d.id,...d.data()}));checkAndRevertPenalties();renderQcMembers();renderQcQuickBar();renderResponderButtons();updateChatSenderSelect();updateCallCallerSelect(); syncFloatSelects(); });}
     function renderQcMembers(){const list=document.getElementById('qcList');const count=document.getElementById('qcCount');count.textContent=String(qcMembers.length);if(qcMembers.length===0){list.innerHTML=`<div style="color:#777;text-align:center;padding:14px;">メンバーがいません</div>`;return;}list.innerHTML=qcMembers.map(m=>`<div class="item"><div style="min-width:0;"><div style="font-weight:900;color:#263238;">${escapeHtml(m.name||'')}</div><small>${escapeHtml(m.email||'')}</small></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;"><label class="toggle"><input type="checkbox" data-qc-toggle="${m.id}" ${m.enabled?'checked':''}><span>有効</span></label><label class="toggle"><input type="checkbox" data-qc-available="${m.id}" ${(m.available??true)?'checked':''}><span>対応可</span></label><label class="toggle" style="gap:6px;"><span>優先度</span><input class="input" style="width:88px;padding:8px;" type="number" min="1" step="1" data-qc-priority="${m.id}" value="${Number(m.priority??50)}"></label><button class="btn btn-secondary" data-qc-del="${m.id}" style="padding:8px 12px;">削除</button></div></div>`).join('');}
     function renderQcQuickBar(){const bar=document.getElementById('qcQuickBar');if(!bar)return;if(!qcMembers||qcMembers.length===0){bar.innerHTML='';return;}const list=[...qcMembers].sort((a,b)=>{const pa=Number(a.priority??50),pb=Number(b.priority??50);if(pa!==pb)return pa-pb;return String(a.name||'').localeCompare(String(b.name||''),'ja');});bar.innerHTML=list.map(m=>{const avail=(m.available??true);const cls=`qc-quick-item${(avail&&m.enabled)?'':' off'}`;return `<div class="${cls}"><span class="qc-name">${escapeHtml(m.name||'')}</span><label class="qc-mini-toggle"><input type="checkbox" data-qc-available="${m.id}" ${avail?'checked':''}><span>${avail?'対応可':'対応不可'}</span></label></div>`;}).join('');}
     document.getElementById('qcAddBtn').addEventListener('click',async()=>{const name=document.getElementById('qcNewName').value.trim();const email=document.getElementById('qcNewEmail').value.trim();if(!name){alert('氏名を入力してください');return;}try{await addDoc(collection(db,'qc_members'),{name,email:email||'',enabled:true,priority:Number(document.getElementById('qcNewPriority')?.value||50),available:!!document.getElementById('qcNewAvailable')?.checked,updatedAt:serverTimestamp()});document.getElementById('qcNewName').value='';document.getElementById('qcNewEmail').value='';document.getElementById('qcNewPriority').value=50;document.getElementById('qcNewAvailable').checked=true;}catch(e){alert('追加に失敗しました: '+(e.message||e));}});
@@ -695,7 +700,8 @@
 
     // ===== リアルタイム監視 =====
     let currentFilter='all';
-    function setupRealtimeListener(){const q=query(collection(db,'quality_cases'),orderBy('createdAt','desc'));onSnapshot(q,async(snapshot)=>{const newCases=[];const newlyNormal=[];snapshot.forEach(docSnap=>{const data={_id:docSnap.id,...docSnap.data()};newCases.push(data);if((data.status||'pending')==='pending'&&!previousCaseIds.has(docSnap.id)){if((data.priority||'normal')!=='urgent')newlyNormal.push(docSnap.id);}previousCaseIds.add(docSnap.id);});casesCache=newCases.filter(isTodayCase);prevHasUrgentPending=hasUrgentPending;hasUrgentPending=casesCache.some(c=>(c.priority||'normal')==='urgent'&&(c.status||'pending')==='pending');if(soundEnabled&&audioCtx){if(newlyNormal.length>0&&!hasUrgentPending)playChimeRepeat(2,2000);if(!prevHasUrgentPending&&hasUrgentPending)startUrgentAlarm();if(prevHasUrgentPending&&!hasUrgentPending)stopUrgentAlarm();}try{await autoAssignForPendingCases();}catch(e){}renderCases();updateStats();updateChatCaseSelect();});}
+    function setupRealtimeListener(){const q=query(collection(db,'quality_cases'),orderBy('createdAt','desc'));onSnapshot(q,async(snapshot)=>{const newCases=[];const newlyNormal=[];snapshot.forEach(docSnap=>{const data={_id:docSnap.id,...docSnap.data()};newCases.push(data);if((data.status||'pending')==='pending'&&!previousCaseIds.has(docSnap.id)){const isFromSelf=String(data.callerName||'').trim()===getMyName()&&getMyName()!=='';if((data.priority||'normal')!=='urgent'&&!isFromSelf)newlyNormal.push(docSnap.id);}previousCaseIds.add(docSnap.id);});casesCache=newCases.filter(isTodayCase);prevHasUrgentPending=hasUrgentPending;// 緊急未対応があっても自分が発信した案件のみなら鳴らさない
+    const newUrgentBySelf=casesCache.filter(c=>(c.priority||'normal')==='urgent'&&(c.status||'pending')==='pending'&&String(c.callerName||'').trim()===getMyName()&&getMyName()!=='');const newUrgentByOthers=casesCache.filter(c=>(c.priority||'normal')==='urgent'&&(c.status||'pending')==='pending').length>newUrgentBySelf.length;hasUrgentPending=newUrgentByOthers||(casesCache.some(c=>(c.priority||'normal')==='urgent'&&(c.status||'pending')==='pending')&&getMyName()==='');if(soundEnabled&&audioCtx){if(newlyNormal.length>0&&!hasUrgentPending)playChimeRepeat(2,2000);if(!prevHasUrgentPending&&hasUrgentPending)startUrgentAlarm();if(prevHasUrgentPending&&!hasUrgentPending)stopUrgentAlarm();}try{await autoAssignForPendingCases();}catch(e){}renderCases();updateStats();updateChatCaseSelect();});}
 
     // ===== 自動割当 =====
     function getBusyResponderNameSet(){const busy=new Set();casesCache.forEach(c=>{if((c.status||'pending')==='inprogress'&&c.respondedBy)busy.add(String(c.respondedBy).trim());});return busy;}
@@ -732,7 +738,8 @@
     // フォアグラウンド時はページ上でリアルタイム更新されるため通知不要
     // バックグラウンド通知はサービスワーカー(firebase-messaging-sw.js)が担当
     if(messaging){onMessage(messaging,(payload)=>{ /* フォアグラウンドは何もしない */ });}
-    document.getElementById('btn-push-register')?.addEventListener('click',async()=>{const statusEl=document.getElementById('push-status');const btnEl=document.getElementById('btn-push-register');if(!messaging){statusEl.textContent='このブラウザは通知非対応です';return;}if(!('Notification' in window)){statusEl.textContent='このブラウザは通知非対応です';return;}statusEl.textContent='許可リクエスト中…';const permission=await Notification.requestPermission();if(permission!=='granted'){statusEl.textContent='通知が拒否されました。ブラウザ設定を確認してください。';return;}try{const reg=await navigator.serviceWorker.register('/testpage/firebase-messaging-sw.js');const token=await getToken(messaging,{vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});const existing=await getDocs(query(collection(db,'fcm_tokens'),where('token','==',token)));if(existing.empty){await addDoc(collection(db,'fcm_tokens'),{token,ua:navigator.userAgent.substring(0,100),createdAt:serverTimestamp()});}statusEl.textContent='✅ 登録しました';btnEl.textContent='🔔 通知登録済み';btnEl.style.background='linear-gradient(135deg,#9e9e9e,#757575)';btnEl.disabled=true;}catch(err){console.error(err);statusEl.textContent='登録失敗: '+err.message;}});
+    document.getElementById('btn-push-register')?.addEventListener('click',async()=>{const statusEl=document.getElementById('push-status');const btnEl=document.getElementById('btn-push-register');if(!messaging){statusEl.textContent='このブラウザは通知非対応です';return;}if(!('Notification' in window)){statusEl.textContent='このブラウザは通知非対応です';return;}statusEl.textContent='許可リクエスト中…';const permission=await Notification.requestPermission();if(permission!=='granted'){statusEl.textContent='通知が拒否されました。ブラウザ設定を確認してください。';return;}try{const reg=await navigator.serviceWorker.register('/testpage/firebase-messaging-sw.js');const token=await getToken(messaging,{vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});const memberName=getMyName()||'';const existing=await getDocs(query(collection(db,'fcm_tokens'),where('token','==',token)));if(existing.empty){await addDoc(collection(db,'fcm_tokens'),{token,memberName,ua:navigator.userAgent.substring(0,100),createdAt:serverTimestamp()});}else{// 名前が変わっていれば更新
+        const existDoc=existing.docs[0];if(existDoc.data().memberName!==memberName){await updateDoc(doc(db,'fcm_tokens',existDoc.id),{memberName});}}statusEl.textContent='✅ 登録しました';btnEl.textContent='🔔 通知登録済み';btnEl.style.background='linear-gradient(135deg,#9e9e9e,#757575)';btnEl.disabled=true;}catch(err){console.error(err);statusEl.textContent='登録失敗: '+err.message;}});
     if(Notification.permission==='granted'){const btn=document.getElementById('btn-push-register');if(btn){btn.textContent='🔔 通知登録済み';btn.style.background='linear-gradient(135deg,#9e9e9e,#757575)';btn.disabled=true;}}
 
     // ===== ★ チャット機能 =====
@@ -832,10 +839,14 @@
 
     function calcUnread(msgs){
       const lastRead=getLastReadTime();
+      const myName=getMyName();
       return msgs.filter(m=>{
         if(!m.createdAt) return false;
         const ts=m.createdAt.toDate ? m.createdAt.toDate().getTime() : Number(m.createdAt);
-        return ts > lastRead;
+        if(ts <= lastRead) return false;
+        // 自分が送ったメッセージは未読にしない
+        if(myName && String(m.senderName||'').trim()===myName) return false;
+        return true;
       }).length;
     }
 
@@ -860,6 +871,77 @@
     }
 
     document.getElementById('chatSenderSelect')?.addEventListener('change',(e)=>{localStorage.setItem('chat_sender',e.target.value);});
+
+    function updateCallCallerSelect(){
+      const sel=document.getElementById('callCallerSelect');
+      if(!sel)return;
+      const saved=getMyName();
+      const options=qcMembers.filter(m=>!!m.enabled).map(m=>String(m.name||'').trim()).filter(Boolean);
+      sel.innerHTML='<option value="">-- 選択してください --</option>'+options.map(n=>`<option value="${escapeAttr(n)}" ${n===saved?'selected':''}>${escapeHtml(n)}</option>`).join('');
+    }
+
+    // ===== 呼び出しモーダル =====
+    (function(){
+      const btnOpen=document.getElementById('btnCallNew');
+      const modal=document.getElementById('callModal');
+      const btnCancel=document.getElementById('cancelCallModal');
+      const btnSubmit=document.getElementById('submitCallModal');
+      if(!btnOpen||!modal)return;
+
+      function openCallModal(){
+        updateCallCallerSelect();
+        modal.style.display='flex';
+        modal.classList.add('active');
+        document.getElementById('callDept').value='品質管理部';
+        document.getElementById('callLine').value='';
+        document.getElementById('callSerial').value='';
+        document.getElementById('callMessage').value='';
+        document.getElementById('callPriorityNormal').checked=true;
+      }
+      function closeCallModal(){
+        modal.classList.remove('active');
+        modal.style.display='none';
+      }
+      btnOpen.addEventListener('click',openCallModal);
+      btnCancel.addEventListener('click',closeCallModal);
+      modal.addEventListener('click',(e)=>{ if(e.target===modal) closeCallModal(); });
+
+      btnSubmit.addEventListener('click',async()=>{
+        const caller=document.getElementById('callCallerSelect').value.trim();
+        const dept=document.getElementById('callDept').value.trim();
+        const line=document.getElementById('callLine').value.trim();
+        const serial=document.getElementById('callSerial').value.trim();
+        const msg=document.getElementById('callMessage').value.trim();
+        const priority=document.querySelector('input[name="callPriority"]:checked')?.value||'normal';
+        if(!caller){ alert('発信者を選択してください'); return; }
+        if(!dept&&!line){ alert('部署またはライン名を入力してください'); return; }
+        btnSubmit.disabled=true;
+        btnSubmit.textContent='送信中…';
+        try{
+          const payload={
+            priority,
+            department: dept||line,
+            lineName: line,
+            serialNo: serial,
+            callerName: caller,
+            message: msg,
+            status: 'pending',
+            createdAt: serverTimestamp(),
+            source: 'andon_monitor'
+          };
+          await addDoc(collection(db,'quality_cases'),payload);
+          // 自分の送信は既読扱いにしてチャット未読に影響させない
+          localStorage.setItem('chat_sender', caller);
+          closeCallModal();
+        }catch(err){
+          console.error(err);
+          alert('送信に失敗しました: '+err.message);
+        }finally{
+          btnSubmit.disabled=false;
+          btnSubmit.textContent='📢 呼び出す';
+        }
+      });
+    })();
 
     function updateChatCaseSelect(){
       const sel=document.getElementById('chatCaseSelect');
@@ -1068,6 +1150,65 @@
     }
 
     </script>
+
+  <!-- 呼び出しモーダル -->
+  <div id="callModal" class="modal">
+    <div class="modal-content">
+      <h3>📢 品質呼び出し（品質部内）</h3>
+      <p style="margin-bottom:14px;color:#666;font-size:0.9rem;">品質部内で異常が発生した際に使用してください。</p>
+
+      <div class="panel" style="margin-bottom:0;">
+        <div class="row" style="gap:10px;display:grid;grid-template-columns:1fr 1fr;margin-bottom:10px;">
+          <!-- 優先度 -->
+          <div>
+            <div style="font-size:11px;font-weight:800;color:#555;margin-bottom:4px;">優先度</div>
+            <div style="display:flex;gap:8px;">
+              <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;border-radius:8px;border:2px solid #ef5350;cursor:pointer;font-weight:800;font-size:13px;color:#c62828;background:#ffebee;">
+                <input type="radio" name="callPriority" value="urgent" id="callPriorityUrgent" style="accent-color:#ef5350;"> 🚨 緊急
+              </label>
+              <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;border-radius:8px;border:2px solid #ffa726;cursor:pointer;font-weight:800;font-size:13px;color:#e65100;background:#fff3e0;">
+                <input type="radio" name="callPriority" value="normal" id="callPriorityNormal" checked style="accent-color:#ffa726;"> ⚠️ 通常
+              </label>
+            </div>
+          </div>
+          <!-- 発信者 -->
+          <div>
+            <div style="font-size:11px;font-weight:800;color:#555;margin-bottom:4px;">発信者（自分）</div>
+            <select id="callCallerSelect" class="input" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;background:#fff;">
+              <option value="">-- 選択してください --</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <div style="font-size:11px;font-weight:800;color:#555;margin-bottom:4px;">部署</div>
+            <input id="callDept" class="input" placeholder="例：品質管理部" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;">
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:800;color:#555;margin-bottom:4px;">ライン名</div>
+            <input id="callLine" class="input" placeholder="例：A-1ライン" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;">
+          </div>
+        </div>
+
+        <div style="margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:800;color:#555;margin-bottom:4px;">整理No（任意）</div>
+          <input id="callSerial" class="input" placeholder="例：2024-001" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;">
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:800;color:#555;margin-bottom:4px;">メッセージ（任意）</div>
+          <textarea id="callMessage" rows="3" placeholder="状況を簡単に入力してください..."
+            style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;outline:none;"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-cancel" id="cancelCallModal">キャンセル</button>
+          <button class="btn btn-save" id="submitCallModal" style="background:linear-gradient(135deg,#ef5350,#c62828);">📢 呼び出す</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- モバイル用フローティングチャットボタン -->
   <button id="chatFab" type="button"
