@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -401,7 +400,7 @@
       justify-content: center;
       align-items: center;
       z-index: 1000;
-      overflow-y: auto;
+      overflow: hidden;
       padding: 8px 0;
     }
     .result-overlay.show { display: flex; animation: fadeIn 0.15s ease; }
@@ -496,6 +495,7 @@
       transition: background 0.12s, transform 0.08s;
       -webkit-user-select: none;
       user-select: none;
+      touch-action: manipulation;
     }
     .numpad-btn:active { background: rgba(255,255,255,0.35); transform: scale(0.94); }
     .numpad-btn.del { font-size: clamp(14px, 3.5vw, 19px); background: rgba(255,255,255,0.08); }
@@ -850,6 +850,47 @@
       cursor: pointer;
     }
     /* ============================ */
+
+    /* ===== スキャンボックス内 OK結果パネル ===== */
+    .ok-result-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 10px;
+      text-align: center;
+      animation: okFadeIn 0.2s ease;
+    }
+    .ok-result-panel.show { display: flex; }
+    @keyframes okFadeIn { from { opacity:0; transform:scale(0.92); } to { opacity:1; transform:scale(1); } }
+    .ok-result-symbol-inline {
+      font-size: clamp(72px, 22vw, 120px);
+      font-weight: 900;
+      color: #4caf50;
+      line-height: 1;
+      text-shadow: 0 0 30px rgba(76,175,80,0.4);
+    }
+    .ok-result-pn {
+      font-size: 14px;
+      color: #66bb6a;
+      margin-top: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      word-break: break-all;
+    }
+    .ok-result-hint {
+      font-size: 12px;
+      color: #555;
+      margin-top: 10px;
+    }
+    .ok-result-photo-inline {
+      width: 80px; height: 80px;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 2px solid #3a7a3a;
+      margin-top: 12px;
+      cursor: pointer;
+    }
+    /* =========================================== */
   </style>
 
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -899,6 +940,14 @@
             <div class="step2-photo-hint-pn" id="step2HintPn">---</div>
           </div>
         </div>
+        <!-- OK結果インライン表示パネル -->
+        <div class="ok-result-panel" id="okResultPanel">
+          <div class="ok-result-symbol-inline">○</div>
+          <div class="ok-result-pn" id="okResultPn"></div>
+          <img class="ok-result-photo-inline" id="okResultPhoto" src="" alt="" style="display:none;">
+          <div class="ok-result-hint">次のQRをスキャンしてください</div>
+        </div>
+
         <div class="scan-step" id="scanStep">STEP 1 / 2</div>
         <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
         <div class="scan-input-area">
@@ -953,10 +1002,6 @@
       <div class="settings-locked" id="settingsLocked">
         <div class="lock-icon">🔒</div>
         <div class="lock-text">設定を変更するには<br>管理者パスワードを入力してください</div>
-        <div style="font-size:11px; color:#666; margin-bottom:12px; text-align:center; line-height:1.6;">
-          テナント管理者パスワード：会社ごとの設定を変更できます<br>
-          システム管理者パスワード：Firebase・テナント管理も可能です
-        </div>
         <div class="password-input-group">
           <input type="password" id="unlockPassword" placeholder="パスワード">
           <button onclick="unlockSettings()">解除</button>
@@ -968,7 +1013,7 @@
           <span class="company-settings-label">✏️ 編集中: <span id="settingsEditingCompany">---</span></span>
           <span id="unlockLevelBadge" style="font-size:12px; padding:4px 10px; border-radius:6px; font-weight:700;"></span>
         </div>
-        <div class="settings-card" id="firebaseSettingsCard">
+        <div class="settings-card" id="firebaseSettingsCard" style="display:none;">
           <div class="settings-card-title">🔥 Firebase設定</div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
             <span class="setting-label">API Key</span>
@@ -1042,7 +1087,7 @@
         <div class="settings-card">
           <div class="settings-card-title">🔐 テナント管理者設定</div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
-            <span class="setting-label">テナント管理者パスワード<small>会社ごとに個別設定</small></span>
+            <span class="setting-label">テナント管理者パスワード<small style="display:block;font-size:11px;color:#666;">会社ごとに個別設定</small></span>
             <input type="password" class="setting-input" id="adminPassword" placeholder="新しいパスワード" style="width:100%;">
           </div>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
@@ -1054,11 +1099,9 @@
         </div>
         <div class="settings-card" id="systemPasswordCard">
           <div class="settings-card-title">🛡️ システム管理者設定</div>
-          <p style="font-size:12px; color:#888; margin-bottom:12px; line-height:1.6;">
-            システム管理者パスワードはFirebase・テナント切替の権限を持ちます。<br>全社共通・端末のlocalStorageに保存されます。
-          </p>
+          <p style="font-size:12px; color:#888; margin-bottom:12px; line-height:1.6;">テナント切替・Firebase設定の権限を持ちます。全社共通・端末に保存されます。</p>
           <div class="setting-row" style="flex-direction: column; align-items: flex-start;">
-            <span class="setting-label">システム管理者パスワード<small>全社共通・端末ごとに保存</small></span>
+            <span class="setting-label">システム管理者パスワード<small style="display:block;font-size:11px;color:#666;">全社共通</small></span>
             <input type="password" class="setting-input" id="systemPassword" placeholder="新しいパスワード" style="width:100%;">
           </div>
         </div>
@@ -1257,7 +1300,7 @@
   let nModeEx = null;          // 1対Nモード：QR1の抽出メタ情報（ログ用）
 
 
-  let currentUnlockLevel = '';  // '' | 'tenant' | 'system'
+  let currentUnlockLevel = '';
 
   let settings = {
     adminPassword: 'admin',
@@ -1319,7 +1362,6 @@
 
   function requestFocus(){
     if (currentTab !== 'scan') return;
-    if (document.getElementById('resultOverlay').classList.contains('show')) return;
     const scanInput = document.getElementById('scanInput');
     if (!scanInput) return;
     if (document.activeElement === scanInput) return;
@@ -1331,7 +1373,6 @@
   function focusScanInputSoon(){
     setTimeout(() => {
       if (currentTab !== 'scan') return;
-      if (document.getElementById('resultOverlay').classList.contains('show')) return;
       document.getElementById('scanInput')?.focus({ preventScroll: true });
     }, 20);
   }
@@ -1486,7 +1527,24 @@
   }
 
   function handleScan(decoded) {
-    if (document.getElementById('resultOverlay').classList.contains('show')) return;
+    if (document.getElementById('resultOverlay').classList.contains('show')) {
+      if (isNGLocked) {
+        const normalized = normalizeQR(decoded).replace(/\D/g, '').slice(0, 4).padStart(4, '0');
+        const expected   = String(settings.releasePIN).padStart(4, '0');
+        if (normalized === expected) {
+          isNGLocked = false;
+          playSound('ok');
+          vibrate([80, 40, 80]);
+          pinBuffer = '';
+          updatePinDots();
+          document.getElementById('resultOverlay').classList.remove('show');
+          if (settings.scanMode === '1toN' && currentStep === 2) {
+            value2 = ''; updateScanUI(); focusScanInputSoon();
+          } else { startScanning(true); }
+        }
+      }
+      return;
+    }
     if (currentStep === 1) {
       value1 = decoded;
       playSound('step1');  // ★ 1枚目読み込み完了：軽い通知音
@@ -2007,7 +2065,6 @@
   }
 
   let _companyAuthCallback = null;
-
   function requireCompanyAuth(callback) {
     _companyAuthCallback = callback;
     document.getElementById('companyAuthInput').value = '';
@@ -2015,7 +2072,6 @@
     document.getElementById('companyAuthOverlay').classList.add('show');
     setTimeout(() => document.getElementById('companyAuthInput').focus(), 80);
   }
-
   function submitCompanyAuth() {
     const input = document.getElementById('companyAuthInput').value;
     const sysPass = localStorage.getItem('qrSystemPassword') || 'system';
@@ -2028,12 +2084,10 @@
       document.getElementById('companyAuthInput').focus();
     }
   }
-
   function closeCompanyAuth() {
     document.getElementById('companyAuthOverlay').classList.remove('show');
     _companyAuthCallback = null;
   }
-
   function openCompanySwitcher() {
     renderCompanyModal();
     document.getElementById('companyModalOverlay').classList.add('show');
@@ -2489,12 +2543,6 @@
     settings.extractRules = collectExtractRules();
     // ★ scanMode は toggleScanModeSettings() で既に settings に反映済み
     // ★ duplicateCheckEnabled はトグル操作で既に settings に反映済み
-    // システム管理者パスワードは端末の独立キーに保存
-    if (currentUnlockLevel === 'system') {
-      const newSysPass = document.getElementById('systemPassword').value.trim();
-      if (newSysPass) localStorage.setItem('qrSystemPassword', newSysPass);
-      document.getElementById('systemPassword').value = '';
-    }
     const saveKey = getSettingsKey(activeCompanyId);
     localStorage.setItem(saveKey, JSON.stringify(settings));
     pushSettingsToFirebase(activeCompanyId, settings);
@@ -2545,14 +2593,9 @@
   function unlockSettings() {
     const input = document.getElementById('unlockPassword').value;
     const sysPass = localStorage.getItem('qrSystemPassword') || 'system';
-    if (input === sysPass) {
-      currentUnlockLevel = 'system';
-    } else if (input === settings.adminPassword) {
-      currentUnlockLevel = 'tenant';
-    } else {
-      alert('❌ パスワードが違います');
-      return;
-    }
+    if (input === sysPass) { currentUnlockLevel = 'system'; }
+    else if (input === settings.adminPassword) { currentUnlockLevel = 'tenant'; }
+    else { alert('❌ パスワードが違います'); return; }
     document.getElementById('settingsLocked').style.display = 'none';
     document.getElementById('settingsUnlocked').style.display = 'block';
     document.getElementById('unlockPassword').value = '';
@@ -2562,22 +2605,18 @@
 
   function applyUnlockLevelUI() {
     const isSystem = currentUnlockLevel === 'system';
-    // Firebase設定カード
-    const fbCard = document.getElementById('firebaseSettingsCard');
-    if (fbCard) fbCard.style.display = isSystem ? '' : 'none';
-    // システム管理者パスワードカード
+    const fbCard  = document.getElementById('firebaseSettingsCard');
+    if (fbCard)  fbCard.style.display  = isSystem ? '' : 'none';
     const sysCard = document.getElementById('systemPasswordCard');
     if (sysCard) sysCard.style.display = isSystem ? '' : 'none';
-    // テナント切替カード（設定タブ上部）
-    const tenantCard = document.getElementById('tenantSwitchCard');
-    if (tenantCard) tenantCard.style.display = isSystem ? '' : 'none';
-    // 権限バッジ表示
-    const badge = document.getElementById('unlockLevelBadge');
+    const tCard   = document.getElementById('tenantSwitchCard');
+    if (tCard)   tCard.style.display   = isSystem ? '' : 'none';
+    const badge   = document.getElementById('unlockLevelBadge');
     if (badge) {
       badge.textContent = isSystem ? '🛡️ システム管理者' : '🔑 テナント管理者';
-      badge.style.background = isSystem ? '#1a3a2a' : '#1a2a1a';
-      badge.style.color = isSystem ? '#66bb6a' : '#4caf50';
-      badge.style.border = isSystem ? '1px solid #2a6a3a' : '1px solid #2a4a2a';
+      badge.style.cssText = isSystem
+        ? 'font-size:12px;padding:4px 10px;border-radius:6px;font-weight:700;background:#1a3a2a;color:#66bb6a;border:1px solid #2a6a3a;'
+        : 'font-size:12px;padding:4px 10px;border-radius:6px;font-weight:700;background:#1a2a1a;color:#4caf50;border:1px solid #2a4a2a;';
     }
   }
 
@@ -2852,38 +2891,32 @@
     if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
 
     if (isOK) {
-      overlay.className = 'result-overlay show ok';
-      symbol.textContent = '○';
-      text.textContent = '一致';
-      if (settings.scanMode === '1toN') {
-        detail.innerHTML = `
-          ${photoHtml}
-          <p class="label">QR1切り出し品番</p><p>${escapeHtml(partNumber)}</p>
-          <p class="label" style="margin-top:10px;">QR2にこの品番が含まれていました</p>
-          <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
-          ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
-        `;
-      } else {
-        const isQR1extract = settings.matchDirection === 'qr1_to_qr2';
-        detail.innerHTML = `
-          ${photoHtml}
-          <p class="label">抽出品番（${isQR1extract ? '1回目QR' : '2回目QR'}から）</p><p>${escapeHtml(partNumber)}</p>
-          <p class="label" style="margin-top:10px;">${isQR1extract ? '2回目QR' : '1回目QR'}にこの品番が含まれていました</p>
-          <p class="label" style="margin-top:10px;">${escapeHtml(ruleText)}</p>
-          ${logEntry.extractNote ? `<p class="label" style="margin-top:10px;">note: ${escapeHtml(logEntry.extractNote)}</p>` : ''}
-        `;
-      }
+      // ★ OK はスキャンボックス内パネルに表示（オーバーレイ不使用）
+      overlay.classList.remove('show');
       adminArea.style.display = 'none';
+      const panel = document.getElementById('okResultPanel');
+      const pnEl  = document.getElementById('okResultPn');
+      const phEl  = document.getElementById('okResultPhoto');
+      if (pnEl) pnEl.textContent = partNumber ? '品番: ' + partNumber : '';
+      if (phEl) {
+        if (photoUrl) {
+          phEl.src = photoUrl; phEl.style.display = 'block';
+          phEl.onclick = () => showPhotoModal(photoUrl, partNumber);
+        } else { phEl.style.display = 'none'; }
+      }
+      if (panel) {
+        panel.classList.remove('show');
+        void panel.offsetWidth;
+        panel.classList.add('show');
+      }
+      // STEP・メッセージ・入力欄を隠す
+      ['scanStep','scanMessage','scan-input-area'].forEach(id => {
+        const el = document.getElementById(id) || document.querySelector('.' + id);
+        if (el) el.style.display = 'none';
+      });
       playSound('ok');
-      okAutoTimer = setTimeout(() => {
-        overlay.classList.remove('show');
-        if (settings.scanMode === '1toN') {
-          continueNMode();   // ★ 1対Nモード：QR1を保持したままQR2待ちへ
-        } else {
-          startScanning(true);
-        }
-        okAutoTimer = null;
-      }, 400);
+      // スキャン状態は次のQR受付へ進める（フォーカスは維持）
+      if (settings.scanMode === '1toN') { continueNMode(); } else { startScanning(true); }
 
     } else if (isDup) {
       // ★ 重複NG
@@ -2938,8 +2971,21 @@
     }
   }
 
+  function hideOkPanel() {
+    const panel = document.getElementById('okResultPanel');
+    if (panel) panel.classList.remove('show');
+    // STEP・メッセージ・入力欄を再表示
+    const stepEl = document.getElementById('scanStep');
+    const msgEl  = document.getElementById('scanMessage');
+    const areaEl = document.querySelector('.scan-input-area');
+    if (stepEl) stepEl.style.display = '';
+    if (msgEl)  msgEl.style.display  = '';
+    if (areaEl) areaEl.style.display = '';
+  }
+
   function startScanning(boot=false) {
     if (isNGLocked) { showNGOverlay(); return; }
+    hideOkPanel();
     value1 = ''; value2 = '';
     nModeQR2Count = 0;
     nModePartNumber = '';
@@ -3147,7 +3193,6 @@
   </div>
 
   <!-- 会社切替モーダル -->
-  <!-- 会社切替 認証モーダル -->
   <div class="company-modal-overlay" id="companyAuthOverlay" style="z-index:2100;" onclick="event.target===this&&closeCompanyAuth()">
     <div class="company-modal" style="max-height:unset;">
       <div class="company-modal-title">🛡️ システム管理者認証</div>
@@ -3156,14 +3201,12 @@
         <input type="password" id="companyAuthInput" placeholder="システム管理者パスワード"
                style="flex:1; padding:12px; border:2px solid #444; border-radius:8px; font-size:16px; background:#0a0a0a; color:#fff;"
                onkeydown="event.key==='Enter'&&submitCompanyAuth()">
-        <button onclick="submitCompanyAuth()"
-                style="padding:12px 20px; background:#4fc3f7; color:#000; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer;">解除</button>
+        <button onclick="submitCompanyAuth()" style="padding:12px 20px; background:#4fc3f7; color:#000; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer;">解除</button>
       </div>
       <div id="companyAuthError" style="font-size:13px; color:#f44336; text-align:center; min-height:20px; margin-bottom:8px;"></div>
       <button class="company-modal-close" onclick="closeCompanyAuth()">✕ キャンセル</button>
     </div>
   </div>
-
   <div class="company-modal-overlay" id="companyModalOverlay" onclick="closeCompanySwitcherOnBg(event)">
     <div class="company-modal" id="companyModalPanel">
       <div class="company-modal-title">🏭 仕入先 / 会社の切替</div>
