@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -851,46 +852,33 @@
     }
     /* ============================ */
 
-    /* ===== スキャンボックス内 OK結果パネル ===== */
-    .ok-result-panel {
-      display: none;
-      flex-direction: column;
+    /* ===== OK トースト通知 ===== */
+    .ok-toast {
+      position: fixed;
+      bottom: -160px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 32px);
+      max-width: 488px;
+      background: #1b4d1b;
+      border: 2px solid #4caf50;
+      border-radius: 16px;
+      padding: 14px 16px;
+      display: flex;
       align-items: center;
-      justify-content: center;
-      padding: 20px 10px;
-      text-align: center;
-      animation: okFadeIn 0.2s ease;
+      gap: 12px;
+      z-index: 999;
+      transition: bottom 0.4s cubic-bezier(0.34,1.4,0.64,1);
+      box-shadow: 0 -4px 24px rgba(0,0,0,0.6);
     }
-    .ok-result-panel.show { display: flex; }
-    @keyframes okFadeIn { from { opacity:0; transform:scale(0.92); } to { opacity:1; transform:scale(1); } }
-    .ok-result-symbol-inline {
-      font-size: clamp(72px, 22vw, 120px);
-      font-weight: 900;
-      color: #4caf50;
-      line-height: 1;
-      text-shadow: 0 0 30px rgba(76,175,80,0.4);
-    }
-    .ok-result-pn {
-      font-size: 14px;
-      color: #66bb6a;
-      margin-top: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      word-break: break-all;
-    }
-    .ok-result-hint {
-      font-size: 12px;
-      color: #555;
-      margin-top: 10px;
-    }
-    .ok-result-photo-inline {
-      width: 80px; height: 80px;
-      border-radius: 10px;
-      object-fit: cover;
-      border: 2px solid #3a7a3a;
-      margin-top: 12px;
-      cursor: pointer;
-    }
-    /* =========================================== */
+    .ok-toast.show { bottom: 24px; }
+    .ok-toast-symbol { font-size: 48px; font-weight: 900; color: #4caf50; line-height: 1; flex-shrink: 0; }
+    .ok-toast-body { flex: 1; min-width: 0; }
+    .ok-toast-title { font-size: 22px; font-weight: 700; color: #4caf50; }
+    .ok-toast-pn { font-size: 12px; color: #66bb6a; margin-top: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; word-break: break-all; }
+    .ok-toast-hint { font-size: 11px; color: #3a6a3a; margin-top: 4px; }
+    .ok-toast-photo { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; border: 2px solid #3a7a3a; cursor: pointer; flex-shrink: 0; }
+    /* =========================== */
   </style>
 
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -940,14 +928,6 @@
             <div class="step2-photo-hint-pn" id="step2HintPn">---</div>
           </div>
         </div>
-        <!-- OK結果インライン表示パネル -->
-        <div class="ok-result-panel" id="okResultPanel">
-          <div class="ok-result-symbol-inline">○</div>
-          <div class="ok-result-pn" id="okResultPn"></div>
-          <img class="ok-result-photo-inline" id="okResultPhoto" src="" alt="" style="display:none;">
-          <div class="ok-result-hint">次のQRをスキャンしてください</div>
-        </div>
-
         <div class="scan-step" id="scanStep">STEP 1 / 2</div>
         <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
         <div class="scan-input-area">
@@ -1011,7 +991,7 @@
       <div class="settings-unlocked" id="settingsUnlocked">
         <div style="text-align:center; margin-bottom:8px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
           <span class="company-settings-label">✏️ 編集中: <span id="settingsEditingCompany">---</span></span>
-          <span id="unlockLevelBadge" style="font-size:12px; padding:4px 10px; border-radius:6px; font-weight:700;"></span>
+          <span id="unlockLevelBadge" style="font-size:12px;padding:4px 10px;border-radius:6px;font-weight:700;"></span>
         </div>
         <div class="settings-card" id="firebaseSettingsCard" style="display:none;">
           <div class="settings-card-title">🔥 Firebase設定</div>
@@ -1242,6 +1222,16 @@
     </div>
   </div>
 
+  <div class="ok-toast" id="okToast">
+    <div class="ok-toast-symbol">○</div>
+    <div class="ok-toast-body">
+      <div class="ok-toast-title">一致</div>
+      <div class="ok-toast-pn" id="okToastPn"></div>
+      <div class="ok-toast-hint">次のQRをスキャンしてください</div>
+    </div>
+    <img class="ok-toast-photo" id="okToastPhoto" src="" alt="" style="display:none;">
+  </div>
+
   <div class="result-overlay" id="resultOverlay">
     <div class="result-symbol" id="resultSymbol">○</div>
     <div class="result-text" id="resultText">一致</div>
@@ -1292,6 +1282,7 @@
   let audioReady = false;
   let currentTab = 'scan';
   let okAutoTimer = null;
+  let isOKPending = false;
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
@@ -1527,16 +1518,14 @@
   }
 
   function handleScan(decoded) {
+    // NG/DUPロック中：QRでPIN解除
     if (document.getElementById('resultOverlay').classList.contains('show')) {
       if (isNGLocked) {
         const normalized = normalizeQR(decoded).replace(/\D/g, '').slice(0, 4).padStart(4, '0');
         const expected   = String(settings.releasePIN).padStart(4, '0');
         if (normalized === expected) {
-          isNGLocked = false;
-          playSound('ok');
-          vibrate([80, 40, 80]);
-          pinBuffer = '';
-          updatePinDots();
+          isNGLocked = false; playSound('ok'); vibrate([80, 40, 80]);
+          pinBuffer = ''; updatePinDots();
           document.getElementById('resultOverlay').classList.remove('show');
           if (settings.scanMode === '1toN' && currentStep === 2) {
             value2 = ''; updateScanUI(); focusScanInputSoon();
@@ -1544,6 +1533,13 @@
         }
       }
       return;
+    }
+    // OK表示中（トースト）：トーストを消して通常スキャン処理へ
+    if (isOKPending) {
+      isOKPending = false;
+      const toast = document.getElementById('okToast');
+      if (toast) toast.classList.remove('show');
+      // UIはすでにリセット済みなので通常の handleScan フローへ続行
     }
     if (currentStep === 1) {
       value1 = decoded;
@@ -2599,19 +2595,14 @@
     document.getElementById('settingsLocked').style.display = 'none';
     document.getElementById('settingsUnlocked').style.display = 'block';
     document.getElementById('unlockPassword').value = '';
-    applyUnlockLevelUI();
-    updateDupStats();
+    applyUnlockLevelUI(); updateDupStats();
   }
 
   function applyUnlockLevelUI() {
     const isSystem = currentUnlockLevel === 'system';
-    const fbCard  = document.getElementById('firebaseSettingsCard');
-    if (fbCard)  fbCard.style.display  = isSystem ? '' : 'none';
-    const sysCard = document.getElementById('systemPasswordCard');
-    if (sysCard) sysCard.style.display = isSystem ? '' : 'none';
-    const tCard   = document.getElementById('tenantSwitchCard');
-    if (tCard)   tCard.style.display   = isSystem ? '' : 'none';
-    const badge   = document.getElementById('unlockLevelBadge');
+    [['firebaseSettingsCard',isSystem],['systemPasswordCard',isSystem],['tenantSwitchCard',isSystem]]
+      .forEach(([id,show])=>{ const el=document.getElementById(id); if(el) el.style.display=show?'':'none'; });
+    const badge = document.getElementById('unlockLevelBadge');
     if (badge) {
       badge.textContent = isSystem ? '🛡️ システム管理者' : '🔑 テナント管理者';
       badge.style.cssText = isSystem
@@ -2891,32 +2882,37 @@
     if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
 
     if (isOK) {
-      // ★ OK はスキャンボックス内パネルに表示（オーバーレイ不使用）
+      // ★ OK：トースト表示 → UIをSTEP1にリセット → 次スキャン待ち
       overlay.classList.remove('show');
       adminArea.style.display = 'none';
-      const panel = document.getElementById('okResultPanel');
-      const pnEl  = document.getElementById('okResultPn');
-      const phEl  = document.getElementById('okResultPhoto');
-      if (pnEl) pnEl.textContent = partNumber ? '品番: ' + partNumber : '';
-      if (phEl) {
+      // トースト内容セット
+      const toastPn = document.getElementById('okToastPn');
+      const toastPhoto = document.getElementById('okToastPhoto');
+      if (toastPn) toastPn.textContent = partNumber ? '品番: ' + partNumber : '';
+      if (toastPhoto) {
         if (photoUrl) {
-          phEl.src = photoUrl; phEl.style.display = 'block';
-          phEl.onclick = () => showPhotoModal(photoUrl, partNumber);
-        } else { phEl.style.display = 'none'; }
+          toastPhoto.src = photoUrl; toastPhoto.style.display = 'block';
+          toastPhoto.onclick = () => showPhotoModal(photoUrl, partNumber);
+        } else { toastPhoto.style.display = 'none'; }
       }
-      if (panel) {
-        panel.classList.remove('show');
-        void panel.offsetWidth;
-        panel.classList.add('show');
-      }
-      // STEP・メッセージ・入力欄を隠す
-      ['scanStep','scanMessage','scan-input-area'].forEach(id => {
-        const el = document.getElementById(id) || document.querySelector('.' + id);
-        if (el) el.style.display = 'none';
-      });
+      const toast = document.getElementById('okToast');
+      if (toast) { toast.classList.remove('show'); void toast.offsetWidth; toast.classList.add('show'); }
+      isOKPending = true;
       playSound('ok');
-      // スキャン状態は次のQR受付へ進める（フォーカスは維持）
-      if (settings.scanMode === '1toN') { continueNMode(); } else { startScanning(true); }
+      // ★ UIを次のスキャン状態にリセット（トーストは残す）
+      if (settings.scanMode === '1toN') {
+        // 1対Nモード：QR1保持のままQR2カウントアップ・STEP2表示
+        value2 = '';
+        nModeQR2Count++;
+        currentStep = 2;
+        updateScanUI();
+      } else {
+        // 1対1モード：STEP1にリセット
+        value1 = ''; value2 = '';
+        currentStep = 1;
+        updateScanUI();
+      }
+      focusScanInputSoon();
 
     } else if (isDup) {
       // ★ 重複NG
@@ -2971,21 +2967,11 @@
     }
   }
 
-  function hideOkPanel() {
-    const panel = document.getElementById('okResultPanel');
-    if (panel) panel.classList.remove('show');
-    // STEP・メッセージ・入力欄を再表示
-    const stepEl = document.getElementById('scanStep');
-    const msgEl  = document.getElementById('scanMessage');
-    const areaEl = document.querySelector('.scan-input-area');
-    if (stepEl) stepEl.style.display = '';
-    if (msgEl)  msgEl.style.display  = '';
-    if (areaEl) areaEl.style.display = '';
-  }
-
   function startScanning(boot=false) {
     if (isNGLocked) { showNGOverlay(); return; }
-    hideOkPanel();
+    isOKPending = false;
+    const toast = document.getElementById('okToast');
+    if (toast) toast.classList.remove('show');
     value1 = ''; value2 = '';
     nModeQR2Count = 0;
     nModePartNumber = '';
