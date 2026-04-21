@@ -519,12 +519,36 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
   const[confirmItem,setConfirmItem]=useState(null);
   const[showAnomaly,setShowAnomaly]=useState(false);
   const role='リフトマン';
+  const firstIncompleteRef=useRef(null);
+  const scrollRef=useRef(null);
+  const[lang,setLang]=useState('ja');
+  const ID={
+    '← 戻る':'← Kembali','リフトマン':'Liftman','進捗':'Progres','件':'item',
+    '異常':'Kelainan','A ライン':'Jalur A','B ライン':'Jalur B',
+    '掛け時間':'Waktu Pasang','所要時間':'Waktu Proses','背番号':'No. Seri',
+    '製品数':'Jml Produk','素材箱数':'Kotak Bahan','完成品箱数':'Kotak Jadi',
+    '操作':'Operasi','✓完了':'✓Selesai','確認':'Konfirmasi','完了':'Selesai',
+    '計画が登録されていません':'Tidak ada rencana yang terdaftar',
+    '製品確認':'Konfirmasi Produk','背番号:':'No. Seri:',
+    '製品画像未登録':'Gambar produk belum terdaftar',
+    'キャンセル':'Batal','個':'pcs','箱':'kotak',
+  };
+  const t=k=>lang==='id'?(ID[k]??k):k;
 
   const itemsA=plans.filter(p=>p.line==='A').sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
   const itemsB=plans.filter(p=>p.line==='B').sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
   const rows=mergeTimeline(itemsA,itemsB);
   const totalDone=plans.filter(p=>p.completions?.[role]?.done).length;
   const pct=plans.length?Math.round(totalDone/plans.length*100):0;
+
+  useEffect(()=>{
+    if(firstIncompleteRef.current&&scrollRef.current){
+      const container=scrollRef.current;
+      const row=firstIncompleteRef.current;
+      const offset=row.offsetTop-container.offsetTop-8;
+      container.scrollTop=Math.max(0,offset);
+    }
+  },[]);
 
   async function handleComplete(item){
     if(saving[item.id])return;
@@ -555,13 +579,13 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
       )),
       <td key="op" style={{padding:'4px 8px',textAlign:'center',verticalAlign:'middle',background:isDone?'#F4FAF0':'inherit',opacity:isDone?0.6:1}}>
         {isDone?(
-          <span style={{fontSize:13,fontWeight:700,color:'#3B6D11'}}>✓完了</span>
+          <span style={{fontSize:13,fontWeight:700,color:'#3B6D11'}}>{t('✓完了')}</span>
         ):(
           <div style={{display:'flex',flexDirection:'column',gap:5}}>
             <button onClick={()=>setConfirmItem({item,img,lc,lb})}
-              style={{padding:'7px 12px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>確認</button>
+              style={{padding:'7px 12px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>{t('確認')}</button>
             <button onClick={()=>handleComplete(item)} disabled={isSaving}
-              style={{padding:'7px 12px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>{isSaving?'..':'完了'}</button>
+              style={{padding:'7px 12px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>{isSaving?'..':t('完了')}</button>
           </div>
         )}
       </td>
@@ -574,45 +598,57 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
   return(
     <div style={{display:'flex',flexDirection:'column',height:'100vh',background:'#F1EFE8',overflow:'hidden'}}>
       <div style={{background:'#fff',borderBottom:'1px solid #E0DED8',padding:'8px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-        <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>← 戻る</button>
-        <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>リフトマン</span>
+        <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>{t('← 戻る')}</button>
+        <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>{t('リフトマン')}</span>
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#888'}}>
-          <span>進捗</span>
+          <span>{t('進捗')}</span>
           <div style={{width:120,height:8,background:'#E0DED8',borderRadius:4,overflow:'hidden'}}>
             <div style={{height:'100%',background:acol,width:pct+'%',transition:'width .5s'}}/>
           </div>
-          <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{plans.length}件</span>
+          <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{plans.length}{t('件')}</span>
         </div>
-        <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>異常</button>
+        <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #4A90D9',background:lang==='id'?'#4A90D9':'#EBF3FC',color:lang==='id'?'#fff':'#1A5FA0',fontSize:13,fontWeight:700}}>
+          {lang==='ja'?'ID':'JP'}
+        </button>
+        <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>{t('異常')}</button>
       </div>
-      <div style={{flex:1,overflowY:'auto',padding:'8px'}}>
+      <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'8px'}}>
         {rows.length===0?(
-          <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>計画が登録されていません</div>
+          <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>{t('計画が登録されていません')}</div>
         ):(
           <div style={{borderRadius:12,border:'1px solid #E0DED8',background:'#fff'}}>
             <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
               <thead style={{position:'sticky',top:0,zIndex:10}}>
                 <tr>
-                  <th colSpan={colCount} style={{...TH,background:acol,textAlign:'center',fontSize:15,padding:'8px 12px',borderRadius:'12px 0 0 0'}}>A ライン</th>
+                  <th colSpan={colCount} style={{...TH,background:acol,textAlign:'center',fontSize:15,padding:'8px 12px',borderRadius:'12px 0 0 0'}}>{t('A ライン')}</th>
                   <th style={{width:3,background:'#E0DED8',padding:0}}/>
-                  <th colSpan={colCount} style={{...TH,background:bcol,textAlign:'center',fontSize:15,padding:'8px 12px',borderRadius:'0 12px 0 0'}}>B ライン</th>
+                  <th colSpan={colCount} style={{...TH,background:bcol,textAlign:'center',fontSize:15,padding:'8px 12px',borderRadius:'0 12px 0 0'}}>{t('B ライン')}</th>
                 </tr>
                 <tr>
-                  {LIFT_COLS.map(c=><th key={'a-'+c.key} style={{...TH,background:acol+'EE'}}>{c.label}</th>)}
-                  <th style={{...TH,background:acol+'EE'}}>操作</th>
+                  {LIFT_COLS.map(c=><th key={'a-'+c.key} style={{...TH,background:acol+'EE'}}>{t(c.label)}</th>)}
+                  <th style={{...TH,background:acol+'EE'}}>{t('操作')}</th>
                   <th style={{width:3,background:'#E0DED8',padding:0}}/>
-                  {LIFT_COLS.map(c=><th key={'b-'+c.key} style={{...TH,background:bcol+'EE'}}>{c.label}</th>)}
-                  <th style={{...TH,background:bcol+'EE'}}>操作</th>
+                  {LIFT_COLS.map(c=><th key={'b-'+c.key} style={{...TH,background:bcol+'EE'}}>{t(c.label)}</th>)}
+                  <th style={{...TH,background:bcol+'EE'}}>{t('操作')}</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row,idx)=>(
-                  <tr key={idx} style={{borderBottom:'1px solid #EEECE6',background:idx%2===0?'#fff':'#FAFAF8'}}>
-                    {renderSide(row.a,acol,'#E6F1FB')}
-                    <td style={{width:3,background:'#E0DED8',padding:0}}/>
-                    {renderSide(row.b,bcol,'#EEEDFE')}
-                  </tr>
-                ))}
+                {(()=>{
+                  let foundFirst=false;
+                  return rows.map((row,idx)=>{
+                    const aIncomplete=row.a&&!row.a.completions?.[role]?.done;
+                    const bIncomplete=row.b&&!row.b.completions?.[role]?.done;
+                    const isFirstIncomplete=!foundFirst&&(aIncomplete||bIncomplete);
+                    if(isFirstIncomplete)foundFirst=true;
+                    return(
+                      <tr key={idx} ref={isFirstIncomplete?firstIncompleteRef:null} style={{borderBottom:'1px solid #EEECE6',background:idx%2===0?'#fff':'#FAFAF8'}}>
+                        {renderSide(row.a,acol,'#E6F1FB')}
+                        <td style={{width:3,background:'#E0DED8',padding:0}}/>
+                        {renderSide(row.b,bcol,'#EEEDFE')}
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>
@@ -623,24 +659,24 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
           <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:480,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,.3)'}}>
             <div style={{background:confirmItem.lc,padding:'16px 20px'}}>
-              <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>製品確認</div>
-              <div style={{fontSize:13,color:'rgba(255,255,255,.8)',marginTop:2}}>背番号: {confirmItem.item.seiban}</div>
+              <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>{t('製品確認')}</div>
+              <div style={{fontSize:13,color:'rgba(255,255,255,.8)',marginTop:2}}>{t('背番号:')} {confirmItem.item.seiban}</div>
             </div>
             <div style={{padding:20}}>
               {confirmItem.img?(
                 <img src={confirmItem.img} style={{width:'100%',maxHeight:280,objectFit:'contain',borderRadius:10,border:'1px solid #E0DED8',marginBottom:16}}/>
               ):(
                 <div style={{height:160,display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F7F4',borderRadius:10,border:'1px dashed #D0CEC8',marginBottom:16}}>
-                  <span style={{color:'#bbb',fontSize:14}}>製品画像未登録</span>
+                  <span style={{color:'#bbb',fontSize:14}}>{t('製品画像未登録')}</span>
                 </div>
               )}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px 20px',marginBottom:20,padding:'12px 14px',background:'#F8F7F4',borderRadius:10}}>
-                {[['製品数',confirmItem.item.products?confirmItem.item.products+'個':'—'],['素材箱数',confirmItem.item.materialBoxes?confirmItem.item.materialBoxes+'箱':'—'],['完成品箱数',confirmItem.item.finishedBoxes?confirmItem.item.finishedBoxes+'箱':'—'],['所要時間',confirmItem.item.reqTime||'—']].map(([l,v])=>(
+                {[['製品数',confirmItem.item.products?confirmItem.item.products+t('個'):'—'],['素材箱数',confirmItem.item.materialBoxes?confirmItem.item.materialBoxes+t('箱'):'—'],['完成品箱数',confirmItem.item.finishedBoxes?confirmItem.item.finishedBoxes+t('箱'):'—'],['所要時間',confirmItem.item.reqTime||'—']].map(([l,v])=>(
                   <div key={l}><div style={{fontSize:11,color:'#999',marginBottom:2}}>{l}</div><div style={{fontSize:17,fontWeight:600,color:'#111'}}>{v}</div></div>
                 ))}
               </div>
               <div style={{display:'flex',gap:10}}>
-                <button onClick={()=>setConfirmItem(null)} style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:15,fontWeight:700,color:'#555'}}>キャンセル</button>
+                <button onClick={()=>setConfirmItem(null)} style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:15,fontWeight:700,color:'#555'}}>{t('キャンセル')}</button>
                 <button onClick={()=>setConfirmItem(null)} style={{flex:2,padding:'14px',background:confirmItem.lc,border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>OK</button>
               </div>
             </div>
