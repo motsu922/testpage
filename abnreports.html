@@ -687,6 +687,61 @@
 }
 @keyframes blink-msg{0%,100%{opacity:1;}50%{opacity:.5;}}
 
+
+  /* ===== URL変更通知モーダル ===== */
+  #urlChangeModal{
+    position:fixed;inset:0;z-index:9999;
+    background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center;
+    padding:16px;
+  }
+  #urlChangeModal.hidden{display:none;}
+  #urlChangeCard{
+    background:#fff;
+    border-radius:10px;
+    padding:28px 28px 22px;
+    max-width:480px;width:100%;
+    box-shadow:0 12px 40px rgba(0,0,0,.25);
+    position:relative;
+    animation:urlModalIn .25s ease-out;
+  }
+  @keyframes urlModalIn{from{transform:translateY(-20px);opacity:0}to{transform:none;opacity:1}}
+  #urlChangeClose{
+    position:absolute;top:12px;right:14px;
+    background:none;border:none;
+    font-size:1.4rem;line-height:1;cursor:pointer;
+    color:#888;transition:color .15s;
+  }
+  #urlChangeClose:hover{color:#333;}
+  #urlChangeCard h2{
+    font-size:1.1rem;margin:0 0 4px;color:#c62828;
+    display:flex;align-items:center;gap:8px;
+  }
+  #urlChangeCard .change-date{
+    font-size:.82rem;color:#555;margin-bottom:16px;
+  }
+  .url-change-row{
+    display:flex;flex-direction:column;gap:4px;
+    background:#f5f5f5;border-radius:6px;padding:12px 14px;
+    margin-bottom:10px;font-size:.88rem;
+  }
+  .url-change-row .app-name{font-weight:700;color:#333;}
+  .url-change-row a{
+    color:#1565c0;word-break:break-all;text-decoration:none;
+    font-family:monospace;font-size:.85rem;
+  }
+  .url-change-row a:hover{text-decoration:underline;}
+  #urlChangeCard .note{
+    font-size:.82rem;color:#666;margin-top:14px;line-height:1.6;
+    border-top:1px solid #eee;padding-top:12px;
+  }
+  #urlChangeOk{
+    width:100%;margin-top:14px;padding:11px;
+    background:#1565c0;color:#fff;border:none;border-radius:6px;
+    font-size:.95rem;font-weight:700;cursor:pointer;transition:background .15s;
+  }
+  #urlChangeOk:hover{background:#0d47a1;}
+
 </style>
 </head>
 <body>
@@ -1749,8 +1804,28 @@ async function ensureAnomalyId(ctx){
   // 主要情報が不足している場合は下書きを作らない（誤爆防止）
   if (!department || !lineName || !handler) return null;
 
-  // Firestoreに書き込まずIDだけローカルで確定
-  const ref = doc(collection(db, 'anomalies'));
+  const anomalyContent = (document.getElementById('anomalyContent')?.value || '').trim();
+  const actionTaken    = (document.getElementById('actionTaken')?.value || '').trim();
+  const traceback      = (document.getElementById('traceback')?.value || '').trim();
+  const qualityResponse= (document.getElementById('qualityResponse')?.value || '').trim();
+
+  // 下書き異常を作成して docId を確定
+  const draft = {
+    department,
+    lineName,
+    serialNo: serialNo || '',
+    handler,
+    anomalyContent: anomalyContent || '',
+    actionTaken: actionTaken || '',
+    traceback: traceback || '',
+    qualityResponse: qualityResponse || '',
+    status: 'draft',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    createdBy: (auth?.currentUser?.email || '')
+  };
+
+  const ref = await addDoc(collection(db, 'anomalies'), draft);
   state.anomalyId = ref.id;
 
   // URLにも反映（リロードしても同じ異常に紐付く）
@@ -2837,6 +2912,7 @@ ${item.traceback ? `
     initAndonCompletionBridge();
     checkAndonPrefillData();
     startWaitingListener();
+    showUrlChangeModal();
 
   }
 
@@ -5454,6 +5530,28 @@ if (editCurrentTab === 'tech') {
   });
 
 
+
+/* ===== URL変更通知モーダル ===== */
+function showUrlChangeModal(){
+  const modal = document.getElementById('urlChangeModal');
+  if (!modal) return;
+
+  function closeModal(){
+    modal.classList.add('hidden');
+  }
+
+  const deadline = new Date('2026-04-30');
+  if (new Date() > deadline) return;
+
+  modal.classList.remove('hidden');
+
+  document.getElementById('urlChangeClose')?.addEventListener('click', closeModal);
+  document.getElementById('urlChangeOk')?.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+}
+
 </script>
  <!-- 編集モーダル -->
 <div id="editModal" class="modal" aria-hidden="true">
@@ -5521,6 +5619,37 @@ if (editCurrentTab === 'tech') {
   </div>
 </div>
 <!-- ========== /画像編集 ========= -->
+
+
+<!-- ===== URL変更通知モーダル ===== -->
+<div id="urlChangeModal" class="hidden">
+  <div id="urlChangeCard">
+    <button id="urlChangeClose" title="閉じる">×</button>
+    <h2>⚠️ URLが変更になります</h2>
+    <p class="change-date">2025年4月30日（木）より新しいURLへ移行します</p>
+
+    <div class="url-change-row">
+      <span class="app-name">📋 異常履歴入力ツール</span>
+      <a href="https://miyama-kogyo.github.io/apps/abnreport.html" target="_blank" rel="noopener">
+        miyama-kogyo.github.io/apps/abnreport.html
+      </a>
+    </div>
+
+    <div class="url-change-row">
+      <span class="app-name">📊 異常履歴データシート</span>
+      <a href="https://miyama-kogyo.github.io/apps/abnbiew.html" target="_blank" rel="noopener">
+        miyama-kogyo.github.io/apps/abnbiew.html
+      </a>
+    </div>
+
+    <p class="note">
+      ブックマークやホーム画面のリンクを上記の新しいURLに更新してください。<br>
+      移行後は旧URLからのアクセスができなくなります。
+    </p>
+    <button id="urlChangeOk">確認しました</button>
+  </div>
+</div>
+<!-- ===== /URL変更通知モーダル ===== -->
 
 </body>
 </html>
