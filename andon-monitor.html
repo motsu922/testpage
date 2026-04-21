@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -929,7 +928,21 @@
             createdAt: serverTimestamp(),
             source: 'andon_monitor'
           };
+          // 担当者を初期ペイロードに含める：
+          // autoAssignForPendingCases による後続の Firestore 更新（assignedTo 書き込み）を防ぎ、
+          // Cloud Function が2回トリガーされて通知が2通送られる問題を解消する
+          const assignee=pickAssigneeForCase({declinedBy:[]});
+          if(assignee){
+            payload.assignedTo=assignee;
+            payload.assignedAt=serverTimestamp();
+            payload.assignedReason='auto';
+            payload.assignmentHistory=[{at:new Date().toISOString(),to:assignee,reason:'auto'}];
+          }
           await addDoc(collection(db,'quality_cases'),payload);
+          // ストリーク管理用に ASSIGN_STATE_REF を更新（バックグラウンド・通知には影響しない）
+          if(assignee){
+            updateDoc(ASSIGN_STATE_REF,{lastUid:assignee,streak:1,updatedAt:serverTimestamp()}).catch(()=>{});
+          }
           // 自分の送信は既読扱いにしてチャット未読に影響させない
           localStorage.setItem('chat_sender', caller);
           closeCallModal();
@@ -965,6 +978,9 @@
         const label=`${priority}[${status}] ${line}${serial?` No.${serial}`:''}`;
         return `<option value="${escapeAttr(label)}">${escapeHtml(label)}</option>`;
       }).join('');
+      // モバイル浮動パネルにも同期（案件変更のたびに更新）
+      const floatSel=document.getElementById('chatFloatCaseSelect');
+      if(floatSel) floatSel.innerHTML=sel.innerHTML;
     }
 
     window.sendQuickReply=async function(text){
