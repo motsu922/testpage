@@ -109,11 +109,11 @@ function getFields(role,item,master){
   }
   if(role==="掛け"){
     add("掛け人数",item.kakeWorkers?item.kakeWorkers+"人":"—");
-    add("掛幅",item.width?item.width+"mm":"—");
+    add("掛幅",item.width?item.width+"cm":"—");
   }
   if(role==="降ろし検査")add("降ろし人数",item.orosiWorkers?item.orosiWorkers+"人":"—");
   if(["出荷","リフトマン"].includes(role))add("完成品箱数",item.finishedBoxes?item.finishedBoxes+"箱":"—");
-  if(role==="リフトマン"&&item.width)add("掛幅",item.width+"mm");
+  if(role==="リフトマン"&&item.width)add("掛幅",item.width+"cm");
   return f;
 }
 
@@ -161,6 +161,20 @@ function ErrorScreen({error,onRetry}){
   );
 }
 
+function FontSizeCtrl(){
+  const{fontScale,setFontScale}=useLang();
+  const idx=FONT_STEPS.indexOf(fontScale);
+  const si=idx<0?FONT_STEPS.indexOf(1.0):idx;
+  const btnSt=(disabled)=>({width:28,height:28,borderRadius:6,border:'1px solid #D0CEC8',background:disabled?'#F0EEE8':'#fff',color:disabled?'#ccc':'#333',fontSize:13,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,cursor:disabled?'default':'pointer'});
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
+      <button style={btnSt(si===0)} onClick={()=>si>0&&setFontScale(FONT_STEPS[si-1])}>A<sup style={{fontSize:8}}>−</sup></button>
+      <span style={{fontSize:10,color:'#888',minWidth:28,textAlign:'center'}}>{Math.round((fontScale||1)*100)}%</span>
+      <button style={btnSt(si===FONT_STEPS.length-1)} onClick={()=>si<FONT_STEPS.length-1&&setFontScale(FONT_STEPS[si+1])}>A<sup style={{fontSize:10}}>+</sup></button>
+    </div>
+  );
+}
+
 function NavBar({title,sub,onBack,right,wide}){
   const{lang,setLang,t}=useLang();
   return(
@@ -169,8 +183,9 @@ function NavBar({title,sub,onBack,right,wide}){
         {onBack&&<button className="btn-ghost" onClick={onBack} style={{marginRight:12,minWidth:64,minHeight:44}}>← {t('戻る')}</button>}
         <div style={{flex:1}}><div style={{fontSize:16,fontWeight:600,color:'#111'}}>{title}</div>{sub&&<div style={{fontSize:12,color:'#888',marginTop:1}}>{sub}</div>}</div>
         {right}
+        <FontSizeCtrl/>
         <button onClick={()=>setLang(lang==='ja'?'en':'ja')}
-          style={{marginLeft:10,padding:'5px 12px',borderRadius:8,border:'1.5px solid #C0BEB5',background:lang==='en'?'#185FA5':'#fff',color:lang==='en'?'#fff':'#555',fontSize:12,fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
+          style={{marginLeft:8,padding:'5px 10px',borderRadius:8,border:'1.5px solid #C0BEB5',background:lang==='en'?'#185FA5':'#fff',color:lang==='en'?'#fff':'#555',fontSize:12,fontWeight:700,whiteSpace:'nowrap',flexShrink:0}}>
           {lang==='ja'?'EN':'JP'}
         </button>
       </div>
@@ -182,9 +197,15 @@ function HomeScreen({onRole,onAdmin}){
   const{t}=useLang();
   return(
     <div className="screen">
-      <div style={{padding:'24px 16px 16px'}}>
-        <div style={{fontSize:11,color:'#888',marginBottom:4}}>ミヤマ工業 / 長坂コーテング</div>
-        <div style={{fontSize:22,fontWeight:700,color:'#111'}}>生産管理システム</div>
+      <div style={{padding:'24px 16px 16px',display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+        <div>
+          <div style={{fontSize:11,color:'#888',marginBottom:4}}>ミヤマ工業 / 長坂コーテング</div>
+          <div style={{fontSize:22,fontWeight:700,color:'#111'}}>生産管理システム</div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6}}>
+          <span style={{fontSize:11,color:'#888'}}>文字サイズ</span>
+          <FontSizeCtrl/>
+        </div>
       </div>
       <div style={{padding:'0 16px 24px'}}>
         <div style={{fontSize:11,fontWeight:600,color:'#888',letterSpacing:1.5,marginBottom:12,textTransform:'uppercase'}}>作業者ログイン</div>
@@ -241,16 +262,19 @@ const DEFAULT_ANOMALY_TYPES=['設備の異常','素材の異常','塗装の異�
 
 
 /* ── Translation ── */
-const LangCtx=React.createContext({lang:'ja',setLang:()=>{}});
+const LangCtx=React.createContext({lang:'ja',setLang:()=>{},fontScale:1,setFontScale:()=>{}});
 function useLang(){
   const ctx=React.useContext(LangCtx);
   const t=s=>ctx.lang==='en'?(EN[s]||s):s;
   return{...ctx,t};
 }
+const FONT_STEPS=[0.8,0.9,1.0,1.1,1.2,1.3];
 function LangProvider({children}){
   const[lang,setLangRaw]=useState(()=>{try{return localStorage.getItem('appLang')||'ja';}catch{return'ja';}});
   function setLang(l){setLangRaw(l);try{localStorage.setItem('appLang',l);}catch{}}
-  return<LangCtx.Provider value={{lang,setLang}}>{children}</LangCtx.Provider>;
+  const[fontScale,setFontScaleRaw]=useState(()=>{try{return parseFloat(localStorage.getItem('fontScale'))||1.0;}catch{return 1.0;}});
+  function setFontScale(v){setFontScaleRaw(v);try{localStorage.setItem('fontScale',v);}catch{}}
+  return<LangCtx.Provider value={{lang,setLang,fontScale,setFontScale}}>{children}</LangCtx.Provider>;
 }
 const EN={
   /* roles */'リフトマン':'Lift Op.','製品段取り':'Product Setup','ハンガー段取り':'Hanger Setup',
@@ -573,7 +597,7 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
     const img=master[item.seiban]?.imageUrl;
     return[
       ...LIFT_COLS.map(c=>(
-        <td key={c.key} style={{padding:'4px 8px',fontSize:c.key==='seiban'?19:16,fontWeight:c.key==='seiban'?700:400,color:c.key==='seiban'?lc:'#222',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',whiteSpace:'nowrap',background:isDone?'#F4FAF0':'inherit',opacity:isDone?0.6:1}}>
+        <td key={c.key} style={{padding:'4px 6px',fontSize:c.key==='seiban'?16:15,fontWeight:c.key==='seiban'?700:400,color:c.key==='seiban'?lc:'#222',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',whiteSpace:c.key==='seiban'?'normal':'nowrap',wordBreak:'break-all',background:isDone?'#F4FAF0':'inherit',opacity:isDone?0.6:1}}>
           {cellVal(c,item)}
         </td>
       )),
@@ -583,9 +607,9 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
         ):(
           <div style={{display:'flex',flexDirection:'column',gap:5}}>
             <button onClick={()=>setConfirmItem({item,img,lc,lb})}
-              style={{padding:'7px 12px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>{t('確認')}</button>
+              style={{padding:'4px 6px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:52}}>{t('確認')}</button>
             <button onClick={()=>handleComplete(item)} disabled={isSaving}
-              style={{padding:'7px 12px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:8,fontSize:13,fontWeight:700,whiteSpace:'nowrap',minWidth:64}}>{isSaving?'..':t('完了')}</button>
+              style={{padding:'4px 6px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:52}}>{isSaving?'..':t('完了')}</button>
           </div>
         )}
       </td>
@@ -607,6 +631,7 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
           </div>
           <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{plans.length}{t('件')}</span>
         </div>
+        <FontSizeCtrl/>
         <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #4A90D9',background:lang==='id'?'#4A90D9':'#EBF3FC',color:lang==='id'?'#fff':'#1A5FA0',fontSize:13,fontWeight:700}}>
           {lang==='ja'?'ID':'JP'}
         </button>
@@ -761,6 +786,7 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
           </div>
           <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{plans.length}件</span>
         </div>
+        <FontSizeCtrl/>
         <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>異常</button>
       </div>
       <div style={{flex:1,display:'flex',gap:12,padding:'12px',overflow:'hidden'}}>
@@ -974,7 +1000,7 @@ const SHEET_COLS=[
   {key:'fraction',label:'端数予定',unit:'個'},
   {key:'actualFraction',label:'端数実績',unit:'個'},
   {key:'kakeWorkers',label:'掛け人数',unit:'人'},
-  {key:'width',label:'掛幅',ms:true,unit:'mm'},
+  {key:'width',label:'掛幅',ms:true,unit:'cm'},
   {key:'voltage',label:'設定電圧',ms:true,unit:'V'},
   {key:'emptyHooks',label:'空フック',ms:true,unit:'個'},
   {key:'continuous',label:'連続本数',ms:true,unit:'本'},
@@ -1553,9 +1579,20 @@ function App(){
     const lines=[...new Set(items.map(i=>i.line))];
     const batch=db.batch();
     const ex=await db.collection('plans').where('date','==',targetDate).get();
-    ex.forEach(doc=>{if(lines.includes(doc.data().line))batch.delete(doc.ref);});
+    // 既存の完了情報を保存（seiban+line+kakeTime をキーに）
+    const savedCompletions={};
+    ex.forEach(doc=>{
+      const d=doc.data();
+      if(lines.includes(d.line)){
+        const key=`${d.line}_${d.seiban}_${d.kakeTime}`;
+        if(d.completions&&Object.keys(d.completions).length>0)savedCompletions[key]=d.completions;
+        batch.delete(doc.ref);
+      }
+    });
     items.forEach(item=>{
       const ref=db.collection('plans').doc();
+      const key=`${item.line}_${item.seiban}_${item.kakeTime}`;
+      const completions=savedCompletions[key]||{};
       batch.set(ref,{date:targetDate,line:item.line,seiban:item.seiban,
         kakeTime:item.kakeTime,orosiTime:item.orosiTime,reqTime:item.reqTime,
         products:item.products,materialBoxes:item.materialBoxes,
@@ -1563,7 +1600,7 @@ function App(){
         kakeWorkers:item.kakeWorkers,width:item.width,
         voltage:item.voltage,voltageMax:item.voltageMax,
         finishedBoxes:item.finishedBoxes,orosiWorkers:item.orosiWorkers,
-        completions:{},actualFraction:'',
+        completions,actualFraction:'',
         createdAt:firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
     });
@@ -1588,16 +1625,20 @@ function App(){
     if(autoCount>0)await autoRegBatch.commit();
   }
 
+  const{fontScale}=useLang();
+
   if(err)return<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
   if(!ready)return<LoadingScreen/>;
 
   function selectRole(r){setRole(r);if(r==='リフトマン'||r==='製品段取り'||r==='出荷'||r==='ハンガー段取り'){setLine(null);setScreen('worker');}else setScreen('lineSelect');}
 
-  if(screen==='home')return<HomeScreen onRole={selectRole} onAdmin={id=>setScreen(id)}/>;
-  if(screen==='lineSelect')return<LineSelectScreen role={role} onLine={l=>{setLine(l);setScreen('worker');}} onBack={()=>setScreen('home')}/>;
-  if(screen==='worker')return<WorkerScreen role={role} line={line} plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onUndo={onUndo} onBack={()=>setScreen('home')}/>;
-  if(screen==='admin')return<AdminScreen plans={plans} master={master} anomalies={anomalies} onRegister={onRegister} onBack={()=>setScreen('home')}/>;
-  if(screen==='master')return<MasterScreen master={master} anomalyTypes={anomalyTypes} onAddAnomalyType={addAnomalyType} onRemoveAnomalyType={removeAnomalyType} onBack={()=>setScreen('home')}/>;
+  const wrap=content=><div style={{zoom:fontScale,transformOrigin:'top left'}}>{content}</div>;
+
+  if(screen==='home')return wrap(<HomeScreen onRole={selectRole} onAdmin={id=>setScreen(id)}/>);
+  if(screen==='lineSelect')return wrap(<LineSelectScreen role={role} onLine={l=>{setLine(l);setScreen('worker');}} onBack={()=>setScreen('home')}/>);
+  if(screen==='worker')return wrap(<WorkerScreen role={role} line={line} plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onUndo={onUndo} onBack={()=>setScreen('home')}/>);
+  if(screen==='admin')return wrap(<AdminScreen plans={plans} master={master} anomalies={anomalies} onRegister={onRegister} onBack={()=>setScreen('home')}/>);
+  if(screen==='master')return wrap(<MasterScreen master={master} anomalyTypes={anomalyTypes} onAddAnomalyType={addAnomalyType} onRemoveAnomalyType={removeAnomalyType} onBack={()=>setScreen('home')}/>);
   return null;
 }
 
