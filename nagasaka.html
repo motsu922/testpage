@@ -58,7 +58,7 @@ var MASTER_DEFAULT={
 </script>
 
 <script type="text/babel">
-const{useState,useEffect,useRef}=React;
+const{useState,useEffect,useRef,useMemo}=React;
 const ROLES=["リフトマン","製品段取り","ハンガー段取り","掛け","降ろし検査","出荷"];
 const RS={"リフトマン":"リフ","製品段取り":"製品","ハンガー段取り":"ハン","掛け":"掛け","降ろし検査":"降ろ","出荷":"出荷"};
 const RA={"リフトマン":"#5F5E5A","製品段取り":"#185FA5","ハンガー段取り":"#534AB7","掛け":"#0F6E56","降ろし検査":"#BA7517","出荷":"#993556"};
@@ -721,6 +721,7 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   const[confirmItem,setConfirmItem]=useState(null);
   const[showAnomaly,setShowAnomaly]=useState(false);
   const[nowTime,setNowTime]=useState(()=>new Date().toTimeString().slice(0,5));
+  const[dismissedAlerts,setDismissedAlerts]=useState(new Set());
   const firstIncompleteRef=useRef(null);
   const scrollRef=useRef(null);
 
@@ -730,12 +731,31 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   const totalDone=plans.filter(p=>p.completions?.[role]?.done).length;
   const pct=plans.length?Math.round(totalDone/plans.length*100):0;
 
-  // 生産開始から23分後の電圧変更アラート
-  const firstKakeTime=[...plans].sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime))[0]?.kakeTime;
+  // 電圧が変わった行を特定（ライン内の前行と比較）
+  const voltageChangeIds=new Set();
+  for(const lineItems of[itemsA,itemsB]){
+    for(let i=1;i<lineItems.length;i++){
+      const prevV=String(master[lineItems[i-1].seiban]?.voltage??lineItems[i-1].voltage??'');
+      const currV=String(master[lineItems[i].seiban]?.voltage??lineItems[i].voltage??'');
+      if(prevV&&currV&&prevV!==currV)voltageChangeIds.add(lineItems[i].id);
+    }
+  }
+
   function addMin(t,m){if(!t)return null;const[h,mi]=t.split(':').map(Number);const tot=h*60+mi+m;return`${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;}
-  const voltageAlertTime=addMin(firstKakeTime,23);
-  const alertActive=voltageAlertTime&&nowTime>=voltageAlertTime;
-  const alertSoon=voltageAlertTime&&!alertActive&&addMin(nowTime,5)>=voltageAlertTime;
+
+  // 電圧変更行が完了してから23分後にアラート
+  const voltageAlert=useMemo(()=>{
+    for(const item of plans){
+      if(!voltageChangeIds.has(item.id))continue;
+      if(!item.completions?.[role]?.done)continue;
+      if(item.voltageCheck?.done)continue;
+      if(dismissedAlerts.has(item.id))continue;
+      const doneTime=item.completions[role].time;
+      const alertAt=addMin(doneTime,23);
+      if(alertAt&&nowTime>=alertAt)return{item,alertAt};
+    }
+    return null;
+  },[plans,nowTime,dismissedAlerts]);
 
   useEffect(()=>{
     const id=setInterval(()=>setNowTime(new Date().toTimeString().slice(0,5)),30000);
@@ -757,8 +777,8 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     finally{setSaving(s=>({...s,[item.id]:false}));}
   }
 
-  async function handleVoltageCheck(item){
-    if(vChecking[item.id]||item.voltageCheck?.done)return;
+  async function handleVoltageConfirm(item){
+    if(vChecking[item.id])return;
     setVChecking(s=>({...s,[item.id]:true}));
     try{
       const t=new Date().toTimeString().slice(0,5);
@@ -792,8 +812,8 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     ];
     const isDone=item.completions?.[role]?.done;
     const isSaving=saving[item.id];
+    const needsVC=voltageChangeIds.has(item.id);
     const isVChecked=item.voltageCheck?.done;
-    const isVChecking=vChecking[item.id];
     const img=master[item.seiban]?.imageUrl;
     const bg=isDone?'#F4FAF0':'inherit';
     const op=isDone?0.6:1;
@@ -807,14 +827,13 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
         return<td key={c.key} style={{padding:'4px 6px',fontSize:isSei?16:14,fontWeight:isSei||isVolt?700:400,color,textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',whiteSpace:isSei?'normal':'nowrap',wordBreak:'break-all',background:bg,opacity:op}}>{disp}</td>;
       }),
       <td key="vc" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op}}>
-        {isVChecked?(
-          <div style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>✓{item.voltageCheck.time}</div>
-        ):(
-          <button onClick={()=>handleVoltageCheck(item)} disabled={isVChecking}
-            style={{padding:'3px 8px',background:isVChecking?'#B4B2A9':'#FFF3E0',color:isVChecking?'#fff':'#E65100',border:'1.5px solid #E65100',borderRadius:6,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
-            {isVChecking?'..':'電圧確認'}
-          </button>
-        )}
+        {needsVC?(
+          isVChecked
+            ?<div style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>✓{item.voltageCheck.time}</div>
+            :isDone
+              ?<div style={{fontSize:11,color:'#E65100',fontWeight:600}}>待機中…</div>
+              :<div style={{fontSize:11,color:'#aaa'}}>完了後</div>
+        ):<span style={{color:'#ddd',fontSize:11}}>—</span>}
       </td>,
       <td key="op" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',background:bg,opacity:op}}>
         {isDone?(
@@ -846,11 +865,6 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
         <FontSizeCtrl/>
         <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>異常</button>
       </div>
-      {voltageAlertTime&&(
-        <div style={{background:alertActive?'#D32F2F':alertSoon?'#E65100':'#F57C00',color:'#fff',padding:'6px 16px',display:'flex',alignItems:'center',gap:8,flexShrink:0,fontSize:14,fontWeight:700}}>
-          <span>{alertActive?'⚠️ 電圧変更の時間です！':alertSoon?'⏱ 電圧変更まであと5分以内です':'⏱ 電圧変更予定:'} {voltageAlertTime}</span>
-        </div>
-      )}
       <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'8px'}}>
         {rows.length===0?(
           <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>計画が登録されていません</div>
@@ -895,6 +909,8 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
           </div>
         )}
       </div>
+
+      {/* 確認モーダル（ハンガー写真） */}
       {confirmItem&&(
         <div onClick={e=>e.target===e.currentTarget&&setConfirmItem(null)}
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
@@ -904,19 +920,16 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
               <div style={{fontSize:13,color:'rgba(255,255,255,.8)',marginTop:2}}>背番号: {confirmItem.item.seiban}</div>
             </div>
             <div style={{padding:20}}>
-              {confirmItem.img?(
-                <img src={confirmItem.img} style={{width:'100%',maxHeight:280,objectFit:'contain',borderRadius:10,border:'1px solid #E0DED8',marginBottom:16}}/>
-              ):(
-                <div style={{height:140,display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F7F4',borderRadius:10,border:'1px dashed #D0CEC8',marginBottom:16}}>
-                  <span style={{color:'#bbb',fontSize:14}}>ハンガー画像未登録</span>
-                </div>
-              )}
+              {confirmItem.img
+                ?<img src={confirmItem.img} style={{width:'100%',maxHeight:280,objectFit:'contain',borderRadius:10,border:'1px solid #E0DED8',marginBottom:16}}/>
+                :<div style={{height:140,display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F7F4',borderRadius:10,border:'1px dashed #D0CEC8',marginBottom:16}}><span style={{color:'#bbb',fontSize:14}}>ハンガー画像未登録</span></div>
+              }
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',marginBottom:20,padding:'12px 14px',background:'#F8F7F4',borderRadius:10}}>
                 {[
                   ['ハンガー名称',master[confirmItem.item.seiban]?.hangerName||confirmItem.item.hangerName||'—'],
-                  ['本数',(master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers||'')?(master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers)+'本':'—'],
-                  ['設定電圧',(master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage||'')?(master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage)+'V':'—'],
-                  ['空フック',(master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks||'')?(master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks)+'個':'—'],
+                  ['本数',(master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers||'')?((master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers)+'本'):'—'],
+                  ['設定電圧',(master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage||'')?((master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage)+'V'):'—'],
+                  ['空フック',(master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks||'')?((master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks)+'個'):'—'],
                 ].map(([l,v])=>(
                   <div key={l}><div style={{fontSize:11,color:'#999',marginBottom:2}}>{l}</div><div style={{fontSize:16,fontWeight:600,color:'#111'}}>{v}</div></div>
                 ))}
@@ -929,6 +942,34 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
           </div>
         </div>
       )}
+
+      {/* 電圧変更確認ポップアップ（完了から23分後） */}
+      {voltageAlert&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+          <div style={{background:'#fff',borderRadius:24,width:'100%',maxWidth:420,padding:'32px 28px',textAlign:'center',boxShadow:'0 12px 60px rgba(0,0,0,.4)'}}>
+            <div style={{fontSize:56,marginBottom:12}}>⚠️</div>
+            <div style={{fontSize:22,fontWeight:700,color:'#D32F2F',marginBottom:10}}>電圧変更の確認</div>
+            <div style={{fontSize:15,color:'#444',lineHeight:1.7,marginBottom:8}}>
+              背番号 <strong style={{color:'#111'}}>{voltageAlert.item.seiban}</strong> の完了から23分が経過しました。
+            </div>
+            <div style={{fontSize:14,color:'#666',marginBottom:28}}>
+              設定電圧: <strong style={{color:voltageColor(master[voltageAlert.item.seiban]?.voltage??voltageAlert.item.voltage),fontSize:18}}>
+                {master[voltageAlert.item.seiban]?.voltage??voltageAlert.item.voltage??'—'}V
+              </strong>　への変更を確認してください。
+            </div>
+            <div style={{display:'flex',gap:12}}>
+              <button onClick={()=>setDismissedAlerts(s=>new Set([...s,voltageAlert.item.id]))}
+                style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:14,fontWeight:700,color:'#555'}}>後で</button>
+              <button disabled={vChecking[voltageAlert.item.id]}
+                onClick={async()=>{await handleVoltageConfirm(voltageAlert.item);setDismissedAlerts(s=>new Set([...s,voltageAlert.item.id]));}}
+                style={{flex:2,padding:'14px',background:'#D32F2F',border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>
+                {vChecking[voltageAlert.item.id]?'記録中…':'✓ 確認済み'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAnomaly&&<AnomalyModal seiban={''} role={role} line={null} types={anomalyTypes} onClose={()=>setShowAnomaly(false)} onDone={()=>setShowAnomaly(false)}/>}
     </div>
   );
