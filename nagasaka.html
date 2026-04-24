@@ -731,17 +731,20 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   const totalDone=plans.filter(p=>p.completions?.[role]?.done).length;
   const pct=plans.length?Math.round(totalDone/plans.length*100):0;
 
-  // 電圧が変わった行を特定（ライン内の前行と比較）
-  const voltageChangeIds=new Set();
-  for(const lineItems of[itemsA,itemsB]){
-    for(let i=1;i<lineItems.length;i++){
-      const prevV=String(master[lineItems[i-1].seiban]?.voltage??lineItems[i-1].voltage??'');
-      const currV=String(master[lineItems[i].seiban]?.voltage??lineItems[i].voltage??'');
-      if(prevV&&currV&&prevV!==currV)voltageChangeIds.add(lineItems[i].id);
-    }
-  }
-
   function addMin(t,m){if(!t)return null;const[h,mi]=t.split(':').map(Number);const tot=h*60+mi+m;return`${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;}
+
+  // 電圧が変わった行を特定（ライン内の前行と比較）
+  const voltageChangeIds=useMemo(()=>{
+    const ids=new Set();
+    for(const lineItems of[itemsA,itemsB]){
+      for(let i=1;i<lineItems.length;i++){
+        const prevV=String(master[lineItems[i-1].seiban]?.voltage??lineItems[i-1].voltage??'');
+        const currV=String(master[lineItems[i].seiban]?.voltage??lineItems[i].voltage??'');
+        if(prevV&&currV&&prevV!==currV)ids.add(lineItems[i].id);
+      }
+    }
+    return ids;
+  },[plans,master]);
 
   // 電圧変更行が完了してから23分後にアラート
   const voltageAlert=useMemo(()=>{
@@ -755,7 +758,7 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
       if(alertAt&&nowTime>=alertAt)return{item,alertAt};
     }
     return null;
-  },[plans,nowTime,dismissedAlerts]);
+  },[plans,voltageChangeIds,nowTime,dismissedAlerts]);
 
   useEffect(()=>{
     const id=setInterval(()=>setNowTime(new Date().toTimeString().slice(0,5)),30000);
@@ -855,6 +858,11 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
       <div style={{background:'#fff',borderBottom:'1px solid #E0DED8',padding:'8px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
         <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>← 戻る</button>
         <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>ハンガー段取り</span>
+        {voltageChangeIds.size>0&&(
+          <div style={{fontSize:12,color:'#E65100',fontWeight:700,background:'#FFF3E0',padding:'4px 10px',borderRadius:8,border:'1px solid #E65100',flexShrink:0}}>
+            ⚡ 電圧切替 {voltageChangeIds.size}件
+          </div>
+        )}
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#888'}}>
           <span>進捗</span>
           <div style={{width:100,height:8,background:'#E0DED8',borderRadius:4,overflow:'hidden'}}>
