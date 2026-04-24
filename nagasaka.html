@@ -720,8 +720,10 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   const[vChecking,setVChecking]=useState({});
   const[confirmItem,setConfirmItem]=useState(null);
   const[showAnomaly,setShowAnomaly]=useState(false);
-  const[nowTime,setNowTime]=useState(()=>new Date().toTimeString().slice(0,5));
-  const[dismissedAlerts,setDismissedAlerts]=useState(new Set());
+  const[tick,setTick]=useState(0);
+  const[dismissedAlerts,setDismissedAlerts]=useState(()=>{
+    try{const s=sessionStorage.getItem('vcDismissed');return s?new Set(JSON.parse(s)):new Set();}catch{return new Set();}
+  });
   const firstIncompleteRef=useRef(null);
   const scrollRef=useRef(null);
 
@@ -746,22 +748,25 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     return ids;
   },[plans,master]);
 
-  // 電圧変更行が完了してから23分後にアラート
+  const ALERT_MS=23*60*1000;
+
+  // 電圧変更行が完了してから23分後にアラート（タイムスタンプ比較）
   const voltageAlert=useMemo(()=>{
+    const now=Date.now();
     for(const item of plans){
       if(!voltageChangeIds.has(item.id))continue;
       if(!item.completions?.[role]?.done)continue;
       if(item.voltageCheck?.done)continue;
       if(dismissedAlerts.has(item.id))continue;
-      const doneTime=item.completions[role].time;
-      const alertAt=addMin(doneTime,23);
-      if(alertAt&&nowTime>=alertAt)return{item,alertAt};
+      const ts=item.completions[role].ts;
+      if(!ts)continue;
+      if(now>=ts+ALERT_MS)return{item};
     }
     return null;
-  },[plans,voltageChangeIds,nowTime,dismissedAlerts]);
+  },[plans,voltageChangeIds,tick,dismissedAlerts]);
 
   useEffect(()=>{
-    const id=setInterval(()=>setNowTime(new Date().toTimeString().slice(0,5)),30000);
+    const id=setInterval(()=>setTick(t=>t+1),30000);
     return()=>clearInterval(id);
   },[]);
 
@@ -966,10 +971,15 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
               </strong>　への変更を確認してください。
             </div>
             <div style={{display:'flex',gap:12}}>
-              <button onClick={()=>setDismissedAlerts(s=>new Set([...s,voltageAlert.item.id]))}
+              <button onClick={()=>{const s=new Set([...dismissedAlerts,voltageAlert.item.id]);setDismissedAlerts(s);try{sessionStorage.setItem('vcDismissed',JSON.stringify([...s]));}catch{}}}
                 style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:14,fontWeight:700,color:'#555'}}>後で</button>
               <button disabled={vChecking[voltageAlert.item.id]}
-                onClick={async()=>{await handleVoltageConfirm(voltageAlert.item);setDismissedAlerts(s=>new Set([...s,voltageAlert.item.id]));}}
+                onClick={async()=>{
+                  await handleVoltageConfirm(voltageAlert.item);
+                  const s=new Set([...dismissedAlerts,voltageAlert.item.id]);
+                  setDismissedAlerts(s);
+                  try{sessionStorage.setItem('vcDismissed',JSON.stringify([...s]));}catch{}
+                }}
                 style={{flex:2,padding:'14px',background:'#D32F2F',border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>
                 {vChecking[voltageAlert.item.id]?'記録中…':'✓ 確認済み'}
               </button>
@@ -1737,7 +1747,7 @@ function App(){
 
   async function onComplete(planId,role,frac){
     const now=new Date().toTimeString().slice(0,5);
-    const upd={[`completions.${role}`]:{done:true,time:now},updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+    const upd={[`completions.${role}`]:{done:true,time:now,ts:Date.now()},updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
     if(frac!=='')upd.actualFraction=frac;
     await db.collection('plans').doc(planId).update(upd);
   }
