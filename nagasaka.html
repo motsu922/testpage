@@ -730,6 +730,25 @@ function LiftmanScreen({plans,master,anomalyTypes,onComplete,onBack}){
 function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   const acol='#185FA5',bcol='#534AB7';
   const role='ハンガー段取り';
+  const[lang,setLang]=useState('ja');
+  const HID={
+    '← 戻る':'← Kembali','ハンガー段取り':'Persiapan Hanger','進捗':'Progres','件':'item',
+    '異常':'Kelainan','A ライン':'Jalur A','B ライン':'Jalur B',
+    '掛け時間':'Waktu Pasang','所要時間':'Waktu Proses','背番号':'No. Seri',
+    'ハンガー名称':'Nama Hanger','本数':'Jumlah','設定電圧':'Volt Set',
+    '空フック':'Kait Kosong','連続本数':'Beruntun','電圧確認':'Cek Volt','操作':'Operasi',
+    '電圧切替':'Ganti Volt','✓完了':'✓Selesai','確認':'Konfirmasi','完了':'Selesai',
+    '待機中…':'Tunggu…','完了後':'Setelah selesai',
+    '計画が登録されていません':'Tidak ada rencana yang terdaftar',
+    'ハンガー確認':'Konfirmasi Hanger','背番号:':'No. Seri:',
+    'ハンガー画像未登録':'Gambar hanger belum terdaftar',
+    'キャンセル':'Batal','完了にしますか？':'Konfirmasi selesai?',
+    '電圧変更の確認':'Konfirmasi Ganti Volt',
+    '設定電圧:':'Volt Set:','への変更を確認してください。':'harap konfirmasi perubahan ke voltase ini.',
+    '後で':'Nanti','✓ 確認済み':'✓ Dikonfirmasi',
+    '本':'btg','個':'pcs',
+  };
+  const t=k=>lang==='id'?(HID[k]??k):k;
   const[saving,setSaving]=useState({});
   const[vChecking,setVChecking]=useState({});
   const[confirmItem,setConfirmItem]=useState(null);
@@ -804,8 +823,8 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     if(vChecking[item.id])return;
     setVChecking(s=>({...s,[item.id]:true}));
     try{
-      const t=new Date().toTimeString().slice(0,5);
-      await db.collection('plans').doc(item.id).update({voltageCheck:{done:true,time:t},updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+      const now=new Date().toTimeString().slice(0,5);
+      await db.collection('plans').doc(item.id).update({voltageCheck:{done:true,time:now},updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
     }catch(e){alert('保存に失敗: '+e.message);}
     finally{setVChecking(s=>({...s,[item.id]:false}));}
   }
@@ -815,7 +834,7 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   function cellVal(col,item){
     const v=col.ms?(master[item.seiban]?.[col.key]??item[col.key]):item[col.key];
     if(v==null||v==='')return'—';
-    return col.unit?v+col.unit:v;
+    return col.unit?v+t(col.unit):v;
   }
 
   const HCOLS=[
@@ -854,19 +873,19 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
           isVChecked
             ?<div style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>✓{item.voltageCheck.time}</div>
             :isDone
-              ?<div style={{fontSize:11,color:'#E65100',fontWeight:600}}>待機中…</div>
-              :<div style={{fontSize:11,color:'#aaa'}}>完了後</div>
+              ?<div style={{fontSize:11,color:'#E65100',fontWeight:600}}>{t('待機中…')}</div>
+              :<div style={{fontSize:11,color:'#aaa'}}>{t('完了後')}</div>
         ):<span style={{color:'#ddd',fontSize:11}}>—</span>}
       </td>,
       <td key="op" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',background:bg,opacity:op}}>
         {isDone?(
-          <span style={{fontSize:12,fontWeight:700,color:'#3B6D11'}}>✓完了</span>
+          <span style={{fontSize:12,fontWeight:700,color:'#3B6D11'}}>{t('✓完了')}</span>
         ):(
           <div style={{display:'flex',flexDirection:'column',gap:4}}>
             <button onClick={()=>setConfirmItem({item,img,lc,lb})}
-              style={{padding:'4px 6px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:52}}>確認</button>
+              style={{padding:'4px 6px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:52}}>{t('確認')}</button>
             <button onClick={()=>setCompleteItem({item,lc})} disabled={isSaving}
-              style={{padding:'4px 6px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:52}}>{isSaving?'..':'完了'}</button>
+              style={{padding:'4px 6px',background:isSaving?'#B4B2A9':lc,color:'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:52}}>{isSaving?'..':t('完了')}</button>
           </div>
         )}
       </td>,
@@ -876,43 +895,46 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   return(
     <div style={{display:'flex',flexDirection:'column',height:'100vh',background:'#F1EFE8',overflow:'hidden'}}>
       <div style={{background:'#fff',borderBottom:'1px solid #E0DED8',padding:'8px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-        <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>← 戻る</button>
-        <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>ハンガー段取り</span>
+        <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>{t('← 戻る')}</button>
+        <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>{t('ハンガー段取り')}</span>
         {voltageChangeIds.size>0&&(
           <div style={{fontSize:12,color:'#E65100',fontWeight:700,background:'#FFF3E0',padding:'4px 10px',borderRadius:8,border:'1px solid #E65100',flexShrink:0}}>
-            ⚡ 電圧切替 {voltageChangeIds.size}件
+            ⚡ {t('電圧切替')} {voltageChangeIds.size}{t('件')}
           </div>
         )}
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#888'}}>
-          <span>進捗</span>
+          <span>{t('進捗')}</span>
           <div style={{width:100,height:8,background:'#E0DED8',borderRadius:4,overflow:'hidden'}}>
             <div style={{height:'100%',background:acol,width:pct+'%',transition:'width .5s'}}/>
           </div>
-          <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{plans.length}件</span>
+          <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{plans.length}{t('件')}</span>
         </div>
         <FontSizeCtrl/>
-        <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>異常</button>
+        <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #4A90D9',background:lang==='id'?'#4A90D9':'#EBF3FC',color:lang==='id'?'#fff':'#1A5FA0',fontSize:13,fontWeight:700}}>
+          {lang==='ja'?'ID':'JP'}
+        </button>
+        <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>{t('異常')}</button>
       </div>
       <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'8px'}}>
         {rows.length===0?(
-          <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>計画が登録されていません</div>
+          <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>{t('計画が登録されていません')}</div>
         ):(
           <div style={{borderRadius:12,border:'1px solid #E0DED8',background:'#fff'}}>
             <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
               <thead style={{position:'sticky',top:0,zIndex:10}}>
                 <tr>
-                  <th colSpan={colCount} style={{...TH,background:acol,textAlign:'center',fontSize:14,padding:'8px 12px',borderRadius:'12px 0 0 0'}}>A ライン</th>
+                  <th colSpan={colCount} style={{...TH,background:acol,textAlign:'center',fontSize:14,padding:'8px 12px',borderRadius:'12px 0 0 0'}}>{t('A ライン')}</th>
                   <th style={{width:3,background:'#E0DED8',padding:0}}/>
-                  <th colSpan={colCount} style={{...TH,background:bcol,textAlign:'center',fontSize:14,padding:'8px 12px',borderRadius:'0 12px 0 0'}}>B ライン</th>
+                  <th colSpan={colCount} style={{...TH,background:bcol,textAlign:'center',fontSize:14,padding:'8px 12px',borderRadius:'0 12px 0 0'}}>{t('B ライン')}</th>
                 </tr>
                 <tr>
-                  {HCOLS.map(c=><th key={'a-'+c.key} style={{...TH,background:acol+'EE'}}>{c.label}</th>)}
-                  <th style={{...TH,background:acol+'EE'}}>電圧確認</th>
-                  <th style={{...TH,background:acol+'EE'}}>操作</th>
+                  {HCOLS.map(c=><th key={'a-'+c.key} style={{...TH,background:acol+'EE'}}>{t(c.label)}</th>)}
+                  <th style={{...TH,background:acol+'EE'}}>{t('電圧確認')}</th>
+                  <th style={{...TH,background:acol+'EE'}}>{t('操作')}</th>
                   <th style={{width:3,background:'#E0DED8',padding:0}}/>
-                  {HCOLS.map(c=><th key={'b-'+c.key} style={{...TH,background:bcol+'EE'}}>{c.label}</th>)}
-                  <th style={{...TH,background:bcol+'EE'}}>電圧確認</th>
-                  <th style={{...TH,background:bcol+'EE'}}>操作</th>
+                  {HCOLS.map(c=><th key={'b-'+c.key} style={{...TH,background:bcol+'EE'}}>{t(c.label)}</th>)}
+                  <th style={{...TH,background:bcol+'EE'}}>{t('電圧確認')}</th>
+                  <th style={{...TH,background:bcol+'EE'}}>{t('操作')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -944,26 +966,26 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
           <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:480,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,.3)'}}>
             <div style={{background:confirmItem.lc,padding:'16px 20px'}}>
-              <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>ハンガー確認</div>
-              <div style={{fontSize:13,color:'rgba(255,255,255,.8)',marginTop:2}}>背番号: {confirmItem.item.seiban}</div>
+              <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>{t('ハンガー確認')}</div>
+              <div style={{fontSize:13,color:'rgba(255,255,255,.8)',marginTop:2}}>{t('背番号:')} {confirmItem.item.seiban}</div>
             </div>
             <div style={{padding:20}}>
               {confirmItem.img
                 ?<img src={confirmItem.img} style={{width:'100%',maxHeight:280,objectFit:'contain',borderRadius:10,border:'1px solid #E0DED8',marginBottom:16}}/>
-                :<div style={{height:140,display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F7F4',borderRadius:10,border:'1px dashed #D0CEC8',marginBottom:16}}><span style={{color:'#bbb',fontSize:14}}>ハンガー画像未登録</span></div>
+                :<div style={{height:140,display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F7F4',borderRadius:10,border:'1px dashed #D0CEC8',marginBottom:16}}><span style={{color:'#bbb',fontSize:14}}>{t('ハンガー画像未登録')}</span></div>
               }
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',marginBottom:20,padding:'12px 14px',background:'#F8F7F4',borderRadius:10}}>
                 {[
-                  ['ハンガー名称',master[confirmItem.item.seiban]?.hangerName||confirmItem.item.hangerName||'—'],
-                  ['本数',(master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers||'')?((master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers)+'本'):'—'],
-                  ['設定電圧',(master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage||'')?((master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage)+'V'):'—'],
-                  ['空フック',(master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks||'')?((master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks)+'個'):'—'],
+                  [t('ハンガー名称'),master[confirmItem.item.seiban]?.hangerName||confirmItem.item.hangerName||'—'],
+                  [t('本数'),(master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers||'')?((master[confirmItem.item.seiban]?.hangers||confirmItem.item.hangers)+t('本')):'—'],
+                  [t('設定電圧'),(master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage||'')?((master[confirmItem.item.seiban]?.voltage||confirmItem.item.voltage)+'V'):'—'],
+                  [t('空フック'),(master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks||'')?((master[confirmItem.item.seiban]?.emptyHooks||confirmItem.item.emptyHooks)+t('個')):'—'],
                 ].map(([l,v])=>(
                   <div key={l}><div style={{fontSize:11,color:'#999',marginBottom:2}}>{l}</div><div style={{fontSize:16,fontWeight:600,color:'#111'}}>{v}</div></div>
                 ))}
               </div>
               <div style={{display:'flex',gap:10}}>
-                <button onClick={()=>setConfirmItem(null)} style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:15,fontWeight:700,color:'#555'}}>キャンセル</button>
+                <button onClick={()=>setConfirmItem(null)} style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:15,fontWeight:700,color:'#555'}}>{t('キャンセル')}</button>
                 <button onClick={()=>setConfirmItem(null)} style={{flex:2,padding:'14px',background:confirmItem.lc,border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>OK</button>
               </div>
             </div>
@@ -976,18 +998,18 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
           <div style={{background:'#fff',borderRadius:24,width:'100%',maxWidth:420,padding:'32px 28px',textAlign:'center',boxShadow:'0 12px 60px rgba(0,0,0,.4)'}}>
             <div style={{fontSize:56,marginBottom:12}}>⚠️</div>
-            <div style={{fontSize:22,fontWeight:700,color:'#D32F2F',marginBottom:10}}>電圧変更の確認</div>
+            <div style={{fontSize:22,fontWeight:700,color:'#D32F2F',marginBottom:10}}>{t('電圧変更の確認')}</div>
             <div style={{fontSize:15,color:'#444',lineHeight:1.7,marginBottom:8}}>
-              背番号 <strong style={{color:'#111'}}>{voltageAlert.item.seiban}</strong> の完了から23分が経過しました。
+              {t('背番号:')} <strong style={{color:'#111'}}>{voltageAlert.item.seiban}</strong>
             </div>
             <div style={{fontSize:14,color:'#666',marginBottom:28}}>
-              設定電圧: <strong style={{color:voltageColor(master[voltageAlert.item.seiban]?.voltage??voltageAlert.item.voltage),fontSize:18}}>
+              {t('設定電圧:')} <strong style={{color:voltageColor(master[voltageAlert.item.seiban]?.voltage??voltageAlert.item.voltage),fontSize:18}}>
                 {master[voltageAlert.item.seiban]?.voltage??voltageAlert.item.voltage??'—'}V
-              </strong>　への変更を確認してください。
+              </strong>　{t('への変更を確認してください。')}
             </div>
             <div style={{display:'flex',gap:12}}>
               <button onClick={()=>{const s=new Set([...dismissedAlerts,voltageAlert.item.id]);setDismissedAlerts(s);try{sessionStorage.setItem('vcDismissed',JSON.stringify([...s]));}catch{}}}
-                style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:14,fontWeight:700,color:'#555'}}>後で</button>
+                style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:14,fontWeight:700,color:'#555'}}>{t('後で')}</button>
               <button disabled={vChecking[voltageAlert.item.id]}
                 onClick={async()=>{
                   await handleVoltageConfirm(voltageAlert.item);
@@ -996,7 +1018,7 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
                   try{sessionStorage.setItem('vcDismissed',JSON.stringify([...s]));}catch{}
                 }}
                 style={{flex:2,padding:'14px',background:'#D32F2F',border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>
-                {vChecking[voltageAlert.item.id]?'記録中…':'✓ 確認済み'}
+                {vChecking[voltageAlert.item.id]?'..':t('✓ 確認済み')}
               </button>
             </div>
           </div>
@@ -1008,11 +1030,11 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
           <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:360,padding:'28px 24px',textAlign:'center',boxShadow:'0 8px 40px rgba(0,0,0,.35)'}}>
             <div style={{fontSize:36,marginBottom:12}}>✅</div>
-            <div style={{fontSize:18,fontWeight:700,color:'#111',marginBottom:6}}>完了にしますか？</div>
-            <div style={{fontSize:14,color:'#666',marginBottom:24}}>背番号: <strong>{completeItem.item.seiban}</strong></div>
+            <div style={{fontSize:18,fontWeight:700,color:'#111',marginBottom:6}}>{t('完了にしますか？')}</div>
+            <div style={{fontSize:14,color:'#666',marginBottom:24}}>{t('背番号:')} <strong>{completeItem.item.seiban}</strong></div>
             <div style={{display:'flex',gap:10}}>
-              <button onClick={()=>setCompleteItem(null)} style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:15,fontWeight:700,color:'#555'}}>キャンセル</button>
-              <button onClick={async()=>{const it=completeItem.item;setCompleteItem(null);await handleComplete(it);}} style={{flex:2,padding:'14px',background:completeItem.lc,border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>完了</button>
+              <button onClick={()=>setCompleteItem(null)} style={{flex:1,padding:'14px',background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:15,fontWeight:700,color:'#555'}}>{t('キャンセル')}</button>
+              <button onClick={async()=>{const it=completeItem.item;setCompleteItem(null);await handleComplete(it);}} style={{flex:2,padding:'14px',background:completeItem.lc,border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>{t('完了')}</button>
             </div>
           </div>
         </div>
