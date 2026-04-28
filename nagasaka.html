@@ -770,11 +770,13 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
 
   function addMin(t,m){if(!t)return null;const[h,mi]=t.split(':').map(Number);const tot=h*60+mi+m;return`${String(Math.floor(tot/60)).padStart(2,'0')}:${String(tot%60).padStart(2,'0')}`;}
 
-  // 電圧が変わった行を特定（ライン内の前行と比較）
+  // 電圧が変わった行を特定（ライン内の前行と比較・試作品は除外）
   const voltageChangeIds=useMemo(()=>{
     const ids=new Set();
     for(const lineItems of[itemsA,itemsB]){
       for(let i=1;i<lineItems.length;i++){
+        const currName=master[lineItems[i].seiban]?.hangerName??lineItems[i].hangerName??'';
+        if(currName.includes('試作'))continue; // 試作品は電圧変更確認不要
         const prevV=String(master[lineItems[i-1].seiban]?.voltage??lineItems[i-1].voltage??'');
         const currV=String(master[lineItems[i].seiban]?.voltage??lineItems[i].voltage??'');
         if(prevV&&currV&&prevV!==currV)ids.add(lineItems[i].id);
@@ -785,17 +787,18 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
 
   const ALERT_MS=23*60*1000;
 
-  // 電圧変更行が完了してから23分後にアラート（タイムスタンプ比較）
+  // 電圧変更行の掛け時間から23分後にアラート（電波時計基準）
   const voltageAlert=useMemo(()=>{
     const now=Date.now();
     for(const item of plans){
       if(!voltageChangeIds.has(item.id))continue;
-      if(!item.completions?.[role]?.done)continue;
       if(item.voltageCheck?.done)continue;
       if(dismissedAlerts.has(item.id))continue;
-      const ts=item.completions[role].ts;
-      if(!ts)continue;
-      if(now>=ts+ALERT_MS)return{item};
+      const kakeTime=item.kakeTime;
+      if(!kakeTime)continue;
+      const[h,m]=kakeTime.split(':').map(Number);
+      const kakeDate=new Date();kakeDate.setHours(h,m,0,0);
+      if(now>=kakeDate.getTime()+ALERT_MS)return{item};
     }
     return null;
   },[plans,voltageChangeIds,tick,dismissedAlerts]);
@@ -868,8 +871,11 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
 
   function renderSide(item,lc,lb){
     if(!item)return[
-      ...HCOLS.map(c=><td key={c.key} style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>),
-      <td key="jc" style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>,
+      ...HCOLS.flatMap(c=>{
+        const base=<td key={c.key} style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>;
+        if(c.key==='voltage')return[base,<td key="jc-e" style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>];
+        return[base];
+      }),
       <td key="vc" style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>,
       <td key="op" style={{padding:'4px 6px',background:'#F8F8F8'}}/>,
     ];
@@ -881,27 +887,30 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     const bg=isDone?'#F4FAF0':'inherit';
     const op=isDone?0.6:1;
     return[
-      ...HCOLS.map(c=>{
+      ...HCOLS.flatMap(c=>{
         const disp=cellVal(c,item);
         const isVolt=c.key==='voltage';
         const isSei=c.key==='seiban';
         const rawV=master[item.seiban]?.[c.key]??item[c.key];
         const color=isVolt?voltageColor(rawV):isSei?lc:'#222';
-        return<td key={c.key} style={{padding:'4px 6px',fontSize:isSei?16:14,fontWeight:isSei||isVolt?700:400,color,textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',whiteSpace:isSei?'normal':'nowrap',wordBreak:'break-all',background:bg,opacity:op}}>{disp}</td>;
-      }),
-      <td key="jc" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op}}>
-        {needsVC?(()=>{
-          const rawV=master[item.seiban]?.voltage??item.voltage??'';
+        const mainCell=<td key={c.key} style={{padding:'4px 6px',fontSize:isSei?16:14,fontWeight:isSei||isVolt?700:400,color,textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',whiteSpace:isSei?'normal':'nowrap',wordBreak:'break-all',background:bg,opacity:op}}>{disp}</td>;
+        if(isVolt){
           const jLabel=jigNum(rawV);
           const isJChecked=item.jigCheck?.done;
-          return isJChecked
-            ?<div style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>✓{jLabel}<br/>{item.jigCheck.time}</div>
-            :<button onClick={()=>handleJigConfirm(item)} disabled={jigChecking[item.id]}
-                style={{padding:'4px 6px',background:jigChecking[item.id]?'#B4B2A9':'#FFF8E1',color:'#7B5800',border:'1.5px solid #F9A825',borderRadius:6,fontSize:11,fontWeight:700,whiteSpace:'normal',wordBreak:'keep-all',lineHeight:1.3,cursor:'pointer',width:'100%'}}>
-                {jLabel}<br/>{t('✓治具確認済')}
-              </button>;
-        })():<span style={{color:'#ddd',fontSize:11}}>—</span>}
-      </td>,
+          const jigCell=<td key="jc" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op}}>
+            {needsVC?(
+              isJChecked
+                ?<div style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>✓{jLabel}<br/>{item.jigCheck.time}</div>
+                :<button onClick={()=>handleJigConfirm(item)} disabled={jigChecking[item.id]}
+                    style={{padding:'4px 6px',background:jigChecking[item.id]?'#B4B2A9':'#FFF8E1',color:'#7B5800',border:'1.5px solid #F9A825',borderRadius:6,fontSize:11,fontWeight:700,whiteSpace:'normal',wordBreak:'keep-all',lineHeight:1.3,cursor:'pointer',width:'100%'}}>
+                    {jLabel}<br/>{t('✓治具確認済')}
+                  </button>
+            ):<span style={{color:'#ddd',fontSize:11}}>—</span>}
+          </td>;
+          return[mainCell,jigCell];
+        }
+        return[mainCell];
+      }),
       <td key="vc" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op}}>
         {needsVC?(
           isVChecked
@@ -949,12 +958,12 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
         </button>
         <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>{t('異常')}</button>
       </div>
-      <div ref={scrollRef} style={{flex:1,overflowY:'auto',padding:'8px'}}>
+      <div ref={scrollRef} style={{flex:1,overflow:'auto',padding:'8px'}}>
         {rows.length===0?(
           <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>{t('計画が登録されていません')}</div>
         ):(
-          <div style={{borderRadius:12,border:'1px solid #E0DED8',background:'#fff'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
+          <div style={{borderRadius:12,border:'1px solid #E0DED8',background:'#fff',overflowX:'auto'}}>
+            <table style={{borderCollapse:'collapse',minWidth:'100%'}}>
               <thead style={{position:'sticky',top:0,zIndex:10}}>
                 <tr>
                   <th colSpan={colCount} style={{...TH,background:acol,textAlign:'center',fontSize:14,padding:'8px 12px',borderRadius:'12px 0 0 0'}}>{t('A ライン')}</th>
@@ -962,13 +971,19 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
                   <th colSpan={colCount} style={{...TH,background:bcol,textAlign:'center',fontSize:14,padding:'8px 12px',borderRadius:'0 12px 0 0'}}>{t('B ライン')}</th>
                 </tr>
                 <tr>
-                  {HCOLS.map(c=><th key={'a-'+c.key} style={{...TH,background:acol+'EE'}}>{t(c.label)}</th>)}
-                  <th style={{...TH,background:acol+'EE'}}>{t('電圧変更治具確認')}</th>
+                  {HCOLS.flatMap(c=>{
+                    const th=<th key={'a-'+c.key} style={{...TH,background:acol+'EE'}}>{t(c.label)}</th>;
+                    if(c.key==='voltage')return[th,<th key="a-jc" style={{...TH,background:acol+'EE'}}>{t('電圧変更治具確認')}</th>];
+                    return[th];
+                  })}
                   <th style={{...TH,background:acol+'EE'}}>{t('電圧確認')}</th>
                   <th style={{...TH,background:acol+'EE'}}>{t('操作')}</th>
                   <th style={{width:3,background:'#E0DED8',padding:0}}/>
-                  {HCOLS.map(c=><th key={'b-'+c.key} style={{...TH,background:bcol+'EE'}}>{t(c.label)}</th>)}
-                  <th style={{...TH,background:bcol+'EE'}}>{t('電圧変更治具確認')}</th>
+                  {HCOLS.flatMap(c=>{
+                    const th=<th key={'b-'+c.key} style={{...TH,background:bcol+'EE'}}>{t(c.label)}</th>;
+                    if(c.key==='voltage')return[th,<th key="b-jc" style={{...TH,background:bcol+'EE'}}>{t('電圧変更治具確認')}</th>];
+                    return[th];
+                  })}
                   <th style={{...TH,background:bcol+'EE'}}>{t('電圧確認')}</th>
                   <th style={{...TH,background:bcol+'EE'}}>{t('操作')}</th>
                 </tr>
