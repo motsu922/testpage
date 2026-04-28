@@ -747,6 +747,7 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     '設定電圧:':'Volt Set:','への変更を確認してください。':'harap konfirmasi perubahan ke voltase ini.',
     '後で':'Nanti','✓ 確認済み':'✓ Dikonfirmasi',
     '本':'btg','個':'pcs',
+    '電圧変更治具確認':'Konfirmasi Jig Volt','治具':'Jig','番':'No.','✓治具確認済':'✓Jig OK',
   };
   const t=k=>lang==='id'?(HID[k]??k):k;
   const[saving,setSaving]=useState({});
@@ -829,6 +830,25 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     finally{setVChecking(s=>({...s,[item.id]:false}));}
   }
 
+  const[jigChecking,setJigChecking]=useState({});
+  async function handleJigConfirm(item){
+    if(jigChecking[item.id])return;
+    setJigChecking(s=>({...s,[item.id]:true}));
+    try{
+      const now=new Date().toTimeString().slice(0,5);
+      await db.collection('plans').doc(item.id).update({jigCheck:{done:true,time:now},updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    }catch(e){alert('保存に失敗: '+e.message);}
+    finally{setJigChecking(s=>({...s,[item.id]:false}));}
+  }
+
+  // 電圧から治具番号を返す（330V→1番, 250V→2番, 210V→3番）
+  function jigNum(v){
+    const n=parseInt(v)||0;
+    if(n>=300)return lang==='id'?'Jig No.1':'治具1番';
+    if(n>=240)return lang==='id'?'Jig No.2':'治具2番';
+    return lang==='id'?'Jig No.3':'治具3番';
+  }
+
   function voltageColor(v){const n=parseInt(v);if(n>=330)return'#D32F2F';if(n>=250)return'#185FA5';return'#222';}
 
   function cellVal(col,item){
@@ -843,12 +863,13 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
     {key:'voltage',label:'設定電圧',ms:true,unit:'V'},{key:'emptyHooks',label:'空フック',ms:true,unit:'個'},
     {key:'continuous',label:'連続本数',ms:true,unit:'本'},
   ];
-  const colCount=HCOLS.length+2;
+  const colCount=HCOLS.length+3;
   const TH={padding:'4px 6px',fontSize:12,fontWeight:700,color:'#fff',whiteSpace:'normal',wordBreak:'keep-all',lineHeight:1.3,textAlign:'center',borderRight:'1px solid rgba(255,255,255,.25)'};
 
   function renderSide(item,lc,lb){
     if(!item)return[
       ...HCOLS.map(c=><td key={c.key} style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>),
+      <td key="jc" style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>,
       <td key="vc" style={{padding:'4px 6px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>,
       <td key="op" style={{padding:'4px 6px',background:'#F8F8F8'}}/>,
     ];
@@ -868,6 +889,19 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
         const color=isVolt?voltageColor(rawV):isSei?lc:'#222';
         return<td key={c.key} style={{padding:'4px 6px',fontSize:isSei?16:14,fontWeight:isSei||isVolt?700:400,color,textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',whiteSpace:isSei?'normal':'nowrap',wordBreak:'break-all',background:bg,opacity:op}}>{disp}</td>;
       }),
+      <td key="jc" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op}}>
+        {needsVC?(()=>{
+          const rawV=master[item.seiban]?.voltage??item.voltage??'';
+          const jLabel=jigNum(rawV);
+          const isJChecked=item.jigCheck?.done;
+          return isJChecked
+            ?<div style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>✓{jLabel}<br/>{item.jigCheck.time}</div>
+            :<button onClick={()=>handleJigConfirm(item)} disabled={jigChecking[item.id]}
+                style={{padding:'4px 6px',background:jigChecking[item.id]?'#B4B2A9':'#FFF8E1',color:'#7B5800',border:'1.5px solid #F9A825',borderRadius:6,fontSize:11,fontWeight:700,whiteSpace:'normal',wordBreak:'keep-all',lineHeight:1.3,cursor:'pointer',width:'100%'}}>
+                {jLabel}<br/>{t('✓治具確認済')}
+              </button>;
+        })():<span style={{color:'#ddd',fontSize:11}}>—</span>}
+      </td>,
       <td key="vc" style={{padding:'4px 6px',textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op}}>
         {needsVC?(
           isVChecked
@@ -929,10 +963,12 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
                 </tr>
                 <tr>
                   {HCOLS.map(c=><th key={'a-'+c.key} style={{...TH,background:acol+'EE'}}>{t(c.label)}</th>)}
+                  <th style={{...TH,background:acol+'EE'}}>{t('電圧変更治具確認')}</th>
                   <th style={{...TH,background:acol+'EE'}}>{t('電圧確認')}</th>
                   <th style={{...TH,background:acol+'EE'}}>{t('操作')}</th>
                   <th style={{width:3,background:'#E0DED8',padding:0}}/>
                   {HCOLS.map(c=><th key={'b-'+c.key} style={{...TH,background:bcol+'EE'}}>{t(c.label)}</th>)}
+                  <th style={{...TH,background:bcol+'EE'}}>{t('電圧変更治具確認')}</th>
                   <th style={{...TH,background:bcol+'EE'}}>{t('電圧確認')}</th>
                   <th style={{...TH,background:bcol+'EE'}}>{t('操作')}</th>
                 </tr>
