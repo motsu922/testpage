@@ -1094,6 +1094,266 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
   );
 }
 
+function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
+  const role=line==='A'?'段取りA':'段取りB';
+  const lc='#185FA5',lb='#E6F1FB';
+  const[saving,setSaving]=useState({});
+  const[qrSaving,setQrSaving]=useState({});
+  const[sampleSaving,setSampleSaving]=useState({});
+  const[selectedItem,setSelectedItem]=useState(null);
+  const[qrInput,setQrInput]=useState('');
+  const[qrResult,setQrResult]=useState(null); // null|'ok'|'ng'
+  const[showSampleConfirm,setShowSampleConfirm]=useState(false);
+  const[showAnomaly,setShowAnomaly]=useState(false);
+  const scrollRef=useRef(null);
+  const qrRef=useRef(null);
+  const firstIncompleteRef=useRef(null);
+
+  const items=plans.filter(p=>p.line===line).sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime));
+  const totalDone=items.filter(p=>p.completions?.[role]?.done).length;
+  const pct=items.length?Math.round(totalDone/items.length*100):0;
+  const currentSelected=selectedItem?items.find(i=>i.id===selectedItem.id):null;
+
+  useEffect(()=>{if(selectedItem&&qrRef.current)setTimeout(()=>qrRef.current?.focus(),100);},[selectedItem?.id]);
+  useEffect(()=>{
+    if(firstIncompleteRef.current&&scrollRef.current){
+      const c=scrollRef.current,r=firstIncompleteRef.current;
+      c.scrollTop=Math.max(0,r.offsetTop-c.offsetTop-8);
+    }
+  },[]);
+
+  function validateQR(value){
+    if(!selectedItem)return false;
+    const m=master[selectedItem.seiban];
+    const target=m?.qrText||selectedItem.seiban;
+    return value.includes(target);
+  }
+
+  async function handleQRScan(e){
+    if(e.key!=='Enter')return;
+    const value=qrInput.trim();
+    if(!value||!selectedItem)return;
+    const ok=validateQR(value);
+    setQrResult(ok?'ok':'ng');
+    setQrInput('');
+    if(!ok)return;
+    setQrSaving(s=>({...s,[selectedItem.id]:true}));
+    try{
+      const now=new Date().toTimeString().slice(0,5);
+      await db.collection('plans').doc(selectedItem.id).update({
+        [`qrCheck_${line}`]:{done:true,time:now},
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+      setTimeout(()=>setShowSampleConfirm(true),400);
+    }catch(e){alert('保存に失敗: '+e.message);}
+    finally{setQrSaving(s=>({...s,[selectedItem.id]:false}));}
+  }
+
+  async function handleSampleConfirm(){
+    if(!currentSelected)return;
+    setSampleSaving(s=>({...s,[currentSelected.id]:true}));
+    try{
+      const now=new Date().toTimeString().slice(0,5);
+      await db.collection('plans').doc(currentSelected.id).update({
+        [`sampleCheck_${line}`]:{done:true,time:now},
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+      setShowSampleConfirm(false);
+    }catch(e){alert('保存に失敗: '+e.message);}
+    finally{setSampleSaving(s=>({...s,[currentSelected.id]:false}));}
+  }
+
+  async function handleComplete(item){
+    if(saving[item.id])return;
+    setSaving(s=>({...s,[item.id]:true}));
+    try{await onComplete(item.id,role,'');}
+    catch(e){alert('保存に失敗: '+e.message);}
+    finally{setSaving(s=>({...s,[item.id]:false}));}
+  }
+
+  const TH={padding:'4px 6px',fontSize:12,fontWeight:700,color:'#fff',whiteSpace:'normal',wordBreak:'break-all',lineHeight:1.3,textAlign:'center',borderRight:'1px solid rgba(255,255,255,.25)'};
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',background:'#F1EFE8',overflow:'hidden'}}>
+      {/* ヘッダー */}
+      <div style={{background:'#fff',borderBottom:'1px solid #E0DED8',padding:'8px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+        <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>← 戻る</button>
+        <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>製品段取り　{line}ライン</span>
+        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#888'}}>
+          <span>進捗</span>
+          <div style={{width:100,height:8,background:'#E0DED8',borderRadius:4,overflow:'hidden'}}>
+            <div style={{height:'100%',background:lc,width:pct+'%',transition:'width .5s'}}/>
+          </div>
+          <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{items.length}件</span>
+        </div>
+        <FontSizeCtrl/>
+        <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>異常</button>
+      </div>
+
+      {/* メイン：左テーブル + 右パネル */}
+      <div style={{display:'flex',flex:1,overflow:'hidden',gap:8,padding:8}}>
+
+        {/* 左：スクロールテーブル */}
+        <div ref={scrollRef} style={{flex:'0 0 56%',overflow:'auto'}}>
+          <div style={{borderRadius:12,border:'1px solid #E0DED8',background:'#fff',width:'fit-content',minWidth:'100%'}}>
+            <table style={{borderCollapse:'collapse',minWidth:'100%'}}>
+              <thead style={{position:'sticky',top:0,zIndex:5}}>
+                <tr>
+                  <th colSpan={7} style={{...TH,background:lc,textAlign:'center',fontSize:13,padding:'6px 12px',borderRadius:'12px 12px 0 0'}}>{line}ライン</th>
+                </tr>
+                <tr>
+                  {['掛け時間','所要時間','背番号','素材箱数','QR照合','1個確認','操作'].map(h=>(
+                    <th key={h} style={{...TH,background:lc+'EE'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.length===0?(
+                  <tr><td colSpan={7} style={{textAlign:'center',padding:'48px',color:'#aaa'}}>計画が登録されていません</td></tr>
+                ):(()=>{
+                  let foundFirst=false;
+                  return items.map(item=>{
+                    const isDone=item.completions?.[role]?.done;
+                    const isQRDone=item[`qrCheck_${line}`]?.done;
+                    const isSampleDone=item[`sampleCheck_${line}`]?.done;
+                    const ready=isQRDone&&isSampleDone;
+                    const isSelected=currentSelected?.id===item.id;
+                    const isFirst=!foundFirst&&!isDone;
+                    if(isFirst)foundFirst=true;
+                    const bg=isSelected?'#EBF3FC':isDone?'#F4FAF0':'inherit';
+                    const op=isDone?0.65:1;
+                    const TD={padding:'3px 6px',fontSize:13,textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op,whiteSpace:'nowrap'};
+                    return(
+                      <tr key={item.id} ref={isFirst?firstIncompleteRef:null}>
+                        <td style={TD}>{item.kakeTime}</td>
+                        <td style={TD}>{item.reqTime}</td>
+                        <td style={{...TD,fontWeight:700,color:lc,fontSize:14}}>{item.seiban}</td>
+                        <td style={TD}>{item.materialBoxes||'—'}</td>
+                        <td style={{...TD,color:isQRDone?'#3B6D11':'#bbb',fontWeight:isQRDone?700:400}}>
+                          {isQRDone?<span>✔<br/><span style={{fontSize:10}}>{item[`qrCheck_${line}`].time}</span></span>:'—'}
+                        </td>
+                        <td style={{...TD,color:isSampleDone?'#3B6D11':'#bbb',fontWeight:isSampleDone?700:400}}>
+                          {isSampleDone?<span>✔<br/><span style={{fontSize:10}}>{item[`sampleCheck_${line}`].time}</span></span>:'—'}
+                        </td>
+                        <td style={{...TD,padding:'3px 5px',borderRight:'none'}}>
+                          {isDone?(
+                            <span style={{fontSize:12,fontWeight:700,color:'#3B6D11'}}>✓完了</span>
+                          ):(
+                            <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                              <button onClick={()=>{setSelectedItem(item);setQrResult(null);}}
+                                style={{padding:'3px 8px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:44}}>確認</button>
+                              <button onClick={()=>handleComplete(item)} disabled={!ready||saving[item.id]}
+                                style={{padding:'3px 8px',background:(!ready||saving[item.id])?'#C8C6C0':lc,color:(!ready||saving[item.id])?'#888':'#fff',border:'none',borderRadius:6,fontSize:12,fontWeight:700,whiteSpace:'nowrap',minWidth:44,cursor:ready?'pointer':'default'}}>
+                                {saving[item.id]?'..':'完了'}</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 右：詳細パネル */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',gap:8,minWidth:0}}>
+          {currentSelected?(
+            <>
+              {/* 製品写真 */}
+              <div style={{flex:'0 0 54%',background:'#fff',borderRadius:12,border:'1px solid #E0DED8',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+                <div style={{padding:'6px 12px',borderBottom:'1px solid #E8E6E0',fontSize:12,fontWeight:700,color:'#555',flexShrink:0}}>
+                  製品写真　<span style={{color:lc}}>{currentSelected.seiban}</span>
+                  {currentSelected.materialBoxes?<span style={{marginLeft:12,color:'#888',fontWeight:400}}>素材箱数：{currentSelected.materialBoxes}箱</span>:null}
+                </div>
+                <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',padding:8,overflow:'hidden'}}>
+                  {master[currentSelected.seiban]?.imageUrl?(
+                    <img src={master[currentSelected.seiban].imageUrl} alt="製品写真"
+                      style={{maxHeight:'100%',maxWidth:'100%',objectFit:'contain',borderRadius:6}}/>
+                  ):(
+                    <div style={{color:'#bbb',fontSize:13,textAlign:'center'}}>
+                      <div style={{fontSize:36,marginBottom:6}}>📷</div>製品写真未登録
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* QRスキャンエリア */}
+              <div style={{flex:1,background:'#fff',borderRadius:12,border:'1px solid #E0DED8',padding:'12px 16px',display:'flex',flexDirection:'column',gap:10,overflow:'auto'}}>
+                <div style={{fontSize:13,fontWeight:700,color:'#333'}}>QRスキャン</div>
+                <input ref={qrRef} value={qrInput}
+                  onChange={e=>setQrInput(e.target.value)}
+                  onKeyDown={handleQRScan}
+                  placeholder="QRコードをスキャン（ハンディスキャナーで読み取り）"
+                  style={{width:'100%',fontSize:13,padding:'8px 12px',borderRadius:8,border:`2px solid ${qrResult==='ok'?'#3B6D11':qrResult==='ng'?'#D32F2F':'#D0CEC8'}`,boxSizing:'border-box',outline:'none'}}/>
+                {qrResult==='ok'&&(
+                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#F4FAF0',borderRadius:8,border:'1.5px solid #3B6D11'}}>
+                    <span style={{fontSize:18}}>✅</span>
+                    <span style={{fontWeight:700,color:'#3B6D11',fontSize:13}}>照合OK — QR照合チェック完了</span>
+                  </div>
+                )}
+                {qrResult==='ng'&&(
+                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#FFF0F0',borderRadius:8,border:'1.5px solid #D32F2F'}}>
+                    <span style={{fontSize:18}}>❌</span>
+                    <span style={{fontWeight:700,color:'#D32F2F',fontSize:13}}>照合NG — 再スキャンしてください</span>
+                  </div>
+                )}
+                <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                  {currentSelected[`qrCheck_${line}`]?.done&&(
+                    <div style={{fontSize:12,color:'#3B6D11',display:'flex',alignItems:'center',gap:6}}>
+                      <span>✔ QR照合済</span><span style={{color:'#888'}}>{currentSelected[`qrCheck_${line}`].time}</span>
+                    </div>
+                  )}
+                  {currentSelected[`sampleCheck_${line}`]?.done&&(
+                    <div style={{fontSize:12,color:'#3B6D11',display:'flex',alignItems:'center',gap:6}}>
+                      <span>✔ 1個確認済</span><span style={{color:'#888'}}>{currentSelected[`sampleCheck_${line}`].time}</span>
+                    </div>
+                  )}
+                </div>
+                {currentSelected[`qrCheck_${line}`]?.done&&!currentSelected[`sampleCheck_${line}`]?.done&&(
+                  <button onClick={()=>setShowSampleConfirm(true)}
+                    style={{padding:'10px',background:'#185FA5',color:'#fff',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                    🔍 1個確認する →
+                  </button>
+                )}
+              </div>
+            </>
+          ):(
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff',borderRadius:12,border:'1px solid #E0DED8',flexDirection:'column',gap:12,color:'#bbb'}}>
+              <div style={{fontSize:40}}>👆</div>
+              <div style={{fontSize:14}}>左の「確認」ボタンを押してください</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 1個確認ポップアップ */}
+      {showSampleConfirm&&currentSelected&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
+          <div style={{background:'#fff',borderRadius:20,padding:'32px 40px',maxWidth:380,width:'90%',textAlign:'center',boxShadow:'0 8px 32px rgba(0,0,0,.2)'}}>
+            <div style={{fontSize:36,marginBottom:12}}>🔍</div>
+            <div style={{fontSize:18,fontWeight:700,color:'#111',marginBottom:8}}>1個確認</div>
+            <div style={{fontSize:14,color:'#555',marginBottom:24}}>
+              背番号 <strong style={{color:lc}}>{currentSelected.seiban}</strong> の<br/>製品を1個実物確認しましたか？
+            </div>
+            <div style={{display:'flex',gap:12}}>
+              <button onClick={()=>setShowSampleConfirm(false)}
+                style={{flex:1,padding:14,background:'#fff',border:'1.5px solid #C0BEB5',borderRadius:12,fontSize:14,fontWeight:700,color:'#555'}}>キャンセル</button>
+              <button onClick={handleSampleConfirm} disabled={sampleSaving[currentSelected.id]}
+                style={{flex:1,padding:14,background:sampleSaving[currentSelected.id]?'#B4B2A9':lc,border:'none',borderRadius:12,fontSize:14,fontWeight:700,color:'#fff'}}>
+                {sampleSaving[currentSelected.id]?'保存中...':'✓ 確認済み'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAnomaly&&<AnomalyModal seiban={currentSelected?.seiban||''} role={role} line={line} types={anomalyTypes} onClose={()=>setShowAnomaly(false)} onDone={()=>setShowAnomaly(false)}/>}
+    </div>
+  );
+}
+
 function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onBack}){
   const{t}=useLang();
   const a=RA[role],l=RL[role];
@@ -1139,6 +1399,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
 
   if(role==='リフトマン')return <LiftmanScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack}/>;
   if(role==='ハンガー段取り')return <HangerScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack}/>;
+  if(role==='製品段取り')return <DantoriScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
 
   return(
     <div className="screen" style={{background:flash?l:'#F1EFE8',transition:'background .35s'}}>
@@ -1926,7 +2187,7 @@ function App(){
   if(err)return<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
   if(!ready)return<LoadingScreen/>;
 
-  function selectRole(r){setRole(r);if(r==='リフトマン'||r==='製品段取り'||r==='出荷'||r==='ハンガー段取り'){setLine(null);setScreen('worker');}else setScreen('lineSelect');}
+  function selectRole(r){setRole(r);if(r==='リフトマン'||r==='出荷'||r==='ハンガー段取り'){setLine(null);setScreen('worker');}else setScreen('lineSelect');}
 
   const wrap=content=><div style={{zoom:fontScale,transformOrigin:'top left'}}>{content}</div>;
 
