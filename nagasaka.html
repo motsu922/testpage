@@ -2046,8 +2046,22 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const[savingQr,setSavingQr]=useState(false);
   const[note,setNote]=useState('');
   const[savingNote,setSavingNote]=useState(false);
+  const subFileRef=useRef(null);
+  const[subUploadField,setSubUploadField]=useState(null);
+  const[subUploadPct,setSubUploadPct]=useState(-1);
+  const[tsudenMethod,setTsudenMethod]=useState('');
+  const[chui1,setChui1]=useState('');
+  const[chui2,setChui2]=useState('');
+  const[chui3,setChui3]=useState('');
+  const[savingTK,setSavingTK]=useState(false);
   useEffect(()=>{setQrText(selData?.qrText||'');},[sel,master]);
   useEffect(()=>{setNote(selData?.note||'');},[sel,master]);
+  useEffect(()=>{
+    setTsudenMethod(selData?.tsudenMethod||'');
+    setChui1(selData?.chui1||'');
+    setChui2(selData?.chui2||'');
+    setChui3(selData?.chui3||'');
+  },[sel,master]);
 
   async function handleSaveQr(){
     if(!sel)return;
@@ -2085,6 +2099,44 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     }catch(err){alert('アップロードに失敗しました: '+err.message);}
     finally{setUploadPct(-1);}
     e.target.value='';
+  }
+
+  async function handleSubImg(e){
+    const file=e.target.files[0];if(!file||!sel||!subUploadField)return;
+    if(file.size>3*1024*1024){alert('ファイルサイズは3MB以下にしてください');return;}
+    setSubUploadPct(0);
+    try{
+      const ref=stor.ref(`product-images/${sel}_${subUploadField}`);
+      const task=ref.put(file);
+      task.on('state_changed',snap=>setSubUploadPct(Math.round(snap.bytesTransferred/snap.totalBytes*100)));
+      await task;
+      const url=await ref.getDownloadURL();
+      await db.collection('master').doc(sel).set({[subUploadField]:url},{merge:true});
+    }catch(err){alert('アップロードに失敗: '+err.message);}
+    finally{setSubUploadPct(-1);}
+    e.target.value='';
+  }
+
+  async function handleDeleteSubImg(fieldName){
+    if(!sel)return;
+    try{
+      try{await stor.ref(`product-images/${sel}_${fieldName}`).delete();}catch(e){}
+      await db.collection('master').doc(sel).update({[fieldName]:firebase.firestore.FieldValue.delete()});
+    }catch(err){alert('削除に失敗: '+err.message);}
+  }
+
+  async function handleSaveTsuriKake(){
+    if(!sel)return;
+    setSavingTK(true);
+    try{
+      await db.collection('master').doc(sel).set({
+        tsudenMethod:tsudenMethod.trim(),
+        chui1:chui1.trim(),
+        chui2:chui2.trim(),
+        chui3:chui3.trim(),
+      },{merge:true});
+    }catch(err){alert('保存に失敗: '+err.message);}
+    finally{setSavingTK(false);}
   }
 
   async function handleDeleteImg(){
@@ -2250,6 +2302,79 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                     </button>
                     {selData?.note&&<div style={{marginTop:6,padding:'5px 10px',background:'#FFFBEA',borderRadius:8,fontSize:11,color:'#8A6A00',wordBreak:'break-all'}}>現在: {selData.note}</div>}
                   </div>
+
+                  {/* ===== 吊り掛け設定 ===== */}
+                  <div style={{marginTop:16,paddingTop:14,borderTop:'2px solid #E1F5EE'}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#0F6E56',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{background:'#E1F5EE',borderRadius:6,padding:'2px 8px'}}>🪝 吊り掛け設定</span>
+                    </div>
+                    {/* サブ画像アップロード共通 input */}
+                    <input type="file" accept="image/*" ref={subFileRef} style={{display:'none'}} onChange={handleSubImg}/>
+                    {/* 4枚の写真 */}
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:12,marginBottom:16}}>
+                      {[
+                        {field:'kakeannaUrl',label:'掛け穴'},
+                        {field:'zentaiUrl',  label:'全体掛け姿'},
+                        {field:'tekinUrl',   label:'テーキン'},
+                        {field:'hangerImageUrl',label:'ハンガー写真'},
+                      ].map(({field,label})=>{
+                        const url=selData?.[field];
+                        const uploading=subUploadPct>=0&&subUploadField===field;
+                        return(
+                          <div key={field} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6}}>
+                            <div style={{fontSize:11,color:'#555',fontWeight:600}}>{label}</div>
+                            {url?(
+                              <div style={{position:'relative'}}>
+                                <img src={url} style={{width:110,height:110,objectFit:'contain',borderRadius:8,border:'1px solid #E0DED8',display:'block'}}/>
+                                <button onClick={()=>handleDeleteSubImg(field)}
+                                  style={{position:'absolute',top:-8,right:-8,width:22,height:22,borderRadius:'50%',background:'#E24B4A',border:'none',color:'#fff',fontSize:13,fontWeight:700,lineHeight:'22px',padding:0}}>×</button>
+                              </div>
+                            ):(
+                              <div onClick={()=>{if(!uploading){setSubUploadField(field);subFileRef.current?.click();}}}
+                                style={{width:110,height:110,border:'2px dashed #A8D5C2',borderRadius:8,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#F4FAF7',cursor:uploading?'default':'pointer',gap:4}}>
+                                {uploading?(
+                                  <>
+                                    <div style={{fontSize:16,fontWeight:700,color:'#0F6E56'}}>{subUploadPct}%</div>
+                                    <div style={{width:70,height:4,background:'#C8E6C9',borderRadius:2}}>
+                                      <div style={{width:subUploadPct+'%',height:'100%',background:'#0F6E56',borderRadius:2,transition:'width .2s'}}/>
+                                    </div>
+                                  </>
+                                ):(
+                                  <><span style={{fontSize:24,color:'#A8D5C2'}}>+</span><span style={{fontSize:10,color:'#aaa'}}>画像を追加</span></>
+                                )}
+                              </div>
+                            )}
+                            <button onClick={()=>{setSubUploadField(field);subFileRef.current?.click();}} disabled={uploading}
+                              style={{minHeight:32,padding:'0 10px',borderRadius:6,border:'1px solid #C0BEB5',background:'#fff',fontSize:11,width:'100%',color:'#555'}}>
+                              {uploading?`${subUploadPct}%`:(url?'変更':'アップロード')}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* テキストフィールド */}
+                    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                      <div>
+                        <div style={{fontSize:11,fontWeight:600,color:'#7B5800',marginBottom:4}}>通電確保方法（未入力の場合「①叩く　②押さえる」と表示）</div>
+                        <input value={tsudenMethod} onChange={e=>setTsudenMethod(e.target.value)}
+                          placeholder="例: ①叩く　②押さえる"
+                          style={{width:'100%',fontSize:13,boxSizing:'border-box'}}/>
+                      </div>
+                      {[['注意ポイント①',chui1,setChui1],['注意ポイント②',chui2,setChui2],['注意ポイント③',chui3,setChui3]].map(([label,val,setter])=>(
+                        <div key={label}>
+                          <div style={{fontSize:11,fontWeight:600,color:'#B91C1C',marginBottom:4}}>{label}</div>
+                          <textarea value={val} onChange={e=>setter(e.target.value)} placeholder={`${label}を入力...`}
+                            style={{width:'100%',height:60,fontSize:13,resize:'vertical',boxSizing:'border-box'}}/>
+                        </div>
+                      ))}
+                      <button onClick={handleSaveTsuriKake} disabled={savingTK}
+                        style={{minHeight:40,padding:'0 18px',borderRadius:10,border:'none',background:savingTK?'#B4B2A9':'#0F6E56',color:'#fff',fontSize:13,fontWeight:600}}>
+                        {savingTK?'保存中...':'吊り掛け設定を保存'}
+                      </button>
+                    </div>
+                  </div>
+
                   {Object.entries(selData||{}).filter(([k])=>k!=='imageUrl'&&k!=='qrText'&&k!=='note'&&selData[k]).length>0&&(
                     <>
                       <div style={{fontSize:12,fontWeight:600,color:'#888',letterSpacing:.5,marginBottom:8,marginTop:14}}>塗装条件</div>
