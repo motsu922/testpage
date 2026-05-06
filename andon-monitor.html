@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -415,6 +416,43 @@
     .btn-secondary { background: linear-gradient(135deg,#e9ecef,#dee2e6); color: #212529; }
     .btn-logout    { background: linear-gradient(135deg,#ef5350,#e53935); color: #fff; }
 
+    .auth-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 3000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: #f0f2f5;
+    }
+    .auth-overlay.active { display: flex; }
+    .auth-card {
+      width: 100%;
+      max-width: 380px;
+      background: #fff;
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+      border-top: 5px solid #667eea;
+    }
+    .auth-card h2 { margin-bottom: 8px; color: #1a1a2e; font-size: 1.25rem; font-weight: 900; }
+    .auth-card p { margin-bottom: 16px; color: #666; font-size: 0.88rem; }
+    .auth-form { display: flex; flex-direction: column; gap: 10px; }
+    .auth-error { min-height: 18px; color: #c62828; font-size: 0.82rem; font-weight: 700; }
+    .auth-submit {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg,#667eea,#764ba2);
+      color: #fff;
+      font-weight: 900;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .auth-submit:disabled { opacity: 0.65; cursor: wait; }
+
     /* ========== レスポンシブ（スマホ） ========== */
     @media (max-width: 768px) {
       .main-layout {
@@ -437,6 +475,19 @@
   </style>
 </head>
 <body>
+
+  <div id="authOverlay" class="auth-overlay active">
+    <div class="auth-card">
+      <h2>ログイン</h2>
+      <p>登録済みのメールアドレスとパスワードで接続してください。</p>
+      <form id="loginForm" class="auth-form">
+        <input id="loginEmail" class="input" type="email" autocomplete="email" placeholder="メールアドレス" required>
+        <input id="loginPassword" class="input" type="password" autocomplete="current-password" placeholder="パスワード" required>
+        <div id="loginError" class="auth-error"></div>
+        <button id="loginSubmit" class="auth-submit" type="submit">ログイン</button>
+      </form>
+    </div>
+  </div>
 
   <!-- ========== ヘッダー ========== -->
   <div class="header">
@@ -595,7 +646,7 @@
 
 <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js';
-    import { getAuth, onAuthStateChanged, signOut, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
+    import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js';
     import {
       getFirestore, collection, onSnapshot, query, orderBy,
       addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
@@ -626,12 +677,69 @@
     function getCaseCreatedDate(c) { const v = c?.createdAt; if (!v) return null; return v.toDate ? v.toDate() : new Date(v); }
     function isTodayCase(c) { const d = getCaseCreatedDate(c); if (!d || Number.isNaN(d.getTime())) return false; return d >= getTodayStart(); }
 
-    let authHandled = false;
-    onAuthStateChanged(auth, async (user) => {
-      if (authHandled) return;
-      if (user) { authHandled = true; setupQcMembersListener(); setupRealtimeListener(); setupChatListenerWithFloat(); }
-      else { try { await signInAnonymously(auth); } catch (e) { authHandled = true; alert('接続に失敗しました。再読み込みしてください。'); } }
+    const authOverlay = document.getElementById('authOverlay');
+    const loginForm = document.getElementById('loginForm');
+    const loginEmail = document.getElementById('loginEmail');
+    const loginPassword = document.getElementById('loginPassword');
+    const loginError = document.getElementById('loginError');
+    const loginSubmit = document.getElementById('loginSubmit');
+    let appStarted = false;
+
+    function showLogin(message = '') {
+      authOverlay?.classList.add('active');
+      if (loginError) loginError.textContent = message;
+      loginEmail?.focus();
+    }
+
+    function hideLogin() {
+      authOverlay?.classList.remove('active');
+      if (loginError) loginError.textContent = '';
+      if (loginPassword) loginPassword.value = '';
+    }
+
+    function getLoginErrorMessage(error) {
+      const code = error?.code || '';
+      if (code === 'auth/invalid-email') return 'メールアドレスの形式が正しくありません。';
+      if (code === 'auth/missing-password') return 'パスワードを入力してください。';
+      if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') return 'メールアドレスまたはパスワードが違います。';
+      if (code === 'auth/too-many-requests') return '試行回数が多すぎます。しばらく待ってから再試行してください。';
+      return 'ログインに失敗しました。';
+    }
+
+    loginForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = loginEmail.value.trim();
+      const password = loginPassword.value;
+      if (!email || !password) {
+        loginError.textContent = 'メールアドレスとパスワードを入力してください。';
+        return;
+      }
+      loginSubmit.disabled = true;
+      loginSubmit.textContent = 'ログイン中...';
+      loginError.textContent = '';
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        loginError.textContent = getLoginErrorMessage(error);
+      } finally {
+        loginSubmit.disabled = false;
+        loginSubmit.textContent = 'ログイン';
+      }
     });
+
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        showLogin();
+        return;
+      }
+      hideLogin();
+      if (appStarted) return;
+      appStarted = true;
+      setupQcMembersListener();
+      setupRealtimeListener();
+      setupChatListenerWithFloat();
+    });
+
 
     // ===== サウンド =====
     let soundEnabled = localStorage.getItem('sound_enabled') === 'true';
@@ -695,7 +803,7 @@
     document.addEventListener('click',async(e)=>{const delBtn=e.target.closest('[data-qc-del]');if(!delBtn)return;const id=delBtn.getAttribute('data-qc-del');const m=qcMembers.find(x=>x.id===id);if(!id)return;if(!confirm(`削除しますか？\n${m?.name||''}`))return;try{await deleteDoc(doc(db,'qc_members',id));}catch(err){alert('削除に失敗しました');}});
     function renderResponderButtons(){const wrap=document.getElementById('completeByBtns');if(!wrap)return;const rs=qcMembers.filter(m=>!!m.enabled).map(m=>String(m.name||'').trim()).filter(Boolean);if(rs.length===0){wrap.innerHTML='<div class="responder-empty">メンバーが登録されていません</div>';return;}wrap.innerHTML=rs.map(n=>`<button type="button" class="responder-btn" data-responder="${escapeAttr(n)}"><span class="r-initial">${escapeHtml(makeInitials(n))}</span>${escapeHtml(n)}</button>`).join('');wrap.querySelectorAll('.responder-btn').forEach(btn=>{btn.addEventListener('click',()=>{executeModalAction(btn.getAttribute('data-responder'));});});}
     async function executeModalAction(byName){if(!currentCompleteCase||!byName)return;const wrap=document.getElementById('completeByBtns');wrap?.querySelectorAll('.responder-btn').forEach(b=>{b.disabled=true;b.style.opacity='0.6';});try{if(modalMode==='inprogress'){await updateDoc(doc(db,'quality_cases',currentCompleteCase._id),{status:'inprogress',respondedBy:byName,respondedAt:serverTimestamp()});}else{await updateDoc(doc(db,'quality_cases',currentCompleteCase._id),{status:'completed',completedBy:byName,completedAt:serverTimestamp()});}closeCompleteModal();}catch(error){alert('更新に失敗しました: '+(error.message||error));wrap?.querySelectorAll('.responder-btn').forEach(b=>{b.disabled=false;b.style.opacity='';});}}
-    document.getElementById('logoutBtn').addEventListener('click',async()=>{if(confirm('ログアウトしますか？')){stopUrgentAlarm();await signOut(auth);window.location.href='./quality_andon.html';}});
+    document.getElementById('logoutBtn').addEventListener('click',async()=>{if(confirm('ログアウトしますか？')){stopUrgentAlarm();await signOut(auth);window.location.reload();}});
 
     // ===== リアルタイム監視 =====
     let currentFilter='all';
