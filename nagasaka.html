@@ -1365,6 +1365,194 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   );
 }
 
+function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
+  const role='掛け';
+  const lc=RA[role],lb=RL[role];
+  const[saving,setSaving]=useState({});
+  const[sampleChecked,setSampleChecked]=useState({}); // local: id->bool
+  const[selectedId,setSelectedId]=useState(null);
+  const[showAnomaly,setShowAnomaly]=useState(false);
+  const scrollRef=useRef(null);
+
+  const items=plans.filter(p=>p.line===line).sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime));
+  const totalDone=items.filter(p=>p.completions?.[role]?.done).length;
+  const pct=items.length?Math.round(totalDone/items.length*100):0;
+  const selectedItem=selectedId?items.find(i=>i.id===selectedId)||null:null;
+  const sm=selectedItem?(master[selectedItem.seiban]||{}):null;
+
+  async function handleComplete(item){
+    if(!sampleChecked[item.id]||saving[item.id])return;
+    setSaving(s=>({...s,[item.id]:true}));
+    const now=new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+    try{
+      await db.collection('plans').doc(item.id).update({
+        [`completions.${role}`]:{done:true,time:now},
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+      setSampleChecked(s=>({...s,[item.id]:false}));
+      if(selectedId===item.id)setSelectedId(null);
+    }finally{setSaving(s=>({...s,[item.id]:false}));}
+  }
+
+  function PhotoBox({url,label}){
+    if(!url)return(
+      <div style={{background:'#F5F4F0',border:'1px solid #E0DED8',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',minHeight:80,color:'#bbb',fontSize:11,marginBottom:4}}>{label}未登録</div>
+    );
+    return <img src={url} alt={label} style={{width:'100%',maxHeight:140,objectFit:'contain',borderRadius:8,border:'1px solid #E0DED8',marginBottom:4,display:'block'}}/>;
+  }
+
+  const TH={padding:'5px 6px',fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'nowrap',textAlign:'center',background:lc,borderRight:'1px solid rgba(255,255,255,.2)'};
+  const TD={padding:'5px 6px',fontSize:12,borderBottom:'1px solid #F0EEE8',textAlign:'center',whiteSpace:'nowrap'};
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',background:'#F5F4F0'}}>
+      {/* ヘッダー */}
+      <div style={{background:lc,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+        <button onClick={onBack} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>← 戻る</button>
+        <div style={{fontSize:16,fontWeight:700,color:'#fff',flex:1}}>吊り掛け {line}ライン</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,.85)'}}>完了 {totalDone}/{items.length}</div>
+        <button onClick={()=>setShowAnomaly(true)} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>⚠ 異常</button>
+      </div>
+      {/* 進捗バー */}
+      <div style={{height:6,background:'rgba(0,0,0,.1)',flexShrink:0}}>
+        <div style={{height:'100%',background:'#fff',width:pct+'%',transition:'width .5s',opacity:.7}}/>
+      </div>
+
+      {/* メインコンテンツ：左テーブル ＋ 右パネル */}
+      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+        {/* 左：テーブル */}
+        <div ref={scrollRef} style={{flex:'0 0 auto',overflow:'auto',maxWidth:'65%',minWidth:0}}>
+          <div style={{width:'fit-content',minWidth:'100%'}}>
+            <table style={{borderCollapse:'collapse'}}>
+              <thead style={{position:'sticky',top:0,zIndex:10}}>
+                <tr>
+                  {['掛け時間','所要時間','背番号','製品数','ハンガー名称','ハンガー本数','掛け数','端数予定','掛け人数','掛幅','1個確認','操作'].map(h=>(
+                    <th key={h} style={TH}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item=>{
+                  const done=item.completions?.[role]?.done;
+                  const m2=master[item.seiban]||{};
+                  const hn=m2.hangerName||item.hangerName||'—';
+                  const hc=m2.hangers||item.hangers||0;
+                  const pr=item.products||0;
+                  const kakeCount=hc?Math.round(pr/hc):pr;
+                  const isSelected=selectedId===item.id;
+                  const bg=done?'#F0FAF5':isSelected?lb:'#fff';
+                  return(
+                    <tr key={item.id} style={{background:bg,opacity:done?.7:1}}>
+                      <td style={{...TD,fontWeight:700}}>{item.kakeTime}</td>
+                      <td style={TD}>{item.reqTime||'—'}</td>
+                      <td style={{...TD,fontWeight:700,whiteSpace:'nowrap'}}>{item.seiban}</td>
+                      <td style={TD}>{pr?pr+'個':'—'}</td>
+                      <td style={{...TD,textAlign:'left',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis'}}>{hn}</td>
+                      <td style={TD}>{hc?hc+'本':'—'}</td>
+                      <td style={TD}>{hc&&pr?kakeCount+'個':'—'}</td>
+                      <td style={TD}>{item.fraction!=null&&item.fraction!==''?item.fraction+'個':'—'}</td>
+                      <td style={TD}>{item.kakeWorkers?item.kakeWorkers+'人':'—'}</td>
+                      <td style={TD}>{item.width?item.width+'cm':'—'}</td>
+                      <td style={{...TD}}>
+                        {done
+                          ? <span style={{color:lc,fontWeight:700,fontSize:15}}>✔</span>
+                          : <button onClick={()=>setSampleChecked(s=>({...s,[item.id]:!s[item.id]}))}
+                              style={{width:24,height:24,borderRadius:5,border:`2px solid ${sampleChecked[item.id]?lc:'#C0BEB5'}`,background:sampleChecked[item.id]?lc:'#fff',color:'#fff',fontSize:14,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0,margin:'0 auto'}}>
+                              {sampleChecked[item.id]?'✔':''}
+                            </button>
+                        }
+                      </td>
+                      <td style={{...TD,padding:'4px 6px'}}>
+                        {done
+                          ? <span style={{color:'#3B6D11',fontSize:11,fontWeight:700}}>完了</span>
+                          : <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                              <button onClick={()=>setSelectedId(isSelected?null:item.id)}
+                                style={{padding:'3px 8px',background:isSelected?'#C8A000':'#FFD600',border:'none',borderRadius:5,fontSize:11,fontWeight:700,color:'#4A3800',whiteSpace:'nowrap'}}>確認</button>
+                              <button onClick={()=>handleComplete(item)} disabled={!sampleChecked[item.id]||saving[item.id]}
+                                style={{padding:'3px 8px',background:(!sampleChecked[item.id]||saving[item.id])?'#C8E6C9':'#3B6D11',border:'none',borderRadius:5,fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'nowrap',cursor:!sampleChecked[item.id]?'not-allowed':'pointer'}}>
+                                {saving[item.id]?'保存中':'完了'}
+                              </button>
+                            </div>
+                        }
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 右：詳細パネル */}
+        <div style={{flex:1,overflow:'auto',padding:12,minWidth:0,background:'#FAFAF8',borderLeft:'1px solid #E0DED8'}}>
+          {selectedItem&&sm?(
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{fontSize:14,fontWeight:700,color:lc,marginBottom:4}}>
+                背番号 {selectedItem.seiban}
+              </div>
+              {/* 製品写真 */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'#555',marginBottom:3}}>製品写真</div>
+                <PhotoBox url={sm.imageUrl} label="製品写真"/>
+              </div>
+              {/* 掛け穴 ＋ 全体掛け姿 */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:'#555',marginBottom:3}}>掛け穴</div>
+                  <PhotoBox url={sm.kakeannaUrl} label="掛け穴"/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:'#555',marginBottom:3}}>全体掛け姿</div>
+                  <PhotoBox url={sm.zentaiUrl} label="全体掛け姿"/>
+                </div>
+              </div>
+              {/* テーキン ＋ ハンガー写真 */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:'#555',marginBottom:3}}>テーキン</div>
+                  <PhotoBox url={sm.tekinUrl} label="テーキン"/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:'#555',marginBottom:3}}>ハンガー写真</div>
+                  <PhotoBox url={sm.hangerImageUrl} label="ハンガー写真"/>
+                </div>
+              </div>
+              {/* 通電確保方法 */}
+              <div style={{background:'#FFF8E1',border:'1px solid #FFD600',borderRadius:8,padding:'8px 12px'}}>
+                <div style={{fontSize:11,fontWeight:700,color:'#7B5800',marginBottom:2}}>通電確保方法</div>
+                <div style={{fontSize:13,fontWeight:700,color:'#4A3800'}}>{sm.tsudenMethod||'①叩く　②押さえる'}</div>
+              </div>
+              {/* 注意ポイント */}
+              {[['注意ポイント①',sm.chui1],['注意ポイント②',sm.chui2],['注意ポイント③',sm.chui3]].map(([label,txt])=>(
+                <div key={label} style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'8px 12px'}}>
+                  <div style={{fontSize:11,fontWeight:700,color:'#B91C1C',marginBottom:2}}>{label}</div>
+                  <div style={{fontSize:12,color:'#7F1D1D',lineHeight:1.5}}>{txt||'（未登録）'}</div>
+                </div>
+              ))}
+              {/* 1個確認ボタン（右パネルからも操作可） */}
+              <button onClick={()=>setSampleChecked(s=>({...s,[selectedItem.id]:!s[selectedItem.id]}))}
+                style={{width:'100%',padding:'10px',borderRadius:10,border:`2px solid ${sampleChecked[selectedItem.id]?lc:'#C0BEB5'}`,background:sampleChecked[selectedItem.id]?lb:'#fff',color:sampleChecked[selectedItem.id]?lc:'#555',fontSize:13,fontWeight:700}}>
+                {sampleChecked[selectedItem.id]?'✔ 1個確認済み':'□ 1個確認'}
+              </button>
+              <button onClick={()=>handleComplete(selectedItem)} disabled={!sampleChecked[selectedItem.id]||saving[selectedItem.id]}
+                style={{width:'100%',padding:'12px',borderRadius:10,border:'none',background:(!sampleChecked[selectedItem.id]||saving[selectedItem.id])?'#C8E6C9':lc,color:'#fff',fontSize:14,fontWeight:700,opacity:!sampleChecked[selectedItem.id]?0.5:1}}>
+                {saving[selectedItem.id]?'保存中...':'✓ 完了'}
+              </button>
+            </div>
+          ):(
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#bbb',fontSize:13,flexDirection:'column',gap:8}}>
+              <div style={{fontSize:32}}>←</div>
+              <div>製品を選んで「確認」を押してください</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showAnomaly&&<AnomalyModal seiban={selectedItem?.seiban||''} role={role} line={line} types={anomalyTypes} onClose={()=>setShowAnomaly(false)} onDone={()=>setShowAnomaly(false)}/>}
+    </div>
+  );
+}
+
 function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onBack}){
   const{t}=useLang();
   const a=RA[role],l=RL[role];
@@ -1411,6 +1599,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
   if(role==='リフトマン')return <LiftmanScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack}/>;
   if(role==='ハンガー段取り')return <HangerScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack}/>;
   if(role==='製品段取り')return <DantoriScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
+  if(role==='掛け')return <TsuriKakeScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
 
   return(
     <div className="screen" style={{background:flash?l:'#F1EFE8',transition:'background .35s'}}>
