@@ -2146,14 +2146,23 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     }catch(err){alert('削除に失敗: '+err.message);}
   }
 
-  async function callTranslateAPI(text){
-    if(!gasProxyUrl.trim())throw new Error('API設定タブでプロキシURLを設定してください');
-    const url=gasProxyUrl.trim()+'?text='+encodeURIComponent(text);
-    const resp=await fetch(url);
-    if(!resp.ok)throw new Error('HTTP '+resp.status);
-    const data=await resp.json();
-    if(data.error)throw new Error(data.error);
-    return data.translated;
+  function callTranslateAPI(text){
+    if(!gasProxyUrl.trim())return Promise.reject(new Error('API設定タブでプロキシURLを設定してください'));
+    return new Promise((resolve,reject)=>{
+      const cb='gasT_'+Date.now();
+      window[cb]=(data)=>{
+        delete window[cb];
+        if(sc.parentNode)sc.parentNode.removeChild(sc);
+        if(data.error)reject(new Error(data.error));
+        else resolve(data.translated);
+      };
+      const sc=document.createElement('script');
+      sc.src=gasProxyUrl.trim()+'?text='+encodeURIComponent(text)+'&callback='+cb;
+      sc.onerror=()=>{delete window[cb];reject(new Error('スクリプト読み込みエラー'));};
+      const tid=setTimeout(()=>{delete window[cb];if(sc.parentNode)sc.parentNode.removeChild(sc);reject(new Error('タイムアウト'));},30000);
+      window[cb]=(data)=>{clearTimeout(tid);delete window[cb];if(sc.parentNode)sc.parentNode.removeChild(sc);data.error?reject(new Error(data.error)):resolve(data.translated);};
+      document.head.appendChild(sc);
+    });
   }
 
   async function translateToId(text,field){
@@ -2277,10 +2286,11 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
               </div>
               <textarea readOnly value={
 `function doGet(e){
+  var cb=e.parameter.callback||'';
   var text=e.parameter.text?decodeURIComponent(e.parameter.text):'';
-  if(!text)return out({error:'no text'});
+  if(!text)return out(cb,{error:'no text'});
   var key=PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
-  if(!key)return out({error:'ANTHROPIC_KEY not set'});
+  if(!key)return out(cb,{error:'ANTHROPIC_KEY not set'});
   try{
     var r=UrlFetchApp.fetch('https://api.anthropic.com/v1/messages',{
       method:'post',contentType:'application/json',
@@ -2291,11 +2301,13 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       })
     });
     var d=JSON.parse(r.getContentText());
-    return out({translated:d.content[0].text.trim()});
-  }catch(err){return out({error:err.toString()});}
+    return out(cb,{translated:d.content[0].text.trim()});
+  }catch(err){return out(cb,{error:err.toString()});}
 }
-function out(obj){
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+function out(cb,obj){
+  var s=JSON.stringify(obj);
+  if(cb)return ContentService.createTextOutput(cb+'('+s+')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON);
 }`}
                 style={{width:'100%',height:200,fontFamily:'monospace',fontSize:11,resize:'vertical',background:'#1E1E2E',color:'#CDD6F4',borderRadius:8,padding:'10px',boxSizing:'border-box',border:'none'}}
               />
