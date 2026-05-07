@@ -2143,32 +2143,61 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     }catch(err){alert('削除に失敗: '+err.message);}
   }
 
+  async function callTranslateAPI(text){
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'x-api-key':anthropicKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-allow-browser':'true',
+        'content-type':'application/json',
+      },
+      body:JSON.stringify({
+        model:'claude-3-5-haiku-20241022',
+        max_tokens:1024,
+        messages:[{role:'user',content:`以下の日本語テキストをインドネシア語（Bahasa Indonesia）に翻訳してください。翻訳文のみ返してください。工場・製造業・表面処理（塗装・メッキ）に関する用語が含まれる場合は適切に訳してください:\n\n${text}`}]
+      })
+    });
+    if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||resp.statusText);}
+    const data=await resp.json();
+    return data.content[0].text.trim();
+  }
+
   async function translateToId(text,field){
     if(!anthropicKey.trim()){alert('API設定タブでAnthropicのAPIキーを設定してください');return;}
     if(!text.trim()){alert('翻訳するテキストがありません');return;}
     if(!sel)return;
     setTranslating(s=>({...s,[field]:true}));
     try{
-      const resp=await fetch('https://api.anthropic.com/v1/messages',{
-        method:'POST',
-        headers:{
-          'x-api-key':anthropicKey,
-          'anthropic-version':'2023-06-01',
-          'anthropic-dangerous-allow-browser':'true',
-          'content-type':'application/json',
-        },
-        body:JSON.stringify({
-          model:'claude-3-5-haiku-20241022',
-          max_tokens:1024,
-          messages:[{role:'user',content:`以下の日本語テキストをインドネシア語（Bahasa Indonesia）に翻訳してください。翻訳文のみ返してください。工場・製造業・表面処理（塗装・メッキ）に関する用語が含まれる場合は適切に訳してください:\n\n${text}`}]
-        })
-      });
-      if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||resp.statusText);}
-      const data=await resp.json();
-      const translated=data.content[0].text.trim();
+      const translated=await callTranslateAPI(text);
       await db.collection('master').doc(sel).set({[field+'_id']:translated},{merge:true});
     }catch(err){alert('翻訳に失敗しました: '+err.message);}
     finally{setTranslating(s=>({...s,[field]:false}));}
+  }
+
+  async function translateAllTK(){
+    if(!anthropicKey.trim()){alert('API設定タブでAnthropicのAPIキーを設定してください');return;}
+    if(!sel)return;
+    const fields=[
+      {field:'tsudenMethod', text:(selData?.tsudenMethod||'').trim()||(tsudenMethod||'①叩く　②押さえる')},
+      {field:'chui1', text:(selData?.chui1||'').trim()||(chui1.trim())},
+      {field:'chui2', text:(selData?.chui2||'').trim()||(chui2.trim())},
+      {field:'chui3', text:(selData?.chui3||'').trim()||(chui3.trim())},
+    ].filter(f=>f.text);
+    if(!fields.length){alert('翻訳するテキストがありません');return;}
+    const allKey='__all__';
+    setTranslating(s=>({...s,[allKey]:true}));
+    try{
+      const updates={};
+      for(const{field,text}of fields){
+        setTranslating(s=>({...s,[field]:true}));
+        try{
+          updates[field+'_id']=await callTranslateAPI(text);
+        }finally{setTranslating(s=>({...s,[field]:false}));}
+      }
+      await db.collection('master').doc(sel).set(updates,{merge:true});
+    }catch(err){alert('翻訳に失敗しました: '+err.message);}
+    finally{setTranslating(s=>({...s,[allKey]:false}));}
   }
 
   async function handleSaveTsuriKake(){
@@ -2468,10 +2497,16 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                           {selData?.[field+'_id']&&<div style={{marginTop:4,padding:'5px 10px',background:'#E6F1FB',borderRadius:6,fontSize:11,color:'#185FA5'}}>🇮🇩 {selData[field+'_id']}</div>}
                         </div>
                       ))}
-                      <button onClick={handleSaveTsuriKake} disabled={savingTK}
-                        style={{minHeight:40,padding:'0 18px',borderRadius:10,border:'none',background:savingTK?'#B4B2A9':'#0F6E56',color:'#fff',fontSize:13,fontWeight:600}}>
-                        {savingTK?'保存中...':'吊り掛け設定を保存'}
-                      </button>
+                      <div style={{display:'flex',gap:8}}>
+                        <button onClick={handleSaveTsuriKake} disabled={savingTK}
+                          style={{flex:1,minHeight:40,padding:'0 14px',borderRadius:10,border:'none',background:savingTK?'#B4B2A9':'#0F6E56',color:'#fff',fontSize:13,fontWeight:600}}>
+                          {savingTK?'保存中...':'吊り掛け設定を保存'}
+                        </button>
+                        <button onClick={translateAllTK} disabled={!!translating['__all__']}
+                          style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'none',background:translating['__all__']?'#B4B2A9':'#185FA5',color:'#fff',fontSize:13,fontWeight:600,whiteSpace:'nowrap'}}>
+                          {translating['__all__']?'翻訳中...':'🤖 一括翻訳'}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
