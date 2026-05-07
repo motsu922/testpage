@@ -1097,6 +1097,7 @@ function HangerScreen({plans,master,anomalyTypes,onComplete,onBack}){
 function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   const role=line==='A'?'段取りA':'段取りB';
   const lc='#185FA5',lb='#E6F1FB';
+  const{lang}=useLang();
   const[saving,setSaving]=useState({});
   const[qrSaving,setQrSaving]=useState({});
   const[sampleSaving,setSampleSaving]=useState({});
@@ -1683,7 +1684,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
                 {master[cur.seiban]?.note&&(
                   <div style={{marginTop:14,padding:'10px 12px',background:'#FFFBEA',border:'1.5px solid #F5D65B',borderRadius:10}}>
                     <div style={{fontSize:10,color:'#8A6A00',fontWeight:700,marginBottom:4}}>⚠ 注意ポイント</div>
-                    <div style={{fontSize:14,color:'#5A4000',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{master[cur.seiban].note}</div>
+                    <div style={{fontSize:14,color:'#5A4000',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{lang==='id'?(master[cur.seiban].note_id||master[cur.seiban].note):master[cur.seiban].note}</div>
                   </div>
                 )}
                 {needsFrac&&(
@@ -2064,6 +2065,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const[savingQr,setSavingQr]=useState(false);
   const[note,setNote]=useState('');
   const[savingNote,setSavingNote]=useState(false);
+  const[savedNote,setSavedNote]=useState(false);
   const subFileRef=useRef(null);
   const[subUploadField,setSubUploadField]=useState(null);
   const[subUploadPct,setSubUploadPct]=useState(-1);
@@ -2072,6 +2074,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const[chui2,setChui2]=useState('');
   const[chui3,setChui3]=useState('');
   const[savingTK,setSavingTK]=useState(false);
+  const[savedTK,setSavedTK]=useState(false);
   const[gasProxyUrl,setGasProxyUrl]=useState(()=>{try{return localStorage.getItem('gasProxyUrl')||'';}catch{return'';}});
   const[translating,setTranslating]=useState({});
   const[savingKey,setSavingKey]=useState(false);
@@ -2102,8 +2105,20 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     setSavingNote(true);
     try{
       await db.collection('master').doc(sel).set({note:note.trim()},{merge:true});
+      setSavedNote(true);
+      setTimeout(()=>setSavedNote(false),3000);
     }catch(err){alert('保存に失敗: '+err.message);}
     finally{setSavingNote(false);}
+  }
+
+  async function translateNote(){
+    if(!sel||!note.trim())return;
+    setTranslating(s=>({...s,note:true}));
+    try{
+      const translated=await callTranslateAPI(note.trim());
+      await db.collection('master').doc(sel).set({note_id:translated},{merge:true});
+    }catch(err){alert('翻訳に失敗しました: '+err.message);}
+    finally{setTranslating(s=>({...s,note:false}));}
   }
 
   async function handleImg(e){
@@ -2202,6 +2217,8 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
         chui2:chui2.trim(),
         chui3:chui3.trim(),
       },{merge:true});
+      setSavedTK(true);
+      setTimeout(()=>setSavedTK(false),3000);
     }catch(err){alert('保存に失敗: '+err.message);}
     finally{setSavingTK(false);}
   }
@@ -2452,10 +2469,17 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                     <div style={{fontSize:12,fontWeight:600,color:'#888',letterSpacing:.5,marginBottom:6}}>注意ポイント</div>
                     <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="作業者に伝えたい注意事項を入力..."
                       style={{width:'100%',height:80,fontSize:13,resize:'vertical',marginBottom:6}}/>
-                    <button onClick={handleSaveNote} disabled={savingNote} style={{minHeight:40,padding:'0 18px',borderRadius:10,border:'none',background:savingNote?'#B4B2A9':'#BA7517',color:'#fff',fontSize:13,fontWeight:600}}>
-                      {savingNote?'保存中...':'注意ポイントを保存'}
-                    </button>
+                    <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                      <button onClick={handleSaveNote} disabled={savingNote} style={{minHeight:40,padding:'0 18px',borderRadius:10,border:'none',background:savingNote?'#B4B2A9':'#BA7517',color:'#fff',fontSize:13,fontWeight:600}}>
+                        {savingNote?'保存中...':'注意ポイントを保存'}
+                      </button>
+                      <button onClick={translateNote} disabled={!!translating['note']||!note.trim()} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'none',background:translating['note']?'#B4B2A9':'#1A7FA8',color:'#fff',fontSize:13,fontWeight:600}}>
+                        {translating['note']?'翻訳中...':'🌐 ID翻訳'}
+                      </button>
+                      {savedNote&&<span style={{color:'#BA7517',fontWeight:600,fontSize:13}}>✓ 保存しました</span>}
+                    </div>
                     {selData?.note&&<div style={{marginTop:6,padding:'5px 10px',background:'#FFFBEA',borderRadius:8,fontSize:11,color:'#8A6A00',wordBreak:'break-all'}}>現在: {selData.note}</div>}
+                    {selData?.note_id&&<div style={{marginTop:4,padding:'5px 10px',background:'#EAF6FB',borderRadius:8,fontSize:11,color:'#1A7FA8',wordBreak:'break-all'}}>🇮🇩 {selData.note_id}</div>}
                   </div>
 
                   {/* ===== 吊り掛け設定 ===== */}
@@ -2544,6 +2568,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                           style={{flex:1,minHeight:40,padding:'0 14px',borderRadius:10,border:'none',background:savingTK?'#B4B2A9':'#0F6E56',color:'#fff',fontSize:13,fontWeight:600}}>
                           {savingTK?'保存中...':'吊り掛け設定を保存'}
                         </button>
+                        {savedTK&&<span style={{alignSelf:'center',color:'#0F6E56',fontWeight:600,fontSize:13}}>✓ 保存しました</span>}
                         <button onClick={translateAllTK} disabled={!!translating['__all__']}
                           style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'none',background:translating['__all__']?'#B4B2A9':'#185FA5',color:'#fff',fontSize:13,fontWeight:600,whiteSpace:'nowrap'}}>
                           {translating['__all__']?'翻訳中...':'🤖 一括翻訳'}
