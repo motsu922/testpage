@@ -1388,40 +1388,18 @@ function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   const lc=RA[role],lb=RL[role];
   const{lang,setLang}=useLang();
   const TK_ID={
-    '戻る':'Kembali',
-    '吊り掛け':'Gantung',
-    'ライン':'Jalur',
-    '完了':'Selesai',
-    '異常':'Kelainan',
-    '背番号':'No. Seri',
-    '製品写真':'Foto Produk',
-    '掛け穴':'Lubang Gantung',
-    '全体掛け姿':'Tampilan Gantung',
-    'テーキン':'Tekin',
-    'ハンガー写真':'Foto Hanger',
-    '通電確保方法':'Metode Pengantar Arus',
-    '注意ポイント①':'Catatan ①',
-    '注意ポイント②':'Catatan ②',
-    '注意ポイント③':'Catatan ③',
-    '未登録':'Belum terdaftar',
-    '1個確認済み':'1 pcs sudah dicek',
-    '1個確認':'Cek 1 pcs',
-    '保存中...':'Menyimpan...',
-    '製品を選んで「確認」を押してください':'Pilih produk lalu tekan 「確認」',
-    '掛け時間':'Waktu Gantung',
-    '所要時間':'Durasi',
-    '製品数':'Jumlah Produk',
-    'ハンガー名称':'Nama Hanger',
-    'ハンガー本数':'Jumlah Hanger',
-    '掛け数':'Jumlah Gantung',
-    '端数予定':'Rencana Sisa',
-    '掛け人数':'Petugas Gantung',
-    '掛幅':'Lebar Gantung',
-    '操作':'Operasi'
+    '戻る':'Kembali','吊り掛け':'Gantung','ライン':'Jalur','完了':'Selesai','異常':'Kelainan',
+    '背番号':'No. Seri','製品写真':'Foto Produk','掛け穴':'Lubang Gantung','全体掛け姿':'Tampilan Gantung',
+    'テーキン':'Tekin','ハンガー写真':'Foto Hanger','通電確保方法':'Metode Pengantar Arus',
+    '注意ポイント①':'Catatan ①','注意ポイント②':'Catatan ②','注意ポイント③':'Catatan ③',
+    '未登録':'Belum terdaftar','1個確認済み':'1 pcs sudah dicek','1個確認':'Cek 1 pcs',
+    '保存中...':'Menyimpan...','掛け時間':'Waktu Gantung','所要時間':'Durasi',
+    '製品数':'Jml Produk','ハンガー名称':'Nama Hanger','ハンガー本数':'Jml Hanger',
+    '掛け数':'Jml Gantung','端数予定':'Sisa','掛け人数':'Petugas','掛幅':'Lebar','操作':'Op.'
   };
   const tk=s=>lang==='id'?(TK_ID[s]||s):s;
   const[saving,setSaving]=useState({});
-  const[sampleChecked,setSampleChecked]=useState({}); // local: id->bool
+  const[sampleChecked,setSampleChecked]=useState({});
   const[selectedId,setSelectedId]=useState(null);
   const[showAnomaly,setShowAnomaly]=useState(false);
   const scrollRef=useRef(null);
@@ -1431,6 +1409,15 @@ function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   const pct=items.length?Math.round(totalDone/items.length*100):0;
   const selectedItem=selectedId?items.find(i=>i.id===selectedId)||null:null;
   const sm=selectedItem?(master[selectedItem.seiban]||{}):null;
+
+  // 完了後・初期表示で次の未完了アイテムを自動選択
+  useEffect(()=>{
+    const sel=items.find(i=>i.id===selectedId);
+    if(!sel||sel.completions?.[role]?.done){
+      const next=items.find(i=>!i.completions?.[role]?.done);
+      setSelectedId(next?.id||null);
+    }
+  },[items.map(i=>i.id+(i.completions?.[role]?.done?'1':'0')).join()]);
 
   async function handleComplete(item){
     if(!sampleChecked[item.id]||saving[item.id])return;
@@ -1442,177 +1429,153 @@ function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
         updatedAt:firebase.firestore.FieldValue.serverTimestamp()
       });
       setSampleChecked(s=>({...s,[item.id]:false}));
-      if(selectedId===item.id)setSelectedId(null);
     }finally{setSaving(s=>({...s,[item.id]:false}));}
   }
 
-  function PhotoBox({url,label}){
-    if(!url)return(
-      <div style={{background:'#F5F4F0',border:'1px solid #E0DED8',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',height:'clamp(62px,12vh,104px)',color:'#bbb',fontSize:11}}>{tk(label)} {tk('未登録')}</div>
-    );
-    return <img src={url} alt={tk(label)} style={{width:'100%',height:'clamp(62px,12vh,104px)',objectFit:'contain',borderRadius:8,border:'1px solid #E0DED8',display:'block',background:'#fff'}}/>;
-  }
+  const PHOTO_H=60; // 製品写真の半分サイズ基準
+  const TH={padding:'3px 4px',fontSize:10,fontWeight:700,color:'#fff',whiteSpace:'nowrap',textAlign:'center',background:lc,borderRight:'1px solid rgba(255,255,255,.2)'};
+  const TD={padding:'3px 4px',fontSize:10,borderBottom:'1px solid #F0EEE8',textAlign:'center',whiteSpace:'nowrap'};
+  const labelStyle={fontSize:10,fontWeight:700,color:'#555',marginBottom:2};
 
-  const TH={padding:'5px 6px',fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'nowrap',textAlign:'center',background:lc,borderRight:'1px solid rgba(255,255,255,.2)'};
-  const TD={padding:'5px 6px',fontSize:12,borderBottom:'1px solid #F0EEE8',textAlign:'center',whiteSpace:'nowrap'};
-  const detailGrid={display:'grid',gridTemplateColumns:'minmax(0,1fr) minmax(0,1fr)',gap:6};
-  const labelStyle={fontSize:10,fontWeight:700,color:'#555',marginBottom:2,lineHeight:1.2};
-  const noteTextStyle={fontSize:11,color:'#7F1D1D',lineHeight:1.35,maxHeight:38,overflow:'auto'};
+  function SmallPhoto({url,label,height}){
+    const h=height||PHOTO_H;
+    if(!url)return <div style={{background:'#F5F4F0',border:'1px solid #E0DED8',borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',height:h,color:'#ccc',fontSize:10}}>{tk(label)}</div>;
+    return <img src={url} alt={tk(label)} style={{width:'100%',height:h,objectFit:'contain',borderRadius:6,border:'1px solid #E0DED8',display:'block',background:'#fff'}}/>;
+  }
 
   return(
     <div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden',background:'#F5F4F0'}}>
       {/* ヘッダー */}
-      <div style={{background:lc,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
-        <button onClick={onBack} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>← {tk('戻る')}</button>
-        <div style={{fontSize:16,fontWeight:700,color:'#fff',flex:1}}>{tk('吊り掛け')} {lang==='id'?`${tk('ライン')} ${line}`:`${line}${tk('ライン')}`}</div>
-        <div style={{fontSize:13,color:'rgba(255,255,255,.85)'}}>{tk('完了')} {totalDone}/{items.length}</div>
-        <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{background:lang==='id'?'#fff':'rgba(255,255,255,.18)',border:'2px solid rgba(255,255,255,.5)',borderRadius:8,color:lang==='id'?lc:'#fff',padding:'5px 12px',fontSize:13,fontWeight:700}}>
+      <div style={{background:lc,padding:'8px 12px',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+        <button onClick={onBack} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'5px 10px',fontSize:12,fontWeight:700}}>← {tk('戻る')}</button>
+        <div style={{fontSize:15,fontWeight:700,color:'#fff',flex:1}}>{tk('吊り掛け')} {lang==='id'?`${tk('ライン')} ${line}`:`${line}${tk('ライン')}`}</div>
+        <div style={{fontSize:12,color:'rgba(255,255,255,.85)'}}>{tk('完了')} {totalDone}/{items.length}</div>
+        <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{background:lang==='id'?'#fff':'rgba(255,255,255,.18)',border:'2px solid rgba(255,255,255,.5)',borderRadius:8,color:lang==='id'?lc:'#fff',padding:'4px 10px',fontSize:12,fontWeight:700}}>
           {lang==='ja'?'🇮🇩 ID':'🇯🇵 JP'}
         </button>
-        <button onClick={()=>setShowAnomaly(true)} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>⚠ {tk('異常')}</button>
+        <button onClick={()=>setShowAnomaly(true)} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'5px 10px',fontSize:12,fontWeight:700}}>⚠ {tk('異常')}</button>
       </div>
-      {/* 進捗バー */}
-      <div style={{height:6,background:'rgba(0,0,0,.1)',flexShrink:0}}>
+      <div style={{height:5,background:'rgba(0,0,0,.1)',flexShrink:0}}>
         <div style={{height:'100%',background:'#fff',width:pct+'%',transition:'width .5s',opacity:.7}}/>
       </div>
 
-      {/* メインコンテンツ：左テーブル ＋ 右パネル */}
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-        {/* 左：テーブル幅に合わせ、広い時だけスクロール */}
-        <div ref={scrollRef} style={{width:'fit-content',maxWidth:'56%',flexShrink:0,overflow:'auto'}}>
-          <div style={{width:'fit-content',minWidth:'100%'}}>
-            <table style={{borderCollapse:'collapse'}}>
-              <thead style={{position:'sticky',top:0,zIndex:10}}>
-                <tr>
-                  {['掛け時間','所要時間','背番号','製品数','ハンガー名称','ハンガー本数','掛け数','端数予定','掛け人数','掛幅','1個確認','操作'].map(h=>(
-                    <th key={h} style={TH}>{tk(h)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(item=>{
-                  const done=item.completions?.[role]?.done;
-                  const m2=master[item.seiban]||{};
-                  const hn=m2.hangerName||item.hangerName||'—';
-                  const hc=m2.hangers||item.hangers||0;
-                  const pr=item.products||0;
-                  const kakeCount=hc?Math.round(pr/hc):pr;
-                  const isSelected=selectedId===item.id;
-                  const bg=done?'#F0FAF5':isSelected?lb:'#fff';
-                  return(
-                    <tr key={item.id} style={{background:bg,opacity:done?.7:1}}>
-                      <td style={{...TD,fontWeight:700}}>{item.kakeTime}</td>
-                      <td style={TD}>{item.reqTime||'—'}</td>
-                      <td style={{...TD,fontWeight:700,whiteSpace:'nowrap'}}>{item.seiban}</td>
-                      <td style={TD}>{pr?pr+'個':'—'}</td>
-                      <td style={{...TD,textAlign:'left',maxWidth:100,overflow:'hidden',textOverflow:'ellipsis'}}>{hn}</td>
-                      <td style={TD}>{hc?hc+'本':'—'}</td>
-                      <td style={TD}>{hc&&pr?kakeCount+'個':'—'}</td>
-                      <td style={TD}>{item.fraction!=null&&item.fraction!==''?item.fraction+'個':'—'}</td>
-                      <td style={TD}>{item.kakeWorkers?item.kakeWorkers+'人':'—'}</td>
-                      <td style={TD}>{item.width?item.width+'cm':'—'}</td>
-                      <td style={{...TD}}>
-                        {done
-                          ? <span style={{color:lc,fontWeight:700,fontSize:15}}>✔</span>
-                          : <button onClick={()=>setSampleChecked(s=>({...s,[item.id]:!s[item.id]}))}
-                              style={{width:24,height:24,borderRadius:5,border:`2px solid ${sampleChecked[item.id]?lc:'#C0BEB5'}`,background:sampleChecked[item.id]?lc:'#fff',color:'#fff',fontSize:14,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:0,flexShrink:0,margin:'0 auto'}}>
-                              {sampleChecked[item.id]?'✔':''}
-                            </button>
-                        }
-                      </td>
-                      <td style={{...TD,padding:'4px 6px'}}>
-                        {done
-                          ? <span style={{color:'#3B6D11',fontSize:11,fontWeight:700}}>完了</span>
-                          : <div style={{display:'flex',flexDirection:'column',gap:3}}>
-                              <button onClick={()=>setSelectedId(isSelected?null:item.id)}
-                                style={{padding:'3px 8px',background:isSelected?'#C8A000':'#FFD600',border:'none',borderRadius:5,fontSize:11,fontWeight:700,color:'#4A3800',whiteSpace:'nowrap'}}>確認</button>
-                              <button onClick={()=>handleComplete(item)} disabled={!sampleChecked[item.id]||saving[item.id]}
-                                style={{padding:'3px 8px',background:(!sampleChecked[item.id]||saving[item.id])?'#C8E6C9':'#3B6D11',border:'none',borderRadius:5,fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'nowrap',cursor:!sampleChecked[item.id]?'not-allowed':'pointer'}}>
-                                {saving[item.id]?'保存中':'完了'}
-                              </button>
-                            </div>
-                        }
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        {/* 左：テーブル（横スクロールなし・縮小フォント） */}
+        <div ref={scrollRef} style={{flex:'0 0 58%',overflow:'auto'}}>
+          <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed'}}>
+            <colgroup>
+              <col style={{width:'7%'}}/><col style={{width:'7%'}}/><col style={{width:'8%'}}/>
+              <col style={{width:'7%'}}/><col style={{width:'14%'}}/><col style={{width:'7%'}}/>
+              <col style={{width:'7%'}}/><col style={{width:'6%'}}/><col style={{width:'6%'}}/>
+              <col style={{width:'6%'}}/><col style={{width:'6%'}}/><col style={{width:'9%'}}/>
+            </colgroup>
+            <thead style={{position:'sticky',top:0,zIndex:10}}>
+              <tr>
+                {['掛け時間','所要時間','背番号','製品数','ハンガー名称','ハンガー本数','掛け数','端数予定','掛け人数','掛幅','1個確認','操作'].map(h=>(
+                  <th key={h} style={TH}>{tk(h)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(item=>{
+                const done=item.completions?.[role]?.done;
+                const m2=master[item.seiban]||{};
+                const hn=m2.hangerName||item.hangerName||'—';
+                const hc=m2.hangers||item.hangers||0;
+                const pr=item.products||0;
+                const kakeCount=hc?Math.round(pr/hc):pr;
+                const isSelected=selectedId===item.id;
+                const bg=done?'#F0FAF5':isSelected?lb:'#fff';
+                return(
+                  <tr key={item.id} onClick={()=>!done&&setSelectedId(isSelected?null:item.id)} style={{background:bg,opacity:done?.7:1,cursor:done?'default':'pointer'}}>
+                    <td style={{...TD,fontWeight:700}}>{item.kakeTime}</td>
+                    <td style={TD}>{item.reqTime||'—'}</td>
+                    <td style={{...TD,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis'}}>{item.seiban}</td>
+                    <td style={TD}>{pr?pr+'個':'—'}</td>
+                    <td style={{...TD,textAlign:'left',overflow:'hidden',textOverflow:'ellipsis'}}>{hn}</td>
+                    <td style={TD}>{hc?hc+'本':'—'}</td>
+                    <td style={TD}>{hc&&pr?kakeCount+'個':'—'}</td>
+                    <td style={TD}>{item.fraction!=null&&item.fraction!==''?item.fraction+'個':'—'}</td>
+                    <td style={TD}>{item.kakeWorkers?item.kakeWorkers+'人':'—'}</td>
+                    <td style={TD}>{item.width?item.width+'cm':'—'}</td>
+                    <td style={{...TD}} onClick={e=>e.stopPropagation()}>
+                      {done
+                        ? <span style={{color:lc,fontWeight:700}}>✔</span>
+                        : <button onClick={()=>setSampleChecked(s=>({...s,[item.id]:!s[item.id]}))}
+                            style={{width:22,height:22,borderRadius:4,border:`2px solid ${sampleChecked[item.id]?lc:'#C0BEB5'}`,background:sampleChecked[item.id]?lc:'#fff',color:'#fff',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:0,margin:'0 auto'}}>
+                            {sampleChecked[item.id]?'✔':''}
+                          </button>
+                      }
+                    </td>
+                    <td style={{...TD,padding:'3px 4px'}} onClick={e=>e.stopPropagation()}>
+                      {done
+                        ? <span style={{color:'#3B6D11',fontSize:10,fontWeight:700}}>完了</span>
+                        : <button onClick={()=>handleComplete(item)} disabled={!sampleChecked[item.id]||saving[item.id]}
+                            style={{padding:'2px 6px',background:(!sampleChecked[item.id]||saving[item.id])?'#C8E6C9':'#3B6D11',border:'none',borderRadius:4,fontSize:10,fontWeight:700,color:'#fff',whiteSpace:'nowrap',cursor:!sampleChecked[item.id]?'not-allowed':'pointer'}}>
+                            {saving[item.id]?'保存中':tk('完了')}
+                          </button>
+                      }
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
 
-        {/* 右：詳細パネル */}
+        {/* 右：詳細パネル（常時表示・完了で自動更新） */}
         <div style={{flex:1,overflow:'auto',background:'#FAFAF8',borderLeft:'1px solid #E0DED8',padding:8,boxSizing:'border-box',minWidth:0}}>
           {selectedItem&&sm?(
-            <div style={{display:'flex',flexDirection:'column',gap:6,height:'100%',minHeight:0}}>
-              <div style={{fontSize:13,fontWeight:700,color:lc,lineHeight:1.2,flexShrink:0}}>
-                {tk('背番号')} {selectedItem.seiban}
-              </div>
-              {/* 製品写真 */}
-              <div style={{minWidth:0,flexShrink:0}}>
+            <div style={{display:'flex',flexDirection:'column',gap:5}}>
+              <div style={{fontSize:12,fontWeight:700,color:lc}}>{tk('背番号')} {selectedItem.seiban}</div>
+              {/* 製品写真（半分サイズ） */}
+              <div>
                 <div style={labelStyle}>{tk('製品写真')}</div>
-                <PhotoBox url={sm.imageUrl} label="製品写真"/>
+                <SmallPhoto url={sm.imageUrl} label="製品写真" height={PHOTO_H}/>
               </div>
-              {/* 掛け穴 ＋ 全体掛け姿 */}
-              <div style={detailGrid}>
-                <div style={{minWidth:0}}>
-                  <div style={labelStyle}>{tk('掛け穴')}</div>
-                  <PhotoBox url={sm.kakeannaUrl} label="掛け穴"/>
-                </div>
-                <div style={{minWidth:0}}>
-                  <div style={labelStyle}>{tk('全体掛け姿')}</div>
-                  <PhotoBox url={sm.zentaiUrl} label="全体掛け姿"/>
-                </div>
-              </div>
-              {/* テーキン ＋ ハンガー写真 */}
-              <div style={detailGrid}>
-                <div style={{minWidth:0}}>
-                  <div style={labelStyle}>{tk('テーキン')}</div>
-                  <PhotoBox url={sm.tekinUrl} label="テーキン"/>
-                </div>
-                <div style={{minWidth:0}}>
-                  <div style={labelStyle}>{tk('ハンガー写真')}</div>
-                  <PhotoBox url={sm.hangerImageUrl} label="ハンガー写真"/>
-                </div>
+              {/* テーキン・ハンガー写真・掛け穴・全体掛け姿 */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5}}>
+                {[['tekinUrl','テーキン'],['hangerImageUrl','ハンガー写真'],['kakeannaUrl','掛け穴'],['zentaiUrl','全体掛け姿']].map(([field,label])=>(
+                  <div key={field}>
+                    <div style={labelStyle}>{tk(label)}</div>
+                    <SmallPhoto url={sm[field]} label={label} height={PHOTO_H}/>
+                  </div>
+                ))}
               </div>
               {/* 通電確保方法 */}
-              <div style={{background:'#FFF8E1',border:'1px solid #FFD600',borderRadius:8,padding:'6px 8px',flexShrink:0}}>
-                <div style={{fontSize:10,fontWeight:700,color:'#7B5800',marginBottom:1}}>
-                  {tk('通電確保方法')}
-                </div>
-                <div style={{fontSize:12,fontWeight:700,color:'#4A3800',lineHeight:1.25}}>
-                  {lang==='id'
-                    ? (sm.tsudenMethod_id||sm.tsudenMethod||'①Dipukul　②Ditekan')
-                    : (sm.tsudenMethod||'①叩く　②押さえる')
-                  }
+              <div style={{background:'#FFF8E1',border:'1px solid #FFD600',borderRadius:6,padding:'5px 7px'}}>
+                <div style={{fontSize:9,fontWeight:700,color:'#7B5800',marginBottom:1}}>{tk('通電確保方法')}</div>
+                <div style={{fontSize:11,fontWeight:700,color:'#4A3800',lineHeight:1.3}}>
+                  {lang==='id'?(sm.tsudenMethod_id||sm.tsudenMethod||'①Dipukul　②Ditekan'):(sm.tsudenMethod||'①叩く　②押さえる')}
                 </div>
               </div>
-              {/* 注意ポイント */}
+              {/* 注意ポイント（写真＋テキスト） */}
               {[
-                [tk('注意ポイント①'), lang==='id'?(sm.chui1_id||sm.chui1):sm.chui1],
-                [tk('注意ポイント②'), lang==='id'?(sm.chui2_id||sm.chui2):sm.chui2],
-                [tk('注意ポイント③'), lang==='id'?(sm.chui3_id||sm.chui3):sm.chui3],
-              ].map(([label,txt])=>(
-                <div key={label} style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'6px 8px',minHeight:0}}>
-                  <div style={{fontSize:10,fontWeight:700,color:'#B91C1C',marginBottom:1}}>{label}</div>
-                  <div style={noteTextStyle}>{txt||(lang==='id'?'(Belum terdaftar)':'（未登録）')}</div>
+                [tk('注意ポイント①'), lang==='id'?(sm.chui1_id||sm.chui1):sm.chui1, sm.chuiImg1],
+                [tk('注意ポイント②'), lang==='id'?(sm.chui2_id||sm.chui2):sm.chui2, sm.chuiImg2],
+                [tk('注意ポイント③'), lang==='id'?(sm.chui3_id||sm.chui3):sm.chui3, sm.chuiImg3],
+              ].map(([label,txt,imgUrl])=>(
+                <div key={label} style={{background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:6,padding:'5px 7px'}}>
+                  <div style={{fontSize:9,fontWeight:700,color:'#B91C1C',marginBottom:3}}>{label}</div>
+                  <div style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+                    {imgUrl&&<img src={imgUrl} style={{width:PHOTO_H,height:PHOTO_H,objectFit:'contain',borderRadius:4,border:'1px solid #FECACA',flexShrink:0,background:'#fff'}}/>}
+                    {txt&&<div style={{fontSize:11,color:'#B91C1C',fontWeight:600,lineHeight:1.4,flex:1}}>{txt}</div>}
+                    {!txt&&!imgUrl&&<div style={{fontSize:10,color:'#ccc'}}>{lang==='id'?'(Belum terdaftar)':'（未登録）'}</div>}
+                  </div>
                 </div>
               ))}
-              {/* 1個確認ボタン（右パネルからも操作可） */}
+              {/* 1個確認＋完了 */}
               <button onClick={()=>setSampleChecked(s=>({...s,[selectedItem.id]:!s[selectedItem.id]}))}
-                style={{width:'100%',minHeight:34,padding:'6px 10px',borderRadius:8,border:`2px solid ${sampleChecked[selectedItem.id]?lc:'#C0BEB5'}`,background:sampleChecked[selectedItem.id]?lb:'#fff',color:sampleChecked[selectedItem.id]?lc:'#555',fontSize:12,fontWeight:700,flexShrink:0}}>
+                style={{width:'100%',minHeight:36,borderRadius:8,border:`2px solid ${sampleChecked[selectedItem.id]?lc:'#C0BEB5'}`,background:sampleChecked[selectedItem.id]?lb:'#fff',color:sampleChecked[selectedItem.id]?lc:'#555',fontSize:13,fontWeight:700}}>
                 {sampleChecked[selectedItem.id]?`✔ ${tk('1個確認済み')}`:`□ ${tk('1個確認')}`}
               </button>
               <button onClick={()=>handleComplete(selectedItem)} disabled={!sampleChecked[selectedItem.id]||saving[selectedItem.id]}
-                style={{width:'100%',minHeight:38,padding:'7px 10px',borderRadius:8,border:'none',background:(!sampleChecked[selectedItem.id]||saving[selectedItem.id])?'#C8E6C9':lc,color:'#fff',fontSize:13,fontWeight:700,opacity:!sampleChecked[selectedItem.id]?0.5:1,flexShrink:0}}>
+                style={{width:'100%',minHeight:42,borderRadius:8,border:'none',background:(!sampleChecked[selectedItem.id]||saving[selectedItem.id])?'#C8E6C9':lc,color:'#fff',fontSize:14,fontWeight:700,opacity:!sampleChecked[selectedItem.id]?0.5:1}}>
                 {saving[selectedItem.id]?tk('保存中...'):`✓ ${tk('完了')}`}
               </button>
             </div>
           ):(
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#bbb',fontSize:13,flexDirection:'column',gap:8}}>
-              <div style={{fontSize:32}}>←</div>
-              <div>{tk('製品を選んで「確認」を押してください')}</div>
-            </div>
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'#ccc',fontSize:13}}>全件完了</div>
           )}
         </div>
       </div>
@@ -2686,17 +2649,46 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                           style={{width:'100%',fontSize:13,boxSizing:'border-box'}}/>
                         {selData?.tsudenMethod_id&&<div style={{marginTop:4,padding:'5px 10px',background:'#E6F1FB',borderRadius:6,fontSize:11,color:'#185FA5'}}>🇮🇩 {selData.tsudenMethod_id}</div>}
                       </div>
-                      {/* 注意ポイント①②③ */}
-                      {[['注意ポイント①',chui1,setChui1,'chui1'],['注意ポイント②',chui2,setChui2,'chui2'],['注意ポイント③',chui3,setChui3,'chui3']].map(([label,val,setter,field])=>(
-                        <div key={label}>
-                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
-                            <div style={{fontSize:11,fontWeight:600,color:'#B91C1C'}}>{label}</div>
+                      {/* 注意ポイント①②③（テキスト＋写真） */}
+                      {[['注意ポイント①',chui1,setChui1,'chui1'],['注意ポイント②',chui2,setChui2,'chui2'],['注意ポイント③',chui3,setChui3,'chui3']].map(([label,val,setter,field])=>{
+                        const imgField=field.replace('chui','chuiImg');
+                        const imgUrl=selData?.[imgField];
+                        const uploadingThis=subUploadPct>=0&&subUploadField===imgField;
+                        return(
+                          <div key={label} style={{border:'1px solid #FECACA',borderRadius:8,padding:'8px',background:'#FEF2F2'}}>
+                            <div style={{fontSize:11,fontWeight:700,color:'#B91C1C',marginBottom:6}}>{label}</div>
+                            <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                              {/* 写真 */}
+                              <div style={{flexShrink:0,width:80}}>
+                                {imgUrl
+                                  ? <div style={{position:'relative'}}>
+                                      <img src={imgUrl} style={{width:80,height:80,objectFit:'contain',borderRadius:6,border:'1px solid #FECACA',display:'block',background:'#fff'}}/>
+                                      <button onClick={()=>handleDeleteSubImg(imgField)}
+                                        style={{position:'absolute',top:-6,right:-6,width:18,height:18,borderRadius:'50%',background:'#E24B4A',border:'none',color:'#fff',fontSize:11,fontWeight:700,lineHeight:'18px',padding:0}}>×</button>
+                                    </div>
+                                  : <div onClick={()=>{if(!uploadingThis){setSubUploadField(imgField);subFileRef.current?.click();}}}
+                                      style={{width:80,height:80,border:'2px dashed #FECACA',borderRadius:6,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#fff',cursor:'pointer',gap:2}}>
+                                      {uploadingThis
+                                        ? <div style={{fontSize:13,fontWeight:700,color:'#B91C1C'}}>{subUploadPct}%</div>
+                                        : <><span style={{fontSize:20,color:'#FECACA'}}>+</span><span style={{fontSize:9,color:'#ccc'}}>写真</span></>
+                                      }
+                                    </div>
+                                }
+                                <button onClick={()=>{setSubUploadField(imgField);subFileRef.current?.click();}} disabled={uploadingThis}
+                                  style={{marginTop:4,width:'100%',minHeight:24,padding:'0 4px',borderRadius:4,border:'1px solid #FECACA',background:'#fff',fontSize:10,color:'#B91C1C'}}>
+                                  {uploadingThis?`${subUploadPct}%`:(imgUrl?'変更':'追加')}
+                                </button>
+                              </div>
+                              {/* テキスト */}
+                              <div style={{flex:1}}>
+                                <textarea value={val} onChange={e=>setter(e.target.value)} placeholder={`${label}を入力...`}
+                                  style={{width:'100%',height:80,fontSize:12,resize:'vertical',boxSizing:'border-box',border:'1px solid #FECACA',borderRadius:6}}/>
+                                {selData?.[field+'_id']&&<div style={{marginTop:2,padding:'3px 8px',background:'#E6F1FB',borderRadius:4,fontSize:10,color:'#185FA5'}}>🇮🇩 {selData[field+'_id']}</div>}
+                              </div>
+                            </div>
                           </div>
-                          <textarea value={val} onChange={e=>setter(e.target.value)} placeholder={`${label}を入力...`}
-                            style={{width:'100%',height:60,fontSize:13,resize:'vertical',boxSizing:'border-box'}}/>
-                          {selData?.[field+'_id']&&<div style={{marginTop:4,padding:'5px 10px',background:'#E6F1FB',borderRadius:6,fontSize:11,color:'#185FA5'}}>🇮🇩 {selData[field+'_id']}</div>}
-                        </div>
-                      ))}
+                        );
+                      })}
                       <div style={{display:'flex',gap:8}}>
                         <button onClick={handleSaveTsuriKake} disabled={savingTK}
                           style={{flex:1,minHeight:40,padding:'0 14px',borderRadius:10,border:'none',background:savingTK?'#B4B2A9':'#0F6E56',color:'#fff',fontSize:13,fontWeight:600}}>
