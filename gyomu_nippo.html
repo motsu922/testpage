@@ -530,6 +530,8 @@
 <div id="addModal" class="modal">
     <div class="modal-content">
         <h3>記録を追加</h3>
+        <div class="form-group"><label>日付</label><input type="date" id="addDate"></div>
+        <div class="form-group"><label>担当者</label><select id="addMember" onchange="refreshAddTaskOptions()"></select></div>
         <div class="form-group"><label>タスク</label><select id="addTaskName"></select></div>
         <div class="form-group"><label>開始</label><input type="time" id="addStart"></div>
         <div class="form-group"><label>終了</label><input type="time" id="addEnd"></div>
@@ -1095,9 +1097,10 @@ function renderHistorySummary(recs){
 
 function renderHistoryRecords(recs,date){
     const listEl = document.getElementById('historyRecords'); if (!listEl) return;
-    if (!recs.length){ listEl.innerHTML = ''; return; }
+    const addButton = `<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal(null,null,'${date}')">＋ 手入力</button>`;
+    if (!recs.length){ listEl.innerHTML = addButton; return; }
     recs.sort((a,b)=>a.startTime.localeCompare(b.startTime));
-    listEl.innerHTML = '<h4 style="margin-bottom:10px;font-size:13px;color:#555;">📝 詳細記録</h4>' + recs.map(r=>`<div class="record-item" onclick="openEditModal(${r.id})"><div class="color-bar" style="background:${getTaskColor(r.task)}"></div><div class="info"><div class="task-name">${getTaskIcon(r.task)} ${r.task}</div><div class="time-range">${r.startTime} - ${r.endTime} (${r.member})</div></div><div class="duration">${calcHours(r.startTime,r.endTime).toFixed(1)}h</div></div>`).join('');
+    listEl.innerHTML = '<h4 style="margin-bottom:10px;font-size:13px;color:#555;">📝 詳細記録</h4>' + recs.map(r=>`<div class="record-item" onclick="openEditModal(${r.id})"><div class="color-bar" style="background:${getTaskColor(r.task)}"></div><div class="info"><div class="task-name">${getTaskIcon(r.task)} ${r.task}</div><div class="time-range">${r.startTime} - ${r.endTime} (${r.member})</div></div><div class="duration">${calcHours(r.startTime,r.endTime).toFixed(1)}h</div></div>`).join('') + addButton;
 }
 
 // ===== ガントチャート =====
@@ -1290,21 +1293,36 @@ function saveRecord(){
 }
 function deleteRecord(){ if (!confirm('削除しますか？')) return; records=records.filter(r=>r.id!==editingId); saveData(); closeModal(); render(); toast('🗑 削除'); }
 
-function openAddModal(startOverride,endOverride){
+function openAddModal(startOverride,endOverride,dateOverride){
     if (!currentMember){ alert('担当者を選択'); return; }
-    const tasks=[...DEFAULT_TASKS,...(customTasks[currentMember]||[])];
-    document.getElementById('addTaskName').innerHTML = tasks.map(t=>`<option value="${t}">${t}</option>`).join('');
+    const filterMember = document.getElementById('filterMember')?.value || '';
+    const selectedMember = members.includes(filterMember) ? filterMember : currentMember;
+    const memberSelect = document.getElementById('addMember');
+    if (memberSelect){
+        memberSelect.innerHTML = members.map(m=>`<option value="${m}" ${m===selectedMember?'selected':''}>${m}</option>`).join('');
+    }
+    refreshAddTaskOptions();
     const now=new Date();
     document.getElementById('addStart').value = startOverride || formatTime(new Date(now-3600000));
     document.getElementById('addEnd').value = endOverride || formatTime(now);
-    addRecordDateStr = formatDate(new Date());
+    addRecordDateStr = dateOverride || formatDate(new Date());
+    document.getElementById('addDate').value = addRecordDateStr;
     document.getElementById('addModal').classList.add('show');
+}
+function refreshAddTaskOptions(){
+    const member = document.getElementById('addMember')?.value || currentMember;
+    const tasks=[...DEFAULT_TASKS,...(customTasks[member]||[])];
+    document.getElementById('addTaskName').innerHTML = tasks.map(t=>`<option value="${t}">${t}</option>`).join('');
 }
 function closeAddModal(){ document.getElementById('addModal').classList.remove('show'); }
 function addRecord(){
     const t=document.getElementById('addTaskName').value, s=document.getElementById('addStart').value, e=document.getElementById('addEnd').value;
+    const date=document.getElementById('addDate')?.value || addRecordDateStr || formatDate(new Date());
+    const member=document.getElementById('addMember')?.value || currentMember;
+    if (!date){ alert('日付を入力してください'); return; }
+    if (!member){ alert('担当者を選択してください'); return; }
     if (e<=s){ alert('終了は開始より後に'); return; }
-    records.push({ id:Date.now(), member:currentMember, task:t, date:addRecordDateStr||formatDate(new Date()), startTime:s, endTime:e });
+    records.push({ id:Date.now(), member, task:t, date, startTime:s, endTime:e });
     saveData(); closeAddModal(); render(); toast('✓ 追加');
 }
 
