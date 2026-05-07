@@ -2146,23 +2146,13 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     }catch(err){alert('削除に失敗: '+err.message);}
   }
 
-  function callTranslateAPI(text){
-    if(!gasProxyUrl.trim())return Promise.reject(new Error('API設定タブでプロキシURLを設定してください'));
-    return new Promise((resolve,reject)=>{
-      const cb='gasT_'+Date.now();
-      window[cb]=(data)=>{
-        delete window[cb];
-        if(sc.parentNode)sc.parentNode.removeChild(sc);
-        if(data.error)reject(new Error(data.error));
-        else resolve(data.translated);
-      };
-      const sc=document.createElement('script');
-      sc.src=gasProxyUrl.trim()+'?text='+encodeURIComponent(text)+'&callback='+cb;
-      sc.onerror=()=>{delete window[cb];reject(new Error('スクリプト読み込みエラー'));};
-      const tid=setTimeout(()=>{delete window[cb];if(sc.parentNode)sc.parentNode.removeChild(sc);reject(new Error('タイムアウト'));},30000);
-      window[cb]=(data)=>{clearTimeout(tid);delete window[cb];if(sc.parentNode)sc.parentNode.removeChild(sc);data.error?reject(new Error(data.error)):resolve(data.translated);};
-      document.head.appendChild(sc);
-    });
+  async function callTranslateAPI(text){
+    if(!gasProxyUrl.trim())throw new Error('API設定タブでプロキシURLを設定してください');
+    const resp=await fetch(gasProxyUrl.trim()+'?text='+encodeURIComponent(text));
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const data=await resp.json();
+    if(data.error)throw new Error(data.error);
+    return data.translated;
   }
 
   async function translateToId(text,field){
@@ -2273,69 +2263,73 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
 
         {masterTab==='api'&&(
           <div style={{maxWidth:680}}>
-            <div style={{fontSize:14,color:'#555',marginBottom:16,lineHeight:1.8,background:'#F0FBF5',border:'1px solid #A8D5C2',borderRadius:10,padding:'12px 16px'}}>
-              <strong>Google Apps Script</strong> を無料プロキシとして使い、Anthropic Claude API でAI翻訳します。<br/>
-              ブラウザから直接 Anthropic API を呼ぶと CORS でブロックされるため、GAS 経由で呼び出します。
+            <div style={{fontSize:14,color:'#555',marginBottom:16,lineHeight:1.8,background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:10,padding:'12px 16px'}}>
+              <strong>Cloudflare Workers</strong>（無料）を使って Anthropic Claude API を呼び出します。<br/>
+              無料枠：10万リクエスト/日。翻訳用途なら実質無制限です。
             </div>
 
-            {/* ステップ1: GASコード */}
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:13,fontWeight:700,color:'#185FA5',marginBottom:8}}>① Google Apps Script にコードを貼り付け</div>
-              <div style={{fontSize:12,color:'#555',marginBottom:6,lineHeight:1.6}}>
-                <a href="https://script.google.com" target="_blank" style={{color:'#185FA5',fontWeight:700}}>script.google.com</a> を開く → 新しいプロジェクト → 以下のコードをすべてコピーして貼り付け
-              </div>
+            {/* ステップ1 */}
+            <div style={{marginBottom:12,padding:'12px 16px',background:'#F8FAFF',border:'1px solid #C7D7F5',borderRadius:10,fontSize:12,color:'#1E3A8A',lineHeight:1.9}}>
+              <strong>① Cloudflare アカウント作成（無料）</strong><br/>
+              <a href="https://dash.cloudflare.com/sign-up" target="_blank" style={{color:'#185FA5',fontWeight:700}}>dash.cloudflare.com/sign-up</a> でメールアドレスだけで登録
+            </div>
+
+            {/* ステップ2 */}
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#185FA5',marginBottom:6}}>② Workers &amp; Pages → 「Create」→ 「Worker を作成」→ 以下を貼り付け</div>
               <textarea readOnly value={
-`function doGet(e){
-  var cb=e.parameter.callback||'';
-  var text=e.parameter.text?decodeURIComponent(e.parameter.text):'';
-  if(!text)return out(cb,{error:'no text'});
-  var key=PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');
-  if(!key)return out(cb,{error:'ANTHROPIC_KEY not set'});
-  try{
-    var r=UrlFetchApp.fetch('https://api.anthropic.com/v1/messages',{
-      method:'post',contentType:'application/json',
-      headers:{'x-api-key':key,'anthropic-version':'2023-06-01'},
-      payload:JSON.stringify({
-        model:'claude-3-5-haiku-20241022',max_tokens:1024,
-        messages:[{role:'user',content:'以下の日本語をインドネシア語（Bahasa Indonesia）に翻訳してください。翻訳文のみ返してください。工場・製造業・表面処理に関する用語も適切に訳してください:\\n\\n'+text}]
-      })
-    });
-    var d=JSON.parse(r.getContentText());
-    return out(cb,{translated:d.content[0].text.trim()});
-  }catch(err){return out(cb,{error:err.toString()});}
-}
-function out(cb,obj){
-  var s=JSON.stringify(obj);
-  if(cb)return ContentService.createTextOutput(cb+'('+s+')').setMimeType(ContentService.MimeType.JAVASCRIPT);
-  return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON);
-}`}
-                style={{width:'100%',height:200,fontFamily:'monospace',fontSize:11,resize:'vertical',background:'#1E1E2E',color:'#CDD6F4',borderRadius:8,padding:'10px',boxSizing:'border-box',border:'none'}}
+`export default {
+  async fetch(request, env) {
+    const cors = {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json'
+    };
+    const json = obj => new Response(JSON.stringify(obj), {headers: cors});
+    if (request.method === 'OPTIONS')
+      return new Response(null, {headers: {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET'}});
+    const text = new URL(request.url).searchParams.get('text');
+    if (!text) return json({error: 'no text'});
+    const key = env.ANTHROPIC_KEY;
+    if (!key) return json({error: 'ANTHROPIC_KEY not set'});
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'},
+        body: JSON.stringify({
+          model: 'claude-3-5-haiku-20241022', max_tokens: 1024,
+          messages: [{role:'user', content:'以下の日本語をインドネシア語（Bahasa Indonesia）に翻訳してください。翻訳文のみ返してください。工場・製造業・表面処理に関する用語も適切に訳してください:\\n\\n' + text}]
+        })
+      });
+      const d = await r.json();
+      return json({translated: d.content[0].text.trim()});
+    } catch(e) { return json({error: e.toString()}); }
+  }
+};`}
+                style={{width:'100%',height:220,fontFamily:'monospace',fontSize:11,resize:'vertical',background:'#1E1E2E',color:'#CDD6F4',borderRadius:8,padding:'10px',boxSizing:'border-box',border:'none'}}
               />
             </div>
 
-            {/* ステップ2: APIキーをGASプロパティに設定 */}
-            <div style={{marginBottom:16,padding:'12px 16px',background:'#FEF9E7',border:'1px solid #F9CA24',borderRadius:10,fontSize:12,color:'#7B5800',lineHeight:1.8}}>
-              <strong>② スクリプトプロパティに Anthropic APIキーを設定</strong><br/>
-              GAS エディタ上部 → 「プロジェクトの設定」（歯車）→「スクリプトのプロパティ」→「プロパティを追加」<br/>
-              　プロパティ名：<code style={{background:'#FEF3C7',padding:'1px 5px',borderRadius:3}}>ANTHROPIC_KEY</code>　値：<code style={{background:'#FEF3C7',padding:'1px 5px',borderRadius:3}}>sk-ant-...</code>
+            {/* ステップ3 */}
+            <div style={{marginBottom:12,padding:'12px 16px',background:'#FEF9E7',border:'1px solid #F9CA24',borderRadius:10,fontSize:12,color:'#7B5800',lineHeight:1.9}}>
+              <strong>③ 「設定」→「変数とシークレット」→「追加」</strong><br/>
+              変数名：<code style={{background:'#FEF3C7',padding:'1px 6px',borderRadius:3,fontFamily:'monospace'}}>ANTHROPIC_KEY</code>
+              値：<code style={{background:'#FEF3C7',padding:'1px 6px',borderRadius:3,fontFamily:'monospace'}}>sk-ant-...</code>（あなたのAPIキー）→「デプロイ」
             </div>
 
-            {/* ステップ3: デプロイ */}
-            <div style={{marginBottom:16,padding:'12px 16px',background:'#EFF6FF',border:'1px solid #93C5FD',borderRadius:10,fontSize:12,color:'#1E40AF',lineHeight:1.8}}>
-              <strong>③ ウェブアプリとしてデプロイ</strong><br/>
-              GAS エディタ右上「デプロイ」→「新しいデプロイ」→ 種類：ウェブアプリ<br/>
-              　次のユーザーとして実行：<strong>自分</strong>　／　アクセスできるユーザー：<strong>全員</strong><br/>
-              →「デプロイ」→ 表示されたウェブアプリURLをコピー
+            {/* ステップ4 */}
+            <div style={{marginBottom:12,padding:'12px 16px',background:'#F0FBF5',border:'1px solid #A8D5C2',borderRadius:10,fontSize:12,color:'#065F46',lineHeight:1.9}}>
+              <strong>④ Worker の URL をコピー</strong><br/>
+              例：<code style={{background:'#D1FAE5',padding:'1px 6px',borderRadius:3,fontFamily:'monospace'}}>https://xxxxx.workers.dev</code>
             </div>
 
             {/* URL入力 */}
             <div style={{marginBottom:8}}>
-              <div style={{fontSize:12,fontWeight:700,color:'#555',marginBottom:6}}>④ ウェブアプリURL を入力して保存</div>
+              <div style={{fontSize:12,fontWeight:700,color:'#555',marginBottom:6}}>⑤ Worker URL を入力して保存</div>
               <div style={{display:'flex',gap:8}}>
                 <input
                   value={gasProxyUrl}
                   onChange={e=>setGasProxyUrl(e.target.value)}
-                  placeholder="https://script.google.com/macros/s/xxxxxx/exec"
+                  placeholder="https://xxxxx.workers.dev"
                   style={{flex:1,fontFamily:'monospace',fontSize:12}}
                 />
                 <button
@@ -2350,7 +2344,7 @@ function out(cb,obj){
                   保存
                 </button>
               </div>
-              {gasProxyUrl&&<div style={{marginTop:6,padding:'5px 10px',background:'#E1F5EE',borderRadius:8,fontSize:11,color:'#0F6E56'}}>✓ プロキシURLが設定されています</div>}
+              {gasProxyUrl&&<div style={{marginTop:6,padding:'5px 10px',background:'#E1F5EE',borderRadius:8,fontSize:11,color:'#0F6E56'}}>✓ Worker URLが設定されています</div>}
             </div>
           </div>
         )}
