@@ -1368,6 +1368,7 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
 function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   const role='掛け';
   const lc=RA[role],lb=RL[role];
+  const{lang,setLang}=useLang();
   const[saving,setSaving]=useState({});
   const[sampleChecked,setSampleChecked]=useState({}); // local: id->bool
   const[selectedId,setSelectedId]=useState(null);
@@ -1411,6 +1412,9 @@ function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
         <button onClick={onBack} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>← 戻る</button>
         <div style={{fontSize:16,fontWeight:700,color:'#fff',flex:1}}>吊り掛け {line}ライン</div>
         <div style={{fontSize:13,color:'rgba(255,255,255,.85)'}}>完了 {totalDone}/{items.length}</div>
+        <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{background:lang==='id'?'#fff':'rgba(255,255,255,.18)',border:'2px solid rgba(255,255,255,.5)',borderRadius:8,color:lang==='id'?lc:'#fff',padding:'5px 12px',fontSize:13,fontWeight:700}}>
+          {lang==='ja'?'🇮🇩 ID':'🇯🇵 JP'}
+        </button>
         <button onClick={()=>setShowAnomaly(true)} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>⚠ 異常</button>
       </div>
       {/* 進捗バー */}
@@ -1519,14 +1523,25 @@ function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
               </div>
               {/* 通電確保方法 */}
               <div style={{background:'#FFF8E1',border:'1px solid #FFD600',borderRadius:8,padding:'8px 12px'}}>
-                <div style={{fontSize:11,fontWeight:700,color:'#7B5800',marginBottom:2}}>通電確保方法</div>
-                <div style={{fontSize:13,fontWeight:700,color:'#4A3800'}}>{sm.tsudenMethod||'①叩く　②押さえる'}</div>
+                <div style={{fontSize:11,fontWeight:700,color:'#7B5800',marginBottom:2}}>
+                  {lang==='id'?'Metode Pengantar Arus':'通電確保方法'}
+                </div>
+                <div style={{fontSize:13,fontWeight:700,color:'#4A3800'}}>
+                  {lang==='id'
+                    ? (sm.tsudenMethod_id||sm.tsudenMethod||'①Dipukul　②Ditekan')
+                    : (sm.tsudenMethod||'①叩く　②押さえる')
+                  }
+                </div>
               </div>
               {/* 注意ポイント */}
-              {[['注意ポイント①',sm.chui1],['注意ポイント②',sm.chui2],['注意ポイント③',sm.chui3]].map(([label,txt])=>(
+              {[
+                [lang==='id'?'Catatan ①':'注意ポイント①', lang==='id'?(sm.chui1_id||sm.chui1):sm.chui1],
+                [lang==='id'?'Catatan ②':'注意ポイント②', lang==='id'?(sm.chui2_id||sm.chui2):sm.chui2],
+                [lang==='id'?'Catatan ③':'注意ポイント③', lang==='id'?(sm.chui3_id||sm.chui3):sm.chui3],
+              ].map(([label,txt])=>(
                 <div key={label} style={{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:8,padding:'8px 12px'}}>
                   <div style={{fontSize:11,fontWeight:700,color:'#B91C1C',marginBottom:2}}>{label}</div>
-                  <div style={{fontSize:12,color:'#7F1D1D',lineHeight:1.5}}>{txt||'（未登録）'}</div>
+                  <div style={{fontSize:12,color:'#7F1D1D',lineHeight:1.5}}>{txt||(lang==='id'?'(Belum terdaftar)':'（未登録）')}</div>
                 </div>
               ))}
               {/* 1個確認ボタン（右パネルからも操作可） */}
@@ -2054,6 +2069,9 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const[chui2,setChui2]=useState('');
   const[chui3,setChui3]=useState('');
   const[savingTK,setSavingTK]=useState(false);
+  const[anthropicKey,setAnthropicKey]=useState(()=>{try{return localStorage.getItem('anthropicKey')||'';}catch{return'';}});
+  const[translating,setTranslating]=useState({});
+  const[savingKey,setSavingKey]=useState(false);
   useEffect(()=>{setQrText(selData?.qrText||'');},[sel,master]);
   useEffect(()=>{setNote(selData?.note||'');},[sel,master]);
   useEffect(()=>{
@@ -2125,6 +2143,34 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     }catch(err){alert('削除に失敗: '+err.message);}
   }
 
+  async function translateToId(text,field){
+    if(!anthropicKey.trim()){alert('API設定タブでAnthropicのAPIキーを設定してください');return;}
+    if(!text.trim()){alert('翻訳するテキストがありません');return;}
+    if(!sel)return;
+    setTranslating(s=>({...s,[field]:true}));
+    try{
+      const resp=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{
+          'x-api-key':anthropicKey,
+          'anthropic-version':'2023-06-01',
+          'anthropic-dangerous-allow-browser':'true',
+          'content-type':'application/json',
+        },
+        body:JSON.stringify({
+          model:'claude-3-5-haiku-20241022',
+          max_tokens:1024,
+          messages:[{role:'user',content:`以下の日本語テキストをインドネシア語（Bahasa Indonesia）に翻訳してください。翻訳文のみ返してください。工場・製造業・表面処理（塗装・メッキ）に関する用語が含まれる場合は適切に訳してください:\n\n${text}`}]
+        })
+      });
+      if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||resp.statusText);}
+      const data=await resp.json();
+      const translated=data.content[0].text.trim();
+      await db.collection('master').doc(sel).set({[field+'_id']:translated},{merge:true});
+    }catch(err){alert('翻訳に失敗しました: '+err.message);}
+    finally{setTranslating(s=>({...s,[field]:false}));}
+  }
+
   async function handleSaveTsuriKake(){
     if(!sel)return;
     setSavingTK(true);
@@ -2189,10 +2235,48 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       <NavBar title="マスター管理" sub="背番号・画像・QRコード" onBack={onBack} wide={true}/>
       <div style={{padding:'24px',maxWidth:1400,margin:'0 auto'}}>
         <div style={{display:'flex',gap:0,marginBottom:20,borderBottom:'1px solid #E0DED8'}}>
-          {[['seiban','背番号マスター'],['anomaly','異常種別管理']].map(([id,label])=>(
+          {[['seiban','背番号マスター'],['anomaly','異常種別管理'],['api','🤖 API設定']].map(([id,label])=>(
             <button key={id} onClick={()=>setMasterTab(id)} style={{padding:'12px 24px',background:'none',border:'none',fontSize:14,fontWeight:600,color:masterTab===id?'#185FA5':'#888',borderBottom:masterTab===id?'3px solid #185FA5':'3px solid transparent'}}>{label}</button>
           ))}
         </div>
+
+        {masterTab==='api'&&(
+          <div style={{maxWidth:600}}>
+            <div style={{fontSize:14,color:'#555',marginBottom:20,lineHeight:1.7,background:'#F0FBF5',border:'1px solid #A8D5C2',borderRadius:10,padding:'12px 16px'}}>
+              <strong>Anthropic APIキー</strong>を設定すると、吊り掛けの注意ポイント等の日本語テキストをインドネシア語へAI翻訳できます。<br/>
+              キーはこのデバイスのみに保存されます（Firestoreには保存されません）。<br/>
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" style={{color:'#0F6E56',fontWeight:700}}>APIキーの取得はこちら →</a>
+            </div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#555',marginBottom:6}}>Anthropic APIキー</div>
+              <div style={{display:'flex',gap:8}}>
+                <input
+                  type="password"
+                  value={anthropicKey}
+                  onChange={e=>setAnthropicKey(e.target.value)}
+                  placeholder="sk-ant-..."
+                  style={{flex:1,fontFamily:'monospace',fontSize:13}}
+                />
+                <button
+                  disabled={savingKey}
+                  onClick={()=>{
+                    setSavingKey(true);
+                    try{localStorage.setItem('anthropicKey',anthropicKey);alert('保存しました');}
+                    catch(e){alert('保存に失敗: '+e.message);}
+                    finally{setSavingKey(false);}
+                  }}
+                  style={{minHeight:48,padding:'0 20px',borderRadius:10,border:'none',background:'#0F6E56',color:'#fff',fontSize:14,fontWeight:700,whiteSpace:'nowrap'}}>
+                  保存
+                </button>
+              </div>
+              {anthropicKey&&<div style={{marginTop:8,padding:'5px 10px',background:'#E1F5EE',borderRadius:8,fontSize:11,color:'#0F6E56'}}>✓ APIキーが設定されています（sk-ant-...{anthropicKey.slice(-4)}）</div>}
+            </div>
+            <div style={{marginTop:16,padding:'12px 16px',background:'#FEF9E7',border:'1px solid #F9CA24',borderRadius:10,fontSize:12,color:'#7B5800',lineHeight:1.7}}>
+              ⚠ APIキーはブラウザのlocalStorageに保存されます。共有端末での利用時はご注意ください。<br/>
+              翻訳には <strong>claude-3-5-haiku</strong> モデルを使用します（高速・低コスト）。
+            </div>
+          </div>
+        )}
 
         {masterTab==='anomaly'&&(
           <div style={{maxWidth:600}}>
@@ -2354,18 +2438,34 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                     </div>
 
                     {/* テキストフィールド */}
-                    <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                      {/* 通電確保方法 */}
                       <div>
-                        <div style={{fontSize:11,fontWeight:600,color:'#7B5800',marginBottom:4}}>通電確保方法（未入力の場合「①叩く　②押さえる」と表示）</div>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                          <div style={{fontSize:11,fontWeight:600,color:'#7B5800'}}>通電確保方法（未入力の場合「①叩く　②押さえる」と表示）</div>
+                          <button onClick={()=>translateToId(tsudenMethod||'①叩く　②押さえる','tsudenMethod')} disabled={translating['tsudenMethod']}
+                            style={{flexShrink:0,padding:'3px 10px',borderRadius:6,border:'none',background:translating['tsudenMethod']?'#B4B2A9':'#185FA5',color:'#fff',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+                            {translating['tsudenMethod']?'翻訳中...':'🤖 ID訳'}
+                          </button>
+                        </div>
                         <input value={tsudenMethod} onChange={e=>setTsudenMethod(e.target.value)}
                           placeholder="例: ①叩く　②押さえる"
                           style={{width:'100%',fontSize:13,boxSizing:'border-box'}}/>
+                        {selData?.tsudenMethod_id&&<div style={{marginTop:4,padding:'5px 10px',background:'#E6F1FB',borderRadius:6,fontSize:11,color:'#185FA5'}}>🇮🇩 {selData.tsudenMethod_id}</div>}
                       </div>
-                      {[['注意ポイント①',chui1,setChui1],['注意ポイント②',chui2,setChui2],['注意ポイント③',chui3,setChui3]].map(([label,val,setter])=>(
+                      {/* 注意ポイント①②③ */}
+                      {[['注意ポイント①',chui1,setChui1,'chui1'],['注意ポイント②',chui2,setChui2,'chui2'],['注意ポイント③',chui3,setChui3,'chui3']].map(([label,val,setter,field])=>(
                         <div key={label}>
-                          <div style={{fontSize:11,fontWeight:600,color:'#B91C1C',marginBottom:4}}>{label}</div>
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                            <div style={{fontSize:11,fontWeight:600,color:'#B91C1C'}}>{label}</div>
+                            <button onClick={()=>translateToId(val,field)} disabled={translating[field]||!val.trim()}
+                              style={{flexShrink:0,padding:'3px 10px',borderRadius:6,border:'none',background:translating[field]?'#B4B2A9':!val.trim()?'#D0CEC8':'#185FA5',color:'#fff',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>
+                              {translating[field]?'翻訳中...':'🤖 ID訳'}
+                            </button>
+                          </div>
                           <textarea value={val} onChange={e=>setter(e.target.value)} placeholder={`${label}を入力...`}
                             style={{width:'100%',height:60,fontSize:13,resize:'vertical',boxSizing:'border-box'}}/>
+                          {selData?.[field+'_id']&&<div style={{marginTop:4,padding:'5px 10px',background:'#E6F1FB',borderRadius:6,fontSize:11,color:'#185FA5'}}>🇮🇩 {selData[field+'_id']}</div>}
                         </div>
                       ))}
                       <button onClick={handleSaveTsuriKake} disabled={savingTK}
