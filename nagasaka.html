@@ -2125,9 +2125,8 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const[chui3,setChui3]=useState('');
   const[savingTK,setSavingTK]=useState(false);
   const[savedTK,setSavedTK]=useState(false);
-  const[gasProxyUrl,setGasProxyUrl]=useState(()=>{try{return localStorage.getItem('gasProxyUrl')||'';}catch{return'';}});
+  const gasProxyUrl='https://dawn-wave-20e6.motsu922.workers.dev';
   const[translating,setTranslating]=useState({});
-  const[savingKey,setSavingKey]=useState(false);
   useEffect(()=>{setQrText(selData?.qrText||'');},[sel,master]);
   useEffect(()=>{setNote(selData?.note||'');},[sel,master]);
   useEffect(()=>{
@@ -2314,98 +2313,10 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       <NavBar title="マスター管理" sub="背番号・画像・QRコード" onBack={onBack} wide={true}/>
       <div style={{padding:'24px',maxWidth:1400,margin:'0 auto'}}>
         <div style={{display:'flex',gap:0,marginBottom:20,borderBottom:'1px solid #E0DED8'}}>
-          {[['seiban','背番号マスター'],['anomaly','異常種別管理'],['api','🤖 API設定']].map(([id,label])=>(
+          {[['seiban','背番号マスター'],['anomaly','異常種別管理']].map(([id,label])=>(
             <button key={id} onClick={()=>setMasterTab(id)} style={{padding:'12px 24px',background:'none',border:'none',fontSize:14,fontWeight:600,color:masterTab===id?'#185FA5':'#888',borderBottom:masterTab===id?'3px solid #185FA5':'3px solid transparent'}}>{label}</button>
           ))}
         </div>
-
-        {masterTab==='api'&&(
-          <div style={{maxWidth:680}}>
-            <div style={{fontSize:14,color:'#555',marginBottom:16,lineHeight:1.8,background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:10,padding:'12px 16px'}}>
-              <strong>Cloudflare Workers</strong>（無料）を使って Anthropic Claude API を呼び出します。<br/>
-              無料枠：10万リクエスト/日。翻訳用途なら実質無制限です。
-            </div>
-
-            {/* ステップ1 */}
-            <div style={{marginBottom:12,padding:'12px 16px',background:'#F8FAFF',border:'1px solid #C7D7F5',borderRadius:10,fontSize:12,color:'#1E3A8A',lineHeight:1.9}}>
-              <strong>① Cloudflare アカウント作成（無料）</strong><br/>
-              <a href="https://dash.cloudflare.com/sign-up" target="_blank" style={{color:'#185FA5',fontWeight:700}}>dash.cloudflare.com/sign-up</a> でメールアドレスだけで登録
-            </div>
-
-            {/* ステップ2 */}
-            <div style={{marginBottom:8}}>
-              <div style={{fontSize:13,fontWeight:700,color:'#185FA5',marginBottom:6}}>② Workers &amp; Pages → 「Create」→ 「Worker を作成」→ 以下を貼り付け</div>
-              <textarea readOnly value={
-`export default {
-  async fetch(request, env) {
-    const cors = {
-      'Access-Control-Allow-Origin': '*',
-      'Content-Type': 'application/json'
-    };
-    const json = obj => new Response(JSON.stringify(obj), {headers: cors});
-    if (request.method === 'OPTIONS')
-      return new Response(null, {headers: {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET'}});
-    const text = new URL(request.url).searchParams.get('text');
-    if (!text) return json({error: 'no text'});
-    const key = env.ANTHROPIC_KEY;
-    if (!key) return json({error: 'ANTHROPIC_KEY not set'});
-    try {
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'},
-        body: JSON.stringify({
-          model: 'claude-3-5-haiku-20241022', max_tokens: 1024,
-          messages: [{role:'user', content:'以下の日本語をインドネシア語（Bahasa Indonesia）に翻訳してください。翻訳文のみ返してください。工場・製造業・表面処理に関する用語も適切に訳してください:\\n\\n' + text}]
-        })
-      });
-      const d = await r.json();
-      return json({translated: d.content[0].text.trim()});
-    } catch(e) { return json({error: e.toString()}); }
-  }
-};`}
-                style={{width:'100%',height:220,fontFamily:'monospace',fontSize:11,resize:'vertical',background:'#1E1E2E',color:'#CDD6F4',borderRadius:8,padding:'10px',boxSizing:'border-box',border:'none'}}
-              />
-            </div>
-
-            {/* ステップ3 */}
-            <div style={{marginBottom:12,padding:'12px 16px',background:'#FEF9E7',border:'1px solid #F9CA24',borderRadius:10,fontSize:12,color:'#7B5800',lineHeight:1.9}}>
-              <strong>③ 「設定」→「変数とシークレット」→「追加」</strong><br/>
-              変数名：<code style={{background:'#FEF3C7',padding:'1px 6px',borderRadius:3,fontFamily:'monospace'}}>ANTHROPIC_KEY</code>
-              値：<code style={{background:'#FEF3C7',padding:'1px 6px',borderRadius:3,fontFamily:'monospace'}}>sk-ant-...</code>（あなたのAPIキー）→「デプロイ」
-            </div>
-
-            {/* ステップ4 */}
-            <div style={{marginBottom:12,padding:'12px 16px',background:'#F0FBF5',border:'1px solid #A8D5C2',borderRadius:10,fontSize:12,color:'#065F46',lineHeight:1.9}}>
-              <strong>④ Worker の URL をコピー</strong><br/>
-              例：<code style={{background:'#D1FAE5',padding:'1px 6px',borderRadius:3,fontFamily:'monospace'}}>https://xxxxx.workers.dev</code>
-            </div>
-
-            {/* URL入力 */}
-            <div style={{marginBottom:8}}>
-              <div style={{fontSize:12,fontWeight:700,color:'#555',marginBottom:6}}>⑤ Worker URL を入力して保存</div>
-              <div style={{display:'flex',gap:8}}>
-                <input
-                  value={gasProxyUrl}
-                  onChange={e=>setGasProxyUrl(e.target.value)}
-                  placeholder="https://xxxxx.workers.dev"
-                  style={{flex:1,fontFamily:'monospace',fontSize:12}}
-                />
-                <button
-                  disabled={savingKey}
-                  onClick={()=>{
-                    setSavingKey(true);
-                    try{localStorage.setItem('gasProxyUrl',gasProxyUrl.trim());alert('保存しました');}
-                    catch(e){alert('保存に失敗: '+e.message);}
-                    finally{setSavingKey(false);}
-                  }}
-                  style={{minHeight:48,padding:'0 20px',borderRadius:10,border:'none',background:'#185FA5',color:'#fff',fontSize:14,fontWeight:700,whiteSpace:'nowrap'}}>
-                  保存
-                </button>
-              </div>
-              {gasProxyUrl&&<div style={{marginTop:6,padding:'5px 10px',background:'#E1F5EE',borderRadius:8,fontSize:11,color:'#0F6E56'}}>✓ Worker URLが設定されています</div>}
-            </div>
-          </div>
-        )}
 
         {masterTab==='anomaly'&&(
           <div style={{maxWidth:600}}>
