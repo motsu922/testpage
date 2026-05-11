@@ -1156,12 +1156,15 @@ $bushoSelect.addEventListener("change", ()=>{
 
 let buffer = "";
 let idleTimer = null;
-const IDLE_MS = 50; // 120ms→50ms: バッファ待機時間短縮
+const IDLE_MS = 900;
 
 function flushBuffer(){
-  if(!buffer) return;
-  const qr = buffer.replace(/\r/g,"").split("\n").map(s=>s.trim()).filter(Boolean).slice(-1)[0] || "";
-  buffer = "";
+  if(idleTimer){
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  const qr = normalizeBufferedQR(buffer);
+  clearBuffer();
   if(qr) processQR(qr);
 }
 
@@ -1169,6 +1172,53 @@ function isModalOpen(){ return $planModal.classList.contains('show'); }
 
 const $scanInput = document.getElementById("scanInput");
 let lastFocusTime = 0;
+
+function normalizeBufferedQR(raw){
+  return String(raw || "").replace(/[\r\n]+/g, " ").trim();
+}
+
+function syncScanInputBuffer(){
+  if($scanInput) $scanInput.value = buffer;
+}
+
+function clearBuffer(){
+  if(idleTimer){
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  buffer = "";
+  syncScanInputBuffer();
+}
+
+function scheduleFlush(){
+  if(idleTimer) clearTimeout(idleTimer);
+  if(!buffer.trim()){
+    idleTimer = null;
+    return;
+  }
+  idleTimer = setTimeout(flushBuffer, IDLE_MS);
+}
+
+function shouldCaptureScannerKey(e){
+  if(e.ctrlKey || e.altKey || e.metaKey) return false;
+  if(isModalOpen()) return false;
+  if(selectIsFocused) return false;
+
+  const activeEl = document.activeElement;
+  if(activeEl && (
+    activeEl.tagName === 'SELECT' ||
+    activeEl.tagName === 'OPTION' ||
+    activeEl.closest('.settingsPanel') ||
+    activeEl.closest('.planModal')
+  )) return false;
+
+  if(activeEl && (
+    activeEl.tagName === 'INPUT' ||
+    activeEl.tagName === 'TEXTAREA'
+  ) && activeEl !== $scanInput) return false;
+
+  return true;
+}
 
 function ensureFocus(){
   if(isModalOpen()) return;
@@ -1208,22 +1258,36 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 document.addEventListener("keydown", (e)=>{
-  e.preventDefault();
+  if(!shouldCaptureScannerKey(e)) return;
   const k = e.key;
-  if(k==="Enter" || k==="Tab"){ flushBuffer(); return; }
+  if(k==="Enter" || k==="Tab"){
+    e.preventDefault();
+    flushBuffer();
+    return;
+  }
+  if(k==="Escape"){
+    e.preventDefault();
+    clearBuffer();
+    return;
+  }
   if(k.length===1){
-    buffer += k;
-    if(idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(()=>flushBuffer(), IDLE_MS);
-  }else if(k==="Backspace"){ buffer = buffer.slice(0,-1); }
-},{ passive:false });
+    e.preventDefault();
+    buffer += k.replace(/[\r\n]+/g, " ");
+    syncScanInputBuffer();
+    scheduleFlush();
+  }else if(k==="Backspace"){
+    e.preventDefault();
+    buffer = buffer.slice(0,-1);
+    syncScanInputBuffer();
+    scheduleFlush();
+  }
+},{ capture:true, passive:false });
 
 window.addEventListener("load", ()=>{ setTimeout(ensureFocus, 500); });
 
 async function processQR(qrRaw){
   if(!qrRaw || String(qrRaw).length < MIN_QR_LENGTH){
-    buffer = "";
-    if(idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    clearBuffer();
     return;
   }
 
