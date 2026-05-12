@@ -415,10 +415,12 @@
         <div class="scan-input-area">
           <input type="text" class="scan-input" id="scanInput"
                  placeholder="QRリーダーで読み取り"
-                 autocomplete="off"
-                 inputmode="latin"
+                  autocomplete="off"
+                 inputmode="none"
                  autocapitalize="none"
-                 spellcheck="false">
+                 spellcheck="false"
+                 readonly
+                 tabindex="-1">
           <div class="input-hint">QRリーダーでスキャンしてください</div>
         </div>
       </div>
@@ -534,9 +536,11 @@
       <div class="admin-input-group">
         <input type="text" class="admin-input" id="adminInput"
                placeholder="管理者QRを読み取り"
-               inputmode="latin"
+               inputmode="none"
                autocapitalize="none"
-               spellcheck="false">
+               spellcheck="false"
+               readonly
+               tabindex="-1">
       </div>
       <!-- 長押し解除ボタン（holdReleaseEnabled時のみ表示） -->
       <button class="hold-release-btn" id="holdReleaseBtn" style="display:none;"
@@ -571,7 +575,9 @@
   let logsRef = null;
   let scannerBuffer = '';
   let scannerIdleTimer = null;
+  const SCANNER_IDLE_MS = 900;
   let adminBuffer = '';
+  let adminIdleTimer = null;
 
   // ===== 長押し解除 状態 =====
   let holdTimer = null;
@@ -604,7 +610,6 @@
     setupInputListeners();
     initFirebase();
     startScanning(true);
-    setupFocusKeeper();
     setupHoldReleaseBtn();
   });
 
@@ -614,34 +619,18 @@
     document.getElementById('tab-settings').classList.add('scanonly-hide');
   }
 
-  // ========= 常時フォーカス維持 =========
+  // ========= QR入力はdocumentのkeydownで直接受ける =========
   function setupFocusKeeper(){
-    document.addEventListener('pointerdown', () => { requestFocus(); }, { passive: true });
-    document.addEventListener('touchstart',  () => { requestFocus(); }, { passive: true });
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') requestFocus();
-    });
-    setInterval(() => { requestFocus(); }, 150);
+    // 旧方式のフォーカス維持は使わない。
+    // QRリーダー入力はhandleGlobalScannerKeyで直接受ける。
   }
 
   function requestFocus(){
-    if (currentTab !== 'scan') return;
-    if (document.getElementById('resultOverlay').classList.contains('show')) return;
-    const scanInput = document.getElementById('scanInput');
-    if (!scanInput) return;
-    if (document.activeElement === scanInput) return;
-    if (document.activeElement === document.getElementById('adminInput')) return;
-    const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') && active.id !== 'scanInput') return;
-    scanInput.focus({ preventScroll: true });
+    // フォーカスに依存しないため何もしない。
   }
 
   function focusScanInputSoon(){
-    setTimeout(() => {
-      if (currentTab !== 'scan') return;
-      if (document.getElementById('resultOverlay').classList.contains('show')) return;
-      document.getElementById('scanInput')?.focus({ preventScroll: true });
-    }, 20);
+    // フォーカスに依存しないため何もしない。
   }
 
   function normalizeQR(str){
@@ -724,18 +713,7 @@
 
   // ========= 入力リスナー =========
   function setupInputListeners() {
-    const scanInput = document.getElementById('scanInput');
-    const adminInput = document.getElementById('adminInput');
-
     document.addEventListener('keydown', handleGlobalScannerKey, { capture: true });
-
-    scanInput.addEventListener('blur', () => {
-      setTimeout(() => requestFocus(), 30);
-    });
-
-    adminInput.addEventListener('blur', () => {
-      adminBuffer = adminInput.value || adminBuffer;
-    });
   }
 
   function handleGlobalScannerKey(e) {
@@ -744,8 +722,6 @@
     const overlayShown = document.getElementById('resultOverlay').classList.contains('show');
     const active = document.activeElement;
     const isEditable = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
-    const isScanEditable = active?.id === 'scanInput';
-    const isAdminEditable = active?.id === 'adminInput';
 
     if (overlayShown && isNGLocked) {
       handleBufferedAdminKey(e);
@@ -753,7 +729,7 @@
     }
 
     if (currentTab !== 'scan' || overlayShown) return;
-    if (isEditable && !isScanEditable) return;
+    if (isEditable && active?.id !== 'scanInput' && active?.id !== 'adminInput') return;
 
     handleBufferedScanKey(e);
   }
@@ -761,7 +737,7 @@
   function handleBufferedScanKey(e) {
     const scanInput = document.getElementById('scanInput');
 
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
       submitScannerBuffer();
       return;
@@ -792,19 +768,20 @@
   function scheduleScannerSubmit() {
     clearTimeout(scannerIdleTimer);
     if (!scannerBuffer.trim()) return;
-    scannerIdleTimer = setTimeout(submitScannerBuffer, 900);
+    scannerIdleTimer = setTimeout(submitScannerBuffer, SCANNER_IDLE_MS);
   }
 
   function submitScannerBuffer() {
     clearTimeout(scannerIdleTimer);
-    const scanInput = document.getElementById('scanInput');
-    const value = normalizeQR(scannerBuffer || scanInput.value);
+    scannerIdleTimer = null;
+    const value = normalizeQR(scannerBuffer);
     if (value) handleScan(value);
     clearScannerBuffer();
   }
 
   function clearScannerBuffer() {
     clearTimeout(scannerIdleTimer);
+    scannerIdleTimer = null;
     scannerBuffer = '';
     const scanInput = document.getElementById('scanInput');
     if (scanInput) scanInput.value = '';
@@ -813,26 +790,23 @@
   function handleBufferedAdminKey(e) {
     const adminInput = document.getElementById('adminInput');
 
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      const value = normalizeQR(adminBuffer || adminInput.value);
-      if (value) handleAdminScan(value);
-      adminBuffer = '';
-      adminInput.value = '';
+      submitAdminBuffer();
       return;
     }
 
     if (e.key === 'Escape') {
       e.preventDefault();
-      adminBuffer = '';
-      adminInput.value = '';
+      clearAdminBuffer();
       return;
     }
 
     if (e.key === 'Backspace') {
       e.preventDefault();
-      adminBuffer = (adminBuffer || adminInput.value).slice(0, -1);
+      adminBuffer = adminBuffer.slice(0, -1);
       adminInput.value = adminBuffer;
+      scheduleAdminSubmit();
       return;
     }
 
@@ -841,6 +815,29 @@
     e.preventDefault();
     adminBuffer += e.key.replace(/[\r\n]+/g, ' ');
     adminInput.value = adminBuffer;
+    scheduleAdminSubmit();
+  }
+
+  function scheduleAdminSubmit() {
+    clearTimeout(adminIdleTimer);
+    if (!adminBuffer.trim()) return;
+    adminIdleTimer = setTimeout(submitAdminBuffer, SCANNER_IDLE_MS);
+  }
+
+  function submitAdminBuffer() {
+    clearTimeout(adminIdleTimer);
+    adminIdleTimer = null;
+    const value = normalizeQR(adminBuffer);
+    if (value) handleAdminScan(value);
+    clearAdminBuffer();
+  }
+
+  function clearAdminBuffer() {
+    clearTimeout(adminIdleTimer);
+    adminIdleTimer = null;
+    adminBuffer = '';
+    const adminInput = document.getElementById('adminInput');
+    if (adminInput) adminInput.value = '';
   }
 
   function handleScan(decoded) {
@@ -868,7 +865,6 @@
     } else {
       playSound('ng');
       alert('❌ 管理者QRが一致しません');
-      document.getElementById('adminInput').focus();
     }
   }
 
@@ -1323,7 +1319,7 @@
         settings.holdReleaseEnabled ? 'block' : 'none';
       isNGLocked = true;
       playSound('ng');
-      setTimeout(() => document.getElementById('adminInput').focus(), 80);
+      clearAdminBuffer();
     }
   }
 
@@ -1352,7 +1348,7 @@
     document.getElementById('adminArea').style.display = 'block';
     document.getElementById('holdReleaseBtn').style.display =
       settings.holdReleaseEnabled ? 'block' : 'none';
-    setTimeout(() => document.getElementById('adminInput').focus(), 80);
+    clearAdminBuffer();
   }
 
   function updateScanUI() {
