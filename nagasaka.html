@@ -151,6 +151,42 @@ function TapPhoto({src,alt,style,emptyStyle,emptyLabel}){
   );
 }
 
+function NumPadModal({value,onConfirm,onClose,label,color}){
+  const[input,setInput]=React.useState(value!=null&&value!==''?String(value):'');
+  const c=color||'#185FA5';
+  function press(v){
+    if(v==='←'){setInput(s=>s.slice(0,-1));}
+    else if(v==='C'){setInput('');}
+    else{if(input.length>=6)return;setInput(s=>s===''&&v==='0'?'':s+v);}
+  }
+  const keys=[['7','8','9'],['4','5','6'],['1','2','3'],['C','0','←']];
+  return(
+    <div onClick={e=>e.target===e.currentTarget&&onClose()}
+      style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <div style={{background:'#fff',borderRadius:16,overflow:'hidden',width:260,boxShadow:'0 8px 40px rgba(0,0,0,.3)'}}>
+        <div style={{background:c,padding:'12px 16px'}}>
+          <div style={{fontSize:12,color:'rgba(255,255,255,.8)',marginBottom:2}}>{label||'数値入力'}</div>
+          <div style={{fontSize:32,fontWeight:700,color:'#fff',minHeight:40,letterSpacing:2}}>{input||'0'}</div>
+        </div>
+        <div style={{padding:10,display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+          {keys.map((row,ri)=>row.map(k=>(
+            <button key={k} onClick={()=>press(k)}
+              style={{height:56,borderRadius:10,border:'none',fontSize:20,fontWeight:700,
+                background:k==='C'?'#FECACA':k==='←'?'#E0DED8':'#F4F2EC',
+                color:k==='C'?'#B91C1C':k==='←'?'#555':'#111',cursor:'pointer'}}>
+              {k}
+            </button>
+          )))}
+          <button onClick={()=>{onConfirm(input===''?'':Number(input));onClose();}}
+            style={{gridColumn:'1/-1',height:52,borderRadius:10,border:'none',background:c,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',marginTop:2}}>
+            ✓ OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Spinner(){return <div style={{width:36,height:36,border:'3px solid #E0DED8',borderTopColor:'#185FA5',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>;}
 
 function LoadingScreen(){
@@ -1802,6 +1838,7 @@ function ShipScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   const[selectedId,setSelectedId]=useState(null);
   const[showAnomaly,setShowAnomaly]=useState(false);
   const[shipCounts,setShipCounts]=useState({});
+  const[numPadItem,setNumPadItem]=useState(null);
   const scrollRef=useRef(null);
 
   const items=plans.filter(p=>p.line===line).sort((a,b)=>(a.orosiTime||a.kakeTime).localeCompare(b.orosiTime||b.kakeTime));
@@ -1881,9 +1918,10 @@ function ShipScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
                       <td style={TD}>
                         {done
                           ? <span style={{fontWeight:700}}>{item.shipCount??'—'}</span>
-                          : <input type="number" min="0" value={shipCount}
-                              onChange={e=>setShipCounts(s=>({...s,[item.id]:e.target.value}))}
-                              style={{width:52,textAlign:'center',fontSize:12,padding:'2px 4px',borderRadius:4,border:'1px solid #C0BEB5'}}/>
+                          : <button onClick={()=>setNumPadItem(item)}
+                              style={{minWidth:48,padding:'3px 8px',borderRadius:6,border:`1px solid ${lc}`,background:shipCount!==''?lb:'#fff',color:shipCount!==''?lc:'#999',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                              {shipCount!==''?shipCount:'入力'}
+                            </button>
                         }
                       </td>
                       <td style={{...TD,padding:'4px 6px'}}>
@@ -1978,6 +2016,12 @@ function ShipScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
         </div>
       </div>
       {showAnomaly&&<AnomalyModal seiban={selectedItem?.seiban||''} role={role} line={line} types={anomalyTypes} onClose={()=>setShowAnomaly(false)} onDone={()=>setShowAnomaly(false)}/>}
+      {numPadItem&&<NumPadModal
+        value={shipCounts[numPadItem.id]??numPadItem.shipCount??''}
+        label={`出荷数　背番号 ${numPadItem.seiban}`}
+        color={lc}
+        onConfirm={v=>setShipCounts(s=>({...s,[numPadItem.id]:v}))}
+        onClose={()=>setNumPadItem(null)}/>}
     </div>
   );
 }
