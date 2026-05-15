@@ -152,35 +152,70 @@ function TapPhoto({src,alt,style,emptyStyle,emptyLabel}){
 }
 
 function NumPadModal({value,onConfirm,onClose,label,color}){
-  const[input,setInput]=React.useState(value!=null&&value!==''?String(value):'');
+  const[expr,setExpr]=React.useState(value!=null&&value!==''?String(value):'');
   const c=color||'#185FA5';
-  function press(v){
-    if(v==='←'){setInput(s=>s.slice(0,-1));}
-    else if(v==='C'){setInput('');}
-    else{if(input.length>=6)return;setInput(s=>s===''&&v==='0'?'':s+v);}
+  const ops=['+','-','×','÷'];
+  function lastIsOp(){return ops.includes(expr.slice(-1));}
+  function calcResult(e){
+    try{
+      const s=e.replace(/×/g,'*').replace(/÷/g,'/');
+      const r=Function('"use strict";return ('+s+')')();
+      return isFinite(r)?String(Math.round(r*100)/100):'エラー';
+    }catch{return 'エラー';}
   }
-  const keys=[['7','8','9'],['4','5','6'],['1','2','3'],['C','0','←']];
+  function press(v){
+    if(v==='C'){setExpr('');}
+    else if(v==='←'){setExpr(s=>s.slice(0,-1));}
+    else if(v==='='){
+      if(!expr)return;
+      const r=calcResult(expr);
+      setExpr(r==='エラー'?'':r);
+    }
+    else if(ops.includes(v)){
+      if(!expr||lastIsOp())return;
+      setExpr(s=>s+v);
+    }
+    else{
+      if(expr==='エラー'){setExpr(v);return;}
+      setExpr(s=>s+v);
+    }
+  }
+  const display=expr||'0';
+  const keys=[
+    ['C','←','÷','×'],
+    ['7','8','9','-'],
+    ['4','5','6','+'],
+    ['1','2','3','='],
+  ];
+  function btnStyle(k){
+    if(k==='C')return{background:'#FECACA',color:'#B91C1C'};
+    if(k==='←')return{background:'#E0DED8',color:'#555'};
+    if(k==='=')return{background:c,color:'#fff'};
+    if(ops.includes(k))return{background:'#FFF3CD',color:'#7B5800'};
+    return{background:'#F4F2EC',color:'#111'};
+  }
   return(
     <div onClick={e=>e.target===e.currentTarget&&onClose()}
       style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}}>
-      <div style={{background:'#fff',borderRadius:16,overflow:'hidden',width:260,boxShadow:'0 8px 40px rgba(0,0,0,.3)'}}>
+      <div style={{background:'#fff',borderRadius:16,overflow:'hidden',width:280,boxShadow:'0 8px 40px rgba(0,0,0,.3)'}}>
         <div style={{background:c,padding:'12px 16px'}}>
           <div style={{fontSize:12,color:'rgba(255,255,255,.8)',marginBottom:2}}>{label||'数値入力'}</div>
-          <div style={{fontSize:32,fontWeight:700,color:'#fff',minHeight:40,letterSpacing:2}}>{input||'0'}</div>
+          <div style={{fontSize:28,fontWeight:700,color:'#fff',minHeight:38,letterSpacing:1,wordBreak:'break-all'}}>{display}</div>
         </div>
-        <div style={{padding:10,display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-          {keys.map((row,ri)=>row.map(k=>(
+        <div style={{padding:10,display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:7}}>
+          {keys.map(row=>row.map(k=>(
             <button key={k} onClick={()=>press(k)}
-              style={{height:56,borderRadius:10,border:'none',fontSize:20,fontWeight:700,
-                background:k==='C'?'#FECACA':k==='←'?'#E0DED8':'#F4F2EC',
-                color:k==='C'?'#B91C1C':k==='←'?'#555':'#111',cursor:'pointer'}}>
+              style={{height:54,borderRadius:10,border:'none',fontSize:18,fontWeight:700,cursor:'pointer',...btnStyle(k)}}>
               {k}
             </button>
           )))}
-          <button onClick={()=>{onConfirm(input===''?'':Number(input));onClose();}}
-            style={{gridColumn:'1/-1',height:52,borderRadius:10,border:'none',background:c,color:'#fff',fontSize:17,fontWeight:700,cursor:'pointer',marginTop:2}}>
-            ✓ OK
-          </button>
+          <button onClick={()=>press('0')} style={{gridColumn:'span 2',height:54,borderRadius:10,border:'none',fontSize:18,fontWeight:700,background:'#F4F2EC',color:'#111',cursor:'pointer'}}>0</button>
+          <button onClick={()=>{press('=');}} style={{height:54,borderRadius:10,border:'none',fontSize:18,fontWeight:700,...btnStyle('=')}}>＝</button>
+          <button onClick={()=>{
+            const val=expr&&expr!=='エラー'?Number(calcResult(expr)):null;
+            onConfirm(val!=null&&isFinite(val)?Math.round(val):'');
+            onClose();
+          }} style={{height:54,borderRadius:10,border:`2px solid ${c}`,background:'#fff',color:c,fontSize:15,fontWeight:700,cursor:'pointer'}}>OK</button>
         </div>
       </div>
     </div>
