@@ -1793,6 +1793,194 @@ function OrosiScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   );
 }
 
+function ShipScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
+  const role='出荷';
+  const lc=RA[role],lb=RL[role];
+  const{lang,setLang}=useLang();
+  const[saving,setSaving]=useState({});
+  const[sampleChecked,setSampleChecked]=useState({});
+  const[selectedId,setSelectedId]=useState(null);
+  const[showAnomaly,setShowAnomaly]=useState(false);
+  const[shipCounts,setShipCounts]=useState({});
+  const scrollRef=useRef(null);
+
+  const items=plans.filter(p=>p.line===line).sort((a,b)=>(a.orosiTime||a.kakeTime).localeCompare(b.orosiTime||b.kakeTime));
+  const totalDone=items.filter(p=>p.completions?.[role]?.done).length;
+  const pct=items.length?Math.round(totalDone/items.length*100):0;
+  const selectedItem=selectedId?items.find(i=>i.id===selectedId)||null:null;
+  const sm=selectedItem?(master[selectedItem.seiban]||{}):null;
+
+  async function handleComplete(item){
+    if(!sampleChecked[item.id]||saving[item.id])return;
+    setSaving(s=>({...s,[item.id]:true}));
+    const now=new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+    try{
+      const upd={
+        [`completions.${role}`]:{done:true,time:now},
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if(shipCounts[item.id]!=null) upd.shipCount=Number(shipCounts[item.id]);
+      await db.collection('plans').doc(item.id).update(upd);
+      setSampleChecked(s=>({...s,[item.id]:false}));
+      if(selectedId===item.id){
+        const next=items.find(i=>!i.completions?.[role]?.done&&i.id!==item.id);
+        setSelectedId(next?next.id:null);
+      }
+    }finally{setSaving(s=>({...s,[item.id]:false}));}
+  }
+
+  const TH={padding:'5px 6px',fontSize:11,fontWeight:700,color:'#fff',textAlign:'center',background:lc,borderRight:'1px solid rgba(255,255,255,.2)',wordBreak:'break-all',lineHeight:1.3};
+  const TD={padding:'5px 6px',fontSize:11,borderBottom:'1px solid #F0EEE8',textAlign:'center',wordBreak:'break-all',lineHeight:1.3,verticalAlign:'middle'};
+  const labelStyle={fontSize:10,fontWeight:700,color:'#555',marginBottom:2};
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',overflow:'hidden',background:'#F5F4F0'}}>
+      <div style={{background:lc,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+        <button onClick={onBack} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>← 戻る</button>
+        <div style={{fontSize:16,fontWeight:700,color:'#fff',flex:1}}>出荷 {line}ライン</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,.85)'}}>完了 {totalDone}/{items.length}</div>
+        <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{background:lang==='id'?'#fff':'rgba(255,255,255,.18)',border:'2px solid rgba(255,255,255,.5)',borderRadius:8,color:lang==='id'?lc:'#fff',padding:'5px 12px',fontSize:13,fontWeight:700}}>
+          {lang==='ja'?'🇮🇩 ID':'🇯🇵 JP'}
+        </button>
+        <button onClick={()=>setShowAnomaly(true)} style={{background:'rgba(255,255,255,.18)',border:'none',borderRadius:8,color:'#fff',padding:'6px 12px',fontSize:13,fontWeight:700}}>⚠ 異常</button>
+      </div>
+      <div style={{height:6,background:'rgba(0,0,0,.1)',flexShrink:0}}>
+        <div style={{height:'100%',background:'#fff',width:pct+'%',transition:'width .5s',opacity:.7}}/>
+      </div>
+      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+        {/* 左：テーブル */}
+        <div ref={scrollRef} style={{width:'fit-content',maxWidth:'58%',flexShrink:0,overflow:'auto'}}>
+          <div style={{width:'fit-content',minWidth:'100%'}}>
+            <table style={{borderCollapse:'collapse',tableLayout:'fixed',width:'100%'}}>
+              <thead style={{position:'sticky',top:0,zIndex:10}}>
+                <tr>{['降ろし時間','所要時間','背番号','完成品箱数','1個確認','出荷数','操作'].map(h=>(
+                  <th key={h} style={TH}>{h}</th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {items.map(item=>{
+                  const done=item.completions?.[role]?.done;
+                  const isSelected=selectedId===item.id;
+                  const bg=done?'#FDF0F5':isSelected?lb:'#fff';
+                  const shipCount=shipCounts[item.id]??item.shipCount??'';
+                  return(
+                    <tr key={item.id} style={{background:bg,opacity:done?.7:1}}>
+                      <td style={{...TD,fontWeight:700}}>{item.orosiTime||'—'}</td>
+                      <td style={TD}>{item.reqTime||'—'}</td>
+                      <td style={{...TD,fontWeight:700}}>{item.seiban}</td>
+                      <td style={TD}>{item.kanseiBako!=null?item.kanseiBako+'箱':'—'}</td>
+                      <td style={TD}>
+                        {done
+                          ? <span style={{color:lc,fontWeight:700,fontSize:15}}>✔</span>
+                          : <button onClick={()=>setSampleChecked(s=>({...s,[item.id]:!s[item.id]}))}
+                              style={{width:24,height:24,borderRadius:5,border:`2px solid ${sampleChecked[item.id]?lc:'#C0BEB5'}`,background:sampleChecked[item.id]?lc:'#fff',color:'#fff',fontSize:14,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:0,margin:'0 auto'}}>
+                              {sampleChecked[item.id]?'✔':''}
+                            </button>
+                        }
+                      </td>
+                      <td style={TD}>
+                        {done
+                          ? <span style={{fontWeight:700}}>{item.shipCount??'—'}</span>
+                          : <input type="number" min="0" value={shipCount}
+                              onChange={e=>setShipCounts(s=>({...s,[item.id]:e.target.value}))}
+                              style={{width:52,textAlign:'center',fontSize:12,padding:'2px 4px',borderRadius:4,border:'1px solid #C0BEB5'}}/>
+                        }
+                      </td>
+                      <td style={{...TD,padding:'4px 6px'}}>
+                        {done
+                          ? <span style={{color:'#3B6D11',fontSize:11,fontWeight:700}}>完了</span>
+                          : <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                              <button onClick={()=>setSelectedId(isSelected?null:item.id)}
+                                style={{padding:'3px 8px',background:isSelected?'#6B1E3D':'#993556',border:'none',borderRadius:5,fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'nowrap'}}>確認</button>
+                              <button onClick={()=>handleComplete(item)} disabled={!sampleChecked[item.id]||saving[item.id]}
+                                style={{padding:'3px 8px',background:(!sampleChecked[item.id]||saving[item.id])?'#C8E6C9':'#3B6D11',border:'none',borderRadius:5,fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'nowrap',cursor:!sampleChecked[item.id]?'not-allowed':'pointer'}}>
+                                {saving[item.id]?'保存中':'完了'}
+                              </button>
+                            </div>
+                        }
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {/* 右：詳細パネル */}
+        <div style={{flex:1,overflow:'auto',background:'#FAFAF8',borderLeft:'1px solid #E0DED8',padding:8,boxSizing:'border-box',minWidth:0}}>
+          {selectedItem&&sm?(
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              <div style={{fontSize:13,fontWeight:700,color:lc}}>背番号 {selectedItem.seiban}</div>
+              {/* 製品写真 */}
+              <div>
+                <div style={labelStyle}>製品写真</div>
+                <TapPhoto src={sm.imageUrl} alt="製品写真"
+                  style={{width:'100%',maxHeight:140,objectFit:'contain',borderRadius:8,border:'1px solid #E0DED8',background:'#fff',display:'block'}}
+                  emptyStyle={{background:'#F5F4F0',border:'1px solid #E0DED8',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',height:60,color:'#bbb',fontSize:11}}
+                  emptyLabel="製品写真未登録"/>
+              </div>
+              {/* テーキン */}
+              <div>
+                <div style={labelStyle}>テーキン</div>
+                <TapPhoto src={sm.tekinUrl} alt="テーキン"
+                  style={{width:'100%',maxHeight:120,objectFit:'contain',borderRadius:8,border:'1px solid #E0DED8',background:'#fff',display:'block'}}
+                  emptyStyle={{background:'#F5F4F0',border:'1px solid #E0DED8',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',height:50,color:'#bbb',fontSize:11}}
+                  emptyLabel="テーキン未登録"/>
+              </div>
+              {/* 梱包仕様 6枚 */}
+              <div>
+                <div style={labelStyle}>梱包仕様</div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:3}}>
+                  {[1,2,3,4,5,6].map(n=>{
+                    const url=sm[`konpoUrl${n}`];
+                    return <div key={n}>
+                      <TapPhoto src={url} alt={`梱包仕様${n}`}
+                        style={{width:'100%',aspectRatio:'1',objectFit:'contain',borderRadius:4,border:'1px solid #E0DED8',background:'#fff',display:'block'}}
+                        emptyStyle={{aspectRatio:'1',background:'#F5F4F0',border:'1px solid #E0DED8',borderRadius:4,display:'flex',alignItems:'center',justifyContent:'center'}}
+                        emptyLabel={<span style={{fontSize:11,fontWeight:700,color:'#ccc'}}>{'①②③④⑤⑥'[n-1]}</span>}/>
+                    </div>;
+                  })}
+                </div>
+              </div>
+              {/* 注意ポイント①〜④ */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}}>
+                {[
+                  ['注意ポイント①', lang==='id'?(sm.chui1_id||sm.chui1):sm.chui1, sm.chuiImg1],
+                  ['注意ポイント②', lang==='id'?(sm.chui2_id||sm.chui2):sm.chui2, sm.chuiImg2],
+                  ['注意ポイント③', lang==='id'?(sm.chui3_id||sm.chui3):sm.chui3, sm.chuiImg3],
+                  ['注意ポイント④', lang==='id'?(sm.chui4_id||sm.chui4):sm.chui4, sm.chuiImg4],
+                ].map(([label,txt,imgUrl])=>(
+                  <div key={label} style={{background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:6,padding:'5px 7px',overflow:'hidden'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#B91C1C',marginBottom:3}}>{label}</div>
+                    {imgUrl&&<TapPhoto src={imgUrl} alt={label} style={{width:'100%',maxHeight:'12vh',objectFit:'contain',borderRadius:4,border:'1px solid #FECACA',display:'block',background:'#fff',marginBottom:3}}/>}
+                    {txt&&<div style={{fontSize:11,color:'#B91C1C',fontWeight:600,lineHeight:1.4,wordBreak:'break-all'}}>{txt}</div>}
+                    {!txt&&!imgUrl&&<div style={{fontSize:10,color:'#ccc'}}>{lang==='id'?'(Belum terdaftar)':'（未登録）'}</div>}
+                  </div>
+                ))}
+              </div>
+              {/* 1個確認＋完了 */}
+              <button onClick={()=>setSampleChecked(s=>({...s,[selectedItem.id]:!s[selectedItem.id]}))}
+                style={{width:'100%',minHeight:40,borderRadius:8,border:`2px solid ${sampleChecked[selectedItem.id]?lc:'#C0BEB5'}`,background:sampleChecked[selectedItem.id]?lb:'#fff',color:sampleChecked[selectedItem.id]?lc:'#555',fontSize:13,fontWeight:700}}>
+                {sampleChecked[selectedItem.id]?'✔ 1個確認済':'□ 1個確認'}
+              </button>
+              <button onClick={()=>handleComplete(selectedItem)} disabled={!sampleChecked[selectedItem.id]||saving[selectedItem.id]}
+                style={{width:'100%',minHeight:46,borderRadius:10,border:'none',background:(!sampleChecked[selectedItem.id]||saving[selectedItem.id])?'#C8E6C9':'#3B6D11',color:'#fff',fontSize:15,fontWeight:700}}>
+                {saving[selectedItem.id]?'保存中...':'✓ 完了'}
+              </button>
+            </div>
+          ):(
+            <div style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',color:'#ccc',flexDirection:'column',gap:8}}>
+              <div style={{fontSize:32}}>📦</div>
+              <div style={{fontSize:13}}>確認ボタンを押すと詳細が表示されます</div>
+            </div>
+          )}
+        </div>
+      </div>
+      {showAnomaly&&<AnomalyModal seiban={selectedItem?.seiban||''} role={role} line={line} types={anomalyTypes} onClose={()=>setShowAnomaly(false)} onDone={()=>setShowAnomaly(false)}/>}
+    </div>
+  );
+}
+
 function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onBack}){
   const{t}=useLang();
   const a=RA[role],l=RL[role];
@@ -1841,6 +2029,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
   if(role==='製品段取り')return <DantoriScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
   if(role==='掛け')return <TsuriKakeScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
   if(role==='降ろし検査')return <OrosiScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
+  if(role==='出荷')return <ShipScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
 
   return(
     <div className="screen" style={{background:flash?l:'#F1EFE8',transition:'background .35s'}}>
@@ -2295,6 +2484,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const[chui1,setChui1]=useState('');
   const[chui2,setChui2]=useState('');
   const[chui3,setChui3]=useState('');
+  const[chui4,setChui4]=useState('');
   const[savingTK,setSavingTK]=useState(false);
   const[savedTK,setSavedTK]=useState(false);
   const gasProxyUrl='https://dawn-wave-20e6.motsu922.workers.dev';
@@ -2306,6 +2496,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     setChui1(selData?.chui1||'');
     setChui2(selData?.chui2||'');
     setChui3(selData?.chui3||'');
+    setChui4(selData?.chui4||'');
   },[sel,master]);
 
   async function handleSaveQr(){
@@ -2397,6 +2588,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       {field:'chui1', text:chui1.trim()},
       {field:'chui2', text:chui2.trim()},
       {field:'chui3', text:chui3.trim()},
+      {field:'chui4', text:chui4.trim()},
     ].filter(f=>f.text);
     return fields;
   }
@@ -2416,6 +2608,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
         chui1:chui1.trim(),
         chui2:chui2.trim(),
         chui3:chui3.trim(),
+        chui4:chui4.trim(),
       };
       for(const{field,text}of fields){
         setTranslating(s=>({...s,[field]:true}));
@@ -2675,7 +2868,7 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                         {selData?.tsudenMethod_id&&<div style={{marginTop:4,padding:'5px 10px',background:'#E6F1FB',borderRadius:6,fontSize:11,color:'#185FA5'}}>🇮🇩 {selData.tsudenMethod_id}</div>}
                       </div>
                       {/* 注意ポイント①②③（テキスト＋写真） */}
-                      {[['注意ポイント①',chui1,setChui1,'chui1'],['注意ポイント②',chui2,setChui2,'chui2'],['注意ポイント③',chui3,setChui3,'chui3']].map(([label,val,setter,field])=>{
+                      {[['注意ポイント①',chui1,setChui1,'chui1'],['注意ポイント②',chui2,setChui2,'chui2'],['注意ポイント③',chui3,setChui3,'chui3'],['注意ポイント④',chui4,setChui4,'chui4']].map(([label,val,setter,field])=>{
                         const imgField=field.replace('chui','chuiImg');
                         const imgUrl=selData?.[imgField];
                         const uploadingThis=subUploadPct>=0&&subUploadField===imgField;
