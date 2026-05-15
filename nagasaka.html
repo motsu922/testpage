@@ -1945,10 +1945,10 @@ function ShipScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
               {/* 注意ポイント①〜④ */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}}>
                 {[
-                  ['注意ポイント①', lang==='id'?(sm.chui1_id||sm.chui1):sm.chui1, sm.chuiImg1],
-                  ['注意ポイント②', lang==='id'?(sm.chui2_id||sm.chui2):sm.chui2, sm.chuiImg2],
-                  ['注意ポイント③', lang==='id'?(sm.chui3_id||sm.chui3):sm.chui3, sm.chuiImg3],
-                  ['注意ポイント④', lang==='id'?(sm.chui4_id||sm.chui4):sm.chui4, sm.chuiImg4],
+                  ['注意ポイント①', lang==='id'?(sm.shipChui1_id||sm.shipChui1):sm.shipChui1, sm.shipChuiImg1],
+                  ['注意ポイント②', lang==='id'?(sm.shipChui2_id||sm.shipChui2):sm.shipChui2, sm.shipChuiImg2],
+                  ['注意ポイント③', lang==='id'?(sm.shipChui3_id||sm.shipChui3):sm.shipChui3, sm.shipChuiImg3],
+                  ['注意ポイント④', lang==='id'?(sm.shipChui4_id||sm.shipChui4):sm.shipChui4, sm.shipChuiImg4],
                 ].map(([label,txt,imgUrl])=>(
                   <div key={label} style={{background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:6,padding:'5px 7px',overflow:'hidden'}}>
                     <div style={{fontSize:9,fontWeight:700,color:'#B91C1C',marginBottom:3}}>{label}</div>
@@ -2485,6 +2485,12 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const[chui2,setChui2]=useState('');
   const[chui3,setChui3]=useState('');
   const[chui4,setChui4]=useState('');
+  const[shipChui1,setShipChui1]=useState('');
+  const[shipChui2,setShipChui2]=useState('');
+  const[shipChui3,setShipChui3]=useState('');
+  const[shipChui4,setShipChui4]=useState('');
+  const[savingShip,setSavingShip]=useState(false);
+  const[savedShip,setSavedShip]=useState(false);
   const[savingTK,setSavingTK]=useState(false);
   const[savedTK,setSavedTK]=useState(false);
   const gasProxyUrl='https://dawn-wave-20e6.motsu922.workers.dev';
@@ -2497,6 +2503,10 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     setChui2(selData?.chui2||'');
     setChui3(selData?.chui3||'');
     setChui4(selData?.chui4||'');
+    setShipChui1(selData?.shipChui1||'');
+    setShipChui2(selData?.shipChui2||'');
+    setShipChui3(selData?.shipChui3||'');
+    setShipChui4(selData?.shipChui4||'');
   },[sel,master]);
 
   async function handleSaveQr(){
@@ -2626,6 +2636,32 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       setSavingTK(false);
       setTranslating(s=>({...s,__all__:false}));
     }
+  }
+
+  async function handleSaveShipChui(){
+    if(!sel)return;
+    setSavingShip(true);
+    try{
+      const updates={
+        shipChui1:shipChui1.trim(),
+        shipChui2:shipChui2.trim(),
+        shipChui3:shipChui3.trim(),
+        shipChui4:shipChui4.trim(),
+      };
+      const fields=[
+        {field:'shipChui1',text:shipChui1.trim()},
+        {field:'shipChui2',text:shipChui2.trim()},
+        {field:'shipChui3',text:shipChui3.trim()},
+        {field:'shipChui4',text:shipChui4.trim()},
+      ].filter(f=>f.text);
+      for(const{field,text}of fields){
+        try{updates[field+'_id']=await callTranslateAPI(text);}catch(e){}
+      }
+      await db.collection('master').doc(sel).set(updates,{merge:true});
+      setSavedShip(true);
+      setTimeout(()=>setSavedShip(false),3000);
+    }catch(err){alert('保存に失敗: '+err.message);}
+    finally{setSavingShip(false);}
   }
 
   async function handleDeleteImg(){
@@ -2913,6 +2949,59 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                           {savingTK?(translating['__all__']?'翻訳・保存中...':'保存中...'):'吊り掛け設定を保存'}
                         </button>
                         {savedTK&&<span style={{alignSelf:'center',color:'#0F6E56',fontWeight:600,fontSize:13}}>✓ 保存しました</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ===== 出荷注意ポイント ===== */}
+                  <div style={{marginTop:16,paddingTop:14,borderTop:'2px solid #FBEAF0'}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#993556',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{background:'#FBEAF0',borderRadius:6,padding:'2px 8px'}}>📦 出荷注意ポイント</span>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                      {[['注意ポイント①',shipChui1,setShipChui1,'shipChui1'],['注意ポイント②',shipChui2,setShipChui2,'shipChui2'],['注意ポイント③',shipChui3,setShipChui3,'shipChui3'],['注意ポイント④',shipChui4,setShipChui4,'shipChui4']].map(([label,val,setter,field])=>{
+                        const imgField=field.replace('shipChui','shipChuiImg');
+                        const imgUrl=selData?.[imgField];
+                        const uploadingThis=subUploadPct>=0&&subUploadField===imgField;
+                        return(
+                          <div key={label} style={{border:'1px solid #F9A8C9',borderRadius:8,padding:'8px',background:'#FFF0F5'}}>
+                            <div style={{fontSize:11,fontWeight:700,color:'#993556',marginBottom:6}}>{label}</div>
+                            <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                              <div style={{flexShrink:0,width:80}}>
+                                {imgUrl
+                                  ? <div style={{position:'relative'}}>
+                                      <TapPhoto src={imgUrl} alt={label} style={{width:80,height:80,objectFit:'contain',borderRadius:6,border:'1px solid #F9A8C9',display:'block',background:'#fff'}}/>
+                                      <button onClick={()=>handleDeleteSubImg(imgField)}
+                                        style={{position:'absolute',top:-6,right:-6,width:18,height:18,borderRadius:'50%',background:'#E24B4A',border:'none',color:'#fff',fontSize:11,fontWeight:700,lineHeight:'18px',padding:0}}>×</button>
+                                    </div>
+                                  : <div onClick={()=>{if(!uploadingThis){setSubUploadField(imgField);subFileRef.current?.click();}}}
+                                      style={{width:80,height:80,border:'2px dashed #F9A8C9',borderRadius:6,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#fff',cursor:'pointer',gap:2}}>
+                                      {uploadingThis
+                                        ? <div style={{fontSize:13,fontWeight:700,color:'#993556'}}>{subUploadPct}%</div>
+                                        : <><span style={{fontSize:20,color:'#F9A8C9'}}>+</span><span style={{fontSize:9,color:'#ccc'}}>写真</span></>
+                                      }
+                                    </div>
+                                }
+                                <button onClick={()=>{setSubUploadField(imgField);subFileRef.current?.click();}} disabled={uploadingThis}
+                                  style={{marginTop:4,width:'100%',minHeight:24,padding:'0 4px',borderRadius:4,border:'1px solid #F9A8C9',background:'#fff',fontSize:10,color:'#993556'}}>
+                                  {uploadingThis?`${subUploadPct}%`:(imgUrl?'変更':'追加')}
+                                </button>
+                              </div>
+                              <div style={{flex:1}}>
+                                <textarea value={val} onChange={e=>setter(e.target.value)} placeholder={`${label}を入力...`}
+                                  style={{width:'100%',height:80,fontSize:12,resize:'vertical',boxSizing:'border-box',border:'1px solid #F9A8C9',borderRadius:6}}/>
+                                {selData?.[field+'_id']&&<div style={{marginTop:2,padding:'3px 8px',background:'#E6F1FB',borderRadius:4,fontSize:10,color:'#185FA5'}}>🇮🇩 {selData[field+'_id']}</div>}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div style={{display:'flex',gap:8}}>
+                        <button onClick={handleSaveShipChui} disabled={savingShip}
+                          style={{flex:1,minHeight:40,borderRadius:10,border:'none',background:savingShip?'#B4B2A9':'#993556',color:'#fff',fontSize:13,fontWeight:600}}>
+                          {savingShip?'保存中...':'出荷注意ポイントを保存（🌐翻訳も実行）'}
+                        </button>
+                        {savedShip&&<span style={{alignSelf:'center',color:'#993556',fontWeight:600,fontSize:13}}>✓ 保存しました</span>}
                       </div>
                     </div>
                   </div>
