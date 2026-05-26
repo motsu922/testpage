@@ -319,6 +319,7 @@ function HomeScreen({onRole,onAdmin}){
 
 function LineSelectScreen({role,onLine,onBack}){
   const a=RA[role],l=RL[role];
+  const showTotal=role==='製品段取り';
   return(
     <div className="screen">
       <NavBar title={role} onBack={onBack}/>
@@ -333,6 +334,16 @@ function LineSelectScreen({role,onLine,onBack}){
             </button>
           ))}
         </div>
+        {showTotal&&(
+          <div style={{marginTop:16}}>
+            <button onClick={()=>onLine('total')}
+              style={{width:'100%',height:100,fontWeight:700,background:'#E6F1FB',border:`2px solid ${a}`,borderRadius:20,color:a,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}}
+              onTouchStart={e=>{e.currentTarget.style.background=a;e.currentTarget.style.color='#fff';}} onTouchEnd={e=>{e.currentTarget.style.background='#E6F1FB';e.currentTarget.style.color=a;}}>
+              <span style={{fontSize:32,fontWeight:700,lineHeight:1}}>トータル</span>
+              <span style={{fontSize:13,opacity:.8}}>A・B 両ライン</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1491,6 +1502,216 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   );
 }
 
+/* ── トータル段取り画面（A+B両ライン） ── */
+function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
+  const acol='#185FA5',bcol='#534AB7';
+  const{lang,setLang}=useLang();
+  const DID={
+    '← 戻る':'← Kembali','製品段取り トータル':'Persiapan Produk Total','進捗':'Progres','件':'item',
+    '異常':'Kelainan','A ライン':'Jalur A','B ライン':'Jalur B',
+    '掛け時間':'Waktu Pasang','所要時間':'Waktu Proses','背番号':'No. Seri',
+    '素材箱数':'Kotak Bahan','QR照合':'Cek QR','1個確認':'Cek 1 pcs','操作':'Operasi',
+    '✓完了':'✓Selesai','確認':'Konfirmasi','完了':'Selesai',
+    '計画が登録されていません':'Tidak ada rencana yang terdaftar',
+    '製品写真':'Foto Produk','ハンガー情報':'Info Hanger',
+    'ハンガー名称':'Nama Hanger','ハンガー本数':'Jml Hanger',
+    '設定電圧':'Volt Set','空フック':'Kait Kosong','連続本数':'Beruntun',
+    'キャンセル':'Batal','本':'btg','個':'pcs','V':'V',
+    '製品写真未登録':'Foto produk belum terdaftar',
+  };
+  const dt=s=>lang==='id'?(DID[s]??s):s;
+
+  const[saving,setSaving]=useState({});
+  const[sampleChecked,setSampleChecked]=useState({});
+  const[confirmItem,setConfirmItem]=useState(null);
+  const[showAnomaly,setShowAnomaly]=useState(false);
+  const firstIncompleteRef=useRef(null);
+  const scrollRef=useRef(null);
+
+  const itemsA=plans.filter(p=>p.line==='A').sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
+  const itemsB=plans.filter(p=>p.line==='B').sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
+  const rows=mergeTimeline(itemsA,itemsB);
+  const totalAll=plans.length;
+  const totalDone=plans.filter(p=>{const r=p.line==='A'?'段取りA':'段取りB';return p.completions?.[r]?.done;}).length;
+  const pct=totalAll?Math.round(totalDone/totalAll*100):0;
+
+  useEffect(()=>{
+    if(firstIncompleteRef.current&&scrollRef.current){
+      const c=scrollRef.current,r=firstIncompleteRef.current;
+      c.scrollTop=Math.max(0,r.offsetTop-c.offsetTop-8);
+    }
+  },[]);
+
+  async function handleComplete(item){
+    const role=item.line==='A'?'段取りA':'段取りB';
+    if(saving[item.id])return;
+    setSaving(s=>({...s,[item.id]:true}));
+    try{await onComplete(item.id,role,'');}
+    catch(e){alert('保存に失敗: '+e.message);}
+    finally{setSaving(s=>({...s,[item.id]:false}));}
+  }
+
+  const TH={padding:'3px 5px',fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'normal',wordBreak:'break-all',lineHeight:1.3,textAlign:'center',borderRight:'1px solid rgba(255,255,255,.25)'};
+  const DCOLS=['掛け時間','所要時間','背番号','素材箱数','QR照合','1個確認','操作'];
+  const colCount=DCOLS.length;
+
+  function renderSide(item,lc,lb){
+    if(!item)return DCOLS.map((_,i)=><td key={i} style={{padding:'3px 5px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>);
+    const role=item.line==='A'?'段取りA':'段取りB';
+    const isDone=item.completions?.[role]?.done;
+    const isSaving=saving[item.id];
+    const isQRDone=item[`qrCheck_${item.line}`]?.done;
+    const isSampleDone=item[`sampleCheck_${item.line}`]?.done;
+    const isSampleChecked=sampleChecked[item.id];
+    const img=master[item.seiban]?.imageUrl;
+    const bg=isDone?'#F4FAF0':'inherit';
+    const op=isDone?0.65:1;
+    const TD={padding:'3px 5px',fontSize:11,textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op,whiteSpace:'nowrap'};
+    return[
+      <td key="kt" style={{...TD,fontWeight:700}}>{item.kakeTime}</td>,
+      <td key="rt" style={TD}>{item.reqTime||'—'}</td>,
+      <td key="sb" style={{...TD,fontWeight:700,color:lc,fontSize:13,whiteSpace:'normal',wordBreak:'break-all'}}>{item.seiban}</td>,
+      <td key="mb" style={TD}>{item.materialBoxes?item.materialBoxes+(lang==='id'?'':'箱'):'—'}</td>,
+      <td key="qr" style={{...TD,color:isQRDone?'#3B6D11':'#bbb',fontWeight:isQRDone?700:400}}>
+        {isQRDone?<span>✔<br/><span style={{fontSize:9}}>{item[`qrCheck_${item.line}`].time}</span></span>:'—'}
+      </td>,
+      <td key="sc" style={TD}>
+        {isDone
+          ?<span style={{color:lc,fontWeight:700}}>✔</span>
+          :<button onClick={()=>setSampleChecked(s=>({...s,[item.id]:!s[item.id]}))}
+              style={{width:22,height:22,borderRadius:4,border:`2px solid ${isSampleChecked?lc:'#C0BEB5'}`,background:isSampleChecked?lc:'#fff',color:'#fff',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:0,margin:'0 auto'}}>
+              {isSampleChecked?'✔':''}
+            </button>
+        }
+      </td>,
+      <td key="op" style={{...TD,padding:'3px 4px',borderRight:'none'}}>
+        {isDone?(
+          <span style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>{dt('✓完了')}</span>
+        ):(
+          <div style={{display:'flex',flexDirection:'column',gap:3}}>
+            <button onClick={()=>setConfirmItem({item,img,lc,lb})}
+              style={{padding:'3px 6px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:5,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>{dt('確認')}</button>
+            <button onClick={()=>handleComplete(item)} disabled={!isSampleChecked||isSaving}
+              style={{padding:'3px 6px',background:(!isSampleChecked||isSaving)?'#C8C6C0':lc,color:(!isSampleChecked||isSaving)?'#888':'#fff',border:'none',borderRadius:5,fontSize:11,fontWeight:700,whiteSpace:'nowrap',cursor:isSampleChecked?'pointer':'default'}}>
+              {isSaving?'..':dt('完了')}
+            </button>
+          </div>
+        )}
+      </td>,
+    ];
+  }
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100vh',background:'#F1EFE8',overflow:'hidden'}}>
+      <div style={{background:'#fff',borderBottom:'1px solid #E0DED8',padding:'8px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+        <button className="btn-ghost" onClick={onBack} style={{minHeight:40,minWidth:56,fontSize:13}}>{dt('← 戻る')}</button>
+        <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>{dt('製品段取り トータル')}</span>
+        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#888'}}>
+          <span>{dt('進捗')}</span>
+          <div style={{width:100,height:8,background:'#E0DED8',borderRadius:4,overflow:'hidden'}}>
+            <div style={{height:'100%',background:acol,width:pct+'%',transition:'width .5s'}}/>
+          </div>
+          <span style={{fontWeight:600,color:'#111'}}>{totalDone}/{totalAll}{dt('件')}</span>
+        </div>
+        <button onClick={()=>setLang(l=>l==='ja'?'id':'ja')} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #4A90D9',background:lang==='id'?'#4A90D9':'#EBF3FC',color:lang==='id'?'#fff':'#1A5FA0',fontSize:13,fontWeight:700}}>
+          {lang==='ja'?'ID':'JP'}
+        </button>
+        <button onClick={()=>setShowAnomaly(true)} style={{minHeight:40,padding:'0 14px',borderRadius:10,border:'2px solid #E24B4A',background:'#FCEBEB',color:'#A32D2D',fontSize:13,fontWeight:700}}>{dt('異常')}</button>
+      </div>
+
+      <div ref={scrollRef} style={{flex:1,overflow:'auto',padding:'8px'}}>
+        {rows.length===0?(
+          <div style={{textAlign:'center',padding:'64px 0',color:'#aaa'}}>{dt('計画が登録されていません')}</div>
+        ):(
+          <div style={{borderRadius:12,border:'1px solid #E0DED8',background:'#fff',width:'fit-content',minWidth:'100%'}}>
+            <table style={{borderCollapse:'collapse',minWidth:'100%'}}>
+              <thead style={{position:'sticky',top:0,zIndex:10}}>
+                <tr>
+                  <th colSpan={colCount} style={{...TH,background:acol,textAlign:'center',fontSize:13,padding:'5px 8px',borderRadius:'12px 0 0 0'}}>{lang==='id'?'Jalur A':'A ライン'}</th>
+                  <th style={{width:4,background:'#E0DED8',padding:0}}/>
+                  <th colSpan={colCount} style={{...TH,background:bcol,textAlign:'center',fontSize:13,padding:'5px 8px',borderRadius:'0 12px 0 0'}}>{lang==='id'?'Jalur B':'B ライン'}</th>
+                </tr>
+                <tr>
+                  {DCOLS.map(h=><th key={'a-'+h} style={{...TH,background:acol+'EE'}}>{dt(h)}</th>)}
+                  <th style={{width:4,background:'#E0DED8',padding:0}}/>
+                  {DCOLS.map(h=><th key={'b-'+h} style={{...TH,background:bcol+'EE'}}>{dt(h)}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {(()=>{
+                  let foundFirst=false;
+                  return rows.map((row,idx)=>{
+                    const aInc=row.a&&!row.a.completions?.['段取りA']?.done;
+                    const bInc=row.b&&!row.b.completions?.['段取りB']?.done;
+                    const isFirst=!foundFirst&&(aInc||bInc);
+                    if(isFirst)foundFirst=true;
+                    return(
+                      <tr key={idx} ref={isFirst?firstIncompleteRef:null} style={{borderBottom:'1px solid #EEECE6',background:idx%2===0?'#fff':'#FAFAF8'}}>
+                        {renderSide(row.a,acol,'#E6F1FB')}
+                        <td style={{width:4,background:'#E0DED8',padding:0}}/>
+                        {renderSide(row.b,bcol,'#EEEDFE')}
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 確認モーダル：製品写真＋ハンガー情報 */}
+      {confirmItem&&(
+        <div onClick={e=>e.target===e.currentTarget&&setConfirmItem(null)}
+          style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:520,overflow:'hidden',boxShadow:'0 8px 40px rgba(0,0,0,.35)'}}>
+            <div style={{background:confirmItem.lc,padding:'14px 20px'}}>
+              <div style={{fontSize:16,fontWeight:700,color:'#fff'}}>{confirmItem.item.line}ライン　{confirmItem.item.seiban}</div>
+              <div style={{fontSize:12,color:'rgba(255,255,255,.8)',marginTop:2}}>{dt('製品写真')} + {dt('ハンガー情報')}</div>
+            </div>
+            <div style={{padding:16,display:'flex',flexDirection:'column',gap:14,maxHeight:'80vh',overflowY:'auto'}}>
+              {/* 製品写真 */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'#555',marginBottom:6}}>{dt('製品写真')}</div>
+                {confirmItem.img
+                  ?<TapPhoto src={confirmItem.img} alt={dt('製品写真')}
+                      style={{width:'100%',maxHeight:220,objectFit:'contain',borderRadius:10,border:'1px solid #E0DED8',display:'block',background:'#F8F7F4'}}/>
+                  :<div style={{height:120,display:'flex',alignItems:'center',justifyContent:'center',background:'#F8F7F4',borderRadius:10,border:'1px dashed #D0CEC8',color:'#bbb',fontSize:13}}>{dt('製品写真未登録')}</div>
+                }
+              </div>
+              {/* ハンガー情報 */}
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:'#555',marginBottom:8}}>{dt('ハンガー情報')}</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 16px',padding:'12px 14px',background:'#F8F7F4',borderRadius:10}}>
+                  {(()=>{
+                    const m=master[confirmItem.item.seiban]||{};
+                    const it=confirmItem.item;
+                    return[
+                      [dt('ハンガー名称'), m.hangerName||it.hangerName||'—'],
+                      [dt('ハンガー本数'), (m.hangers||it.hangers)?(m.hangers||it.hangers)+dt('本'):'—'],
+                      [dt('設定電圧'), (m.voltage||it.voltage)?(m.voltage||it.voltage)+'V':'—'],
+                      [dt('空フック'), (m.emptyHooks||it.emptyHooks)?(m.emptyHooks||it.emptyHooks)+dt('個'):'—'],
+                      [dt('連続本数'), (m.continuous||it.continuous)?(m.continuous||it.continuous)+dt('本'):'—'],
+                    ].map(([l,v])=>(
+                      <div key={l}><div style={{fontSize:10,color:'#999',marginBottom:2}}>{l}</div><div style={{fontSize:17,fontWeight:700,color:'#111'}}>{v}</div></div>
+                    ));
+                  })()}
+                </div>
+              </div>
+              <button onClick={()=>setConfirmItem(null)}
+                style={{padding:'14px',background:confirmItem.lc,border:'none',borderRadius:12,fontSize:15,fontWeight:700,color:'#fff'}}>
+                {dt('キャンセル')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAnomaly&&<AnomalyModal seiban={''} role='製品段取り' line={null} types={anomalyTypes} onClose={()=>setShowAnomaly(false)} onDone={()=>setShowAnomaly(false)}/>}
+    </div>
+  );
+}
+
 function TsuriKakeScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   const role='掛け';
   const lc=RA[role],lb=RL[role];
@@ -2162,6 +2383,7 @@ function WorkerScreen({role,line,plans,master,anomalyTypes,onComplete,onUndo,onB
 
   if(role==='リフトマン')return <LiftmanScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack}/>;
   if(role==='ハンガー段取り')return <HangerScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack}/>;
+  if(role==='製品段取り'&&line==='total')return <TotalDantoriScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack}/>;
   if(role==='製品段取り')return <DantoriScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
   if(role==='掛け')return <TsuriKakeScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
   if(role==='降ろし検査')return <OrosiScreen plans={plans} master={master} anomalyTypes={anomalyTypes} onComplete={onComplete} onBack={onBack} line={line}/>;
