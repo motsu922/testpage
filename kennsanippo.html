@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -547,6 +549,7 @@
 <div class="andon-toast" id="andonToast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
 <script>
@@ -609,12 +612,28 @@ const andonFirebaseConfig = {
 };
 
 let andonDb;
+let andonAuth;
+let andonAuthReady = Promise.resolve(null);
 let andonUnsubscribeWait = null;
 let andonMasters = null;
 
 try {
   const andonApp = firebase.initializeApp(andonFirebaseConfig, 'andon');
+  andonAuth = firebase.auth(andonApp);
   andonDb = firebase.firestore(andonApp);
+  andonAuthReady = new Promise(resolve => {
+    andonAuth.onAuthStateChanged(user => {
+      if(user && user.isAnonymous) {
+        andonAuth.signOut().catch(() => {});
+        resolve(null);
+        return;
+      }
+      resolve(user || null);
+    }, e => {
+      console.error('アンドンFirebase認証エラー:', e);
+      resolve(null);
+    });
+  });
 } catch (e) {
   console.error('アンドンFirebase初期化エラー:', e);
 }
@@ -974,12 +993,45 @@ function updateAndonHandlerSelect() {
 }
 
 // ===== アンドン機能 =====
-function initAndon() {
+async function initAndon() {
   if(!andonDb) return;
-  fetchAndonMasters();
-  startAndonWaitListener();
   document.getElementById('andonBtnUrgent').addEventListener('click', () => sendAndonCall('urgent'));
   document.getElementById('andonBtnNormal').addEventListener('click', () => sendAndonCall('normal'));
+  const user = await andonAuthReady;
+  if(!user) {
+    document.getElementById('andonWaitMsg').textContent = 'abnreport側のログインが必要です';
+    return;
+  }
+  fetchAndonMasters();
+  startAndonWaitListener();
+}
+
+async function ensureAndonUser() {
+  if(!andonAuth) return null;
+  let user = andonAuth.currentUser || await andonAuthReady;
+  if(user && user.isAnonymous) {
+    await andonAuth.signOut().catch(() => {});
+    user = null;
+  }
+  if(user) return user;
+
+  const email = prompt('abnreport側のメールアドレスを入力してください');
+  if(!email) return null;
+  const password = prompt('abnreport側のパスワードを入力してください');
+  if(password === null) return null;
+
+  try {
+    await andonAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+    const cred = await andonAuth.signInWithEmailAndPassword(email.trim(), password);
+    document.getElementById('andonWaitMsg').textContent = 'アンドン接続済み';
+    fetchAndonMasters();
+    startAndonWaitListener();
+    return cred.user;
+  } catch(e) {
+    console.error('アンドンログインエラー:', e);
+    showAndonToast('abnreportログインに失敗しました: ' + e.message, 'error');
+    return null;
+  }
 }
 
 function populateAndonDatalist(datalistId, opts) {
@@ -1017,6 +1069,7 @@ async function fetchAndonMasters() {
 
 function startAndonWaitListener() {
   if(!andonDb) return;
+  if(andonUnsubscribeWait) return;
   try {
     andonUnsubscribeWait = andonDb.collection('quality_cases')
       .orderBy('createdAt', 'desc')
@@ -1047,6 +1100,9 @@ function startAndonWaitListener() {
 
 async function sendAndonCall(priority) {
   if(!andonDb) { showAndonToast('Firebaseに接続されていません', 'error'); return; }
+
+  const user = await ensureAndonUser();
+  if(!user) { showAndonToast('アンドン認証が完了していません', 'error'); return; }
 
   const dept     = document.getElementById('andonDept').value.trim();
   const lineName = document.getElementById('andonLine').value.trim();
