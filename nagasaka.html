@@ -1531,20 +1531,22 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
     '← 戻る':'← Kembali','製品段取り トータル':'Persiapan Produk Total','進捗':'Progres','件':'item',
     '異常':'Kelainan','A ライン':'Jalur A','B ライン':'Jalur B',
     '掛け時間':'Waktu Pasang','所要時間':'Waktu Proses','背番号':'No. Seri',
-    '素材箱数':'Kotak Bahan','QR照合':'Cek QR','箱数':'Jml Kotak','操作':'Operasi',
+    '素材箱数':'Kotak Bahan','QR照合':'Cek QR','箱数':'Jml Kotak','抜けかんばん':'Kanban Hilang','操作':'Operasi',
     '✓完了':'✓Selesai','確認':'Konfirmasi','完了':'Selesai',
     '計画が登録されていません':'Tidak ada rencana yang terdaftar',
     '製品写真':'Foto Produk','ハンガー情報':'Info Hanger',
     'ハンガー名称':'Nama Hanger','ハンガー本数':'Jml Hanger',
     '設定電圧':'Volt Set','空フック':'Kait Kosong','連続本数':'Beruntun',
-    'キャンセル':'Batal','本':'btg','個':'pcs','V':'V','箱':'kotak',
+    'キャンセル':'Batal','本':'btg','個':'pcs','V':'V','箱':'kotak','枚':'lbr',
     '製品写真未登録':'Foto produk belum terdaftar',
     '箱数を入力してください':'Masukkan jumlah kotak',
+    '抜けかんばんを確認してください':'Konfirmasi kanban hilang',
   };
   const dt=s=>lang==='id'?(DID[s]??s):s;
 
   const[saving,setSaving]=useState({});
-  const[boxCount,setBoxCount]=useState({}); // item.id → 文字列（箱数）
+  const[boxCount,setBoxCount]=useState({});    // item.id → 文字列（箱数）
+  const[kanbanCount,setKanbanCount]=useState({}); // item.id → 文字列（抜けかんばん数）、undefined=未確認
   const[confirmItem,setConfirmItem]=useState(null);
   const[showAnomaly,setShowAnomaly]=useState(false);
   const firstIncompleteRef=useRef(null);
@@ -1564,7 +1566,7 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
     }
   },[]);
 
-  async function handleComplete(item,boxes){
+  async function handleComplete(item,boxes,kanbans){
     const role=item.line==='A'?'段取りA':'段取りB';
     if(saving[item.id])return;
     setSaving(s=>({...s,[item.id]:true}));
@@ -1573,6 +1575,7 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
       await db.collection('plans').doc(item.id).update({
         [`completions.${role}`]:{done:true,time:now},
         totalBoxCount:parseInt(boxes)||0,
+        missingKanban:parseInt(kanbans)||0,
         updatedAt:firebase.firestore.FieldValue.serverTimestamp()
       });
     }
@@ -1581,7 +1584,7 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
   }
 
   const TH={padding:'3px 5px',fontSize:11,fontWeight:700,color:'#fff',whiteSpace:'normal',wordBreak:'break-all',lineHeight:1.3,textAlign:'center',borderRight:'1px solid rgba(255,255,255,.25)'};
-  const DCOLS=['掛け時間','所要時間','背番号','素材箱数','QR照合','箱数','操作'];
+  const DCOLS=['掛け時間','所要時間','背番号','素材箱数','QR照合','箱数','抜けかんばん','操作'];
   const colCount=DCOLS.length;
 
   function renderSide(item,lc,lb){
@@ -1593,11 +1596,15 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
     const cnt=boxCount[item.id]??'';
     const cntNum=parseInt(cnt)||0;
     const hasCount=cntNum>0;
+    const kb=kanbanCount[item.id];          // undefined=未確認, 文字列=確認済み
+    const kbConfirmed=kb!==undefined;
+    const kbNum=parseInt(kb)||0;
     const img=master[item.seiban]?.imageUrl;
     const bg=isDone?'#F4FAF0':'inherit';
     const op=isDone?0.65:1;
     const TD={padding:'3px 5px',fontSize:11,textAlign:'center',verticalAlign:'middle',borderRight:'1px solid #E8E6E0',background:bg,opacity:op,whiteSpace:'nowrap'};
     const adjBox=delta=>setBoxCount(s=>({...s,[item.id]:String(Math.max(0,(parseInt(s[item.id])||0)+delta))}));
+    const adjKb=delta=>setKanbanCount(s=>({...s,[item.id]:String(Math.max(0,(parseInt(s[item.id])||0)+delta))}));
     return[
       <td key="kt" style={{...TD,fontWeight:700}}>{item.kakeTime}</td>,
       <td key="rt" style={TD}>{item.reqTime||'—'}</td>,
@@ -1631,6 +1638,32 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
           </div>
         }
       </td>,
+      <td key="kb" style={{...TD,padding:'2px 3px'}}>
+        {isDone
+          ?<span style={{color:lc,fontWeight:700}}>{item.missingKanban!=null?item.missingKanban+dt('枚'):'✔'}</span>
+          :<div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+            {/* +10/-10 行 */}
+            <div style={{display:'flex',gap:2}}>
+              <button onPointerDown={e=>{e.preventDefault();adjKb(-10);}}
+                style={{flex:1,height:22,borderRadius:4,border:'1px solid #C0BEB5',background:'#EAE8E0',fontSize:10,fontWeight:700,padding:'0 2px',color:'#555'}}>−10</button>
+              <button onPointerDown={e=>{e.preventDefault();adjKb(10);}}
+                style={{flex:1,height:22,borderRadius:4,border:'1px solid #C0BEB5',background:'#EAE8E0',fontSize:10,fontWeight:700,padding:'0 2px',color:'#555'}}>＋10</button>
+            </div>
+            {/* ±1 + 入力 */}
+            <div style={{display:'flex',alignItems:'center',gap:2}}>
+              <button onPointerDown={e=>{e.preventDefault();adjKb(-1);}}
+                style={{width:20,height:26,borderRadius:4,border:'1px solid #C0BEB5',background:'#F0EEE8',fontSize:14,fontWeight:700,padding:0,lineHeight:1,color:'#555',flexShrink:0}}>－</button>
+              <input type="number" min="0" inputMode="numeric" pattern="[0-9]*"
+                value={kb??''}
+                onChange={e=>setKanbanCount(s=>({...s,[item.id]:e.target.value.replace(/[^0-9]/,'')}))}
+                placeholder="0"
+                style={{width:36,textAlign:'center',fontSize:13,fontWeight:700,border:`1.5px solid ${kbConfirmed?'#E07B00':'#C0BEB5'}`,borderRadius:4,padding:'2px 0',color:kbConfirmed?'#C05A00':'#888',MozAppearance:'textfield'}}/>
+              <button onPointerDown={e=>{e.preventDefault();adjKb(1);}}
+                style={{width:20,height:26,borderRadius:4,border:'1px solid #C0BEB5',background:'#F0EEE8',fontSize:14,fontWeight:700,padding:0,lineHeight:1,color:'#555',flexShrink:0}}>＋</button>
+            </div>
+          </div>
+        }
+      </td>,
       <td key="op" style={{...TD,padding:'3px 4px',borderRight:'none'}}>
         {isDone?(
           <span style={{fontSize:11,fontWeight:700,color:'#3B6D11'}}>{dt('✓完了')}</span>
@@ -1638,9 +1671,9 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
           <div style={{display:'flex',flexDirection:'column',gap:3}}>
             <button onClick={()=>setConfirmItem({item,img,lc,lb})}
               style={{padding:'3px 6px',background:lb,color:lc,border:`1.5px solid ${lc}`,borderRadius:5,fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>{dt('確認')}</button>
-            <button onClick={()=>handleComplete(item,cnt)} disabled={!hasCount||isSaving}
-              title={!hasCount?dt('箱数を入力してください'):''}
-              style={{padding:'3px 6px',background:(!hasCount||isSaving)?'#C8C6C0':lc,color:(!hasCount||isSaving)?'#888':'#fff',border:'none',borderRadius:5,fontSize:11,fontWeight:700,whiteSpace:'nowrap',cursor:hasCount?'pointer':'not-allowed'}}>
+            <button onClick={()=>handleComplete(item,cnt,kb??'0')} disabled={!hasCount||!kbConfirmed||isSaving}
+              title={!hasCount?dt('箱数を入力してください'):!kbConfirmed?dt('抜けかんばんを確認してください'):''}
+              style={{padding:'3px 6px',background:(!hasCount||!kbConfirmed||isSaving)?'#C8C6C0':lc,color:(!hasCount||!kbConfirmed||isSaving)?'#888':'#fff',border:'none',borderRadius:5,fontSize:11,fontWeight:700,whiteSpace:'nowrap',cursor:(hasCount&&kbConfirmed)?'pointer':'not-allowed'}}>
               {isSaving?'..':dt('完了')}
             </button>
           </div>
