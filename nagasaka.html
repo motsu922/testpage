@@ -1237,6 +1237,7 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
     'スキャン待機中...':'Menunggu scan...',
     '照合OK — QR照合チェック完了':'Cek OK — QR sesuai','照合NG — 再スキャンしてください':'Cek NG — Harap scan ulang',
     '✔ QR照合済':'✔ QR OK','✔ 1個確認済':'✔ 1 pcs OK','🔍 1個確認する →':'🔍 Cek 1 pcs →',
+    'QR Skip':'QR Skip','QRをスキップしました':'QR di-skip','スキップ':'Skip',
     '左の「確認」ボタンを押してください':'Tekan tombol "Konfirmasi" di kiri',
     '製品写真未登録':'Foto produk belum terdaftar','写真未登録':'Foto belum terdaftar',
     '1個確認':'Cek 1 pcs','キャンセル':'Batal','確認済み':'Sudah dikonfirmasi',
@@ -1246,6 +1247,7 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
   const dt=s=>lang==='id'?(DID[s]??s):s;
   const[saving,setSaving]=useState({});
   const[qrSaving,setQrSaving]=useState({});
+  const[qrSkipSaving,setQrSkipSaving]=useState({});
   const[sampleSaving,setSampleSaving]=useState({});
   const[selectedItem,setSelectedItem]=useState(null);
   const[qrInput,setQrInput]=useState('');
@@ -1299,6 +1301,20 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
       setTimeout(()=>setShowSampleConfirm(true),400);
     }catch(e){alert('保存に失敗: '+e.message);}
     finally{setQrSaving(s=>({...s,[selectedItem.id]:false}));}
+  }
+
+  async function handleQRSkip(){
+    if(!selectedItem||qrSkipSaving[selectedItem.id])return;
+    setQrSkipSaving(s=>({...s,[selectedItem.id]:true}));
+    try{
+      const now=new Date().toTimeString().slice(0,5);
+      await db.collection('plans').doc(selectedItem.id).update({
+        [`qrCheck_${line}`]:{done:true,skipped:true,time:now},
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      });
+      setTimeout(()=>setShowSampleConfirm(true),300);
+    }catch(e){alert('保存に失敗: '+e.message);}
+    finally{setQrSkipSaving(s=>({...s,[selectedItem.id]:false}));}
   }
 
   async function handleSampleConfirm(){
@@ -1384,8 +1400,8 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
                         <td style={TD}>{item.reqTime}</td>
                         <td style={{...TD,fontWeight:700,color:lc,fontSize:14}}>{item.seiban}</td>
                         <td style={TD}>{item.materialBoxes||'—'}</td>
-                        <td style={{...TD,color:isQRDone?'#3B6D11':'#bbb',fontWeight:isQRDone?700:400}}>
-                          {isQRDone?<span>✔<br/><span style={{fontSize:10}}>{item[`qrCheck_${line}`].time}</span></span>:'—'}
+                        <td style={{...TD,color:isQRDone?item[`qrCheck_${line}`]?.skipped?'#999':'#3B6D11':'#bbb',fontWeight:isQRDone?700:400}}>
+                          {isQRDone?<span>{item[`qrCheck_${line}`]?.skipped?'Skip':'✔'}<br/><span style={{fontSize:10}}>{item[`qrCheck_${line}`].time}</span></span>:'—'}
                         </td>
                         <td style={{...TD,color:isSampleDone?'#3B6D11':'#bbb',fontWeight:isSampleDone?700:400}}>
                           {isSampleDone?<span>✔<br/><span style={{fontSize:10}}>{item[`sampleCheck_${line}`].time}</span></span>:'—'}
@@ -1437,49 +1453,63 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
               {/* QRスキャンエリア */}
               <div style={{flex:1,background:'#fff',borderRadius:12,border:'1px solid #E0DED8',padding:'12px 16px',display:'flex',flexDirection:'column',gap:10,overflow:'auto'}}>
                 <div style={{fontSize:13,fontWeight:700,color:'#333'}}>{dt('QRスキャン')}</div>
-                {/* 隠し入力 - ハンディスキャナー専用（仮想キーボード非表示） */}
-                <input ref={qrRef} value={qrInput}
-                  onChange={e=>{setQrInput(e.target.value);setQrResult(null);}}
-                  onKeyDown={handleQRScan}
-                  onBlur={()=>{if(selectedItem&&!showSampleConfirm&&!showAnomaly)setTimeout(()=>qrRef.current?.focus(),50);}}
-                  inputMode="none"
-                  style={{position:'fixed',top:-9999,left:-9999,opacity:0,width:1,height:1}}/>
-                {/* スキャン状態表示 */}
-                <div style={{width:'100%',fontSize:13,padding:'8px 12px',borderRadius:8,border:`2px solid ${qrResult==='ok'?'#3B6D11':qrResult==='ng'?'#D32F2F':'#CBD3DC'}`,boxSizing:'border-box',background:qrInput?'#F0F7FF':'#F8F7F3',display:'flex',alignItems:'center',gap:8,minHeight:38}}>
-                  <span style={{fontSize:16}}>{qrResult==='ok'?'✅':qrResult==='ng'?'❌':qrInput?'⌛':'📷'}</span>
-                  <span style={{flex:1,fontFamily:'monospace',color:qrInput?'#111':'#aaa',wordBreak:'break-all'}}>
-                    {qrInput||dt('スキャン待機中...')}
-                  </span>
-                </div>
-                {qrResult==='ok'&&(
-                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#F4FAF0',borderRadius:8,border:'1.5px solid #3B6D11'}}>
-                    <span style={{fontSize:18}}>✅</span>
-                    <span style={{fontWeight:700,color:'#3B6D11',fontSize:13}}>{dt('照合OK — QR照合チェック完了')}</span>
+                {currentSelected[`qrCheck_${line}`]?.done?(
+                  /* QR済み（スキャン or スキップ） */
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {currentSelected[`qrCheck_${line}`]?.skipped?(
+                      <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#F8F7F3',borderRadius:8,border:'1.5px solid #C0BEB5'}}>
+                        <span style={{fontSize:18}}>⏭️</span>
+                        <span style={{fontWeight:700,color:'#888',fontSize:13}}>{dt('QRをスキップしました')}</span>
+                        <span style={{color:'#aaa',fontSize:11,marginLeft:'auto'}}>{currentSelected[`qrCheck_${line}`].time}</span>
+                      </div>
+                    ):(
+                      <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#F4FAF0',borderRadius:8,border:'1.5px solid #3B6D11'}}>
+                        <span style={{fontSize:18}}>✅</span>
+                        <span style={{fontWeight:700,color:'#3B6D11',fontSize:13}}>{dt('✔ QR照合済')}</span>
+                        <span style={{color:'#888',fontSize:11,marginLeft:'auto'}}>{currentSelected[`qrCheck_${line}`].time}</span>
+                      </div>
+                    )}
+                    {currentSelected[`sampleCheck_${line}`]?.done&&(
+                      <div style={{fontSize:12,color:'#3B6D11',display:'flex',alignItems:'center',gap:6}}>
+                        <span>{dt('✔ 1個確認済')}</span><span style={{color:'#888'}}>{currentSelected[`sampleCheck_${line}`].time}</span>
+                      </div>
+                    )}
+                    {!currentSelected[`sampleCheck_${line}`]?.done&&(
+                      <button onClick={()=>setShowSampleConfirm(true)}
+                        style={{padding:'10px',background:'#185FA5',color:'#fff',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>
+                        {dt('🔍 1個確認する →')}
+                      </button>
+                    )}
                   </div>
-                )}
-                {qrResult==='ng'&&(
-                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#FFF0F0',borderRadius:8,border:'1.5px solid #D32F2F'}}>
-                    <span style={{fontSize:18}}>❌</span>
-                    <span style={{fontWeight:700,color:'#D32F2F',fontSize:13}}>{dt('照合NG — 再スキャンしてください')}</span>
-                  </div>
-                )}
-                <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                  {currentSelected[`qrCheck_${line}`]?.done&&(
-                    <div style={{fontSize:12,color:'#3B6D11',display:'flex',alignItems:'center',gap:6}}>
-                      <span>{dt('✔ QR照合済')}</span><span style={{color:'#888'}}>{currentSelected[`qrCheck_${line}`].time}</span>
+                ):(
+                  /* QR未照合 - スキャン入力 + Skipボタン */
+                  <>
+                    {/* 隠し入力 - ハンディスキャナー専用（仮想キーボード非表示） */}
+                    <input ref={qrRef} value={qrInput}
+                      onChange={e=>{setQrInput(e.target.value);setQrResult(null);}}
+                      onKeyDown={handleQRScan}
+                      onBlur={()=>{if(selectedItem&&!showSampleConfirm&&!showAnomaly)setTimeout(()=>qrRef.current?.focus(),50);}}
+                      inputMode="none"
+                      style={{position:'fixed',top:-9999,left:-9999,opacity:0,width:1,height:1}}/>
+                    {/* スキャン状態表示 */}
+                    <div style={{width:'100%',fontSize:13,padding:'8px 12px',borderRadius:8,border:`2px solid ${qrResult==='ok'?'#3B6D11':qrResult==='ng'?'#D32F2F':'#CBD3DC'}`,boxSizing:'border-box',background:qrInput?'#F0F7FF':'#F8F7F3',display:'flex',alignItems:'center',gap:8,minHeight:38}}>
+                      <span style={{fontSize:16}}>{qrResult==='ok'?'✅':qrResult==='ng'?'❌':qrInput?'⌛':'📷'}</span>
+                      <span style={{flex:1,fontFamily:'monospace',color:qrInput?'#111':'#aaa',wordBreak:'break-all'}}>
+                        {qrInput||dt('スキャン待機中...')}
+                      </span>
                     </div>
-                  )}
-                  {currentSelected[`sampleCheck_${line}`]?.done&&(
-                    <div style={{fontSize:12,color:'#3B6D11',display:'flex',alignItems:'center',gap:6}}>
-                      <span>{dt('✔ 1個確認済')}</span><span style={{color:'#888'}}>{currentSelected[`sampleCheck_${line}`].time}</span>
-                    </div>
-                  )}
-                </div>
-                {currentSelected[`qrCheck_${line}`]?.done&&!currentSelected[`sampleCheck_${line}`]?.done&&(
-                  <button onClick={()=>setShowSampleConfirm(true)}
-                    style={{padding:'10px',background:'#185FA5',color:'#fff',border:'none',borderRadius:10,fontSize:13,fontWeight:700,cursor:'pointer'}}>
-                    {dt('🔍 1個確認する →')}
-                  </button>
+                    {qrResult==='ng'&&(
+                      <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',background:'#FFF0F0',borderRadius:8,border:'1.5px solid #D32F2F'}}>
+                        <span style={{fontSize:18}}>❌</span>
+                        <span style={{fontWeight:700,color:'#D32F2F',fontSize:13}}>{dt('照合NG — 再スキャンしてください')}</span>
+                      </div>
+                    )}
+                    {/* Skip ボタン */}
+                    <button onClick={handleQRSkip} disabled={qrSkipSaving[selectedItem?.id]}
+                      style={{width:'100%',padding:'9px',background:qrSkipSaving[selectedItem?.id]?'#C8C6C0':'#F8F7F3',border:'1.5px solid #C0BEB5',borderRadius:10,fontSize:13,fontWeight:700,color:'#888',cursor:'pointer'}}>
+                      {qrSkipSaving[selectedItem?.id]?'...':dt('スキップ')} QR Skip
+                    </button>
+                  </>
                 )}
               </div>
             </>
