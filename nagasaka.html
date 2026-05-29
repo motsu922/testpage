@@ -1319,16 +1319,28 @@ function DantoriScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
 
   async function handleSampleConfirm(){
     if(!currentSelected)return;
-    setSampleSaving(s=>({...s,[currentSelected.id]:true}));
+    const doneId=currentSelected.id;
+    setSampleSaving(s=>({...s,[doneId]:true}));
     try{
       const now=new Date().toTimeString().slice(0,5);
-      await db.collection('plans').doc(currentSelected.id).update({
+      await db.collection('plans').doc(doneId).update({
         [`sampleCheck_${line}`]:{done:true,time:now},
         updatedAt:firebase.firestore.FieldValue.serverTimestamp()
       });
       setShowSampleConfirm(false);
+      setQrInput('');
+      setQrResult(null);
+      // QR＆1個確認がまだ済んでいない次のアイテムへ自動移動
+      const currentIdx=items.findIndex(i=>i.id===doneId);
+      const candidates=items.filter(i=>
+        i.id!==doneId&&
+        !i.completions?.[role]?.done&&
+        !(i[`qrCheck_${line}`]?.done&&i[`sampleCheck_${line}`]?.done)
+      );
+      const nextItem=candidates.find(i=>items.indexOf(i)>currentIdx)||candidates[0]||null;
+      setTimeout(()=>setSelectedItem(nextItem),300);
     }catch(e){alert('保存に失敗: '+e.message);}
-    finally{setSampleSaving(s=>({...s,[currentSelected.id]:false}));}
+    finally{setSampleSaving(s=>({...s,[doneId]:false}));}
   }
 
   async function handleComplete(item){
