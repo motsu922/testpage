@@ -1602,7 +1602,7 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
   const itemsB=plans.filter(p=>p.line==='B').sort((x,y)=>x.kakeTime.localeCompare(y.kakeTime));
   const rows=mergeTimeline(itemsA,itemsB);
   const totalAll=plans.length;
-  const totalDone=plans.filter(p=>{const r=p.line==='A'?'段取りA':'段取りB';return p.completions?.[r]?.done;}).length;
+  const totalDone=plans.filter(p=>p.completions?.['段取りトータル']?.done).length;
   const pct=totalAll?Math.round(totalDone/totalAll*100):0;
 
   useEffect(()=>{
@@ -1613,13 +1613,12 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
   },[]);
 
   async function handleComplete(item,boxes,kanbans){
-    const role=item.line==='A'?'段取りA':'段取りB';
     if(saving[item.id])return;
     setSaving(s=>({...s,[item.id]:true}));
     try{
       const now=new Date().toTimeString().slice(0,5);
       await db.collection('plans').doc(item.id).update({
-        [`completions.${role}`]:{done:true,time:now},
+        'completions.段取りトータル':{done:true,time:now},
         totalBoxCount:parseInt(boxes)||0,
         missingKanban:kanbans==='skip'?null:(parseInt(kanbans)||0),
         missingKanbanSkipped:kanbans==='skip',
@@ -1636,8 +1635,7 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
 
   function renderSide(item,lc,lb){
     if(!item)return DCOLS.map((_,i)=><td key={i} style={{padding:'3px 5px',borderRight:'1px solid #E8E6E0',background:'#F8F8F8'}}/>);
-    const role=item.line==='A'?'段取りA':'段取りB';
-    const isDone=item.completions?.[role]?.done;
+    const isDone=item.completions?.['段取りトータル']?.done;
     const isSaving=saving[item.id];
     const isQRDone=item[`qrCheck_${item.line}`]?.done;
     const cnt=boxCount[item.id]??'';
@@ -1786,8 +1784,8 @@ function TotalDantoriScreen({plans,master,anomalyTypes,onComplete,onBack}){
                 {(()=>{
                   let foundFirst=false;
                   return rows.map((row,idx)=>{
-                    const aInc=row.a&&!row.a.completions?.['段取りA']?.done;
-                    const bInc=row.b&&!row.b.completions?.['段取りB']?.done;
+                    const aInc=row.a&&!row.a.completions?.['段取りトータル']?.done;
+                    const bInc=row.b&&!row.b.completions?.['段取りトータル']?.done;
                     const isFirst=!foundFirst&&(aInc||bInc);
                     if(isFirst)foundFirst=true;
                     return(
