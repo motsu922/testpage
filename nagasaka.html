@@ -63,6 +63,11 @@ const ROLES=["リフトマン","製品段取り","ハンガー段取り","掛け
 const RS={"リフトマン":"リフ","製品段取り":"製品","ハンガー段取り":"ハン","掛け":"掛け","降ろし検査":"降ろ","出荷":"出荷"};
 const RA={"リフトマン":"#5F5E5A","製品段取り":"#185FA5","ハンガー段取り":"#534AB7","掛け":"#0F6E56","降ろし検査":"#BA7517","出荷":"#993556"};
 const RL={"リフトマン":"#F1EFE8","製品段取り":"#E6F1FB","ハンガー段取り":"#EEEDFE","掛け":"#E1F5EE","降ろし検査":"#FAEEDA","出荷":"#FBEAF0"};
+// 製品段取りは段取りA/Bの完了を経て段取りトータルに集約されるため、進捗表示時はそちらを参照する
+function roleCompletion(item,role){
+  const key=role==='製品段取り'?'段取りトータル':role;
+  return item&&item.completions?item.completions[key]:undefined;
+}
 
 function toHHMM(s){
   if(!s)return'';
@@ -2866,7 +2871,7 @@ function PlanSpreadsheet({plans,master}){
               </thead>
               <tbody>
                 {items.map((item,idx)=>{
-                  const doneRoles=SHEET_ROLES.filter(r=>item.completions?.[r]?.done);
+                  const doneRoles=SHEET_ROLES.filter(r=>roleCompletion(item,r)?.done);
                   const allDone=doneRoles.length===SHEET_ROLES.length;
                   const rowBg=allDone?'#F4FAF0':idx%2===0?'#fff':'#FAFAF8';
                   return(
@@ -2880,8 +2885,8 @@ function PlanSpreadsheet({plans,master}){
                       <td style={TD}>
                         <div style={{display:'flex',gap:4,alignItems:'center'}}>
                           {SHEET_ROLES.map(r=>{
-                            const done=item.completions?.[r]?.done;
-                            const time=item.completions?.[r]?.time;
+                            const done=roleCompletion(item,r)?.done;
+                            const time=roleCompletion(item,r)?.time;
                             return(
                               <div key={r} title={r+(time?' ('+time+')':'')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:1}}>
                                 <div style={{width:20,height:20,borderRadius:4,background:done?'#3B6D11':'#E0DED8',display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -3012,7 +3017,7 @@ function AdminProgress({plans}){
   const isHistory=histDate!==TODAY;
   const now=new Date().toTimeString().slice(0,5);
   const sorted=[...displayPlans].sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime)||a.line.localeCompare(b.line));
-  const ad=p=>ROLES.every(r=>p.completions?.[r]?.done);
+  const ad=p=>ROLES.every(r=>roleCompletion(p,r)?.done);
   const dl=p=>!isHistory&&p.kakeTime<now&&!ad(p);
   return(
     <div>
@@ -3025,7 +3030,7 @@ function AdminProgress({plans}){
         {histLoading&&<span style={{fontSize:12,color:'#888'}}>読み込み中...</span>}
       </div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:20}}>
-        {[{l:'全体',v:plans.length,c:'#111'},{l:'完了',v:plans.filter(ad).length,c:'#3B6D11'},{l:'進行中',v:plans.filter(p=>ROLES.some(r=>p.completions?.[r]?.done)&&!ad(p)).length,c:'#BA7517'},{l:'遅延',v:plans.filter(dl).length,c:'#993556'}].map(s=>(
+        {[{l:'全体',v:plans.length,c:'#111'},{l:'完了',v:plans.filter(ad).length,c:'#3B6D11'},{l:'進行中',v:plans.filter(p=>ROLES.some(r=>roleCompletion(p,r)?.done)&&!ad(p)).length,c:'#BA7517'},{l:'遅延',v:plans.filter(dl).length,c:'#993556'}].map(s=>(
           <div key={s.l} style={{background:'#fff',borderRadius:16,padding:'20px 12px',textAlign:'center',border:'1px solid #E0DED8'}}>
             <div style={{fontSize:13,color:'#888',marginBottom:8,fontWeight:500}}>{s.l}</div>
             <div style={{fontSize:40,fontWeight:700,color:s.c}}>{s.v}</div>
@@ -3052,7 +3057,7 @@ function AdminProgress({plans}){
                 <td style={{padding:'12px 12px',color:'#555',fontSize:14}}>{item.kakeTime}</td>
                 <td style={{padding:'12px 12px',color:'#555',fontSize:14}}>{item.orosiTime||'—'}</td>
                 <td style={{padding:'12px 12px',color:'#555',fontSize:14,textAlign:'right'}}>{item.products?item.products.toLocaleString():'—'}</td>
-                {ROLES.map(r=><td key={r} style={{padding:'12px 8px',textAlign:'center'}}>{item.completions?.[r]?.done?<span style={{color:'#3B6D11',fontWeight:700,fontSize:18}}>○</span>:<span style={{color:'#DDD',fontSize:20}}>·</span>}</td>)}
+                {ROLES.map(r=><td key={r} style={{padding:'12px 8px',textAlign:'center'}}>{roleCompletion(item,r)?.done?<span style={{color:'#3B6D11',fontWeight:700,fontSize:18}}>○</span>:<span style={{color:'#DDD',fontSize:20}}>·</span>}</td>)}
                 <td style={{padding:'12px 8px',textAlign:'center'}}>
                   {ad(item)?<span style={{fontSize:11,padding:'3px 7px',borderRadius:6,fontWeight:600,background:'#C0DD97',color:'#27500A'}}>完了</span>
                     :dl(item)?<span style={{fontSize:11,padding:'3px 7px',borderRadius:6,fontWeight:600,background:'#F09595',color:'#501313'}}>遅延</span>
