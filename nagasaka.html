@@ -3002,44 +3002,18 @@ function AdminRegister({plans,master,onRegister}){
 
 function AdminProgress({plans}){
   const[editPlan,setEditPlan]=useState(null);
-  const[histDate,setHistDate]=useState(TODAY);
-  const[histPlans,setHistPlans]=useState(null);
-  const[histLoading,setHistLoading]=useState(false);
   async function deletePlan(planId){
     if(!window.confirm('この計画を削除しますか？完了済みの工程情報も削除されます。'))return;
     try{await db.collection('plans').doc(planId).delete();}
     catch(e){alert('削除失敗: '+e.message);}
   }
-
-  async function loadHistory(date){
-    if(date===TODAY){setHistPlans(null);return;}
-    setHistLoading(true);
-    try{
-      const snap=await db.collection('plans').where('date','==',date).get();
-      const p=[];snap.forEach(doc=>p.push({id:doc.id,...doc.data()}));
-      p.sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime)||a.line.localeCompare(b.line));
-      setHistPlans(p);
-    }catch(e){alert('読み込み失敗: '+e.message);}
-    finally{setHistLoading(false);}
-  }
-  function handleDateChange(d){setHistDate(d);loadHistory(d);}
-  const displayPlans=histPlans!==null?histPlans:plans;
-  const isHistory=histDate!==TODAY;
   const now=new Date().toTimeString().slice(0,5);
-  const sorted=[...displayPlans].sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime)||a.line.localeCompare(b.line));
+  const sorted=[...plans].sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime)||a.line.localeCompare(b.line));
   const ad=p=>ROLES.every(r=>roleCompletion(p,r)?.done);
   const orosiDone=p=>!!roleCompletion(p,'降ろし検査')?.done;
-  const dl=p=>!isHistory&&!orosiDone(p)&&!!p.orosiTime&&p.orosiTime<now;
+  const dl=p=>!orosiDone(p)&&!!p.orosiTime&&p.orosiTime<now;
   return(
     <div>
-      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
-        <div style={{fontSize:13,color:'#888',fontWeight:500,whiteSpace:'nowrap'}}>日付：</div>
-        <input type="date" value={histDate} onChange={e=>handleDateChange(e.target.value)}
-          style={{fontSize:14,padding:'8px 12px',borderRadius:10,width:'auto',flex:'none'}}/>
-        {isHistory&&<span style={{fontSize:12,padding:'4px 10px',borderRadius:8,background:'#FAEEDA',color:'#854F0B',fontWeight:600}}>過去実績</span>}
-        {isHistory&&<button onClick={()=>handleDateChange(TODAY)} style={{fontSize:12,padding:'6px 14px',borderRadius:8,border:'1px solid #C0BEB5',background:'#fff',color:'#555'}}>今日に戻る</button>}
-        {histLoading&&<span style={{fontSize:12,color:'#888'}}>読み込み中...</span>}
-      </div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:20}}>
         {[{l:'全体',v:plans.length,c:'#111'},{l:'完了',v:plans.filter(ad).length,c:'#3B6D11'},{l:'進行中',v:plans.filter(p=>!ad(p)&&!dl(p)).length,c:'#BA7517'},{l:'遅延',v:plans.filter(dl).length,c:'#993556'}].map(s=>(
           <div key={s.l} style={{background:'#fff',borderRadius:16,padding:'20px 12px',textAlign:'center',border:'1px solid #E0DED8'}}>
@@ -3101,6 +3075,175 @@ function AdminProgress({plans}){
   );
 }
 
+function HistoryScreen(){
+  const[fromDate,setFromDate]=useState(TODAY);
+  const[toDate,setToDate]=useState(TODAY);
+  const[lineFilter,setLineFilter]=useState('all');
+  const[plans,setPlans]=useState([]);
+  const[anomalies,setAnomalies]=useState([]);
+  const[loading,setLoading]=useState(false);
+  const[loaded,setLoaded]=useState(false);
+
+  async function loadData(){
+    if(fromDate>toDate){alert('開始日は終了日以前にしてください');return;}
+    setLoading(true);setLoaded(false);
+    try{
+      const snap=await db.collection('plans').where('date','>=',fromDate).where('date','<=',toDate).get();
+      let ps=[];
+      snap.forEach(doc=>ps.push({id:doc.id,...doc.data()}));
+      if(lineFilter!=='all')ps=ps.filter(p=>p.line===lineFilter);
+      ps.sort((a,b)=>a.date.localeCompare(b.date)||(a.kakeTime||"").localeCompare(b.kakeTime||"")||(a.line||"").localeCompare(b.line||""));
+      setPlans(ps);
+      const aSnap=await db.collection('anomalies').where('date','>=',fromDate).where('date','<=',toDate).get();
+      const as=[];aSnap.forEach(doc=>as.push({id:doc.id,...doc.data()}));
+      setAnomalies(as);
+      setLoaded(true);
+    }catch(e){alert('読み込み失敗: '+e.message);}
+    finally{setLoading(false);}
+  }
+
+  function compTime(item,role){
+    const key=role==='製品段取り'?'段取りトータル':role;
+    return item?.completions?.[key]?.time||'';
+  }
+
+  function csvEsc(v){
+    const s=v==null?'':(typeof v==='number'?String(v):v);
+    return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;
+  }
+
+  function downloadCSV(){
+    const headers=['日付','L','背番号','掛け時間','降ろし時間','製品数','端数実績','完成品箱数','出荷数','電圧確認','QR照合','QRスキップ','1個確認','リフトマン','製品段取り','ハンガー段取り','掛け','降ろし検査','出荷','異常件数'];
+    const rows=plans.map(item=>{
+      const qc=item[`qrCheck_${item.line}`];
+      const sc=item[`sampleCheck_${item.line}`];
+      const aCount=anomalies.filter(a=>a.date===item.date&&a.seiban===item.seiban).length;
+      return [
+        item.date,item.line,item.seiban,item.kakeTime||'',item.orosiTime||'',
+        item.products??'',(item.actualFraction??''),(item.finishedBoxes??''),(item.shipCount!=null?item.shipCount:''),
+        item.voltageCheck?.time||'',
+        (qc?.done&&!qc?.skipped?qc.time:''),(qc?.skipped?'スキップ':''),
+        sc?.time||'',
+        compTime(item,'リフトマン'),compTime(item,'製品段取り'),compTime(item,'ハンガー段取り'),
+        compTime(item,'掛け'),compTime(item,'降ろし検査'),compTime(item,'出荷'),
+        aCount||'']
+        .map(csvEsc).join(',');
+    });
+    const bom='\uFEFF';
+    const csv=bom+headers.join(',')+'\n'+rows.join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=`生産実績_${fromDate}_${toDate}.csv`;
+    document.body.appendChild(a);a.click();
+    setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+  }
+
+  const HLINES=['A','B','C','D','E','F'];
+  const tc=v=>v?<span style={{fontSize:12,color:'#3B6D11',fontWeight:600}}>{v}</span>:<span style={{color:'#DDD',fontSize:16}}>·</span>;
+  const TH=({c})=><th style={{padding:'9px 8px',textAlign:'center',borderBottom:'1px solid #E0DED8',fontWeight:600,color:'#666',fontSize:11,whiteSpace:'nowrap'}}>{c}</th>;
+
+  return(
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,flexWrap:'wrap',background:'#F8F7F4',padding:'14px 16px',borderRadius:12,border:'1px solid #E0DED8'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <span style={{fontSize:13,color:'#666',whiteSpace:'nowrap'}}>開始日</span>
+          <input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}
+            style={{fontSize:14,padding:'6px 10px',borderRadius:8,border:'1px solid #C0BEB5'}}/>
+        </div>
+        <span style={{color:'#999'}}>〜</span>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <span style={{fontSize:13,color:'#666',whiteSpace:'nowrap'}}>終了日</span>
+          <input type="date" value={toDate} onChange={e=>setToDate(e.target.value)}
+            style={{fontSize:14,padding:'6px 10px',borderRadius:8,border:'1px solid #C0BEB5'}}/>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <span style={{fontSize:13,color:'#666',whiteSpace:'nowrap'}}>ライン</span>
+          <select value={lineFilter} onChange={e=>setLineFilter(e.target.value)}
+            style={{fontSize:14,padding:'6px 10px',borderRadius:8,border:'1px solid #C0BEB5'}}>
+            <option value="all">全て</option>
+            {HLINES.map(l=><option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        <button onClick={loadData} disabled={loading}
+          style={{padding:'8px 20px',borderRadius:10,border:'none',background:loading?'#B4B2A9':'#185FA5',color:'#fff',fontSize:14,fontWeight:600,minHeight:38}}>
+          {loading?'読込中...':'読み込む'}
+        </button>
+        {loaded&&(
+          <button onClick={downloadCSV}
+            style={{padding:'8px 20px',borderRadius:10,border:'1px solid #3B6D11',background:'#EAF3DE',color:'#27500A',fontSize:14,fontWeight:600,minHeight:38}}>
+            ⬇ CSV出力
+          </button>
+        )}
+        {loaded&&<span style={{fontSize:13,color:'#888'}}>{plans.length}件</span>}
+      </div>
+
+      {!loaded&&!loading&&(
+        <div style={{textAlign:'center',padding:'60px',color:'#bbb',fontSize:14}}>日付を選択して「読み込む」を押してください</div>
+      )}
+      {loading&&(
+        <div style={{textAlign:'center',padding:'60px',color:'#888',fontSize:14}}>読み込み中...</div>
+      )}
+      {loaded&&plans.length===0&&(
+        <div style={{textAlign:'center',padding:'60px',color:'#999',fontSize:14}}>この期間のデータはありません</div>
+      )}
+      {loaded&&plans.length>0&&(
+        <div style={{overflowX:'auto',border:'1px solid #E0DED8',borderRadius:12}}>
+          <table style={{borderCollapse:'collapse',fontSize:12}}>
+            <thead><tr style={{background:'#F8F7F4'}}>
+              <TH c="日付"/><TH c="L"/><TH c="背番号"/><TH c="掛け時間"/><TH c="降ろし時間"/>
+              <TH c="製品数"/><TH c="端数実績"/><TH c="完成品箱数"/><TH c="出荷数"/>
+              <TH c="電圧確認"/><TH c="QR照合"/><TH c="1個確認"/>
+              <TH c="リフトマン"/><TH c="製品段取り"/><TH c="ハンガー段取り"/><TH c="掛け"/><TH c="降ろし検査"/><TH c="出荷"/>
+              <TH c="異常"/>
+            </tr></thead>
+            <tbody>
+              {plans.map(item=>{
+                const qc=item[`qrCheck_${item.line}`];
+                const sc=item[`sampleCheck_${item.line}`];
+                const aCount=anomalies.filter(a=>a.date===item.date&&a.seiban===item.seiban).length;
+                const TD=({v,right,bold})=><td style={{padding:'8px 8px',textAlign:right?'right':'center',color:bold?'#111':'#555',fontWeight:bold?700:400,whiteSpace:'nowrap'}}>{v??'—'}</td>;
+                return(
+                  <tr key={item.id} style={{borderBottom:'1px solid #F0EEE8'}}>
+                    <td style={{padding:'8px 8px',color:'#555',whiteSpace:'nowrap'}}>{item.date}</td>
+                    <td style={{padding:'8px 8px',color:'#888',fontWeight:700,textAlign:'center'}}>{item.line}</td>
+                    <td style={{padding:'8px 10px',fontWeight:700,color:'#111',whiteSpace:'nowrap'}}>{item.seiban}</td>
+                    <TD v={item.kakeTime||'—'}/>
+                    <TD v={item.orosiTime||'—'}/>
+                    <TD v={item.products??'—'} right/>
+                    <TD v={item.actualFraction??'—'} right/>
+                    <TD v={item.finishedBoxes??'—'} right/>
+                    <TD v={item.shipCount!=null?item.shipCount:'—'} right/>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(item.voltageCheck?.time)}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>
+                      {qc?.done?(qc.skipped
+                        ?<span style={{fontSize:11,color:'#888',padding:'1px 5px',background:'#EEEAE0',borderRadius:4}}>スキップ</span>
+                        :<span style={{fontSize:12,color:'#3B6D11',fontWeight:600}}>{qc.time}</span>)
+                        :<span style={{color:'#DDD',fontSize:16}}>·</span>}
+                    </td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(sc?.time)}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(compTime(item,'リフトマン'))}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(compTime(item,'製品段取り'))}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(compTime(item,'ハンガー段取り'))}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(compTime(item,'掛け'))}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(compTime(item,'降ろし検査'))}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>{tc(compTime(item,'出荷'))}</td>
+                    <td style={{padding:'8px 8px',textAlign:'center'}}>
+                      {aCount>0
+                        ?<span style={{fontSize:11,padding:'2px 6px',borderRadius:5,background:'#FCEBEB',color:'#A32D2D',fontWeight:600}}>{aCount}件</span>
+                        :<span style={{color:'#DDD',fontSize:16}}>·</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminScreen({plans,master,anomalies,onRegister,onBack}){
   const[tab,setTab]=useState('register');
   return(
@@ -3111,13 +3254,13 @@ function AdminScreen({plans,master,anomalies,onRegister,onBack}){
           <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>管理者</span>
         </div>
         <div style={{display:'flex',padding:'0 24px',maxWidth:1400,margin:'0 auto'}}>
-          {[['register','計画登録'],['progress','進捗確認'],['sheet','計画表'],['anomaly','異常履歴']].map(([id,label])=>(
+          {[['register','計画登録'],['progress','進捗確認'],['sheet','計画表'],['anomaly','異常履歴'],['history','生産履歴']].map(([id,label])=>(
             <button key={id} onClick={()=>setTab(id)} style={{padding:'14px 24px',background:'none',border:'none',fontSize:15,fontWeight:600,color:tab===id?'#185FA5':'#888',borderBottom:tab===id?'3px solid #185FA5':'3px solid transparent',minHeight:52}}>{label}</button>
           ))}
         </div>
       </div>
       <div style={{padding:'24px',maxWidth:1400,margin:'0 auto'}}>
-        {tab==='register'?<AdminRegister plans={plans} master={master} onRegister={onRegister}/>:tab==='progress'?<AdminProgress plans={plans}/>:tab==='sheet'?<PlanSpreadsheet plans={plans} master={master}/>:<AnomalyHistory anomalies={anomalies}/>}
+        {tab==='register'?<AdminRegister plans={plans} master={master} onRegister={onRegister}/>:tab==='progress'?<AdminProgress plans={plans}/>:tab==='sheet'?<PlanSpreadsheet plans={plans} master={master}/>:tab==='anomaly'?<AnomalyHistory anomalies={anomalies}/>:<HistoryScreen/>}
       </div>
     </div>
   );
