@@ -604,6 +604,7 @@ let fs = null, docRef = null, fbUnsubscribe = null, fbConnected = false, fbUpdat
 let localVersion = 0, pendingLocalChanges = false, lastSyncTime = 0, taskList = [];
 let ganttFilterTask = null, ganttDate = null;
 let dailyRecordCache = {};
+let syncInProgress = false, syncQueued = false;
 
 function isAbnormalTask(task){ return task === '異常処置' || task === '不具合対応'; }
 function getTaskIcon(task){ return ICONS[task] || customIcons[task] || '📋'; }
@@ -666,7 +667,7 @@ function saveDataLocal(){
 
 function saveData(){
     saveDataLocal(); pendingLocalChanges = true;
-    if (!fbUpdating && fbConnected) syncPushToServer();
+    if (!fbUpdating && fbConnected) queueSyncPush();
     updateVersionDisplay();
 }
 
@@ -1439,6 +1440,31 @@ function getRecordsForDate(date){
     return records.filter(r => r.date === date);
 }
 
+function getFirebaseErrorMessage(e){
+    const code = e && e.code ? String(e.code) : '';
+    const message = e && e.message ? String(e.message) : String(e || '');
+    if (code.includes('permission-denied') || message.includes('Missing or insufficient permissions')) {
+        return '権限エラーです。Firestoreルールで timeTracker/state/dailyRecords/{date} の書き込み許可を確認してください。';
+    }
+    if (message === 'CONFLICT') {
+        return '他の端末で更新があります。最新データを取得してから再送信してください。';
+    }
+    return message || '不明なエラー';
+}
+
+function notifySyncError(e, label){
+    const msg = getFirebaseErrorMessage(e);
+    console.error(label || '[Sync] error:', e);
+    updateSyncStatus('disconnected');
+    toast(`⚠️ Firebase送信失敗: ${msg}`);
+    return msg;
+}
+
+function queueSyncPush(){
+    if (syncInProgress) { syncQueued = true; return; }
+    syncPushToServer();
+}
+
 function createStatePayload(newVersion, extra){
     return Object.assign({
         members, customTasks, customIcons, activeTimers, taskList, breakList, cases,
@@ -1454,20 +1480,28 @@ async function writeDailyRecordsForDates(dates, version){
     if (!fs) return;
     const uniqueDates = [...new Set((dates || []).filter(Boolean))];
     if (!uniqueDates.length) return;
-    const batch = fs.batch();
-    uniqueDates.forEach(date => {
+    const written = [];
+    for (let i = 0; i < uniqueDates.length; i += 450) {
+        const batch = fs.batch();
+        const chunk = uniqueDates.slice(i, i + 450);
+        chunk.forEach(date => {
+            const dayRecords = getRecordsForDate(date);
+            batch.set(getDailyDocRef(date), {
+                date,
+                records: dayRecords,
+                recordCount: dayRecords.length,
+                lastUpdatedVersion: version,
+                lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastUpdatedBy: getDeviceId()
+            }, { merge: false });
+        });
+        await batch.commit();
+        written.push(...chunk);
+    }
+    written.forEach(date => {
         const dayRecords = getRecordsForDate(date);
-        batch.set(getDailyDocRef(date), {
-            date,
-            records: dayRecords,
-            recordCount: dayRecords.length,
-            lastUpdatedVersion: version,
-            lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-            lastUpdatedBy: getDeviceId()
-        }, { merge: false });
         dailyRecordCache[date] = { loaded: true, loading: false, recordCount: dayRecords.length, loadedAt: Date.now() };
     });
-    await batch.commit();
 }
 
 function autoConnectFB(){
@@ -1515,19 +1549,25 @@ function setupFBListener(){
 
 async function syncPushToServer(){
     if (!fbConnected || !docRef || !fs) return; updateSyncStatus('syncing');
+    if (syncInProgress) { syncQueued = true; return; }
+    syncInProgress = true;
     try {
         const datesToWrite = getRecordDatesForUpload();
-        await fs.runTransaction(async tx => {
-            const snap = await tx.get(docRef), serverData = snap.exists ? snap.data() : {}, serverVersion = serverData.lastUpdatedVersion || 0;
-            if (serverVersion > localVersion) throw new Error('CONFLICT');
-            const newVersion = Math.max(serverVersion, localVersion) + 1;
-            tx.set(docRef, createStatePayload(newVersion), { merge: true });
-            localVersion = newVersion; lastSyncTime = Date.now();
-            localStorage.setItem('tt_version', String(localVersion)); localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
-        });
-        await writeDailyRecordsForDates(datesToWrite, localVersion);
+        const snap = await docRef.get(), serverData = snap.exists ? snap.data() : {}, serverVersion = serverData.lastUpdatedVersion || 0;
+        if (serverVersion > localVersion) throw new Error('CONFLICT');
+        const newVersion = Math.max(serverVersion, localVersion) + 1;
+        await writeDailyRecordsForDates(datesToWrite, newVersion);
+        await docRef.set(createStatePayload(newVersion), { merge: true });
+        localVersion = newVersion; lastSyncTime = Date.now();
+        localStorage.setItem('tt_version', String(localVersion)); localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
         pendingLocalChanges = false; updateSyncStatus('connected'); updateVersionDisplay();
-    } catch (e) { if (e.message === 'CONFLICT') { showConflictBanner(); updateSyncStatus('connected'); } else { console.error('[Sync] Push error:', e); updateSyncStatus('disconnected'); } }
+    } catch (e) {
+        if (e.message === 'CONFLICT') { showConflictBanner(); updateSyncStatus('connected'); toast('⚠️ 他の端末で更新があります。最新データを取得してください。'); }
+        else { notifySyncError(e, '[Sync] Push error:'); }
+    } finally {
+        syncInProgress = false;
+        if (syncQueued) { syncQueued = false; setTimeout(queueSyncPush, 0); }
+    }
 }
 
 async function forcePushToServer(){
@@ -1536,12 +1576,12 @@ async function forcePushToServer(){
     updateSyncStatus('syncing');
     try {
         const snap = await docRef.get(), serverData = snap.exists ? snap.data() : {}, newVersion = Math.max(serverData.lastUpdatedVersion || 0, localVersion) + 1;
-        await docRef.set(createStatePayload(newVersion, { forcePushed: true }), { merge: true });
         await writeDailyRecordsForDates(getRecordDatesForUpload(), newVersion);
+        await docRef.set(createStatePayload(newVersion, { forcePushed: true }), { merge: true });
         localVersion = newVersion; lastSyncTime = Date.now();
         localStorage.setItem('tt_version', String(localVersion)); localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
         hideConflictBanner(); updateSyncStatus('connected'); updateVersionDisplay(); toast('✓ 強制アップロード完了');
-    } catch (e) { alert('アップロードに失敗しました: ' + e.message); updateSyncStatus('disconnected'); }
+    } catch (e) { alert('アップロードに失敗しました: ' + getFirebaseErrorMessage(e)); notifySyncError(e, '[Sync] Force push error:'); }
 }
 
 function getDeviceId(){ let deviceId = localStorage.getItem('tt_deviceId'); if (!deviceId) { deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9); localStorage.setItem('tt_deviceId', deviceId); } return deviceId; }
