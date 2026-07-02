@@ -603,6 +603,7 @@ let cases = [], newCasePhotos = [], currentCaseFilter = 'all';
 let fs = null, docRef = null, fbUnsubscribe = null, fbConnected = false, fbUpdating = false;
 let localVersion = 0, pendingLocalChanges = false, lastSyncTime = 0, taskList = [];
 let ganttFilterTask = null, ganttDate = null;
+let dailyRecordCache = {};
 
 function isAbnormalTask(task){ return task === '異常処置' || task === '不具合対応'; }
 function getTaskIcon(task){ return ICONS[task] || customIcons[task] || '📋'; }
@@ -714,6 +715,7 @@ function renderTaskButtons(){
 
 function renderTodayRecords(){
     const today = formatDate(new Date());
+    ensureDailyRecords(today);
     const recs = records.filter(r => r.date === today && r.member === currentMember);
     renderPieChart(recs); renderRecordList('todayRecords','todaySummary',recs,true);
 }
@@ -1047,6 +1049,7 @@ function closePhotoModal(){ document.getElementById('photoModal').classList.remo
 // ===== 履歴 =====
 function renderHistory(){
     const date = document.getElementById('historyDate')?.value || formatDate(new Date());
+    ensureDailyRecords(date);
     const filterMember = document.getElementById('filterMember')?.value || '';
     const filterTask = document.getElementById('filterTask')?.value || '';
     updateHistoryFilters(date);
@@ -1059,6 +1062,7 @@ function renderHistory(){
 function updateHistoryFilters(date){
     const memberSelect = document.getElementById('filterMember'), taskSelect = document.getElementById('filterTask');
     if (!memberSelect || !taskSelect) return;
+    ensureDailyRecords(date);
     const currentMemberVal = memberSelect.value, currentTaskVal = taskSelect.value;
     memberSelect.innerHTML = '<option value="">全員</option>' + members.map(m=>`<option value="${m}" ${m===currentMemberVal?'selected':''}>${m}</option>`).join('');
     const dayRecs = records.filter(r=>r.date===date);
@@ -1108,6 +1112,7 @@ function renderGantt(){
     const container = document.getElementById('ganttContainer'), header = document.getElementById('ganttHeader'), body = document.getElementById('ganttBody'), legend = document.getElementById('ganttLegend'), timeDisplay = document.getElementById('ganttCurrentTime'), dateInput = document.getElementById('ganttDate');
     if (!container || !header || !body) return;
     const now = new Date(), todayStr = formatDate(now), target = ganttDate || todayStr;
+    ensureDailyRecords(target);
     if (dateInput && dateInput.value !== target) dateInput.value = target;
     const currentHour = now.getHours(), currentMinute = now.getMinutes();
     if (timeDisplay) timeDisplay.textContent = target===todayStr ? `今: ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}` : target.replace(/-/g,'/');
@@ -1375,6 +1380,96 @@ function initFirebase(){
     fs = firebase.firestore(); docRef = fs.doc('timeTracker/state');
 }
 
+function getDailyDocRef(date){
+    if (!fs || !date) return null;
+    return fs.doc(`timeTracker/state/dailyRecords/${date}`);
+}
+
+function getVisibleDates(){
+    const today = formatDate(new Date());
+    const historyDate = document.getElementById('historyDate')?.value || today;
+    const ganttDateValue = ganttDate || document.getElementById('ganttDate')?.value || today;
+    return [...new Set([today, historyDate, ganttDateValue].filter(Boolean))];
+}
+
+function setRecordsForDate(date, dayRecords){
+    const incoming = Array.isArray(dayRecords) ? dayRecords : [];
+    records = records.filter(r => r.date !== date).concat(incoming);
+    dailyRecordCache[date] = { loaded: true, loading: false, recordCount: incoming.length, loadedAt: Date.now() };
+}
+
+async function loadDailyRecords(date, renderAfter){
+    if (!fbConnected || !fs || !date) return;
+    const cached = dailyRecordCache[date];
+    if (cached && (cached.loaded || cached.loading)) return;
+    dailyRecordCache[date] = { loaded: false, loading: true };
+    try {
+        const snap = await getDailyDocRef(date).get();
+        if (snap.exists) {
+            const data = snap.data() || {};
+            setRecordsForDate(date, data.records || []);
+            saveDataLocal();
+        } else {
+            dailyRecordCache[date] = { loaded: true, loading: false, recordCount: records.filter(r => r.date === date).length, missing: true };
+        }
+        if (renderAfter) render();
+    } catch (e) {
+        console.error('[DailyRecords] load error:', date, e);
+        dailyRecordCache[date] = { loaded: false, loading: false, error: e.message };
+    }
+}
+
+function ensureDailyRecords(date){
+    if (!fbConnected || !fs || !date) return;
+    const cached = dailyRecordCache[date];
+    if (cached && (cached.loaded || cached.loading)) return;
+    loadDailyRecords(date, true);
+}
+
+async function loadVisibleDailyRecords(){
+    if (!fbConnected || !fs) return;
+    await Promise.all(getVisibleDates().map(date => loadDailyRecords(date, false)));
+}
+
+function getRecordDatesForUpload(){
+    return [...new Set(records.map(r => r.date).filter(Boolean))];
+}
+
+function getRecordsForDate(date){
+    return records.filter(r => r.date === date);
+}
+
+function createStatePayload(newVersion, extra){
+    return Object.assign({
+        members, customTasks, customIcons, activeTimers, taskList, breakList, cases,
+        storageMode: 'dailyRecords',
+        dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}',
+        lastUpdatedVersion: newVersion,
+        lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastUpdatedBy: getDeviceId()
+    }, extra || {});
+}
+
+async function writeDailyRecordsForDates(dates, version){
+    if (!fs) return;
+    const uniqueDates = [...new Set((dates || []).filter(Boolean))];
+    if (!uniqueDates.length) return;
+    const batch = fs.batch();
+    uniqueDates.forEach(date => {
+        const dayRecords = getRecordsForDate(date);
+        batch.set(getDailyDocRef(date), {
+            date,
+            records: dayRecords,
+            recordCount: dayRecords.length,
+            lastUpdatedVersion: version,
+            lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastUpdatedBy: getDeviceId()
+        }, { merge: false });
+        dailyRecordCache[date] = { loaded: true, loading: false, recordCount: dayRecords.length, loadedAt: Date.now() };
+    });
+    await batch.commit();
+}
+
 function autoConnectFB(){
     const cfg = localStorage.getItem('tt_firebaseConfig'); if (!cfg) return;
     document.getElementById('firebaseConfig').value = cfg;
@@ -1399,15 +1494,20 @@ function updateSyncStatus(status){
 
 function setupFBListener(){
     if (!docRef) return; if (fbUnsubscribe) fbUnsubscribe();
-    fbUnsubscribe = docRef.onSnapshot(snapshot => {
+    fbUnsubscribe = docRef.onSnapshot(async snapshot => {
         if (!snapshot.exists){ fbUpdating = false; updateSyncStatus('connected'); if (records.length > 0 || members.length > 1 || cases.length > 0) syncPushToServer(); return; }
         const serverData = snapshot.data() || {}, serverVersion = serverData.lastUpdatedVersion || 0;
         if (serverVersion > localVersion) {
             fbUpdating = true;
             members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {};
-            records = serverData.records || []; activeTimers = serverData.activeTimers || {}; taskList = serverData.taskList || [];
+            if (Array.isArray(serverData.records) && serverData.records.length) {
+                records = serverData.records;
+            }
+            activeTimers = serverData.activeTimers || {}; taskList = serverData.taskList || [];
             breakList = serverData.breakList || []; cases = serverData.cases || [];
             localVersion = serverVersion; lastSyncTime = Date.now();
+            dailyRecordCache = {};
+            await loadVisibleDailyRecords();
             saveDataLocal(); render(); updateVersionDisplay(); hideConflictBanner(); fbUpdating = false; updateSyncStatus('connected');
         } else { updateSyncStatus('connected'); }
     }, err => { console.error('onSnapshot error:', err); updateSyncStatus('disconnected'); });
@@ -1416,14 +1516,16 @@ function setupFBListener(){
 async function syncPushToServer(){
     if (!fbConnected || !docRef || !fs) return; updateSyncStatus('syncing');
     try {
+        const datesToWrite = getRecordDatesForUpload();
         await fs.runTransaction(async tx => {
             const snap = await tx.get(docRef), serverData = snap.exists ? snap.data() : {}, serverVersion = serverData.lastUpdatedVersion || 0;
             if (serverVersion > localVersion) throw new Error('CONFLICT');
             const newVersion = Math.max(serverVersion, localVersion) + 1;
-            tx.set(docRef, { members, customTasks, customIcons, records, activeTimers, taskList, breakList, cases, lastUpdatedVersion: newVersion, lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(), lastUpdatedBy: getDeviceId() }, { merge: false });
+            tx.set(docRef, createStatePayload(newVersion), { merge: true });
             localVersion = newVersion; lastSyncTime = Date.now();
             localStorage.setItem('tt_version', String(localVersion)); localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
         });
+        await writeDailyRecordsForDates(datesToWrite, localVersion);
         pendingLocalChanges = false; updateSyncStatus('connected'); updateVersionDisplay();
     } catch (e) { if (e.message === 'CONFLICT') { showConflictBanner(); updateSyncStatus('connected'); } else { console.error('[Sync] Push error:', e); updateSyncStatus('disconnected'); } }
 }
@@ -1434,7 +1536,8 @@ async function forcePushToServer(){
     updateSyncStatus('syncing');
     try {
         const snap = await docRef.get(), serverData = snap.exists ? snap.data() : {}, newVersion = Math.max(serverData.lastUpdatedVersion || 0, localVersion) + 1;
-        await docRef.set({ members, customTasks, customIcons, records, activeTimers, taskList, breakList, cases, lastUpdatedVersion: newVersion, lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(), lastUpdatedBy: getDeviceId(), forcePushed: true });
+        await docRef.set(createStatePayload(newVersion, { forcePushed: true }), { merge: true });
+        await writeDailyRecordsForDates(getRecordDatesForUpload(), newVersion);
         localVersion = newVersion; lastSyncTime = Date.now();
         localStorage.setItem('tt_version', String(localVersion)); localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
         hideConflictBanner(); updateSyncStatus('connected'); updateVersionDisplay(); toast('✓ 強制アップロード完了');
@@ -1447,13 +1550,18 @@ function hideConflictBanner(){ const banner = document.getElementById('conflictB
 
 function forceReload(){
     if (!docRef) { location.reload(); return; } updateSyncStatus('syncing');
-    docRef.get().then(snap => {
+    docRef.get().then(async snap => {
         if (!snap.exists) { toast('⚠️ サーバーにデータがありません'); updateSyncStatus('connected'); return; }
         const serverData = snap.data();
         members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {};
-        records = serverData.records || []; activeTimers = serverData.activeTimers || {}; taskList = serverData.taskList || [];
+        if (Array.isArray(serverData.records) && serverData.records.length) {
+            records = serverData.records;
+        }
+        activeTimers = serverData.activeTimers || {}; taskList = serverData.taskList || [];
         breakList = serverData.breakList || []; cases = serverData.cases || [];
         localVersion = serverData.lastUpdatedVersion || 0; lastSyncTime = Date.now();
+        dailyRecordCache = {};
+        await loadVisibleDailyRecords();
         saveDataLocal(); render(); updateVersionDisplay(); hideConflictBanner(); updateSyncStatus('connected'); toast('✓ 最新データを取得しました');
     }).catch(err => { alert('データ取得に失敗しました: ' + err.message); updateSyncStatus('disconnected'); });
 }
