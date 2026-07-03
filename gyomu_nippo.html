@@ -646,6 +646,10 @@ function getTaskColor(task){
 }
 
 function isPcWorkRecord(r){ return r && r.source === 'PCWorkTracker'; }
+function getRecordSource(r){
+    if (!r || !r.source) return 'Manual';
+    return r.source;
+}
 function getRecordSourceLabel(r){
     if (isPcWorkRecord(r)) return 'PC自動';
     if (r && r.source === 'TimerTracker') return 'タイマー';
@@ -658,6 +662,88 @@ function getRecordSourceClass(r){
 }
 function renderSourceBadge(r){
     return `<span class="source-badge ${getRecordSourceClass(r)}">${getRecordSourceLabel(r)}</span>`;
+}
+
+function getSourcePriority(r){
+    const source = getRecordSource(r);
+    if (source === 'PCWorkTracker') return 1;
+    if (source === 'TimerTracker') return 2;
+    return 3;
+}
+
+function getRecordRange(r){
+    if (!r || !r.startTime || !r.endTime) return null;
+    const start = timeToMinutes(r.startTime), end = timeToMinutes(r.endTime);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    return { start, end };
+}
+
+function subtractRanges(start, end, blockers){
+    let ranges = [{ start, end }];
+    blockers.forEach(block => {
+        const next = [];
+        ranges.forEach(range => {
+            if (block.end <= range.start || block.start >= range.end) {
+                next.push(range);
+                return;
+            }
+            if (block.start > range.start) next.push({ start: range.start, end: block.start });
+            if (block.end < range.end) next.push({ start: block.end, end: range.end });
+        });
+        ranges = next.filter(r => r.end > r.start);
+    });
+    return ranges;
+}
+
+function normalizeRecordsNoOverlap(){
+    const grouped = {};
+    const passthrough = [];
+    records.forEach((r, index) => {
+        const range = getRecordRange(r);
+        if (!range || !r.member || !r.date) {
+            passthrough.push(r);
+            return;
+        }
+        r.source = getRecordSource(r);
+        const key = `${r.member}|||${r.date}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push({ record: r, range, index, priority: getSourcePriority(r) });
+    });
+
+    const normalized = [...passthrough];
+    Object.values(grouped).forEach(items => {
+        const keptForGroup = [];
+        const occupied = [];
+        [3, 2, 1].forEach(priority => {
+            const samePriorityItems = items
+                .filter(item => item.priority === priority)
+                .sort((a,b) => a.range.start - b.range.start || a.range.end - b.range.end || a.index - b.index);
+            const keptThisPriority = [];
+            samePriorityItems.forEach(item => {
+                const ranges = subtractRanges(item.range.start, item.range.end, occupied);
+                ranges.forEach((range, rangeIndex) => {
+                    const rec = { ...item.record };
+                    rec.startTime = minutesToTime(range.start);
+                    rec.endTime = minutesToTime(range.end);
+                    if (rangeIndex > 0) {
+                        rec.id = Date.now() + Math.floor(Math.random() * 1000000) + range.start;
+                    }
+                    keptThisPriority.push({ record: rec, range });
+                });
+            });
+            keptForGroup.push(...keptThisPriority);
+            occupied.push(...keptThisPriority.map(item => item.range));
+            occupied.sort((a,b) => a.start - b.start || a.end - b.end);
+        });
+        normalized.push(...keptForGroup.map(item => item.record));
+    });
+
+    records = normalized.sort((a,b) =>
+        String(a.date || '').localeCompare(String(b.date || '')) ||
+        String(a.member || '').localeCompare(String(b.member || '')) ||
+        String(a.startTime || '').localeCompare(String(b.startTime || '')) ||
+        getSourcePriority(b) - getSourcePriority(a)
+    );
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -697,6 +783,7 @@ function loadData(){
 }
 
 function saveDataLocal(){
+    normalizeRecordsNoOverlap();
     localStorage.setItem('tt_members', JSON.stringify(members));
     localStorage.setItem('tt_customTasks', JSON.stringify(customTasks));
     localStorage.setItem('tt_customIcons', JSON.stringify(customIcons));
@@ -1298,7 +1385,7 @@ function updateTimerBar(){
 function toggleTask(task){
     if (!currentMember) return;
     const timer = activeTimers[currentMember];
-    if (timer && timer.task===task){ stopTimer(); return; }
+    if (timer && String(timer.task) === String(task)){ stopTimer(); return; }
     if (timer) saveTimerAsRecord(currentMember,timer);
     activeTimers[currentMember] = {task, startTime:new Date().toISOString()};
     saveData(); render(); toast(`▶ ${task}`);
@@ -1314,7 +1401,7 @@ function stopTimer(){
 function saveTimerAsRecord(member,timer){
     const start = new Date(timer.startTime), end=new Date();
     if (end-start<60000) return false;
-    records.push({ id:Date.now(), member, task:timer.task, date:formatDate(start), startTime:formatTime(start), endTime:formatTime(end), source:'TimerTracker' });
+    records.push({ id:Date.now(), member, task:String(timer.task), date:formatDate(start), startTime:formatTime(start), endTime:formatTime(end), source:'TimerTracker' });
     return true;
 }
 
@@ -1339,7 +1426,7 @@ function saveRecord(){
     const r = records.find(x=>x.id===editingId); if (!r) return;
     const s=document.getElementById('editStart').value, e=document.getElementById('editEnd').value;
     if (e<=s){ alert('終了は開始より後に'); return; }
-    r.task=document.getElementById('editTaskName').value; r.startTime=s; r.endTime=e;
+    r.task=document.getElementById('editTaskName').value; r.startTime=s; r.endTime=e; r.source = getRecordSource(r);
     saveData(); closeModal(); render(); toast('✓ 保存');
 }
 function deleteRecord(){ if (!confirm('削除しますか？')) return; records=records.filter(r=>r.id!==editingId); saveData(); closeModal(); render(); toast('🗑 削除'); }
@@ -1805,7 +1892,7 @@ function completePendingTask(member){
     const m=endTimeInput.match(/^(\d{1,2}):(\d{2})$/); if (!m){ alert('正しい時刻形式で入力してください'); return; }
     const endTime=`${String(parseInt(m[1])).padStart(2,'0')}:${m[2]}`;
     if (endTime<=startTimeStr){ alert('終了時刻は開始時刻より後にしてください'); return; }
-    records.push({ id:Date.now(), member, task:timer.task, date:startDate, startTime:startTimeStr, endTime });
+    records.push({ id:Date.now(), member, task:timer.task, date:startDate, startTime:startTimeStr, endTime, source:'TimerTracker' });
     delete activeTimers[member]; saveData(); render(); toast(`✓ ${startDate}の記録を保存しました`);
 }
 
