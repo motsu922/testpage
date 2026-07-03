@@ -67,6 +67,11 @@
         .record-item .task-name { font-weight: 600; font-size: 16px; }
         .record-item .time-range { font-size: 14px; color: #666; margin-top: 4px; }
         .record-item .duration { font-weight: 700; font-size: 18px; }
+        .source-badge { display:inline-block; margin-left:8px; padding:2px 7px; font-size:11px; font-weight:700; border-radius:999px; vertical-align:middle; }
+        .source-badge.pc { background:#dbeafe; color:#1d4ed8; }
+        .source-badge.manual { background:#ecfdf5; color:#047857; }
+        .source-badge.timer { background:#fef3c7; color:#b45309; }
+        .import-note { background:#f8fafc; border-left:4px solid #3b82f6; padding:12px; color:#334155; font-size:13px; line-height:1.6; margin-bottom:14px; }
 
         .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
         .summary-item { background: #f8f9fa; padding: 14px; text-align: center; }
@@ -368,6 +373,7 @@
                         <h3 style="margin:0;">📋 タスク <span id="currentMemberName" style="color:#667eea;"></span></h3>
                         <div style="display:flex;gap:6px;">
                             <button class="btn btn-secondary btn-sm" onclick="manualSave()">💾 保存</button>
+                            <button class="btn btn-primary btn-sm" onclick="openPcImportModal()">PC作業取込</button>
                             <button class="btn btn-danger btn-sm" onclick="endWorkToday()">業務終了</button>
                         </div>
                     </div>
@@ -542,6 +548,30 @@
     </div>
 </div>
 
+<!-- PC作業記録取り込みモーダル -->
+<div id="pcImportModal" class="modal">
+    <div class="modal-content">
+        <h3>PC作業記録を取り込む</h3>
+        <div class="import-note">
+            PC作業記録アプリの <strong>out/YYYY-MM-DD_summary.json</strong> を選択、またはJSONを貼り付けてください。<br>
+            同じ日付・担当者のPC自動記録だけを差し替え、手入力のタイムトラッカー記録は残します。
+        </div>
+        <div class="form-group">
+            <label>集計JSONファイル</label>
+            <input type="file" id="pcImportFile" accept=".json,application/json" onchange="loadPcImportFile(event)">
+        </div>
+        <div class="form-group">
+            <label>JSON貼り付け</label>
+            <textarea id="pcImportText" rows="8" oninput="previewPcImportText()" placeholder='{"date":"2026-07-03","member":"杉本","segments":[...]}'></textarea>
+        </div>
+        <div id="pcImportPreview" style="font-size:13px;color:#475569;margin-top:8px;"></div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closePcImportModal()">キャンセル</button>
+            <button class="btn btn-primary" onclick="importPcSummaryFromModal()">取り込む</button>
+        </div>
+    </div>
+</div>
+
 <!-- タスク追加モーダル -->
 <div id="taskModal" class="modal">
     <div class="modal-content">
@@ -613,6 +643,21 @@ function getTaskColor(task){
     const allCustom = Object.values(customTasks).flat();
     const idx = allCustom.indexOf(task);
     return idx >= 0 ? CUSTOM_COLORS[idx % CUSTOM_COLORS.length] : '#667eea';
+}
+
+function isPcWorkRecord(r){ return r && r.source === 'PCWorkTracker'; }
+function getRecordSourceLabel(r){
+    if (isPcWorkRecord(r)) return 'PC自動';
+    if (r && r.source === 'TimerTracker') return 'タイマー';
+    return '手動';
+}
+function getRecordSourceClass(r){
+    if (isPcWorkRecord(r)) return 'pc';
+    if (r && r.source === 'TimerTracker') return 'timer';
+    return 'manual';
+}
+function renderSourceBadge(r){
+    return `<span class="source-badge ${getRecordSourceClass(r)}">${getRecordSourceLabel(r)}</span>`;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1105,7 +1150,7 @@ function renderHistoryRecords(recs,date){
     const addButton = `<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal(null,null,'${date}')">＋ 手入力</button>`;
     if (!recs.length){ listEl.innerHTML = addButton; return; }
     recs.sort((a,b)=>a.startTime.localeCompare(b.startTime));
-    listEl.innerHTML = '<h4 style="margin-bottom:10px;font-size:13px;color:#555;">📝 詳細記録</h4>' + recs.map(r=>`<div class="record-item" onclick="openEditModal(${r.id})"><div class="color-bar" style="background:${getTaskColor(r.task)}"></div><div class="info"><div class="task-name">${getTaskIcon(r.task)} ${r.task}</div><div class="time-range">${r.startTime} - ${r.endTime} (${r.member})</div></div><div class="duration">${calcHours(r.startTime,r.endTime).toFixed(1)}h</div></div>`).join('') + addButton;
+    listEl.innerHTML = '<h4 style="margin-bottom:10px;font-size:13px;color:#555;">📝 詳細記録</h4>' + recs.map(r=>`<div class="record-item" onclick="openEditModal(${r.id})"><div class="color-bar" style="background:${getTaskColor(r.task)}"></div><div class="info"><div class="task-name">${getTaskIcon(r.task)} ${r.task}${renderSourceBadge(r)}</div><div class="time-range">${r.startTime} - ${r.endTime} (${r.member})</div></div><div class="duration">${calcHours(r.startTime,r.endTime).toFixed(1)}h</div></div>`).join('') + addButton;
 }
 
 // ===== ガントチャート =====
@@ -1191,7 +1236,7 @@ function renderRecordList(listId,summaryId,recs,showAdd){
     if (!items.length){ listEl.innerHTML = `<div style="text-align:center;color:#888;padding:20px;">記録なし</div>` + (showAdd?`<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal()">＋ 手入力</button>`:''); return; }
     items.sort((a,b)=>a.startMin-b.startMin);
     listEl.innerHTML = items.map(item=>{
-        if (item.type==='record'){ const r = item.rec; return `<div class="record-item" onclick="openEditModal(${r.id})"><div class="color-bar" style="background:${getTaskColor(r.task)}"></div><div class="info"><div class="task-name">${getTaskIcon(r.task)} ${r.task}</div><div class="time-range">${r.startTime} - ${r.endTime}</div></div><div class="duration">${calcHours(r.startTime,r.endTime).toFixed(1)}h</div></div>`; }
+        if (item.type==='record'){ const r = item.rec; return `<div class="record-item" onclick="openEditModal(${r.id})"><div class="color-bar" style="background:${getTaskColor(r.task)}"></div><div class="info"><div class="task-name">${getTaskIcon(r.task)} ${r.task}${renderSourceBadge(r)}</div><div class="time-range">${r.startTime} - ${r.endTime}</div></div><div class="duration">${calcHours(r.startTime,r.endTime).toFixed(1)}h</div></div>`; }
         else { return `<div class="record-item" style="opacity:0.9;background:#fff7ed;border:1px dashed #f97316;" onclick="openAddModal('${minutesToTime(item.startMin)}','${minutesToTime(item.endMin)}')"><div class="color-bar" style="background:#f97316"></div><div class="info"><div class="task-name">⚠️ 未入力</div><div class="time-range">${minutesToTime(item.startMin)} - ${minutesToTime(item.endMin)}</div></div><div class="duration">${((item.endMin-item.startMin)/60).toFixed(1)}h</div></div>`; }
     }).join('') + (showAdd?`<button class="btn btn-secondary" style="width:100%;margin-top:10px;" onclick="openAddModal()">＋ 手入力</button>`:'');
 }
@@ -1238,7 +1283,7 @@ function endWorkToday(){
     const gaps=[]; let cursor = WORK_START_MIN;
     merged.forEach(int=>{ if (int.start>cursor) gaps.push({start:cursor,end:int.start}); cursor=Math.max(cursor,int.end); });
     if (cursor<nowMin) gaps.push({start:cursor,end:nowMin});
-    gaps.forEach(g=>{ if (g.end<=g.start) return; records.push({ id:Date.now()+Math.floor(Math.random()*1000), member:currentMember, task:'その他', date:todayStr, startTime:minutesToTime(g.start), endTime:minutesToTime(g.end), autoFilled:true, autoFilledTag:'endWork' }); });
+    gaps.forEach(g=>{ if (g.end<=g.start) return; records.push({ id:Date.now()+Math.floor(Math.random()*1000), member:currentMember, task:'その他', date:todayStr, startTime:minutesToTime(g.start), endTime:minutesToTime(g.end), source:'Manual', autoFilled:true, autoFilledTag:'endWork' }); });
     saveData(); render(); toast('✓ 業務終了：空白時間を「その他」で登録しました');
 }
 
@@ -1269,7 +1314,7 @@ function stopTimer(){
 function saveTimerAsRecord(member,timer){
     const start = new Date(timer.startTime), end=new Date();
     if (end-start<60000) return false;
-    records.push({ id:Date.now(), member, task:timer.task, date:formatDate(start), startTime:formatTime(start), endTime:formatTime(end) });
+    records.push({ id:Date.now(), member, task:timer.task, date:formatDate(start), startTime:formatTime(start), endTime:formatTime(end), source:'TimerTracker' });
     return true;
 }
 
@@ -1328,8 +1373,110 @@ function addRecord(){
     if (!date){ alert('日付を入力してください'); return; }
     if (!member){ alert('担当者を選択してください'); return; }
     if (e<=s){ alert('終了は開始より後に'); return; }
-    records.push({ id:Date.now(), member, task:t, date, startTime:s, endTime:e });
+    records.push({ id:Date.now(), member, task:t, date, startTime:s, endTime:e, source:'Manual' });
     saveData(); closeAddModal(); render(); toast('✓ 追加');
+}
+
+// ===== PC作業記録取り込み =====
+function openPcImportModal(){
+    const textEl = document.getElementById('pcImportText');
+    const previewEl = document.getElementById('pcImportPreview');
+    const fileEl = document.getElementById('pcImportFile');
+    if (textEl) textEl.value = '';
+    if (previewEl) previewEl.textContent = '';
+    if (fileEl) fileEl.value = '';
+    document.getElementById('pcImportModal').classList.add('show');
+}
+
+function closePcImportModal(){ document.getElementById('pcImportModal').classList.remove('show'); }
+
+function loadPcImportFile(event){
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        const textEl = document.getElementById('pcImportText');
+        if (textEl) textEl.value = e.target.result || '';
+        previewPcImportText();
+    };
+    reader.readAsText(file, 'UTF-8');
+}
+
+function previewPcImportText(){
+    const previewEl = document.getElementById('pcImportPreview');
+    const text = document.getElementById('pcImportText')?.value || '';
+    if (!previewEl || !text.trim()) return;
+    try{
+        const summary = JSON.parse(text);
+        const segments = Array.isArray(summary.segments) ? summary.segments : [];
+        const member = summary.member || currentMember || '(担当者未設定)';
+        const date = summary.date || '(日付未設定)';
+        previewEl.textContent = `${date} / ${member} / ${segments.length}件を取り込み予定`;
+    }catch(e){
+        previewEl.textContent = 'JSONを確認できません。形式を見直してください。';
+    }
+}
+
+function importPcSummaryFromModal(){
+    const text = document.getElementById('pcImportText')?.value || '';
+    if (!text.trim()){ alert('PC作業記録のsummary JSONを選択または貼り付けてください'); return; }
+    try{
+        const summary = JSON.parse(text);
+        const result = importPcSummary(summary);
+        closePcImportModal();
+        render();
+        toast(`✓ PC作業記録を取り込みました: ${result.count}件`);
+    }catch(e){
+        alert('取り込みに失敗しました: ' + e.message);
+    }
+}
+
+function ensureTaskForMember(member, task){
+    if (!member || !task || DEFAULT_TASKS.includes(task)) return;
+    if (!customTasks[member]) customTasks[member] = [];
+    if (!customTasks[member].includes(task)) customTasks[member].push(task);
+}
+
+function importPcSummary(summary){
+    if (!summary || !Array.isArray(summary.segments)) throw new Error('segmentsが見つかりません');
+    const member = summary.member || currentMember;
+    const date = summary.date || (summary.segments[0] && summary.segments[0].date);
+    if (!member) throw new Error('担当者がありません');
+    if (!date) throw new Error('日付がありません');
+
+    if (!members.includes(member)) members.push(member);
+    if (!currentMember) currentMember = member;
+
+    const validSegments = summary.segments.filter(seg => seg && seg.task && seg.startTime && seg.endTime && seg.endTime > seg.startTime && seg.task !== '休憩' && seg.sourceType !== 'break');
+    const baseId = Date.now() * 100;
+    const importedAt = new Date().toISOString();
+    const imported = validSegments.map((seg, idx) => {
+        const task = String(seg.task);
+        ensureTaskForMember(member, task);
+        return {
+            id: baseId + idx,
+            member,
+            task,
+            date,
+            startTime: String(seg.startTime),
+            endTime: String(seg.endTime),
+            source: 'PCWorkTracker',
+            sourceType: seg.sourceType || 'PCWork',
+            importedAt,
+            samples: seg.samples || 0,
+            windows: Array.isArray(seg.windows) ? seg.windows.slice(0, 5) : []
+        };
+    });
+
+    records = records.filter(r => !(r.member === member && r.date === date && r.source === 'PCWorkTracker'));
+    records = records.concat(imported);
+    saveData();
+
+    const historyDate = document.getElementById('historyDate');
+    if (historyDate) historyDate.value = date;
+    ganttDate = date;
+
+    return { member, date, count: imported.length };
 }
 
 const AVAILABLE_ICONS = ['📋','📁','💼','🎯','🔔','⭐','💡','🔍','📊','📈','🛠️','⚙️','🔧','🔨','📱','💻','🖥️','📞','📧','📬','📝','✏️','📌','🗂️','📂','🗃️','📅','⏰','🕐','⏱️','🚀','✈️','🚗','🚌','🏭','🏢','🏠','👤','👥','🤝','💬','📢','🔊','🎤','🎧','📷','🎬','🎨','✅','❌','⚠️','❗','❓','💰','💵','🧾','📦','🎁','🛒','🔐','🔑','🌟','🎉'];
