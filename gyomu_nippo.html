@@ -634,6 +634,7 @@ let fs = null, docRef = null, fbUnsubscribe = null, fbConnected = false, fbUpdat
 let localVersion = 0, pendingLocalChanges = false, lastSyncTime = 0, taskList = [];
 let ganttFilterTask = null, ganttDate = null;
 let dailyRecordCache = {};
+let dailyServerBaseline = {}; // date -> array of record ids last known on the server (for safe merge)
 let syncInProgress = false, syncQueued = false;
 let stoppedTimers = {};
 const STOPPED_TIMER_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1689,6 +1690,9 @@ function setRecordsForDate(date, dayRecords){
     const incoming = Array.isArray(dayRecords) ? dayRecords : [];
     records = records.filter(r => r.date !== date).concat(incoming);
     dailyRecordCache[date] = { loaded: true, loading: false, recordCount: incoming.length, loadedAt: Date.now() };
+    // Remember which record ids the server had for this date, so a later merge can tell
+    // "deleted locally" apart from "added by another device".
+    dailyServerBaseline[date] = incoming.map(r => String(r.id));
 }
 
 async function loadDailyRecords(date, renderAfter){
@@ -1772,28 +1776,37 @@ async function writeDailyRecordsForDates(dates, version){
     if (!fs) return;
     const uniqueDates = [...new Set((dates || []).filter(Boolean))];
     if (!uniqueDates.length) return;
-    const written = [];
-    for (let i = 0; i < uniqueDates.length; i += 450) {
-        const batch = fs.batch();
-        const chunk = uniqueDates.slice(i, i + 450);
-        chunk.forEach(date => {
-            const dayRecords = getRecordsForDate(date);
-            batch.set(getDailyDocRef(date), {
+    // Write each date in a transaction that merges by record id, so a concurrent writer
+    // (another device, or the PCWorkTracker importer) is never silently overwritten.
+    for (const date of uniqueDates) {
+        const ref = getDailyDocRef(date);
+        const localRecords = getRecordsForDate(date);
+        const localById = new Map(localRecords.map(r => [String(r.id), r]));
+        const baseline = new Set((dailyServerBaseline[date] || []).map(String));
+        let finalRecords = localRecords;
+        await fs.runTransaction(async tx => {
+            const snap = await tx.get(ref);
+            const serverRecords = (snap.exists && Array.isArray(snap.data().records)) ? snap.data().records : [];
+            const merged = new Map();
+            // 1) start from the latest server state (keeps other devices' additions)
+            serverRecords.forEach(r => { if (r && r.id != null) merged.set(String(r.id), r); });
+            // 2) local additions / edits win for ids this device knows
+            localRecords.forEach(r => { if (r && r.id != null) merged.set(String(r.id), r); });
+            // 3) honor local deletions: ids we had loaded from the server but removed locally
+            baseline.forEach(id => { if (!localById.has(id)) merged.delete(id); });
+            finalRecords = [...merged.values()];
+            tx.set(ref, {
                 date,
-                records: dayRecords,
-                recordCount: dayRecords.length,
+                records: finalRecords,
+                recordCount: finalRecords.length,
                 lastUpdatedVersion: version,
                 lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
                 lastUpdatedBy: getDeviceId()
             }, { merge: false });
         });
-        await batch.commit();
-        written.push(...chunk);
+        // reflect the merged result locally (also refreshes the server baseline for this date)
+        setRecordsForDate(date, finalRecords);
     }
-    written.forEach(date => {
-        const dayRecords = getRecordsForDate(date);
-        dailyRecordCache[date] = { loaded: true, loading: false, recordCount: dayRecords.length, loadedAt: Date.now() };
-    });
 }
 
 function autoConnectFB(){
