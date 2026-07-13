@@ -2329,6 +2329,19 @@ function OrosiScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
           {selectedItem&&sm?(
             <div style={{display:'flex',flexDirection:'column',gap:6}}>
               <div style={{fontSize:13,fontWeight:700,color:lc}}>{ot('背番号 ')}{selectedItem.seiban}</div>
+              {/* 収容数・秤番号 */}
+              {(sm.yokousu||sm.hakariNum)&&(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5}}>
+                  {sm.yokousu&&<div style={{background:'#FFF8E8',border:'1.5px solid #F0C87A',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#BA7517',marginBottom:1}}>{lang==='id'?'Kapasitas':'収容数'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#4A3800'}}>{sm.yokousu}</div>
+                  </div>}
+                  {sm.hakariNum&&<div style={{background:'#FFF8E8',border:'1.5px solid #F0C87A',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#BA7517',marginBottom:1}}>{lang==='id'?'No. Timbangan':'秤番号'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#4A3800'}}>{sm.hakariNum}</div>
+                  </div>}
+                </div>
+              )}
               {/* 製品写真 */}
               <div>
                 <div style={labelStyle}>{ot('製品写真')}</div>
@@ -2553,6 +2566,19 @@ function ShipScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
           {selectedItem&&sm?(
             <div style={{display:'flex',flexDirection:'column',gap:6}}>
               <div style={{fontSize:13,fontWeight:700,color:lc}}>{st('背番号 ')}{selectedItem.seiban}</div>
+              {/* 収容数・秤番号 */}
+              {(sm.yokousu||sm.hakariNum)&&(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5}}>
+                  {sm.yokousu&&<div style={{background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#993556',marginBottom:1}}>{lang==='id'?'Kapasitas':'収容数'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#6B1E3D'}}>{sm.yokousu}</div>
+                  </div>}
+                  {sm.hakariNum&&<div style={{background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#993556',marginBottom:1}}>{lang==='id'?'No. Timbangan':'秤番号'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#6B1E3D'}}>{sm.hakariNum}</div>
+                  </div>}
+                </div>
+              )}
               {/* 製品写真 ＋ テーキン 横並び */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
                 <div>
@@ -3279,6 +3305,10 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const subFileRef=useRef(null);
   const[subUploadField,setSubUploadField]=useState(null);
   const[subUploadPct,setSubUploadPct]=useState(-1);
+  const[hakariNum,setHakariNum]=useState('');
+  const[yokousu,setYokousu]=useState('');
+  const[savingHakari,setSavingHakari]=useState(false);
+  const[savedHakari,setSavedHakari]=useState(false);
   const[tsudenMethod,setTsudenMethod]=useState('');
   const[chui1,setChui1]=useState('');
   const[chui2,setChui2]=useState('');
@@ -3315,6 +3345,8 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   useEffect(()=>{setQrText(selData?.qrText||'');},[sel,master]);
   useEffect(()=>{setNote(selData?.note||'');},[sel,master]);
   useEffect(()=>{
+    setHakariNum(selData?.hakariNum||'');
+    setYokousu(selData?.yokousu||'');
     setTsudenMethod(selData?.tsudenMethod||'');
     setChui1(selData?.chui1||'');
     setChui2(selData?.chui2||'');
@@ -3372,6 +3404,16 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       await db.collection('master').doc(sel).set({note_id:translated},{merge:true});
     }catch(err){alert('翻訳に失敗しました: '+err.message);}
     finally{setTranslating(s=>({...s,note:false}));}
+  }
+
+  async function handleSaveHakari(){
+    if(!sel)return;
+    setSavingHakari(true);
+    try{
+      await db.collection('master').doc(sel).set({hakariNum:hakariNum.trim(),yokousu:yokousu.trim()},{merge:true});
+      setSavedHakari(true);setTimeout(()=>setSavedHakari(false),3000);
+    }catch(err){alert('保存に失敗: '+err.message);}
+    finally{setSavingHakari(false);}
   }
 
   async function handleImg(e){
@@ -3690,6 +3732,34 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                     </div>
                     {selData?.note&&<div style={{marginTop:6,padding:'5px 10px',background:'#FFFBEA',borderRadius:8,fontSize:11,color:'#8A6A00',wordBreak:'break-all'}}>現在: {selData.note}</div>}
                     {selData?.note_id&&<div style={{marginTop:4,padding:'5px 10px',background:'#EAF6FB',borderRadius:8,fontSize:11,color:'#1A7FA8',wordBreak:'break-all'}}>🇮🇩 {selData.note_id}</div>}
+                  </div>
+
+                  {/* ===== 収容数・秤番号 ===== */}
+                  <div style={{marginTop:16,paddingTop:14,borderTop:'2px solid #FAEEDA'}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#BA7517',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{background:'#FAEEDA',borderRadius:6,padding:'2px 8px'}}>⚖ 収容数・秤番号</span>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                      <div>
+                        <div style={{fontSize:11,fontWeight:600,color:'#7B5800',marginBottom:4}}>収容数</div>
+                        <input value={yokousu} onChange={e=>setYokousu(e.target.value)}
+                          placeholder="例: 50" type="number" min="0"
+                          style={{width:'100%',fontSize:14,boxSizing:'border-box',fontWeight:700}}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,fontWeight:600,color:'#7B5800',marginBottom:4}}>秤番号（00〜99）</div>
+                        <input value={hakariNum} onChange={e=>setHakariNum(e.target.value)}
+                          placeholder="例: 03" maxLength={2}
+                          style={{width:'100%',fontSize:14,boxSizing:'border-box',fontWeight:700}}/>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:8}}>
+                      <button onClick={handleSaveHakari} disabled={savingHakari}
+                        style={{flex:1,minHeight:40,borderRadius:10,border:'none',background:savingHakari?'#B4B2A9':'#BA7517',color:'#fff',fontSize:13,fontWeight:600}}>
+                        {savingHakari?'保存中...':'収容数・秤番号を保存'}
+                      </button>
+                      {savedHakari&&<span style={{alignSelf:'center',color:'#BA7517',fontWeight:600,fontSize:13}}>✓ 保存しました</span>}
+                    </div>
                   </div>
 
                   {/* ===== 吊り掛け設定 ===== */}
