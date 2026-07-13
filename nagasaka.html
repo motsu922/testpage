@@ -2329,6 +2329,19 @@ function OrosiScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
           {selectedItem&&sm?(
             <div style={{display:'flex',flexDirection:'column',gap:6}}>
               <div style={{fontSize:13,fontWeight:700,color:lc}}>{ot('背番号 ')}{selectedItem.seiban}</div>
+              {/* 収容数・秤番号 */}
+              {(sm.yokousu||sm.hakariNum)&&(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5}}>
+                  {sm.yokousu&&<div style={{background:'#FFF8E8',border:'1.5px solid #F0C87A',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#BA7517',marginBottom:1}}>{lang==='id'?'Kapasitas':'収容数'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#4A3800'}}>{sm.yokousu}</div>
+                  </div>}
+                  {sm.hakariNum&&<div style={{background:'#FFF8E8',border:'1.5px solid #F0C87A',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#BA7517',marginBottom:1}}>{lang==='id'?'No. Timbangan':'秤番号'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#4A3800'}}>{sm.hakariNum}</div>
+                  </div>}
+                </div>
+              )}
               {/* 製品写真 */}
               <div>
                 <div style={labelStyle}>{ot('製品写真')}</div>
@@ -2553,6 +2566,19 @@ function ShipScreen({plans,master,anomalyTypes,onComplete,onBack,line}){
           {selectedItem&&sm?(
             <div style={{display:'flex',flexDirection:'column',gap:6}}>
               <div style={{fontSize:13,fontWeight:700,color:lc}}>{st('背番号 ')}{selectedItem.seiban}</div>
+              {/* 収容数・秤番号 */}
+              {(sm.yokousu||sm.hakariNum)&&(
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5}}>
+                  {sm.yokousu&&<div style={{background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#993556',marginBottom:1}}>{lang==='id'?'Kapasitas':'収容数'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#6B1E3D'}}>{sm.yokousu}</div>
+                  </div>}
+                  {sm.hakariNum&&<div style={{background:'#FEF2F2',border:'1.5px solid #FECACA',borderRadius:6,padding:'5px 8px',textAlign:'center'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#993556',marginBottom:1}}>{lang==='id'?'No. Timbangan':'秤番号'}</div>
+                    <div style={{fontSize:18,fontWeight:700,color:'#6B1E3D'}}>{sm.hakariNum}</div>
+                  </div>}
+                </div>
+              )}
               {/* 製品写真 ＋ テーキン 横並び */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
                 <div>
@@ -3244,6 +3270,8 @@ function AdminScreen({plans,master,anomalies,onRegister,onBack}){
         <div style={{display:'flex',alignItems:'center',padding:'12px 24px 0',maxWidth:1400,margin:'0 auto'}}>
           <button className="btn-ghost" onClick={onBack} style={{marginRight:12,minHeight:44,minWidth:64}}>← 戻る</button>
           <span style={{fontSize:17,fontWeight:700,color:'#111',flex:1}}>管理者</span>
+          <button onClick={()=>{if(window.confirm('ログアウトしますか？'))auth.signOut();}}
+            style={{fontSize:12,padding:'6px 14px',borderRadius:8,border:'1px solid #C0BEB5',background:'#F8F7F4',color:'#666',fontWeight:600}}>ログアウト</button>
         </div>
         <div style={{display:'flex',padding:'0 24px',maxWidth:1400,margin:'0 auto'}}>
           {[['register','計画登録'],['progress','進捗確認'],['sheet','計画表'],['anomaly','異常履歴'],['history','生産履歴']].map(([id,label])=>(
@@ -3279,6 +3307,10 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   const subFileRef=useRef(null);
   const[subUploadField,setSubUploadField]=useState(null);
   const[subUploadPct,setSubUploadPct]=useState(-1);
+  const[hakariNum,setHakariNum]=useState('');
+  const[yokousu,setYokousu]=useState('');
+  const[savingHakari,setSavingHakari]=useState(false);
+  const[savedHakari,setSavedHakari]=useState(false);
   const[tsudenMethod,setTsudenMethod]=useState('');
   const[chui1,setChui1]=useState('');
   const[chui2,setChui2]=useState('');
@@ -3315,6 +3347,8 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
   useEffect(()=>{setQrText(selData?.qrText||'');},[sel,master]);
   useEffect(()=>{setNote(selData?.note||'');},[sel,master]);
   useEffect(()=>{
+    setHakariNum(selData?.hakariNum||'');
+    setYokousu(selData?.yokousu||'');
     setTsudenMethod(selData?.tsudenMethod||'');
     setChui1(selData?.chui1||'');
     setChui2(selData?.chui2||'');
@@ -3372,6 +3406,16 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
       await db.collection('master').doc(sel).set({note_id:translated},{merge:true});
     }catch(err){alert('翻訳に失敗しました: '+err.message);}
     finally{setTranslating(s=>({...s,note:false}));}
+  }
+
+  async function handleSaveHakari(){
+    if(!sel)return;
+    setSavingHakari(true);
+    try{
+      await db.collection('master').doc(sel).set({hakariNum:hakariNum.trim(),yokousu:yokousu.trim()},{merge:true});
+      setSavedHakari(true);setTimeout(()=>setSavedHakari(false),3000);
+    }catch(err){alert('保存に失敗: '+err.message);}
+    finally{setSavingHakari(false);}
   }
 
   async function handleImg(e){
@@ -3692,6 +3736,34 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
                     {selData?.note_id&&<div style={{marginTop:4,padding:'5px 10px',background:'#EAF6FB',borderRadius:8,fontSize:11,color:'#1A7FA8',wordBreak:'break-all'}}>🇮🇩 {selData.note_id}</div>}
                   </div>
 
+                  {/* ===== 収容数・秤番号 ===== */}
+                  <div style={{marginTop:16,paddingTop:14,borderTop:'2px solid #FAEEDA'}}>
+                    <div style={{fontSize:12,fontWeight:700,color:'#BA7517',marginBottom:10,display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{background:'#FAEEDA',borderRadius:6,padding:'2px 8px'}}>⚖ 収容数・秤番号</span>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                      <div>
+                        <div style={{fontSize:11,fontWeight:600,color:'#7B5800',marginBottom:4}}>収容数</div>
+                        <input value={yokousu} onChange={e=>setYokousu(e.target.value)}
+                          placeholder="例: 50" type="number" min="0"
+                          style={{width:'100%',fontSize:14,boxSizing:'border-box',fontWeight:700}}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,fontWeight:600,color:'#7B5800',marginBottom:4}}>秤番号（00〜99）</div>
+                        <input value={hakariNum} onChange={e=>setHakariNum(e.target.value)}
+                          placeholder="例: 03" maxLength={2}
+                          style={{width:'100%',fontSize:14,boxSizing:'border-box',fontWeight:700}}/>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',gap:8}}>
+                      <button onClick={handleSaveHakari} disabled={savingHakari}
+                        style={{flex:1,minHeight:40,borderRadius:10,border:'none',background:savingHakari?'#B4B2A9':'#BA7517',color:'#fff',fontSize:13,fontWeight:600}}>
+                        {savingHakari?'保存中...':'収容数・秤番号を保存'}
+                      </button>
+                      {savedHakari&&<span style={{alignSelf:'center',color:'#BA7517',fontWeight:600,fontSize:13}}>✓ 保存しました</span>}
+                    </div>
+                  </div>
+
                   {/* ===== 吊り掛け設定 ===== */}
                   <div style={{marginTop:16,paddingTop:14,borderTop:'2px solid #E1F5EE'}}>
                     <div style={{fontSize:12,fontWeight:700,color:'#0F6E56',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
@@ -3940,7 +4012,66 @@ function MasterScreen({master,anomalyTypes,onAddAnomalyType,onRemoveAnomalyType,
     </div>
   );
 }
+function LoginScreen(){
+  const[email,setEmail]=useState('');
+  const[password,setPassword]=useState('');
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState('');
+
+  async function handleLogin(e){
+    e.preventDefault();
+    if(!email||!password)return;
+    setLoading(true);setError('');
+    try{
+      await auth.signInWithEmailAndPassword(email.trim(),password);
+    }catch(e){
+      const msgs={
+        'auth/user-not-found':'メールアドレスが登録されていません',
+        'auth/wrong-password':'パスワードが間違っています',
+        'auth/invalid-email':'メールアドレスの形式が正しくありません',
+        'auth/invalid-credential':'メールアドレスまたはパスワードが間違っています',
+        'auth/too-many-requests':'試行回数が多すぎます。しばらく待ってから再試行してください',
+      };
+      setError(msgs[e.code]||'ログインに失敗しました');
+    }finally{setLoading(false);}
+  }
+
+  return(
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#0F4C2A 0%,#1B7A47 100%)',padding:24}}>
+      <div style={{background:'#fff',borderRadius:20,padding:'40px 32px',width:'100%',maxWidth:400,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+        <div style={{textAlign:'center',marginBottom:32}}>
+          <div style={{fontSize:40,marginBottom:10}}>🏭</div>
+          <div style={{fontSize:22,fontWeight:700,color:'#0F4C2A',letterSpacing:1}}>長坂コーティング</div>
+          <div style={{fontSize:13,color:'#888',marginTop:6}}>生産管理システム</div>
+        </div>
+        <form onSubmit={handleLogin}>
+          <div style={{marginBottom:16}}>
+            <label style={{display:'block',fontSize:13,fontWeight:600,color:'#444',marginBottom:6}}>メールアドレス</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+              placeholder="example@email.com" autoComplete="email"
+              style={{width:'100%',padding:'13px 14px',borderRadius:10,border:'1.5px solid #C0BEB5',fontSize:15,boxSizing:'border-box',outline:'none'}}
+              onFocus={e=>e.target.style.borderColor='#0F4C2A'} onBlur={e=>e.target.style.borderColor='#C0BEB5'}/>
+          </div>
+          <div style={{marginBottom:22}}>
+            <label style={{display:'block',fontSize:13,fontWeight:600,color:'#444',marginBottom:6}}>パスワード</label>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+              placeholder="パスワードを入力" autoComplete="current-password"
+              style={{width:'100%',padding:'13px 14px',borderRadius:10,border:'1.5px solid #C0BEB5',fontSize:15,boxSizing:'border-box',outline:'none'}}
+              onFocus={e=>e.target.style.borderColor='#0F4C2A'} onBlur={e=>e.target.style.borderColor='#C0BEB5'}/>
+          </div>
+          {error&&<div style={{padding:'10px 14px',borderRadius:8,background:'#FEECEC',color:'#B91C1C',fontSize:13,marginBottom:16,fontWeight:500}}>{error}</div>}
+          <button type="submit" disabled={loading||!email||!password}
+            style={{width:'100%',minHeight:52,borderRadius:12,border:'none',background:(loading||!email||!password)?'#B4B2A9':'#0F4C2A',color:'#fff',fontSize:16,fontWeight:700,cursor:(loading||!email||!password)?'not-allowed':'pointer'}}>
+            {loading?'ログイン中...':'ログイン'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function App(){
+  const[user,setUser]=useState(undefined);
   const[ready,setReady]=useState(false);
   const[err,setErr]=useState(null);
   const[master,setMaster]=useState({});
@@ -3952,31 +4083,32 @@ function App(){
   const[line,setLine]=useState(null);
 
   useEffect(()=>{
-    let unsubM,unsubP,unsubAT,unsubAnomaly;
-    auth.setPersistence(firebase.auth.Auth.Persistence.NONE)
-      .then(()=>auth.signInAnonymously())
-      .then(()=>{
-        unsubAT=db.collection('anomalyTypes').onSnapshot(snap=>{
-          const types=[];snap.forEach(doc=>types.push({id:doc.id,...doc.data()}));
-          types.sort((a,b)=>(a.order||99)-(b.order||99));
-          setAnomalyTypes(types.length>0?types:DEFAULT_ANOMALY_TYPES.map((n,i)=>({id:n,name:n,order:i})));
-        });
-        unsubAnomaly=db.collection('anomalies').where('date','==',TODAY).onSnapshot(snap=>{
-          const a=[];snap.forEach(doc=>a.push({id:doc.id,...doc.data()}));
-          setAnomalies(a);
-        });
-        unsubM=db.collection('master').onSnapshot(snap=>{
-          const m={};snap.forEach(doc=>{m[doc.id]={...doc.data()};});setMaster(m);
-        },e=>console.error('master listener:',e));
-        unsubP=db.collection('plans').where('date','==',TODAY).onSnapshot(snap=>{
-          const p=[];snap.forEach(doc=>p.push({id:doc.id,...doc.data()}));
-          p.sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime));setPlans(p);
-        },e=>console.error('plans listener:',e));
-        setReady(true);
-      })
-      .catch(e=>setErr(e.message));
-    return()=>{unsubM&&unsubM();unsubP&&unsubP();unsubAT&&unsubAT();unsubAnomaly&&unsubAnomaly();};
+    const unsub=auth.onAuthStateChanged(u=>setUser(u||null));
+    return()=>unsub();
   },[]);
+
+  useEffect(()=>{
+    if(!user){setReady(false);return;}
+    let unsubM,unsubP,unsubAT,unsubAnomaly;
+    unsubAT=db.collection('anomalyTypes').onSnapshot(snap=>{
+      const types=[];snap.forEach(doc=>types.push({id:doc.id,...doc.data()}));
+      types.sort((a,b)=>(a.order||99)-(b.order||99));
+      setAnomalyTypes(types.length>0?types:DEFAULT_ANOMALY_TYPES.map((n,i)=>({id:n,name:n,order:i})));
+    });
+    unsubAnomaly=db.collection('anomalies').where('date','==',TODAY).onSnapshot(snap=>{
+      const a=[];snap.forEach(doc=>a.push({id:doc.id,...doc.data()}));
+      setAnomalies(a);
+    });
+    unsubM=db.collection('master').onSnapshot(snap=>{
+      const m={};snap.forEach(doc=>{m[doc.id]={...doc.data()};});setMaster(m);
+    },e=>console.error('master listener:',e));
+    unsubP=db.collection('plans').where('date','==',TODAY).onSnapshot(snap=>{
+      const p=[];snap.forEach(doc=>p.push({id:doc.id,...doc.data()}));
+      p.sort((a,b)=>a.kakeTime.localeCompare(b.kakeTime));setPlans(p);
+    },e=>console.error('plans listener:',e));
+    setReady(true);
+    return()=>{unsubM&&unsubM();unsubP&&unsubP();unsubAT&&unsubAT();unsubAnomaly&&unsubAnomaly();};
+  },[user]);
 
   async function onComplete(planId,role,frac){
     const now=new Date().toTimeString().slice(0,5);
@@ -4069,6 +4201,8 @@ function App(){
 
   const{fontScale}=useLang();
 
+  if(user===undefined)return<LoadingScreen/>;
+  if(!user)return<LoginScreen/>;
   if(err)return<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
   if(!ready)return<LoadingScreen/>;
 
