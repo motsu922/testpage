@@ -1289,6 +1289,7 @@
   let audioReady = false;
   let currentTab = 'scan';
   let okAutoTimer = null;
+  let shortQrTimer = null;
   let isOKPending = false;
   let firebaseApp = null;
   let database = null;
@@ -1591,6 +1592,9 @@
     }
     if(isOKPending){isOKPending=false;const t=document.getElementById('okToast');if(t)t.classList.remove('show');}
     if (currentStep === 1) {
+      const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'extract' : 'search';
+      const shortInfo = getShortQRInfo(decoded, scanRole);
+      if (shortInfo) { showShortQRError(shortInfo); return; }
       value1 = decoded;
       playSound('step1');  // ★ 1枚目読み込み完了：軽い通知音
       // ★ 1対Nモード：QR1スキャン時点で品番を切り出して固定
@@ -1602,6 +1606,9 @@
       updateScanUI();
       focusScanInputSoon();
     } else if (currentStep === 2) {
+      const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'search' : 'extract';
+      const shortInfo = getShortQRInfo(decoded, scanRole);
+      if (shortInfo) { showShortQRError(shortInfo); return; }
       value2 = decoded;
       playSound('beep');
       doMatch();
@@ -2866,6 +2873,75 @@
     return { part, rule, totalLen: qr.length, start0, note };
   }
 
+  function getRuleRequiredLength(rule) {
+    if (!rule) return 8;
+    const start = Number(rule.startPos) || 1;
+    const count = Number(rule.charCount) || 1;
+    return Math.max(1, start + count - 1);
+  }
+
+  function getMinimumQRLength() {
+    const lengths = (settings.extractRules || [])
+      .map(getRuleRequiredLength)
+      .filter(n => Number.isFinite(n) && n > 1);
+    return lengths.length ? Math.min(...lengths) : 8;
+  }
+
+  function getShortQRInfo(qrRaw, scanRole) {
+    const qr = normalizeQR(qrRaw);
+    const minLen = getMinimumQRLength();
+    if (qr.length < minLen) {
+      return { qr, minLen, actualLen: qr.length, note: 'too_short' };
+    }
+
+    if (scanRole === 'extract') {
+      const ex = extractPartNumberFrom(qr);
+      if (ex.note === 'bad_start_full' || ex.note === 'short_extract') {
+        return {
+          qr,
+          minLen: getRuleRequiredLength(ex.rule),
+          actualLen: qr.length,
+          note: ex.note
+        };
+      }
+    }
+    return null;
+  }
+
+  function showShortQRError(info) {
+    const overlay = document.getElementById('resultOverlay');
+    const symbol = document.getElementById('resultSymbol');
+    const text = document.getElementById('resultText');
+    const detail = document.getElementById('resultDetail');
+    const adminArea = document.getElementById('adminArea');
+
+    if (shortQrTimer) {
+      clearTimeout(shortQrTimer);
+      shortQrTimer = null;
+    }
+    isNGLocked = false;
+    overlay.className = 'result-overlay show ng';
+    symbol.textContent = '×';
+    text.textContent = 'QRが途中で切れています';
+    detail.innerHTML = `
+      <p class="label">読み取りが短すぎるため、照合前に停止しました。</p>
+      <p class="label" style="margin-top:10px;">読み取り文字数: ${escapeHtml(info.actualLen)} / 必要目安: ${escapeHtml(info.minLen)}以上</p>
+      <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(info.qr || '(空)')}</p>
+      <p class="label" style="margin-top:12px;">同じQRをもう一度、最後まで読み取ってください。</p>
+    `;
+    if (adminArea) adminArea.style.display = 'none';
+    playSound('ng');
+    vibrate([160, 60, 160]);
+
+    shortQrTimer = setTimeout(() => {
+      overlay.classList.remove('show');
+      shortQrTimer = null;
+      clearScannerBuffer();
+      updateScanUI();
+      focusScanInputSoon();
+    }, 2600);
+  }
+
   function resolveAliases(partNumber) {
     const candidates=[partNumber];
     if(!settings.aliasMap||!settings.aliasMap.length) return candidates;
@@ -3030,6 +3106,7 @@
 
   function startScanning(boot=false) {
     if (isNGLocked) { showNGOverlay(); return; }
+    if (shortQrTimer) { clearTimeout(shortQrTimer); shortQrTimer = null; }
     clearScannerBuffer();
     isOKPending=false;const t=document.getElementById('okToast');if(t)t.classList.remove('show');
     value1=''; value2='';
