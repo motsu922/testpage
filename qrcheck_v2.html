@@ -2084,6 +2084,10 @@
       handleOrderDetailScan(decoded);
       return;
     }
+    if (isOrderDetailComplete()) {
+      showOrderDetailCompleteOverlay();
+      return;
+    }
     if (currentStep === 1) {
       const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'extract' : 'search';
       const shortInfo = getShortQRInfo(decoded, scanRole);
@@ -3563,7 +3567,9 @@
       orderQr: parsed.orderQr,
       meta: parsed.meta,
       lines: parsed.lines,
-      scannedIds: {}
+      scannedIds: {},
+      completedAt: '',
+      completeLoggedAt: ''
     };
     saveOrderDetailSession();
     renderOrderDetailPanel();
@@ -3574,7 +3580,7 @@
 
   function clearOrderDetail() {
     if (orderDetailSession.lines.length && !confirm('注文明細をクリアしますか？')) return;
-    orderDetailSession = { orderQr: '', meta: {}, lines: [], scannedIds: {} };
+    orderDetailSession = { orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
     saveOrderDetailSession();
     renderOrderDetailPanel();
     focusScanInputSoon();
@@ -3588,10 +3594,10 @@
     try {
       const saved = JSON.parse(localStorage.getItem(ORDER_DETAIL_KEY) || 'null');
       if (saved && Array.isArray(saved.lines)) {
-        orderDetailSession = { orderQr: '', meta: {}, scannedIds: {}, ...saved };
+        orderDetailSession = { orderQr: '', meta: {}, scannedIds: {}, completedAt: '', completeLoggedAt: '', ...saved };
       }
     } catch (e) {
-      orderDetailSession = { orderQr: '', meta: {}, lines: [], scannedIds: {} };
+      orderDetailSession = { orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
     }
   }
 
@@ -3601,6 +3607,80 @@
 
   function orderScannedBoxes() {
     return orderDetailSession.lines.reduce((sum, line) => sum + line.scanned, 0);
+  }
+
+  function isOrderDetailComplete() {
+    const required = orderRequiredBoxes();
+    return orderDetailSession.lines.length > 0 && required > 0 && orderScannedBoxes() >= required;
+  }
+
+  function saveOrderDetailCompleteLog(sourceLog) {
+    const required = orderRequiredBoxes();
+    const scanned = orderScannedBoxes();
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      qr1_raw: '',
+      qr2_raw: '',
+      qr1: '',
+      qr2: '',
+      partNumber: 'ORDER_DETAIL_COMPLETE',
+      qr1Length: 0,
+      qr2Length: 0,
+      scanMode: settings.scanMode || '1to1',
+      matchedRule: null,
+      extractStart0: null,
+      extractNote: 'order_detail_complete',
+      orderDetailActive: true,
+      orderDetailCompleted: true,
+      orderDetailCompletedAt: orderDetailSession.completedAt || new Date().toISOString(),
+      orderDetailRequiredBoxes: required,
+      orderDetailScannedBoxes: scanned,
+      orderDetailLineCount: orderDetailSession.lines.length,
+      orderDetailLastPart: sourceLog && sourceLog.partNumber ? sourceLog.partNumber : '',
+      terminalInputMode: terminalInputMode,
+      result: 'OK',
+      isDuplicate: false,
+      dupType: ''
+    };
+    scanLog.unshift(logEntry);
+    if (scanLog.length > 120) scanLog.pop();
+    saveLog();
+    renderLog();
+    saveLogToFirebase(logEntry);
+  }
+
+  function showOrderDetailCompleteOverlay() {
+    const overlay = document.getElementById('resultOverlay');
+    const symbol = document.getElementById('resultSymbol');
+    const text = document.getElementById('resultText');
+    const detail = document.getElementById('resultDetail');
+    const adminArea = document.getElementById('adminArea');
+    const required = orderRequiredBoxes();
+    const scanned = orderScannedBoxes();
+
+    if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
+    if (shortQrTimer) { clearTimeout(shortQrTimer); shortQrTimer = null; }
+    isOKPending = false;
+    isNGLocked = false;
+    overlay.className = 'result-overlay show ok';
+    symbol.textContent = 'OK';
+    text.textContent = '明細照合完了';
+    detail.innerHTML = `
+      <p class="label">全ての明細分の照合が完了しました</p>
+      <p style="font-size:18px;font-weight:900;margin-top:8px;">${escapeHtml(scanned)} / ${escapeHtml(required)}</p>
+      <p class="label" style="margin-top:12px;">次の注文は「明細QR読込」から開始してください</p>
+    `;
+    if (adminArea) adminArea.style.display = 'none';
+    playSound('ok');
+    vibrate([80, 40, 80, 40, 160]);
+
+    okAutoTimer = setTimeout(() => {
+      overlay.classList.remove('show');
+      okAutoTimer = null;
+      clearScannerBuffer();
+      updateScanUI();
+      focusScanInputSoon();
+    }, 3600);
   }
 
   function renderOrderDetailPanel() {
@@ -3647,6 +3727,10 @@
     }
     line.scanned += 1;
     orderDetailSession.scannedIds[key] = true;
+    const completed = isOrderDetailComplete();
+    if (completed && !orderDetailSession.completedAt) {
+      orderDetailSession.completedAt = new Date().toISOString();
+    }
     saveOrderDetailSession();
     renderOrderDetailPanel();
     return { active: true, ok: true, note: `明細OK: ${line.partNo} ${line.scanned}/${line.requiredBoxes}` };
@@ -3690,6 +3774,7 @@
 
     // 最終判定
     const isOK = isQROK && !isDup && orderCheck.ok;
+    const orderJustCompleted = isOK && orderCheck.active && isOrderDetailComplete() && !orderDetailSession.completeLoggedAt;
 
     // 品番一致 かつ 非重複 → 本日スキャン済みリストに登録（3種すべて）
     if (isOK) {
@@ -3714,6 +3799,9 @@
       orderDetailActive: !!orderCheck.active,
       orderDetailResult: orderCheck.active ? (orderCheck.ok ? 'OK' : 'NG') : '',
       orderDetailNote: orderCheck.note || '',
+      orderDetailCompleted: orderJustCompleted,
+      orderDetailRequiredBoxes: orderCheck.active ? orderRequiredBoxes() : 0,
+      orderDetailScannedBoxes: orderCheck.active ? orderScannedBoxes() : 0,
       result: isOK ? 'OK' : (isDup ? 'DUP' : 'NG'),
       isDuplicate: isDup,
       dupType: dupType || ''
@@ -3724,6 +3812,11 @@
     saveLog();
     renderLog();
     saveLogToFirebase(logEntry);
+    if (orderJustCompleted) {
+      orderDetailSession.completeLoggedAt = new Date().toISOString();
+      saveOrderDetailSession();
+      saveOrderDetailCompleteLog(logEntry);
+    }
     showResult(isOK, isDup, dupType, partNumber, logEntry);
   }
 
@@ -3750,6 +3843,14 @@
     if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
 
     if (isOK) {
+      if (logEntry.orderDetailCompleted) {
+        value1 = '';
+        value2 = '';
+        currentStep = 0;
+        updateScanUI();
+        showOrderDetailCompleteOverlay();
+        return;
+      }
       overlay.classList.remove('show'); adminArea.style.display = 'none';
       const toastPn=document.getElementById('okToastPn'), toastPhoto=document.getElementById('okToastPhoto');
       if(toastPn) toastPn.textContent = partNumber ? '品番: '+partNumber : '';
@@ -3911,6 +4012,18 @@
     const input   = document.getElementById('scanInput');
     const panel   = document.getElementById('qr1InfoPanel');
     const changePnBtn = document.getElementById('changePnBtn');
+    if (isOrderDetailComplete()) {
+      step.textContent = '明細照合完了';
+      message.textContent = '次の注文は「明細QR読込」から開始してください';
+      message.className = 'scan-message';
+      input.className = 'scan-input';
+      input.placeholder = '明細QR読込を押してください';
+      if (panel) panel.style.display = 'none';
+      if (changePnBtn) changePnBtn.style.display = 'none';
+      const hint = document.getElementById('step2PhotoHint');
+      if (hint) hint.classList.remove('show');
+      return;
+    }
     if (currentStep === 1) {
       step.textContent    = isNMode ? '1対Nモード｜STEP 1' : 'STEP 1 / 2';
       message.textContent = isNMode ? 'マスターQRを読み取ってください' : '1回目を読み取ってください';
