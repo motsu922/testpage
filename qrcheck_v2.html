@@ -1,0 +1,1191 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>QR照合システム v2</title>
+  <meta name="format-detection" content="telephone=no">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      min-height: 100vh;
+      background: #0b0d10;
+      color: #e8edf2;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      touch-action: manipulation;
+      overscroll-behavior: none;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: #111821;
+      border-bottom: 1px solid #223040;
+      padding: 12px 14px;
+    }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .brand-title { font-size: 17px; font-weight: 800; color: #7cc7ff; }
+    .brand-sub { margin-top: 3px; font-size: 11px; color: #7f8d9a; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .main { padding: 14px; max-width: 980px; margin: 0 auto; }
+    .panel {
+      background: #121923;
+      border: 1px solid #243344;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .scan-panel {
+      display: grid;
+      gap: 10px;
+      border-color: #31506b;
+      background: #101d2a;
+    }
+    .step-label {
+      color: #7cc7ff;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .04em;
+    }
+    .scan-message {
+      font-size: clamp(21px, 5vw, 32px);
+      font-weight: 900;
+      color: #f5fbff;
+      line-height: 1.25;
+    }
+    .scan-input {
+      width: 100%;
+      min-height: 58px;
+      border: 3px solid #4faeea;
+      background: #070a0e;
+      color: #fff;
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 18px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      outline: none;
+    }
+    .scan-input:focus { box-shadow: 0 0 0 4px rgba(79,174,234,.18); }
+    .hint { color: #728191; font-size: 12px; line-height: 1.5; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .btn {
+      border: 1px solid #314155;
+      background: #1b2734;
+      color: #d7e2ec;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 700;
+      font-size: 13px;
+      min-height: 42px;
+    }
+    .btn.primary { background: #0078c8; border-color: #1598ed; color: white; }
+    .btn.danger { background: #3a1518; border-color: #7b2d34; color: #ffadb4; }
+    .btn:disabled { opacity: .45; cursor: default; }
+    .input-mode-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: #0b1118;
+      border: 1px solid #263647;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .input-mode-label { color: #8b9aab; font-size: 12px; font-weight: 800; }
+    .input-mode-toggle {
+      border: 1px solid #34536c;
+      background: #132333;
+      color: #9ed8ff;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 900;
+      min-height: 34px;
+      white-space: nowrap;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .flow-step {
+      min-height: 74px;
+      background: #121923;
+      border: 1px solid #243344;
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .flow-step.active { border-color: #4faeea; background: #0f2739; }
+    .flow-step.done { border-color: #327f48; background: #0d1d13; }
+    .flow-no { color: #7f8d9a; font-size: 10px; font-weight: 900; }
+    .flow-title { margin-top: 6px; font-size: 14px; font-weight: 900; }
+    .flow-sub { margin-top: 3px; color: #8b9aab; font-size: 11px; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .summary-card {
+      background: #121923;
+      border: 1px solid #243344;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 78px;
+    }
+    .summary-label { font-size: 10px; color: #7f8d9a; font-weight: 800; letter-spacing: .08em; }
+    .summary-value { margin-top: 7px; font-size: 24px; font-weight: 900; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .ok-text { color: #53d076; }
+    .warn-text { color: #ffbd5a; }
+    .ng-text { color: #ff6666; }
+    .info-text { color: #7cc7ff; }
+    .pair-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .qr-box {
+      min-height: 74px;
+      background: #070a0e;
+      border: 1px solid #263647;
+      border-radius: 8px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      color: #cdd8e3;
+      word-break: break-all;
+    }
+    .order-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .meta-item { background: #0b1118; border: 1px solid #243344; border-radius: 7px; padding: 9px; }
+    .meta-key { color: #7f8d9a; font-size: 10px; font-weight: 800; }
+    .meta-val { color: #edf6ff; font-size: 14px; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .line-list { display: grid; gap: 8px; }
+    .line-card {
+      background: #0f151d;
+      border: 1px solid #263647;
+      border-radius: 8px;
+      padding: 11px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 10px;
+    }
+    .line-card.done { border-color: #327f48; background: #0d1d13; }
+    .line-no {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #1b2734;
+      color: #9fb0c0;
+      font-weight: 900;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    .part { font-size: 15px; font-weight: 900; color: #f2f7fc; word-break: break-all; }
+    .line-sub { margin-top: 4px; color: #8b9aab; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .progress-box { text-align: right; min-width: 84px; }
+    .progress-num { font-size: 20px; font-weight: 900; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .progress-label { color: #7f8d9a; font-size: 10px; margin-top: 2px; }
+    .log-list { max-height: 270px; overflow: auto; display: grid; gap: 6px; }
+    .log-item {
+      background: #0f151d;
+      border-left: 4px solid #4faeea;
+      border-radius: 6px;
+      padding: 9px;
+      font-size: 12px;
+    }
+    .log-item.ok { border-left-color: #53d076; }
+    .log-item.ng { border-left-color: #ff6666; }
+    .log-item.warn { border-left-color: #ffbd5a; }
+    .log-time { color: #687788; font-size: 10px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .log-title { margin-top: 3px; font-weight: 800; }
+    .log-detail { margin-top: 3px; color: #9fb0c0; word-break: break-all; }
+    .empty { color: #657586; text-align: center; padding: 18px; }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 18px;
+      text-align: center;
+      color: white;
+    }
+    .overlay.show { display: flex; }
+    .overlay.ok { background: rgba(0,92,28,.96); }
+    .overlay.ng { background: rgba(120,0,10,.96); }
+    .overlay.warn { background: rgba(137,78,0,.96); }
+    .overlay-symbol { font-size: min(34vw, 160px); font-weight: 900; line-height: 1; }
+    .overlay-title { font-size: clamp(24px, 6vw, 38px); font-weight: 900; }
+    .overlay-detail {
+      max-width: 760px;
+      background: rgba(255,255,255,.12);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-size: 14px;
+      line-height: 1.7;
+      word-break: break-all;
+    }
+    .unlock-panel {
+      display: none;
+      width: min(340px, 92vw);
+      background: rgba(255,255,255,.12);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .unlock-panel.show { display: block; }
+    .unlock-label { font-size: 13px; font-weight: 800; margin-bottom: 10px; }
+    .pin-dots { display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; }
+    .pin-dot {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,.78);
+      border-radius: 50%;
+      background: transparent;
+    }
+    .pin-dot.filled { background: white; }
+    .pin-error { min-height: 18px; color: #ffd2d2; font-size: 12px; font-weight: 800; margin-bottom: 8px; }
+    .pin-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .pin-key {
+      min-height: 48px;
+      border: 1px solid rgba(255,255,255,.28);
+      background: rgba(255,255,255,.15);
+      color: white;
+      border-radius: 9px;
+      font-size: 20px;
+      font-weight: 900;
+    }
+    .pin-key:active { background: rgba(255,255,255,.32); }
+    @media (max-width: 720px) {
+      body { background: #090c10; }
+      .app-header {
+        padding: 9px 10px;
+        box-shadow: 0 8px 18px rgba(0,0,0,.28);
+      }
+      .brand-row { align-items: flex-start; }
+      .brand-title { font-size: 15px; line-height: 1.2; }
+      .brand-sub { font-size: 9px; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .brand-row .btn {
+        min-width: 52px;
+        min-height: 38px;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .main {
+        padding: 8px;
+        padding-bottom: calc(14px + env(safe-area-inset-bottom));
+      }
+      .panel {
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+      }
+      .scan-panel {
+        position: sticky;
+        top: 58px;
+        z-index: 12;
+        gap: 8px;
+        padding: 12px;
+        border-width: 2px;
+        box-shadow: 0 12px 22px rgba(0,0,0,.32);
+      }
+      .step-label { font-size: 11px; }
+      .scan-message {
+        font-size: 22px;
+        line-height: 1.2;
+      }
+      .scan-input {
+        min-height: 64px;
+        border-width: 4px;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 20px;
+      }
+      .hint { font-size: 11px; line-height: 1.45; }
+      .btn-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 7px;
+      }
+      .btn {
+        min-height: 44px;
+        padding: 9px 10px;
+        font-size: 12px;
+      }
+      .input-mode-row { padding: 7px 8px; }
+      .input-mode-label { font-size: 11px; }
+      .input-mode-toggle {
+        min-height: 34px;
+        padding: 7px 10px;
+        font-size: 11px;
+      }
+      #exportBtn { grid-column: 1 / -1; }
+      .flow, .summary-grid { grid-template-columns: repeat(2, 1fr); }
+      .flow { gap: 6px; margin-bottom: 8px; }
+      .flow-step {
+        min-height: 58px;
+        padding: 8px;
+        border-radius: 7px;
+      }
+      .flow-no { font-size: 9px; }
+      .flow-title { margin-top: 4px; font-size: 12px; line-height: 1.2; }
+      .flow-sub { margin-top: 2px; font-size: 10px; }
+      .summary-grid { gap: 6px; margin-bottom: 8px; }
+      .summary-card {
+        min-height: 64px;
+        padding: 9px;
+        border-radius: 7px;
+      }
+      .summary-label { font-size: 9px; }
+      .summary-value {
+        margin-top: 4px;
+        font-size: 22px;
+      }
+      .pair-grid, .order-meta { grid-template-columns: 1fr; }
+      .qr-box {
+        min-height: 54px;
+        max-height: 92px;
+        overflow: auto;
+        padding: 8px;
+        font-size: 11px;
+      }
+      .order-meta { gap: 6px; margin-top: 8px; }
+      .meta-item { padding: 8px; }
+      .meta-val { font-size: 13px; }
+      .line-list { gap: 6px; }
+      .line-card {
+        grid-template-columns: 26px 1fr;
+        gap: 8px;
+        padding: 9px;
+        border-radius: 7px;
+      }
+      .line-no {
+        width: 26px;
+        height: 26px;
+        font-size: 12px;
+      }
+      .part { font-size: 14px; line-height: 1.25; }
+      .line-sub { font-size: 11px; line-height: 1.35; }
+      .progress-box { grid-column: 2; text-align: left; }
+      .progress-num { font-size: 18px; }
+      .log-list { max-height: 220px; gap: 5px; }
+      .log-item { padding: 8px; font-size: 11px; }
+      .overlay { padding: 14px; }
+      .overlay-symbol { font-size: min(40vw, 130px); }
+      .overlay-title { font-size: 28px; }
+      .overlay-detail {
+        width: 100%;
+        padding: 12px;
+        font-size: 14px;
+      }
+      .unlock-panel {
+        width: 100%;
+        padding: 12px;
+      }
+      .pin-key { min-height: 52px; }
+    }
+    @media (max-width: 380px) {
+      .scan-message { font-size: 20px; }
+      .scan-input { font-size: 18px; }
+      .btn-row { grid-template-columns: 1fr; }
+      #exportBtn { grid-column: auto; }
+      .summary-value { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-row">
+      <div>
+        <div class="brand-title">QR照合システム v2</div>
+        <div class="brand-sub">ORDER DETAIL → CUSTOMER KANBAN → INTERNAL KANBAN</div>
+      </div>
+      <button class="btn" onclick="focusScanInput()">入力</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="panel scan-panel">
+      <div class="step-label" id="currentStep">STEP 1 / 4</div>
+      <div class="scan-message" id="scanMessage">注文明細QRを読み取ってください</div>
+      <input class="scan-input" id="scanInput" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="none" enterkeyhint="done" placeholder="QRリーダーで読み取り">
+      <div class="hint" id="scanHint">先に注文明細を登録し、顧客かんばんと社内かんばんの照合後に明細通りか確認します。</div>
+      <div class="input-mode-row">
+        <div>
+          <div class="input-mode-label">QR入力方式</div>
+          <div class="hint" id="inputModeHint">画面全体でQRリーダー入力を受けます</div>
+        </div>
+        <button class="input-mode-toggle" id="inputModeToggle" onclick="toggleInputMode()">全体入力</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn danger" onclick="resetCurrentPair()">現在のかんばんをリセット</button>
+        <button class="btn danger" onclick="resetAll()">全リセット</button>
+        <button class="btn" onclick="exportLog()" id="exportBtn" disabled>CSV出力</button>
+      </div>
+    </section>
+
+    <section class="flow" id="flowSteps"></section>
+
+    <section class="summary-grid">
+      <div class="summary-card"><div class="summary-label">明細行</div><div class="summary-value info-text" id="sumLines">0</div></div>
+      <div class="summary-card"><div class="summary-label">必要箱数</div><div class="summary-value info-text" id="sumBoxes">0</div></div>
+      <div class="summary-card"><div class="summary-label">照合済</div><div class="summary-value ok-text" id="sumScanned">0</div></div>
+      <div class="summary-card"><div class="summary-label">残り</div><div class="summary-value warn-text" id="sumRemain">0</div></div>
+    </section>
+
+    <section class="panel pair-grid">
+      <div>
+        <div class="step-label" style="margin-bottom:8px;">顧客かんばん</div>
+        <div class="qr-box" id="customerQr">未読取</div>
+      </div>
+      <div>
+        <div class="step-label" style="margin-bottom:8px;">社内かんばん</div>
+        <div class="qr-box" id="internalQr">未読取</div>
+      </div>
+    </section>
+
+    <section class="panel" id="orderInfoPanel">
+      <div class="step-label">注文情報</div>
+      <div class="empty">注文明細QRを読み取ると表示します</div>
+    </section>
+
+    <section class="panel">
+      <div class="step-label" style="margin-bottom:10px;">明細チェックリスト</div>
+      <div class="line-list" id="lineList"><div class="empty">明細はまだありません</div></div>
+    </section>
+
+    <section class="panel">
+      <div class="step-label" style="margin-bottom:10px;">照合ログ</div>
+      <div class="log-list" id="logList"><div class="empty">ログはまだありません</div></div>
+    </section>
+  </main>
+
+  <div class="overlay" id="resultOverlay" onclick="closeOverlay()">
+    <div class="overlay-symbol" id="overlaySymbol">○</div>
+    <div class="overlay-title" id="overlayTitle">OK</div>
+    <div class="overlay-detail" id="overlayDetail"></div>
+    <div class="unlock-panel" id="unlockPanel" onclick="event.stopPropagation();">
+      <div class="unlock-label">解除パスワードを入力</div>
+      <div class="pin-dots" id="pinDots"></div>
+      <div class="pin-error" id="pinError"></div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="appendUnlockDigit('1')">1</button>
+        <button class="pin-key" onclick="appendUnlockDigit('2')">2</button>
+        <button class="pin-key" onclick="appendUnlockDigit('3')">3</button>
+        <button class="pin-key" onclick="appendUnlockDigit('4')">4</button>
+        <button class="pin-key" onclick="appendUnlockDigit('5')">5</button>
+        <button class="pin-key" onclick="appendUnlockDigit('6')">6</button>
+        <button class="pin-key" onclick="appendUnlockDigit('7')">7</button>
+        <button class="pin-key" onclick="appendUnlockDigit('8')">8</button>
+        <button class="pin-key" onclick="appendUnlockDigit('9')">9</button>
+        <button class="pin-key" onclick="clearUnlockPin()">消</button>
+        <button class="pin-key" onclick="appendUnlockDigit('0')">0</button>
+        <button class="pin-key" onclick="backspaceUnlockPin()">⌫</button>
+      </div>
+    </div>
+    <button class="btn" id="overlayCloseBtn" onclick="closeOverlay(); event.stopPropagation();">閉じる</button>
+  </div>
+
+  <script>
+    const ORDER_LINE_RE = /P(\d{4})P([^Q]+)Q(\d+)Q(\d+)/g;
+    const KANBAN_RE = /P(\d{4})P([^Q]+)Q(\d+)/;
+    const MIN_QR_LENGTH = 20;
+    const SCANNER_IDLE_MS = 80;
+    const DEFAULT_UNLOCK_PIN = '0000';
+    const STORAGE_KEY = 'qrcheck_v2_combined_session';
+    const INPUT_MODE_KEY = 'qrcheck_v2_input_mode';
+
+    const flowLabels = [
+      ['注文明細', '最初に登録'],
+      ['顧客かんばん', '1回目'],
+      ['社内かんばん', '2回目'],
+      ['照合結果', 'かんばん＋明細']
+    ];
+
+    let session = freshSession();
+    let scannerBuffer = '';
+    let scannerIdleTimer = null;
+    let ngLocked = false;
+    let unlockPinBuffer = '';
+    let inputMode = localStorage.getItem(INPUT_MODE_KEY) || 'global';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSession();
+      setupInputListeners();
+      renderAll();
+      renderInputMode();
+      focusScanInput();
+    });
+
+    function freshSession() {
+      return {
+        phase: 'order',
+        customerQr: '',
+        internalQr: '',
+        pendingKanban: null,
+        orderQr: '',
+        meta: null,
+        lines: [],
+        scannedIds: {},
+        logs: []
+      };
+    }
+
+    function setupInputListeners() {
+      document.addEventListener('keydown', handleGlobalScannerKey, { capture: true });
+      const scanInput = document.getElementById('scanInput');
+      scanInput.addEventListener('keydown', handleDirectInputKey);
+    }
+
+    function handleGlobalScannerKey(e) {
+      if (inputMode !== 'global') return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      if (ngLocked) {
+        handleUnlockKey(e);
+        return;
+      }
+
+      const active = document.activeElement;
+      const isEditable = active && (
+        active.tagName === 'INPUT' ||
+        active.tagName === 'TEXTAREA' ||
+        active.tagName === 'SELECT' ||
+        active.isContentEditable
+      );
+      if (isEditable && active.id !== 'scanInput') return;
+
+      handleBufferedScanKey(e);
+    }
+
+    function handleDirectInputKey(e) {
+      if (inputMode !== 'direct') return;
+      if (ngLocked) {
+        handleUnlockKey(e);
+        return;
+      }
+      if (e.key !== 'Enter' && e.key !== 'Tab') return;
+      e.preventDefault();
+      const scanInput = document.getElementById('scanInput');
+      const value = normalizeQR(scanInput.value);
+      scanInput.value = '';
+      if (value) handleScan(value);
+    }
+
+    function toggleInputMode() {
+      inputMode = inputMode === 'global' ? 'direct' : 'global';
+      localStorage.setItem(INPUT_MODE_KEY, inputMode);
+      clearScannerBuffer();
+      renderInputMode();
+      focusScanInput();
+    }
+
+    function renderInputMode() {
+      const toggle = document.getElementById('inputModeToggle');
+      const hint = document.getElementById('inputModeHint');
+      const input = document.getElementById('scanInput');
+      if (!toggle || !hint || !input) return;
+      if (inputMode === 'global') {
+        toggle.textContent = '全体入力';
+        hint.textContent = '画面全体でQRリーダー入力を受けます';
+        input.setAttribute('inputmode', 'none');
+      } else {
+        toggle.textContent = '直接入力';
+        hint.textContent = '入力欄に入ったQRをEnter/Tabで確定します';
+        input.setAttribute('inputmode', 'text');
+      }
+    }
+
+    function handleBufferedScanKey(e) {
+      const scanInput = document.getElementById('scanInput');
+
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        submitScannerBuffer();
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        clearScannerBuffer();
+        return;
+      }
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        scannerBuffer = scannerBuffer.slice(0, -1);
+        if (scanInput) scanInput.value = scannerBuffer;
+        scheduleScannerSubmit();
+        return;
+      }
+
+      if (e.key.length !== 1) return;
+
+      e.preventDefault();
+      scannerBuffer += e.key.replace(/[\r\n]+/g, ' ');
+      if (scanInput) scanInput.value = scannerBuffer;
+      scheduleScannerSubmit();
+    }
+
+    function scheduleScannerSubmit() {
+      clearTimeout(scannerIdleTimer);
+      if (!scannerBuffer.trim()) return;
+      scannerIdleTimer = setTimeout(submitScannerBuffer, SCANNER_IDLE_MS);
+    }
+
+    function submitScannerBuffer() {
+      clearTimeout(scannerIdleTimer);
+      scannerIdleTimer = null;
+      const value = normalizeQR(scannerBuffer);
+      if (value) handleScan(value);
+      clearScannerBuffer();
+    }
+
+    function clearScannerBuffer() {
+      clearTimeout(scannerIdleTimer);
+      scannerIdleTimer = null;
+      scannerBuffer = '';
+      const scanInput = document.getElementById('scanInput');
+      if (scanInput) scanInput.value = '';
+    }
+
+    function handleUnlockKey(e) {
+      if (/^\d$/.test(e.key)) {
+        e.preventDefault();
+        appendUnlockDigit(e.key);
+        return;
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        backspaceUnlockPin();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        clearUnlockPin();
+      }
+    }
+
+    function getUnlockPin() {
+      return String(localStorage.getItem('qrcheck_v2_unlock_pin') || DEFAULT_UNLOCK_PIN).padStart(4, '0').slice(-4);
+    }
+
+    function appendUnlockDigit(digit) {
+      if (!ngLocked || !/^\d$/.test(digit)) return;
+      unlockPinBuffer = (unlockPinBuffer + digit).slice(0, 4);
+      renderUnlockPin();
+      if (unlockPinBuffer.length === 4) {
+        if (unlockPinBuffer === getUnlockPin()) {
+          closeOverlay(true);
+        } else {
+          document.getElementById('pinError').textContent = 'パスワードが違います';
+          unlockPinBuffer = '';
+          setTimeout(renderUnlockPin, 180);
+        }
+      }
+    }
+
+    function backspaceUnlockPin() {
+      if (!ngLocked) return;
+      unlockPinBuffer = unlockPinBuffer.slice(0, -1);
+      renderUnlockPin();
+    }
+
+    function clearUnlockPin() {
+      unlockPinBuffer = '';
+      renderUnlockPin();
+    }
+
+    function renderUnlockPin() {
+      const dots = document.getElementById('pinDots');
+      const error = document.getElementById('pinError');
+      if (!dots || !error) return;
+      dots.innerHTML = [0, 1, 2, 3].map(index => `<span class="pin-dot ${index < unlockPinBuffer.length ? 'filled' : ''}"></span>`).join('');
+      if (unlockPinBuffer.length < 4) error.textContent = '';
+    }
+
+    function handleScan(qr) {
+      if (qr.length < MIN_QR_LENGTH) {
+        pushLog('ng', 'QRが途中で切れています', `読取文字数: ${qr.length}`);
+        showOverlay('ng', '×', 'QRが途中で切れています', '再度QRを読み込んでください。');
+        renderAll();
+        return;
+      }
+
+      if (session.phase === 'order') {
+        const parsed = parseOrderQR(qr);
+        if (!parsed.lines.length) {
+          pushLog('ng', '注文明細QRを解析できません', qr);
+          showOverlay('ng', '×', '注文明細QRエラー', '部品番号・背番号・数量を読み取れませんでした。注文明細QRを確認してください。');
+          renderAll();
+          return;
+        }
+        session.orderQr = qr;
+        session.meta = parsed.meta;
+        session.lines = parsed.lines;
+        session.scannedIds = {};
+        session.customerQr = '';
+        session.internalQr = '';
+        session.pendingKanban = null;
+        session.phase = 'customer';
+        pushLog('ok', '注文明細QR読取OK', `${parsed.lines.length}明細 / ${sumRequiredBoxes()}箱`);
+        showOverlay('ok', '○', '注文明細読取OK', `${parsed.lines.length}明細、必要箱数 ${sumRequiredBoxes()}箱を登録しました。`);
+        saveSession();
+        renderAll();
+        return;
+      }
+
+      if (session.phase === 'customer') {
+        session.customerQr = qr;
+        session.internalQr = '';
+        session.pendingKanban = null;
+        session.phase = 'internal';
+        pushLog('ok', '顧客かんばん読取OK', summarizeKanban(qr));
+        showOverlay('ok', '1', '顧客かんばん読取OK', '続けて社内かんばんQRを読み取ってください。');
+        saveSession();
+        renderAll();
+        return;
+      }
+
+      if (session.phase === 'internal') {
+        session.internalQr = qr;
+        checkKanbanPair();
+        saveSession();
+        renderAll();
+        return;
+      }
+
+      resetCurrentPair();
+    }
+
+    function checkKanbanPair() {
+      const customerPart = extractPartNo(session.customerQr);
+      const internalKanban = parseKanbanQR(session.internalQr);
+      const pairOk = partAppearsInQr(customerPart, session.internalQr);
+
+      if (!pairOk) {
+        pushLog('ng', '顧客かんばんと社内かんばんが不一致', `顧客品番: ${customerPart || '抽出不可'} / 社内QR内に該当品番なし`);
+        showOverlay('ng', '×', 'かんばん不一致', `顧客品番: ${escapeHtml(customerPart || '抽出不可')}<br>社内かんばん内に該当する品番がありません。`);
+        session.phase = 'customer';
+        session.customerQr = '';
+        session.internalQr = '';
+        session.pendingKanban = null;
+        return;
+      }
+
+      if (!internalKanban) {
+        pushLog('ng', '社内かんばんQRを解析できません', session.internalQr);
+        showOverlay('ng', '×', '社内かんばんQRエラー', '背番号・部品番号・収容数を読み取れませんでした。');
+        session.phase = 'customer';
+        return;
+      }
+
+      session.pendingKanban = internalKanban;
+      pushLog('ok', '顧客/社内かんばん照合OK', `顧客品番 ${customerPart} を社内かんばん内で確認 / 背番号 ${internalKanban.backNo}`);
+
+      checkPendingKanbanAgainstOrder();
+    }
+
+    function checkPendingKanbanAgainstOrder() {
+      const kanban = session.pendingKanban;
+      if (!kanban) return;
+
+      if (session.scannedIds[kanban.individualId]) {
+        pushLog('warn', '重複かんばん', `${kanban.partNo} / ${kanban.individualId}`);
+        showOverlay('warn', '!', '重複', 'この社内かんばんはすでに読み取り済みです。');
+        finishPair();
+        return;
+      }
+
+      const line = session.lines.find(item =>
+        item.backNo === kanban.backNo &&
+        partsEquivalent(item.partNo, kanban.partNo) &&
+        item.packQty === kanban.packQty
+      );
+
+      if (!line) {
+        pushLog('ng', '注文明細外のかんばん', `${kanban.backNo} / ${kanban.partNo} / ${kanban.packQty}`);
+        showOverlay('ng', '×', '明細外', `このかんばんは注文明細にありません。<br>${escapeHtml(kanban.partNo)} / 背番号 ${escapeHtml(kanban.backNo)}`);
+        finishPair();
+        return;
+      }
+
+      if (line.scanned >= line.requiredBoxes) {
+        pushLog('warn', '数量超過', `${line.partNo} ${line.scanned + 1}/${line.requiredBoxes}`);
+        showOverlay('warn', '!', '数量超過', `${escapeHtml(line.partNo)} は必要箱数 ${line.requiredBoxes} 箱を超えています。`);
+        finishPair();
+        return;
+      }
+
+      line.scanned += 1;
+      line.kanbans.push(kanban.individualId);
+      session.scannedIds[kanban.individualId] = true;
+      pushLog('ok', '注文明細照合OK', `${line.partNo} ${line.scanned}/${line.requiredBoxes}箱`);
+
+      if (isOrderComplete()) {
+        showOverlay('ok', '○', '注文照合完了', '明細通りのかんばんがすべて読み込まれました。');
+      } else {
+        showOverlay('ok', '○', '明細照合OK', `${escapeHtml(line.partNo)}<br>${line.scanned}/${line.requiredBoxes}箱 完了`);
+      }
+      finishPair();
+    }
+
+    function finishPair() {
+      session.phase = session.lines.length ? 'customer' : 'order';
+      session.customerQr = '';
+      session.internalQr = '';
+      session.pendingKanban = null;
+      saveSession();
+      renderAll();
+    }
+
+    function parseOrderQR(qr) {
+      const lines = [];
+      for (const match of qr.matchAll(ORDER_LINE_RE)) {
+        const packQty = decodeQty(match[3]);
+        const totalQty = decodeQty(match[4]);
+        if (!match[1] || !match[2] || !packQty || !totalQty) continue;
+        lines.push({
+          no: lines.length + 1,
+          backNo: match[1],
+          partNo: match[2].trim(),
+          packQty,
+          totalQty,
+          requiredBoxes: Math.ceil(totalQty / packQty),
+          scanned: 0,
+          kanbans: []
+        });
+      }
+      const meta = {
+        orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || '',
+        supplierCode: (qr.match(/V(\d{10,})/) || [])[1] || '',
+        shipDate: formatDateToken((qr.match(/16D(\d{8})/) || [])[1]),
+        deliveryDate: formatDateToken((qr.match(/12D(\d{8})/) || [])[1])
+      };
+      return { meta, lines };
+    }
+
+    function parseKanbanQR(qr) {
+      const match = qr.match(KANBAN_RE);
+      if (!match) return parsePlainInternalKanban(qr);
+      const ids = qr.match(/K[A-Z0-9]{8,}/g) || [];
+      const individualId = ids.find(id => /Z/.test(id)) || ids.at(-1) || `${match[1]}-${match[2]}-${qr.slice(-24)}`;
+      return {
+        backNo: match[1],
+        partNo: match[2].trim(),
+        packQty: decodeQty(match[3]),
+        individualId,
+        raw: qr
+      };
+    }
+
+    function parsePlainInternalKanban(qr) {
+      const normalized = normalizeQR(qr);
+      const partNo = extractPlainPartNo(normalized);
+      const backNo = (normalized.match(/(?:^|[\s:])(\d{4})(?=\s+\d{5}-[A-Z0-9]+)/) || [])[1] || '';
+      const qtyMatch = normalized.match(/\b0{0,3}(\d{2,4})\b(?=[^\d]*\d{5}[A-Z0-9]{5,}|[^\d]*$)/);
+      const packQty = qtyMatch ? Number(qtyMatch[1]) : 0;
+      if (!partNo || !backNo || !packQty) return null;
+      return {
+        backNo,
+        partNo,
+        packQty,
+        individualId: `${backNo}-${canonicalPart(partNo)}-${canonicalQr(qr).slice(-28)}`,
+        raw: qr
+      };
+    }
+
+    function extractPartNo(qr) {
+      const parsed = parseKanbanQR(qr);
+      if (parsed) return parsed.partNo;
+      const normalized = normalizeQR(qr);
+      return extractPlainPartNo(normalized);
+    }
+
+    function extractPlainPartNo(qr) {
+      const match = normalizeQR(qr).match(/\b\d{5}-[A-Z0-9]{5,}\b/);
+      return match ? match[0] : '';
+    }
+
+    function canonicalQr(value) {
+      return normalizeQR(value).toUpperCase().replace(/[^0-9A-Z]/g, '');
+    }
+
+    function canonicalPart(value) {
+      return normalizeQR(value).toUpperCase().replace(/[^0-9A-Z]/g, '');
+    }
+
+    function partVariants(partNo) {
+      const base = canonicalPart(partNo);
+      const variants = new Set([base]);
+      if (/0$/.test(base)) variants.add(base.replace(/0+$/, ''));
+      return [...variants].filter(Boolean);
+    }
+
+    function partAppearsInQr(partNo, qr) {
+      const targetQr = canonicalQr(qr);
+      return partVariants(partNo).some(part => targetQr.includes(part));
+    }
+
+    function partsEquivalent(a, b) {
+      const aVariants = partVariants(a);
+      const bVariants = partVariants(b);
+      return aVariants.some(left => bVariants.includes(left));
+    }
+
+    function summarizeKanban(qr) {
+      const parsed = parseKanbanQR(qr);
+      if (parsed) return `${parsed.partNo} / 背番号 ${parsed.backNo} / 収容数 ${parsed.packQty}`;
+      return extractPartNo(qr) || qr.slice(0, 80);
+    }
+
+    function decodeQty(raw) {
+      let value = String(raw || '').trim();
+      if (value.length > 2 && /[24]$/.test(value)) value = value.slice(0, -1);
+      return Number(value) || 0;
+    }
+
+    function normalizeQR(value) {
+      return String(value ?? '')
+        .normalize('NFKC')
+        .replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/g, '')
+        .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63]/g, '-')
+        .replace(/\u00A0/g, ' ')
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function formatDateToken(token) {
+      if (!token || token.length !== 8) return '';
+      return `${token.slice(0,4)}-${token.slice(4,6)}-${token.slice(6,8)}`;
+    }
+
+    function resetCurrentPair() {
+      session.phase = session.lines.length ? 'customer' : 'order';
+      session.customerQr = '';
+      session.internalQr = '';
+      session.pendingKanban = null;
+      saveSession();
+      renderAll();
+      focusScanInput();
+    }
+
+    function resetAll() {
+      if ((session.lines.length || session.logs.length) && !confirm('現在の注文照合をすべてリセットしますか？')) return;
+      session = freshSession();
+      saveSession();
+      renderAll();
+      focusScanInput();
+    }
+
+    function pushLog(type, title, detail) {
+      session.logs.unshift({ time: new Date().toISOString(), type, title, detail });
+      if (session.logs.length > 160) session.logs.pop();
+      saveSession();
+    }
+
+    function sumRequiredBoxes() {
+      return session.lines.reduce((sum, line) => sum + line.requiredBoxes, 0);
+    }
+
+    function sumScannedBoxes() {
+      return session.lines.reduce((sum, line) => sum + line.scanned, 0);
+    }
+
+    function isOrderComplete() {
+      return session.lines.length > 0 && session.lines.every(line => line.scanned >= line.requiredBoxes);
+    }
+
+    function renderAll() {
+      renderFlow();
+      renderSummary();
+      renderPair();
+      renderOrder();
+      renderLogs();
+    }
+
+    function renderFlow() {
+      const activeIndex = session.phase === 'order' ? 0 : session.phase === 'customer' ? 1 : session.phase === 'internal' ? 2 : 3;
+      document.getElementById('flowSteps').innerHTML = flowLabels.map((item, index) => {
+        const done =
+          (index === 0 && session.lines.length) ||
+          (index === 1 && session.customerQr) ||
+          (index === 2 && session.internalQr) ||
+          (index === 3 && session.pendingKanban);
+        return `
+          <div class="flow-step ${index === activeIndex ? 'active' : ''} ${done ? 'done' : ''}">
+            <div class="flow-no">STEP ${index + 1}</div>
+            <div class="flow-title">${item[0]}</div>
+            <div class="flow-sub">${item[1]}</div>
+          </div>
+        `;
+      }).join('');
+
+      const stepText = session.phase === 'order' ? 'STEP 1 / 4' : session.phase === 'customer' ? 'STEP 2 / 4' : session.phase === 'internal' ? 'STEP 3 / 4' : 'STEP 4 / 4';
+      const message = session.phase === 'order'
+        ? '注文明細QRを読み取ってください'
+        : session.phase === 'customer'
+          ? '顧客かんばんQRを読み取ってください'
+          : session.phase === 'internal'
+          ? '社内かんばんQRを読み取ってください'
+          : '照合中です';
+      const hint = '先に注文明細を登録し、顧客かんばんと社内かんばんの照合後に明細通りか確認します。';
+      document.getElementById('currentStep').textContent = stepText;
+      document.getElementById('scanMessage').textContent = message;
+      document.getElementById('scanHint').textContent = hint;
+    }
+
+    function renderSummary() {
+      const required = sumRequiredBoxes();
+      const scanned = sumScannedBoxes();
+      document.getElementById('sumLines').textContent = session.lines.length;
+      document.getElementById('sumBoxes').textContent = required;
+      document.getElementById('sumScanned').textContent = scanned;
+      document.getElementById('sumRemain').textContent = Math.max(0, required - scanned);
+      document.getElementById('exportBtn').disabled = !session.lines.length;
+    }
+
+    function renderPair() {
+      document.getElementById('customerQr').textContent = session.customerQr || '未読取';
+      document.getElementById('internalQr').textContent = session.internalQr || '未読取';
+    }
+
+    function renderOrder() {
+      const infoPanel = document.getElementById('orderInfoPanel');
+      if (!session.lines.length) {
+        infoPanel.innerHTML = '<div class="step-label">注文情報</div><div class="empty">注文明細QRを読み取ると表示します</div>';
+      } else {
+        const meta = session.meta || {};
+        infoPanel.innerHTML = `
+          <div class="step-label">注文情報</div>
+          <div class="order-meta">
+            <div class="meta-item"><div class="meta-key">納品書No</div><div class="meta-val">${escapeHtml(meta.orderNo || '-')}</div></div>
+            <div class="meta-item"><div class="meta-key">納入指示日</div><div class="meta-val">${escapeHtml(meta.deliveryDate || '-')}</div></div>
+            <div class="meta-item"><div class="meta-key">納入日</div><div class="meta-val">${escapeHtml(meta.shipDate || '-')}</div></div>
+          </div>
+        `;
+      }
+
+      const lineList = document.getElementById('lineList');
+      lineList.innerHTML = session.lines.length
+        ? session.lines.map(line => `
+          <div class="line-card ${line.scanned >= line.requiredBoxes ? 'done' : ''}">
+            <div class="line-no">${line.no}</div>
+            <div class="line-main">
+              <div class="part">${escapeHtml(line.partNo)}</div>
+              <div class="line-sub">背番号 ${escapeHtml(line.backNo)} / 収容数 ${line.packQty} / 納入数 ${line.totalQty}</div>
+            </div>
+            <div class="progress-box">
+              <div class="progress-num ${line.scanned >= line.requiredBoxes ? 'ok-text' : 'warn-text'}">${line.scanned}/${line.requiredBoxes}</div>
+              <div class="progress-label">箱</div>
+            </div>
+          </div>
+        `).join('')
+        : '<div class="empty">明細はまだありません</div>';
+    }
+
+    function renderLogs() {
+      const target = document.getElementById('logList');
+      if (!session.logs.length) {
+        target.innerHTML = '<div class="empty">ログはまだありません</div>';
+        return;
+      }
+      target.innerHTML = session.logs.slice(0, 100).map(log => `
+        <div class="log-item ${log.type}">
+          <div class="log-time">${new Date(log.time).toLocaleString('ja-JP')}</div>
+          <div class="log-title">${escapeHtml(log.title)}</div>
+          <div class="log-detail">${escapeHtml(log.detail)}</div>
+        </div>
+      `).join('');
+    }
+
+    function exportLog() {
+      if (!session.lines.length) return;
+      const rows = [
+        ['No','部品番号','背番号','収容数','納入数','必要箱数','読込箱数','状態'],
+        ...session.lines.map(line => [
+          line.no, line.partNo, line.backNo, line.packQty, line.totalQty,
+          line.requiredBoxes, line.scanned, line.scanned >= line.requiredBoxes ? '完了' : '不足'
+        ])
+      ];
+      const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv' }));
+      a.download = `QR照合_v2_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function saveSession() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    }
+
+    function loadSession() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+        if (saved && Array.isArray(saved.lines)) {
+          session = { ...freshSession(), ...saved };
+          if (!session.lines.length) session.phase = 'order';
+        }
+      } catch (e) {
+        session = freshSession();
+      }
+    }
+
+    function showOverlay(type, symbol, title, detail) {
+      const overlay = document.getElementById('resultOverlay');
+      overlay.className = `overlay show ${type}`;
+      document.getElementById('overlaySymbol').textContent = symbol;
+      document.getElementById('overlayTitle').textContent = title;
+      document.getElementById('overlayDetail').innerHTML = detail;
+      const unlockPanel = document.getElementById('unlockPanel');
+      const closeBtn = document.getElementById('overlayCloseBtn');
+      clearTimeout(showOverlay._timer);
+      ngLocked = type === 'ng';
+      unlockPinBuffer = '';
+      unlockPanel.classList.toggle('show', ngLocked);
+      closeBtn.style.display = ngLocked ? 'none' : '';
+      renderUnlockPin();
+      if (!ngLocked) {
+        showOverlay._timer = setTimeout(closeOverlay, type === 'ok' ? 900 : 2400);
+      }
+    }
+
+    function closeOverlay(force = false) {
+      if (ngLocked && !force) return;
+      ngLocked = false;
+      unlockPinBuffer = '';
+      document.getElementById('resultOverlay').classList.remove('show');
+      document.getElementById('unlockPanel').classList.remove('show');
+      document.getElementById('overlayCloseBtn').style.display = '';
+      renderUnlockPin();
+      focusScanInput();
+    }
+
+    function focusScanInput() {
+      setTimeout(() => {
+        const input = document.getElementById('scanInput');
+        if (input) input.focus();
+      }, 40);
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+  </script>
+</body>
+</html>
