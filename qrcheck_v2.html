@@ -3750,6 +3750,57 @@
     return av.some(x => bv.includes(x));
   }
 
+  function findOrderDetailPartInQR(qrRaw) {
+    if (!orderDetailSession.lines.length) return null;
+    const tokens = partSearchTokens(qrRaw);
+    const matches = [];
+    orderDetailSession.lines.forEach(line => {
+      const variants = partVariants(line.partNo).sort((a, b) => b.length - a.length);
+      for (const variant of variants) {
+        const tokenIndex = tokens.findIndex(token => variant && token.includes(variant));
+        if (tokenIndex >= 0) {
+          matches.push({ line, part: line.partNo, hit: variant, index: tokenIndex });
+          break;
+        }
+      }
+    });
+    if (!matches.length) return null;
+    matches.sort((a, b) => b.hit.length - a.hit.length || a.index - b.index);
+    return matches[0];
+  }
+
+  function extractPartNumberForMatch(qrRaw) {
+    const detailHit = findOrderDetailPartInQR(qrRaw);
+    if (detailHit) {
+      return {
+        part: detailHit.part,
+        rule: null,
+        totalLen: normalizeQR(qrRaw).length,
+        start0: detailHit.index,
+        note: 'order_detail_search',
+        orderDetailSearchHit: detailHit.hit
+      };
+    }
+    return extractPartNumberFrom(qrRaw);
+  }
+
+  function qrContainsPart(qrRaw, partNumber) {
+    const tokens = partSearchTokens(qrRaw);
+    return resolveAliases(partNumber).some(alias =>
+      partVariants(alias).some(part => part && tokens.some(token => token.includes(part)))
+    );
+  }
+
+  function partSearchTokens(qrRaw) {
+    return normalizeQR(qrRaw)
+      .toUpperCase()
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63-]/g, '')
+      .replace(/[^0-9A-Z]+/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const lines = [];
@@ -4096,18 +4147,22 @@
 
     let ex, partNumber, isQROK;
 
-    if (settings.scanMode === '1toN') {
+    if (orderDetailSession.lines.length) {
+      ex = extractPartNumberForMatch(value1);
+      partNumber = ex.part;
+      isQROK = qrContainsPart(v2, partNumber);
+    } else if (settings.scanMode === '1toN') {
       // ★ 1対Nモード：QR1から切り出した品番（固定済み）がQR2に含まれているか
-      ex = nModeEx || extractPartNumberFrom(value1);
+      ex = nModeEx || extractPartNumberForMatch(value1);
       partNumber = nModePartNumber || ex.part;
-      isQROK=resolveAliases(partNumber).some(c=>v2.includes(c));
+      isQROK=qrContainsPart(v2, partNumber);
     } else {
       if (settings.matchDirection === 'qr1_to_qr2') {
-        ex=extractPartNumberFrom(value1);partNumber=ex.part;
-        isQROK=resolveAliases(partNumber).some(c=>v2.includes(c));
+        ex=extractPartNumberForMatch(value1);partNumber=ex.part;
+        isQROK=qrContainsPart(v2, partNumber);
       } else {
-        ex=extractPartNumberFrom(value2);partNumber=ex.part;
-        isQROK=resolveAliases(partNumber).some(c=>v1.includes(c));
+        ex=extractPartNumberForMatch(value2);partNumber=ex.part;
+        isQROK=qrContainsPart(v1, partNumber);
       }
     }
 
@@ -4140,6 +4195,7 @@
       } : null,
       extractStart0: ex.start0,
       extractNote: ex.note || '',
+      orderDetailSearchHit: ex.orderDetailSearchHit || '',
       orderDetailActive: !!orderCheck.active,
       orderDetailSessionId: orderCheck.active ? (orderDetailSession.sessionId || '') : '',
       orderDetailResult: orderCheck.active ? (orderCheck.ok ? 'OK' : 'NG') : '',
