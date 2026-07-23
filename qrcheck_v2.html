@@ -297,7 +297,7 @@
     .order-detail-primary {
       width: 100%;
       min-height: 54px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       padding: 13px 14px;
       background: #0b5f8f;
       border-color: #4fc3f7;
@@ -305,6 +305,15 @@
       font-size: 17px;
       border-radius: 8px;
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
+    }
+    .order-detail-secondary {
+      width: 100%;
+      min-height: 40px;
+      margin-bottom: 8px;
+      border-color: #2f6b46;
+      background: #12351f;
+      color: #93efad;
+      font-size: 13px;
     }
     .order-detail-btn.danger {
       flex: 0 0 auto;
@@ -1042,9 +1051,15 @@
       }
       .order-detail-primary {
         min-height: 48px;
-        margin-bottom: 6px;
+        margin-bottom: 5px;
         padding: 11px 12px;
         font-size: 15px;
+      }
+      .order-detail-secondary {
+        min-height: 34px;
+        margin-bottom: 6px;
+        font-size: 11px;
+        padding: 7px 8px;
       }
       .order-detail-btn.danger {
         font-size: 10px;
@@ -1264,6 +1279,7 @@
             </div>
           </div>
           <button class="order-detail-btn order-detail-primary" onclick="startOrderDetailScan()">明細QR読込</button>
+          <button class="order-detail-btn order-detail-secondary" id="orderDetailAppendBtn" onclick="startOrderDetailScan(true)" style="display:none;">明細QR追加</button>
           <div id="orderDetailContent" class="order-detail-empty"></div>
         </div>
         <!-- 1対N モード QR1 情報パネル -->
@@ -1697,10 +1713,13 @@
   const ORDER_DETAIL_KEY = 'qrcheck_v2_order_detail_session';
   const ORDER_LINE_RE = /P(\d{4})P([^Q]+)Q(\d+)Q(\d+)/g;
   let orderDetailAwaiting = false;
+  let orderDetailAppendMode = false;
   let orderDetailSession = {
     sessionId: '',
     orderQr: '',
     meta: {},
+    details: [],
+    sourceHashes: {},
     lines: [],
     scannedIds: {},
     completedAt: '',
@@ -1993,6 +2012,8 @@
       sessionId: source.sessionId || sessionId || '',
       orderQr: source.orderQr || '',
       meta: source.meta || {},
+      details: Array.isArray(source.details) ? source.details : Object.values(source.details || {}),
+      sourceHashes: source.sourceHashes || {},
       lines: lines.map((line, index) => ({
         no: line.no || index + 1,
         backNo: line.backNo || '',
@@ -2008,6 +2029,55 @@
       createdAt: source.createdAt || '',
       updatedAt: source.updatedAt || ''
     };
+  }
+
+  function mergeParsedOrderDetail(session, parsed) {
+    const target = normalizeOrderDetailSessionData(session, session && session.sessionId);
+    const qrHash = hashString(parsed.orderQr || '');
+    target.sourceHashes = target.sourceHashes || {};
+    target.details = Array.isArray(target.details) ? target.details : [];
+    if (target.sourceHashes[qrHash]) {
+      return { session: target, added: false, duplicate: true };
+    }
+
+    const now = new Date().toISOString();
+    target.sourceHashes[qrHash] = true;
+    target.details.push({
+      qrHash,
+      meta: parsed.meta || {},
+      lineCount: parsed.lines.length,
+      readAt: now
+    });
+    if (!target.orderQr) target.orderQr = parsed.orderQr || '';
+    if (!target.meta || !Object.keys(target.meta).length) target.meta = parsed.meta || {};
+
+    parsed.lines.forEach(line => {
+      const existing = target.lines.find(item => partsEquivalent(item.partNo, line.partNo));
+      if (existing) {
+        existing.totalQty = (Number(existing.totalQty) || 0) + (Number(line.totalQty) || 0);
+        existing.requiredBoxes = (Number(existing.requiredBoxes) || 0) + (Number(line.requiredBoxes) || 0);
+        if (!String(existing.backNo || '').includes(line.backNo)) {
+          existing.backNo = [existing.backNo, line.backNo].filter(Boolean).join('+');
+        }
+      } else {
+        target.lines.push({ ...line, no: target.lines.length + 1, scanned: 0 });
+      }
+    });
+    target.lines.forEach((line, index) => { line.no = index + 1; });
+    target.updatedAt = now;
+    if (target.completedAt && orderScannedBoxesFrom(target) < orderRequiredBoxesFrom(target)) {
+      target.completedAt = '';
+      target.completeLoggedAt = '';
+    }
+    return { session: target, added: true, duplicate: false };
+  }
+
+  function orderRequiredBoxesFrom(session) {
+    return (session.lines || []).reduce((sum, line) => sum + (Number(line.requiredBoxes) || 0), 0);
+  }
+
+  function orderScannedBoxesFrom(session) {
+    return (session.lines || []).reduce((sum, line) => sum + (Number(line.scanned) || 0), 0);
   }
 
   function subscribeOrderDetailSession(sessionId) {
@@ -2033,20 +2103,26 @@
     });
   }
 
-  function upsertOrderDetailSessionToFirebase(session) {
+  function upsertOrderDetailSessionToFirebase(session, parsedToMerge = null) {
     const root = getOrderDetailSessionsRef();
     if (!root || !session.sessionId) return Promise.resolve(session);
     const ref = root.child(session.sessionId);
     const now = new Date().toISOString();
     return ref.transaction(current => {
       if (current) {
+        const existing = normalizeOrderDetailSessionData(current, session.sessionId);
+        const merged = parsedToMerge ? mergeParsedOrderDetail(existing, parsedToMerge).session : existing;
         return {
           ...current,
           sessionId: current.sessionId || session.sessionId,
           orderQr: current.orderQr || session.orderQr,
           meta: current.meta || session.meta || {},
-          lines: current.lines || session.lines || [],
-          scannedIds: current.scannedIds || {},
+          details: merged.details || current.details || session.details || [],
+          sourceHashes: merged.sourceHashes || current.sourceHashes || session.sourceHashes || {},
+          lines: merged.lines || current.lines || session.lines || [],
+          scannedIds: merged.scannedIds || current.scannedIds || {},
+          completedAt: merged.completedAt || '',
+          completeLoggedAt: merged.completeLoggedAt || '',
           updatedAt: now
         };
       }
@@ -3702,8 +3778,10 @@
     };
   }
 
-  function startOrderDetailScan() {
+  function startOrderDetailScan(append = false) {
     if (isNGLocked) { showNGOverlay(); return; }
+    if (!append && orderDetailSession.lines.length && !confirm('現在の明細セットを破棄して、新しい明細QRを読み込みますか？')) return;
+    orderDetailAppendMode = !!append;
     orderDetailAwaiting = true;
     clearScannerBuffer();
     currentStep = 0;
@@ -3712,7 +3790,7 @@
     const step = document.getElementById('scanStep');
     const message = document.getElementById('scanMessage');
     if (step) step.textContent = '明細QR';
-    if (message) message.textContent = '明細QRを読み取ってください';
+    if (message) message.textContent = append ? '追加する明細QRを読み取ってください' : '明細QRを読み取ってください';
     focusScanInputSoon();
   }
 
@@ -3721,6 +3799,7 @@
     const parsed = parseOrderDetailQR(decoded);
     if (!parsed.lines.length) {
       orderDetailAwaiting = false;
+      orderDetailAppendMode = false;
       currentStep = 1;
       if (normalized.length < 180) {
         saveOrderDetailReadLog('NG', normalized, parsed, 'order_detail_too_short');
@@ -3737,20 +3816,35 @@
       return;
     }
     saveOrderDetailReadLog('OK', normalized, parsed, 'order_detail_read_ok');
-    const sessionId = buildOrderDetailSessionId(parsed);
-    orderDetailSession = {
-      sessionId,
-      orderQr: parsed.orderQr,
-      meta: parsed.meta,
-      lines: parsed.lines,
-      scannedIds: {},
-      completedAt: '',
-      completeLoggedAt: ''
-    };
+    const append = orderDetailAppendMode && orderDetailSession.lines.length > 0;
+    const sessionId = append ? orderDetailSession.sessionId : buildOrderDetailSessionId(parsed);
+    if (!append) {
+      if (orderDetailRef) {
+        orderDetailRef.off('value');
+        orderDetailRef = null;
+        orderDetailRefPath = '';
+        orderDetailSyncReady = false;
+      }
+      orderDetailSession = {
+        sessionId,
+        orderQr: '',
+        meta: {},
+        details: [],
+        sourceHashes: {},
+        lines: [],
+        scannedIds: {},
+        completedAt: '',
+        completeLoggedAt: ''
+      };
+    }
+    orderDetailSession.sessionId = sessionId;
+    const mergeResult = mergeParsedOrderDetail(orderDetailSession, parsed);
+    orderDetailSession = mergeResult.session;
     saveOrderDetailSession();
     renderOrderDetailPanel();
-    await upsertOrderDetailSessionToFirebase(orderDetailSession);
+    await upsertOrderDetailSessionToFirebase(orderDetailSession, parsed);
     orderDetailAwaiting = false;
+    orderDetailAppendMode = false;
     playSound('ok');
     startScanning(true);
   }
@@ -3763,7 +3857,8 @@
       orderDetailRefPath = '';
       orderDetailSyncReady = false;
     }
-    orderDetailSession = { sessionId: '', orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
+    orderDetailAppendMode = false;
+    orderDetailSession = { sessionId: '', orderQr: '', meta: {}, details: [], sourceHashes: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
     saveOrderDetailSession();
     renderOrderDetailPanel();
     focusScanInputSoon();
@@ -3784,20 +3879,20 @@
       const raw = localStorage.getItem(getOrderDetailStorageKey()) || localStorage.getItem(ORDER_DETAIL_KEY);
       const saved = JSON.parse(raw || 'null');
       if (saved && Array.isArray(saved.lines)) {
-        orderDetailSession = { sessionId: '', orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '', ...saved };
+        orderDetailSession = { sessionId: '', orderQr: '', meta: {}, details: [], sourceHashes: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '', ...saved };
       }
     } catch (e) {
-      orderDetailSession = { sessionId: '', orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
+      orderDetailSession = { sessionId: '', orderQr: '', meta: {}, details: [], sourceHashes: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
     }
     setupOrderDetailRealtimeSync();
   }
 
   function orderRequiredBoxes() {
-    return orderDetailSession.lines.reduce((sum, line) => sum + line.requiredBoxes, 0);
+    return orderRequiredBoxesFrom(orderDetailSession);
   }
 
   function orderScannedBoxes() {
-    return orderDetailSession.lines.reduce((sum, line) => sum + line.scanned, 0);
+    return orderScannedBoxesFrom(orderDetailSession);
   }
 
   function isOrderDetailComplete() {
@@ -3877,6 +3972,8 @@
 
   function renderOrderDetailPanel() {
     const target = document.getElementById('orderDetailContent');
+    const appendBtn = document.getElementById('orderDetailAppendBtn');
+    if (appendBtn) appendBtn.style.display = orderDetailSession.lines.length ? '' : 'none';
     if (!target) return;
     if (!orderDetailSession.lines.length) {
       target.className = 'order-detail-empty';
@@ -3886,6 +3983,7 @@
     target.className = '';
     const required = orderRequiredBoxes();
     const scanned = orderScannedBoxes();
+    const detailCount = Array.isArray(orderDetailSession.details) ? orderDetailSession.details.length : 1;
     const syncText = database && orderDetailSession.sessionId
       ? (orderDetailSyncReady ? 'Firebase同期中' : 'Firebase同期準備中')
       : 'この端末のみ';
@@ -3896,7 +3994,7 @@
         <div class="order-detail-stat"><div class="order-detail-stat-label">読込</div><div class="order-detail-stat-value">${scanned}</div></div>
         <div class="order-detail-stat"><div class="order-detail-stat-label">残り</div><div class="order-detail-stat-value">${Math.max(0, required - scanned)}</div></div>
       </div>
-      <div class="order-detail-sync">${escapeHtml(syncText)} / ${escapeHtml(scanned)} / ${escapeHtml(required)}</div>
+      <div class="order-detail-sync">${escapeHtml(syncText)} / 明細${escapeHtml(detailCount)}枚 / ${escapeHtml(scanned)} / ${escapeHtml(required)}</div>
       <div class="order-detail-lines">
         ${orderDetailSession.lines.map(line => `
           <div class="order-detail-line ${line.scanned >= line.requiredBoxes ? 'done' : ''}">
@@ -3912,14 +4010,20 @@
     if (!orderDetailSession.lines.length) return { active: false, ok: true, note: '' };
     const key = `${canonicalPart(partNumber)}|${normalizeQR(qr1)}|${normalizeQR(qr2)}`;
     const scanKey = 'scan_' + hashString(key);
+    const attemptId = 'attempt_' + hashString(key + '|' + Date.now() + '|' + Math.random());
     const localCheck = (session) => {
       const line = session.lines.find(item => partsEquivalent(item.partNo, partNumber));
       if (!line) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
-      if (session.scannedIds && session.scannedIds[scanKey]) return { active: true, ok: false, note: `明細重複: ${partNumber}` };
+      const existingScan = session.scannedIds && session.scannedIds[scanKey];
+      if (existingScan && existingScan.attemptId === attemptId) {
+        return { active: true, ok: true, completed: !!session.completedAt, note: `明細OK: ${partNumber}` };
+      }
+      if (existingScan) return { active: true, ok: false, note: `明細重複: ${partNumber}` };
       if (line.scanned >= line.requiredBoxes) return { active: true, ok: false, note: `数量超過: ${line.partNo} ${line.scanned + 1}/${line.requiredBoxes}` };
       line.scanned += 1;
       session.scannedIds = session.scannedIds || {};
       session.scannedIds[scanKey] = {
+        attemptId,
         partNumber,
         qrHash: hashString(normalizeQR(qr1) + '|' + normalizeQR(qr2)),
         timestamp: new Date().toISOString(),
