@@ -1426,6 +1426,13 @@
           <div style="margin-top:10px; padding:10px; background:#0a0a0a; border-radius:8px; border:1px solid #333; font-size:12px; color:#888; line-height:1.5;">
             ※ スキャン画面の <b>🔗 1対1 / 🔀 1対N</b> バッジをタップしても即時切替できます。
           </div>
+          <div class="setting-row">
+            <span class="setting-label">
+              QR途切れ監視
+              <small>短すぎるQRを照合前に止める</small>
+            </span>
+            <div class="toggle-switch on" id="shortQRCheckToggle" onclick="toggleShortQRCheck()"></div>
+          </div>
         </div>
 
         <!-- ★ 照合方向設定カード -->
@@ -1742,6 +1749,7 @@
       dup:  'buu'                // 重複
     },
     duplicateCheckEnabled: false,   // ★ 重複監視モード
+    shortQRCheckEnabled: true,
     scanMode: '1to1',               // ★ '1to1' | '1toN'
     matchDirection: 'qr2_to_qr1',  // ★ 'qr2_to_qr1' | 'qr1_to_qr2'
     photoMap: [],                   // ★ [{ id, partNumber, url }]
@@ -2532,6 +2540,12 @@
   }
 
   // ★ 設定画面のスキャンモードトグル
+  function toggleShortQRCheck() {
+    settings.shortQRCheckEnabled = !settings.shortQRCheckEnabled;
+    const tog = document.getElementById('shortQRCheckToggle');
+    if (tog) tog.className = settings.shortQRCheckEnabled ? 'toggle-switch on' : 'toggle-switch';
+  }
+
   function toggleScanModeSettings() {
     settings.scanMode = settings.scanMode === '1toN' ? '1to1' : '1toN';
     const tog = document.getElementById('scanModeToggle');
@@ -2998,6 +3012,7 @@
     settings.firebase.databaseURL = settings.firebase.databaseURL || "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app";
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
     if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;
+    if (settings.shortQRCheckEnabled === undefined) settings.shortQRCheckEnabled = true;
     if (!settings.scanMode) settings.scanMode = '1to1';
     if (!settings.aliasMap) settings.aliasMap = [];
     if (!settings.matchDirection) settings.matchDirection = 'qr2_to_qr1';
@@ -3053,6 +3068,8 @@
     const smToggle = document.getElementById('scanModeToggle');
     if (smToggle) smToggle.className = settings.scanMode === '1toN' ? 'toggle-switch on' : 'toggle-switch';
     // ★ 照合方向トグル
+    const shortToggle = document.getElementById('shortQRCheckToggle');
+    if (shortToggle) shortToggle.className = settings.shortQRCheckEnabled ? 'toggle-switch on' : 'toggle-switch';
     const mdToggle = document.getElementById('matchDirectionToggle');
     if (mdToggle) mdToggle.className = settings.matchDirection === 'qr1_to_qr2' ? 'toggle-switch on' : 'toggle-switch';
     const mdLabel = document.getElementById('matchDirectionLabel');
@@ -3635,6 +3652,7 @@
   }
 
   function getShortQRInfo(qrRaw, scanRole) {
+    if (settings.shortQRCheckEnabled === false) return null;
     const qr = normalizeQR(qrRaw);
     if (scanRole === 'extract') {
       const minLen = getMinimumQRLength();
@@ -3852,7 +3870,7 @@
       orderDetailAwaiting = false;
       orderDetailAppendMode = false;
       currentStep = 1;
-      if (normalized.length < 180) {
+      if (settings.shortQRCheckEnabled !== false && normalized.length < 180) {
         saveOrderDetailReadLog('NG', normalized, parsed, 'order_detail_too_short');
         showShortQRError({
           qr: normalized,
