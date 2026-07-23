@@ -163,6 +163,32 @@
     .scan-input.step2 { border-color: #ffb74d; }
     .scan-input.step2:focus { border-color: #ffb74d; box-shadow: 0 0 0 4px rgba(255,183,77,0.3); }
     .input-hint { font-size: 14px; color: #666; margin-top: 10px; }
+    .input-mode-box {
+      margin-top: 10px;
+      padding: 9px 10px;
+      background: #0e1e2e;
+      border: 1px solid #2a4a6a;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      text-align: left;
+    }
+    .input-mode-text { min-width: 0; }
+    .input-mode-label { font-size: 10px; color: #4fc3f7; font-weight: 800; margin-bottom: 3px; }
+    .input-mode-desc { font-size: 11px; color: #8aa1b7; line-height: 1.35; }
+    .input-mode-btn {
+      flex-shrink: 0;
+      padding: 7px 11px;
+      background: #1a2a4a;
+      border: 1px solid #3a5a9a;
+      color: #9ed8ff;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+    }
     .scanner-icon { font-size: 64px; margin-bottom: 20px; }
     .stop-btn-row {
       margin-top: 20px;
@@ -1000,6 +1026,13 @@
                  readonly
                  tabindex="-1">
           <div class="input-hint">QRリーダーでスキャンしてください</div>
+          <div class="input-mode-box">
+            <div class="input-mode-text">
+              <div class="input-mode-label">端末入力方式</div>
+              <div class="input-mode-desc" id="inputModeDesc">HID/キーボード入力を画面全体で受けます</div>
+            </div>
+            <button class="input-mode-btn" id="inputModeBtn" onclick="toggleTerminalInputMode()">HID</button>
+          </div>
         </div>
       </div>
 
@@ -1377,6 +1410,10 @@
   let scannerBuffer = '';
   let scannerIdleTimer = null;
   const SCANNER_IDLE_MS = 900;
+  const TERMINAL_INPUT_MODE_KEY = 'qrcheck_v2_terminal_input_mode';
+  let terminalInputMode = localStorage.getItem(TERMINAL_INPUT_MODE_KEY) || 'hid';
+  let inputConnectionTimer = null;
+  let inputConnectionComposing = false;
   let nModeQR2Count = 0;       // 1対Nモード：現QR1に対してOK済みのQR2枚数
   let nModePartNumber = '';    // 1対Nモード：QR1から切り出した品番（固定）
   let nModeEx = null;          // 1対Nモード：QR1の抽出メタ情報（ログ用）
@@ -1436,6 +1473,7 @@
     updateDupBadge();
     updateDupStats();
     updateModeBadge();           // ★ モードバッジ初期化
+    renderTerminalInputMode();
   });
 
   function applyScanOnlyModeUI(){
@@ -1451,11 +1489,15 @@
   }
 
   function requestFocus(){
-    // フォーカスに依存しないため何もしない。
+    focusScanInputSoon();
   }
 
   function focusScanInputSoon(){
-    // フォーカスに依存しないため何もしない。
+    if (terminalInputMode !== 'inputconnection') return;
+    setTimeout(() => {
+      const input = document.getElementById('scanInput');
+      if (input) input.focus();
+    }, 40);
   }
 
   function normalizeQR(str){
@@ -1593,9 +1635,21 @@
   // ========= 入力リスナー =========
   function setupInputListeners() {
     document.addEventListener('keydown', handleGlobalScannerKey, { capture: true });
+    const scanInput = document.getElementById('scanInput');
+    if (scanInput) {
+      scanInput.addEventListener('keydown', handleInputConnectionKey);
+      scanInput.addEventListener('input', handleInputConnectionInput);
+      scanInput.addEventListener('change', submitInputConnectionValue);
+      scanInput.addEventListener('compositionstart', () => { inputConnectionComposing = true; });
+      scanInput.addEventListener('compositionend', () => {
+        inputConnectionComposing = false;
+        scheduleInputConnectionSubmit();
+      });
+    }
   }
 
   function handleGlobalScannerKey(e) {
+    if (terminalInputMode === 'inputconnection') return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
 
     const active = document.activeElement;
@@ -1611,6 +1665,70 @@
     if (currentTab !== 'scan' && !overlayShown) return;
 
     handleBufferedScanKey(e);
+  }
+
+  function handleInputConnectionKey(e) {
+    if (terminalInputMode !== 'inputconnection') return;
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      submitInputConnectionValue();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      clearScannerBuffer();
+    }
+  }
+
+  function handleInputConnectionInput() {
+    if (terminalInputMode !== 'inputconnection' || inputConnectionComposing) return;
+    scheduleInputConnectionSubmit();
+  }
+
+  function getInputConnectionIdleMs() {
+    return orderDetailAwaiting ? 1800 : 900;
+  }
+
+  function scheduleInputConnectionSubmit() {
+    if (terminalInputMode !== 'inputconnection') return;
+    clearTimeout(inputConnectionTimer);
+    const input = document.getElementById('scanInput');
+    if (!input || !normalizeQR(input.value)) return;
+    inputConnectionTimer = setTimeout(submitInputConnectionValue, getInputConnectionIdleMs());
+  }
+
+  function submitInputConnectionValue() {
+    if (terminalInputMode !== 'inputconnection') return;
+    clearTimeout(inputConnectionTimer);
+    inputConnectionTimer = null;
+    const input = document.getElementById('scanInput');
+    if (!input) return;
+    const value = normalizeQR(input.value);
+    input.value = '';
+    if (value) handleScan(value);
+  }
+
+  function toggleTerminalInputMode() {
+    terminalInputMode = terminalInputMode === 'inputconnection' ? 'hid' : 'inputconnection';
+    localStorage.setItem(TERMINAL_INPUT_MODE_KEY, terminalInputMode);
+    clearScannerBuffer();
+    renderTerminalInputMode();
+    focusScanInputSoon();
+  }
+
+  function renderTerminalInputMode() {
+    const input = document.getElementById('scanInput');
+    const btn = document.getElementById('inputModeBtn');
+    const desc = document.getElementById('inputModeDesc');
+    if (!input || !btn || !desc) return;
+    const inputConnection = terminalInputMode === 'inputconnection';
+    input.readOnly = !inputConnection;
+    input.tabIndex = inputConnection ? 0 : -1;
+    input.setAttribute('inputmode', inputConnection ? 'text' : 'none');
+    btn.textContent = inputConnection ? 'InputConnection' : 'HID';
+    desc.textContent = inputConnection
+      ? '入力欄へ直接入る文字列を受けます。Enter/Tabまたは入力停止で確定します'
+      : 'HID/キーボード入力を画面全体で受けます';
   }
 
   function handleBufferedScanKey(e) {
@@ -1660,7 +1778,9 @@
 
   function clearScannerBuffer() {
     clearTimeout(scannerIdleTimer);
+    clearTimeout(inputConnectionTimer);
     scannerIdleTimer = null;
+    inputConnectionTimer = null;
     scannerBuffer = '';
     const scanInput = document.getElementById('scanInput');
     if (scanInput) scanInput.value = '';
