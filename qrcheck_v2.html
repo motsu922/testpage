@@ -1626,6 +1626,42 @@
     logsRef.push(logEntry).catch(err => console.error('Firebase保存エラー:', err));
   }
 
+  function saveOrderDetailReadLog(status, qr, parsed, note) {
+    const normalized = normalizeQR(qr);
+    const detailLineCandidates = (normalized.match(/P\d{4}P/g) || []).length;
+    const qtyCandidates = (normalized.match(/Q\d+/g) || []).length;
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      qr1_raw: normalized,
+      qr2_raw: '',
+      qr1: normalized,
+      qr2: '',
+      partNumber: 'ORDER_DETAIL',
+      qr1Length: normalized.length,
+      qr2Length: 0,
+      scanMode: settings.scanMode || '1to1',
+      matchedRule: null,
+      extractStart0: null,
+      extractNote: note || '',
+      orderDetailActive: true,
+      orderDetailRead: true,
+      orderDetailReadResult: status,
+      orderDetailReadLength: normalized.length,
+      orderDetailLineCandidates: detailLineCandidates,
+      orderDetailQtyCandidates: qtyCandidates,
+      orderDetailLineCount: parsed && parsed.lines ? parsed.lines.length : 0,
+      terminalInputMode: terminalInputMode,
+      result: status === 'OK' ? 'OK' : 'NG',
+      isDuplicate: false,
+      dupType: ''
+    };
+    scanLog.unshift(logEntry);
+    if (scanLog.length > 120) scanLog.pop();
+    saveLog();
+    renderLog();
+    saveLogToFirebase(logEntry);
+  }
+
   function clearFirebaseLogs() {
     if (!database) return;
     const ref = database.ref('qr_match_logs/' + (activeCompanyId || 'default'));
@@ -3266,6 +3302,7 @@
       orderDetailAwaiting = false;
       currentStep = 1;
       if (normalized.length < 180) {
+        saveOrderDetailReadLog('NG', normalized, parsed, 'order_detail_too_short');
         showShortQRError({
           qr: normalized,
           actualLen: normalized.length,
@@ -3273,10 +3310,12 @@
           note: 'order_detail_too_short'
         });
       } else {
+        saveOrderDetailReadLog('NG', normalized, parsed, 'order_detail_parse_error');
         showOrderDetailParseError(normalized);
       }
       return;
     }
+    saveOrderDetailReadLog('OK', normalized, parsed, 'order_detail_read_ok');
     orderDetailSession = {
       orderQr: parsed.orderQr,
       meta: parsed.meta,
