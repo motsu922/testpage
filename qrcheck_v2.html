@@ -1686,7 +1686,7 @@
   }
 
   function getInputConnectionIdleMs() {
-    return orderDetailAwaiting ? 1800 : 900;
+    return orderDetailAwaiting ? 4500 : 900;
   }
 
   function scheduleInputConnectionSubmit() {
@@ -3158,6 +3158,42 @@
     }, 2600);
   }
 
+  function showOrderDetailParseError(qr) {
+    const normalized = normalizeQR(qr);
+    const overlay = document.getElementById('resultOverlay');
+    const symbol = document.getElementById('resultSymbol');
+    const text = document.getElementById('resultText');
+    const detail = document.getElementById('resultDetail');
+    const adminArea = document.getElementById('adminArea');
+
+    if (shortQrTimer) {
+      clearTimeout(shortQrTimer);
+      shortQrTimer = null;
+    }
+    isNGLocked = false;
+    overlay.className = 'result-overlay show ng';
+    symbol.textContent = '×';
+    text.textContent = '明細QR形式エラー';
+    detail.innerHTML = `
+      <p class="label">QRは読み取れていますが、明細行を解析できませんでした。</p>
+      <p class="label" style="margin-top:10px;">読み取り文字数: ${escapeHtml(normalized.length)}</p>
+      <p class="label">明細候補: ${(normalized.match(/P\d{4}P/g) || []).length}件 / 数量候補: ${(normalized.match(/Q\d+/g) || []).length}件</p>
+      <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(normalized || '(空)')}</p>
+      <p class="label" style="margin-top:12px;">明細QRではないQR、または端末側の文字変換が原因の可能性があります。</p>
+    `;
+    if (adminArea) adminArea.style.display = 'none';
+    playSound('ng');
+    vibrate([160, 60, 160]);
+
+    shortQrTimer = setTimeout(() => {
+      overlay.classList.remove('show');
+      shortQrTimer = null;
+      clearScannerBuffer();
+      updateScanUI();
+      focusScanInputSoon();
+    }, 4200);
+  }
+
   function decodeOrderQty(raw) {
     let value = String(raw || '').trim();
     if (value.length > 2 && /[24]$/.test(value)) value = value.slice(0, -1);
@@ -3224,16 +3260,21 @@
   }
 
   function handleOrderDetailScan(decoded) {
+    const normalized = normalizeQR(decoded);
     const parsed = parseOrderDetailQR(decoded);
     if (!parsed.lines.length) {
       orderDetailAwaiting = false;
       currentStep = 1;
-      showShortQRError({
-        qr: normalizeQR(decoded),
-        actualLen: normalizeQR(decoded).length,
-        minLen: 80,
-        note: 'order_detail_parse_failed'
-      });
+      if (normalized.length < 180) {
+        showShortQRError({
+          qr: normalized,
+          actualLen: normalized.length,
+          minLen: 180,
+          note: 'order_detail_too_short'
+        });
+      } else {
+        showOrderDetailParseError(normalized);
+      }
       return;
     }
     orderDetailSession = {
