@@ -303,6 +303,7 @@
     }
     .order-detail-stat-label { font-size: 9px; color: #8aa1b7; font-weight: 800; }
     .order-detail-stat-value { margin-top: 3px; font-size: 16px; color: #fff; font-weight: 900; font-family: ui-monospace, monospace; }
+    .order-detail-sync { color: #8aa1b7; font-size: 10px; margin-bottom: 5px; line-height: 1.25; }
     .order-detail-lines {
       display: grid;
       gap: 4px;
@@ -1644,6 +1645,10 @@
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
+  let orderDetailRef = null;
+  let orderDetailRefPath = '';
+  let orderDetailSyncReady = false;
+  let matchInProgress = false;
   let scannerBuffer = '';
   let scannerIdleTimer = null;
   const SCANNER_IDLE_MS = 900;
@@ -1658,10 +1663,13 @@
   const ORDER_LINE_RE = /P(\d{4})P([^Q]+)Q(\d+)Q(\d+)/g;
   let orderDetailAwaiting = false;
   let orderDetailSession = {
+    sessionId: '',
     orderQr: '',
     meta: {},
     lines: [],
-    scannedIds: {}
+    scannedIds: {},
+    completedAt: '',
+    completeLoggedAt: ''
   };
 
 
@@ -1831,6 +1839,7 @@
     if (!database) return;
     logsRef = database.ref('qr_match_logs/' + (activeCompanyId || 'default'));
     setupRealtimeSync();
+    setupOrderDetailRealtimeSync();
   }
 
   function setupRealtimeSync() {
@@ -1902,6 +1911,127 @@
     saveLog();
     renderLog();
     saveLogToFirebase(logEntry);
+  }
+
+  function getOrderDetailSessionsRef() {
+    if (!database) return null;
+    return database.ref('qr_match_companies/order_detail_sessions/' + (activeCompanyId || 'default'));
+  }
+
+  function setupOrderDetailRealtimeSync() {
+    if (!database || !orderDetailSession.sessionId) return;
+    subscribeOrderDetailSession(orderDetailSession.sessionId);
+  }
+
+  function hashString(value) {
+    let hash = 2166136261;
+    const text = String(value || '');
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function buildOrderDetailSessionId(parsed) {
+    const qr = parsed && parsed.orderQr ? parsed.orderQr : '';
+    const meta = parsed && parsed.meta ? parsed.meta : {};
+    const base = [
+      meta.orderNo || '',
+      meta.deliveryDate || '',
+      meta.shipDate || '',
+      hashString(qr)
+    ].join('|');
+    return 'od_' + hashString(base);
+  }
+
+  function getOrderDetailStorageKey() {
+    return ORDER_DETAIL_KEY + '_' + (activeCompanyId || 'default');
+  }
+
+  function normalizeOrderDetailSessionData(data, sessionId) {
+    const source = data || {};
+    const lines = Array.isArray(source.lines)
+      ? source.lines
+      : Object.values(source.lines || {});
+    return {
+      sessionId: source.sessionId || sessionId || '',
+      orderQr: source.orderQr || '',
+      meta: source.meta || {},
+      lines: lines.map((line, index) => ({
+        no: line.no || index + 1,
+        backNo: line.backNo || '',
+        partNo: line.partNo || '',
+        packQty: Number(line.packQty) || 0,
+        totalQty: Number(line.totalQty) || 0,
+        requiredBoxes: Number(line.requiredBoxes) || 0,
+        scanned: Number(line.scanned) || 0
+      })),
+      scannedIds: source.scannedIds || {},
+      completedAt: source.completedAt || '',
+      completeLoggedAt: source.completeLoggedAt || '',
+      createdAt: source.createdAt || '',
+      updatedAt: source.updatedAt || ''
+    };
+  }
+
+  function subscribeOrderDetailSession(sessionId) {
+    const root = getOrderDetailSessionsRef();
+    if (!root || !sessionId) return;
+    const nextRef = root.child(sessionId);
+    const nextPath = nextRef.toString();
+    if (orderDetailRef && orderDetailRefPath && orderDetailRefPath !== nextPath) {
+      orderDetailRef.off('value');
+      orderDetailSyncReady = false;
+    }
+    if (orderDetailRefPath === nextPath && orderDetailRef) return;
+    orderDetailRef = nextRef;
+    orderDetailRefPath = nextPath;
+    orderDetailRef.on('value', snapshot => {
+      const data = snapshot.val();
+      if (!data) return;
+      orderDetailSession = normalizeOrderDetailSessionData(data, sessionId);
+      orderDetailSyncReady = true;
+      saveOrderDetailSession();
+      renderOrderDetailPanel();
+      updateScanUI();
+    });
+  }
+
+  function upsertOrderDetailSessionToFirebase(session) {
+    const root = getOrderDetailSessionsRef();
+    if (!root || !session.sessionId) return Promise.resolve(session);
+    const ref = root.child(session.sessionId);
+    const now = new Date().toISOString();
+    return ref.transaction(current => {
+      if (current) {
+        return {
+          ...current,
+          sessionId: current.sessionId || session.sessionId,
+          orderQr: current.orderQr || session.orderQr,
+          meta: current.meta || session.meta || {},
+          lines: current.lines || session.lines || [],
+          scannedIds: current.scannedIds || {},
+          updatedAt: now
+        };
+      }
+      return {
+        ...session,
+        createdAt: now,
+        updatedAt: now
+      };
+    }).then(result => {
+      const data = result.snapshot && result.snapshot.val();
+      if (data) orderDetailSession = normalizeOrderDetailSessionData(data, session.sessionId);
+      subscribeOrderDetailSession(session.sessionId);
+      saveOrderDetailSession();
+      renderOrderDetailPanel();
+      updateScanUI();
+      return orderDetailSession;
+    }).catch(err => {
+      console.error('Order detail session sync error:', err);
+      return session;
+    });
   }
 
   function clearFirebaseLogs() {
@@ -2081,7 +2211,12 @@
     }
     if(isOKPending){isOKPending=false;const t=document.getElementById('okToast');if(t)t.classList.remove('show');}
     if (orderDetailAwaiting) {
-      handleOrderDetailScan(decoded);
+      handleOrderDetailScan(decoded).catch(err => {
+        console.error('Order detail scan error:', err);
+        orderDetailAwaiting = false;
+        currentStep = 1;
+        updateScanUI();
+      });
       return;
     }
     if (isOrderDetailComplete()) {
@@ -2108,7 +2243,10 @@
       if (shortInfo) { showShortQRError(shortInfo); return; }
       value2 = decoded;
       playSound('beep');
-      doMatch();
+      doMatch().catch(err => {
+        console.error('Match error:', err);
+        matchInProgress = false;
+      });
     }
   }
 
@@ -2365,6 +2503,7 @@
       // ローカルの activeId は上書きしない（管理端末の選択状態を保持）
     }
 
+    loadOrderDetailSession();
     updateCompanyBadge();
     applyFixedCompanyUI();
   }
@@ -3542,7 +3681,7 @@
     focusScanInputSoon();
   }
 
-  function handleOrderDetailScan(decoded) {
+  async function handleOrderDetailScan(decoded) {
     const normalized = normalizeQR(decoded);
     const parsed = parseOrderDetailQR(decoded);
     if (!parsed.lines.length) {
@@ -3563,7 +3702,9 @@
       return;
     }
     saveOrderDetailReadLog('OK', normalized, parsed, 'order_detail_read_ok');
+    const sessionId = buildOrderDetailSessionId(parsed);
     orderDetailSession = {
+      sessionId,
       orderQr: parsed.orderQr,
       meta: parsed.meta,
       lines: parsed.lines,
@@ -3573,6 +3714,7 @@
     };
     saveOrderDetailSession();
     renderOrderDetailPanel();
+    await upsertOrderDetailSessionToFirebase(orderDetailSession);
     orderDetailAwaiting = false;
     playSound('ok');
     startScanning(true);
@@ -3580,25 +3722,39 @@
 
   function clearOrderDetail() {
     if (orderDetailSession.lines.length && !confirm('注文明細をクリアしますか？')) return;
-    orderDetailSession = { orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
+    if (orderDetailRef) {
+      orderDetailRef.off('value');
+      orderDetailRef = null;
+      orderDetailRefPath = '';
+      orderDetailSyncReady = false;
+    }
+    orderDetailSession = { sessionId: '', orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
     saveOrderDetailSession();
     renderOrderDetailPanel();
     focusScanInputSoon();
   }
 
   function saveOrderDetailSession() {
-    localStorage.setItem(ORDER_DETAIL_KEY, JSON.stringify(orderDetailSession));
+    localStorage.setItem(getOrderDetailStorageKey(), JSON.stringify(orderDetailSession));
   }
 
   function loadOrderDetailSession() {
+    if (orderDetailRef) {
+      orderDetailRef.off('value');
+      orderDetailRef = null;
+      orderDetailRefPath = '';
+      orderDetailSyncReady = false;
+    }
     try {
-      const saved = JSON.parse(localStorage.getItem(ORDER_DETAIL_KEY) || 'null');
+      const raw = localStorage.getItem(getOrderDetailStorageKey()) || localStorage.getItem(ORDER_DETAIL_KEY);
+      const saved = JSON.parse(raw || 'null');
       if (saved && Array.isArray(saved.lines)) {
-        orderDetailSession = { orderQr: '', meta: {}, scannedIds: {}, completedAt: '', completeLoggedAt: '', ...saved };
+        orderDetailSession = { sessionId: '', orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '', ...saved };
       }
     } catch (e) {
-      orderDetailSession = { orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
+      orderDetailSession = { sessionId: '', orderQr: '', meta: {}, lines: [], scannedIds: {}, completedAt: '', completeLoggedAt: '' };
     }
+    setupOrderDetailRealtimeSync();
   }
 
   function orderRequiredBoxes() {
@@ -3631,6 +3787,7 @@
       extractStart0: null,
       extractNote: 'order_detail_complete',
       orderDetailActive: true,
+      orderDetailSessionId: orderDetailSession.sessionId || '',
       orderDetailCompleted: true,
       orderDetailCompletedAt: orderDetailSession.completedAt || new Date().toISOString(),
       orderDetailRequiredBoxes: required,
@@ -3694,6 +3851,9 @@
     target.className = '';
     const required = orderRequiredBoxes();
     const scanned = orderScannedBoxes();
+    const syncText = database && orderDetailSession.sessionId
+      ? (orderDetailSyncReady ? 'Firebase同期中' : 'Firebase同期準備中')
+      : 'この端末のみ';
     target.innerHTML = `
       <div class="order-detail-summary">
         <div class="order-detail-stat"><div class="order-detail-stat-label">明細</div><div class="order-detail-stat-value">${orderDetailSession.lines.length}</div></div>
@@ -3701,6 +3861,7 @@
         <div class="order-detail-stat"><div class="order-detail-stat-label">読込</div><div class="order-detail-stat-value">${scanned}</div></div>
         <div class="order-detail-stat"><div class="order-detail-stat-label">残り</div><div class="order-detail-stat-value">${Math.max(0, required - scanned)}</div></div>
       </div>
+      <div class="order-detail-sync">${escapeHtml(syncText)} / ${escapeHtml(scanned)} / ${escapeHtml(required)}</div>
       <div class="order-detail-lines">
         ${orderDetailSession.lines.map(line => `
           <div class="order-detail-line ${line.scanned >= line.requiredBoxes ? 'done' : ''}">
@@ -3712,28 +3873,70 @@
     `;
   }
 
-  function checkOrderDetailMatch(partNumber, qr1, qr2) {
+  async function checkOrderDetailMatch(partNumber, qr1, qr2) {
     if (!orderDetailSession.lines.length) return { active: false, ok: true, note: '' };
-    const line = orderDetailSession.lines.find(item => partsEquivalent(item.partNo, partNumber));
-    if (!line) {
-      return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
-    }
     const key = `${canonicalPart(partNumber)}|${normalizeQR(qr1)}|${normalizeQR(qr2)}`;
-    if (orderDetailSession.scannedIds[key]) {
-      return { active: true, ok: false, note: `明細重複: ${partNumber}` };
+    const scanKey = 'scan_' + hashString(key);
+    const localCheck = (session) => {
+      const line = session.lines.find(item => partsEquivalent(item.partNo, partNumber));
+      if (!line) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
+      if (session.scannedIds && session.scannedIds[scanKey]) return { active: true, ok: false, note: `明細重複: ${partNumber}` };
+      if (line.scanned >= line.requiredBoxes) return { active: true, ok: false, note: `数量超過: ${line.partNo} ${line.scanned + 1}/${line.requiredBoxes}` };
+      line.scanned += 1;
+      session.scannedIds = session.scannedIds || {};
+      session.scannedIds[scanKey] = {
+        partNumber,
+        qrHash: hashString(normalizeQR(qr1) + '|' + normalizeQR(qr2)),
+        timestamp: new Date().toISOString(),
+        terminalInputMode
+      };
+      const required = session.lines.reduce((sum, item) => sum + item.requiredBoxes, 0);
+      const scanned = session.lines.reduce((sum, item) => sum + item.scanned, 0);
+      const completed = session.lines.length > 0 && required > 0 && scanned >= required;
+      if (completed && !session.completedAt) session.completedAt = new Date().toISOString();
+      session.updatedAt = new Date().toISOString();
+      return { active: true, ok: true, completed, note: `明細OK: ${line.partNo} ${line.scanned}/${line.requiredBoxes}` };
+    };
+
+    if (!database || !orderDetailSession.sessionId) {
+      const result = localCheck(orderDetailSession);
+      saveOrderDetailSession();
+      renderOrderDetailPanel();
+      return result;
     }
-    if (line.scanned >= line.requiredBoxes) {
-      return { active: true, ok: false, note: `数量超過: ${line.partNo} ${line.scanned + 1}/${line.requiredBoxes}` };
+
+    const root = getOrderDetailSessionsRef();
+    if (!root) {
+      const result = localCheck(orderDetailSession);
+      saveOrderDetailSession();
+      renderOrderDetailPanel();
+      return result;
     }
-    line.scanned += 1;
-    orderDetailSession.scannedIds[key] = true;
-    const completed = isOrderDetailComplete();
-    if (completed && !orderDetailSession.completedAt) {
-      orderDetailSession.completedAt = new Date().toISOString();
+
+    let txResult = { active: true, ok: false, note: '明細同期エラー' };
+    const ref = root.child(orderDetailSession.sessionId);
+    try {
+      const tx = await ref.transaction(current => {
+        if (!current) {
+          current = orderDetailSession;
+        }
+        const session = normalizeOrderDetailSessionData(current, orderDetailSession.sessionId);
+        txResult = localCheck(session);
+        if (!txResult.ok) return current;
+        return session;
+      });
+      const data = tx.snapshot && tx.snapshot.val();
+      if (data) {
+        orderDetailSession = normalizeOrderDetailSessionData(data, orderDetailSession.sessionId);
+        saveOrderDetailSession();
+        renderOrderDetailPanel();
+        updateScanUI();
+      }
+      return txResult;
+    } catch (err) {
+      console.error('Order detail transaction error:', err);
+      return { active: true, ok: false, note: '明細同期エラー' };
     }
-    saveOrderDetailSession();
-    renderOrderDetailPanel();
-    return { active: true, ok: true, note: `明細OK: ${line.partNo} ${line.scanned}/${line.requiredBoxes}` };
   }
 
   function resolveAliases(partNumber) {
@@ -3746,7 +3949,9 @@
   }
 
   // ========= 照合 =========
-  function doMatch() {
+  async function doMatch() {
+    if (matchInProgress) return;
+    matchInProgress = true;
     const v1 = normalizeQR(value1);
     const v2 = normalizeQR(value2);
 
@@ -3770,7 +3975,7 @@
     // ② 重複チェック（QR1単体・QR2単体・QR1+QR2ペアの3種すべて監視）
     const dupType = isDuplicateToday(v1, v2); // null / 'qr1' / 'qr2' / 'pair'
     const isDup = dupType !== null;
-    const orderCheck = (isQROK && !isDup) ? checkOrderDetailMatch(partNumber, v1, v2) : { active: false, ok: true, note: '' };
+    const orderCheck = (isQROK && !isDup) ? await checkOrderDetailMatch(partNumber, v1, v2) : { active: false, ok: true, note: '' };
 
     // 最終判定
     const isOK = isQROK && !isDup && orderCheck.ok;
@@ -3797,6 +4002,7 @@
       extractStart0: ex.start0,
       extractNote: ex.note || '',
       orderDetailActive: !!orderCheck.active,
+      orderDetailSessionId: orderCheck.active ? (orderDetailSession.sessionId || '') : '',
       orderDetailResult: orderCheck.active ? (orderCheck.ok ? 'OK' : 'NG') : '',
       orderDetailNote: orderCheck.note || '',
       orderDetailCompleted: orderJustCompleted,
@@ -3813,11 +4019,17 @@
     renderLog();
     saveLogToFirebase(logEntry);
     if (orderJustCompleted) {
-      orderDetailSession.completeLoggedAt = new Date().toISOString();
+      const completeLoggedAt = new Date().toISOString();
+      orderDetailSession.completeLoggedAt = completeLoggedAt;
       saveOrderDetailSession();
+      const root = getOrderDetailSessionsRef();
+      if (root && orderDetailSession.sessionId) {
+        root.child(orderDetailSession.sessionId).update({ completeLoggedAt });
+      }
       saveOrderDetailCompleteLog(logEntry);
     }
     showResult(isOK, isDup, dupType, partNumber, logEntry);
+    matchInProgress = false;
   }
 
   // ========= 結果表示 =========
@@ -4112,7 +4324,7 @@
 
   function exportLog() {
     if (scanLog.length === 0) return alert('履歴がありません');
-    const headers = ['日時','結果','重複フラグ','スキャンモード','1回目QR(raw)','2回目QR(raw)','1回目QR(norm)','2回目QR(norm)','抽出品番','1回目文字数','2回目文字数','ルール','note','明細結果','明細メモ'];
+    const headers = ['日時','結果','重複フラグ','スキャンモード','1回目QR(raw)','2回目QR(raw)','1回目QR(norm)','2回目QR(norm)','抽出品番','1回目文字数','2回目文字数','ルール','note','明細セッション','明細結果','明細メモ','明細完了','明細必要','明細読込'];
     const rows = scanLog.map(l => [
       new Date(l.timestamp).toLocaleString('ja-JP'),
       l.result,
@@ -4123,8 +4335,12 @@
       l.qr1Length ?? '', l.qr2Length ?? '',
       l.matchedRule ? JSON.stringify(l.matchedRule) : '',
       l.extractNote ?? '',
+      l.orderDetailSessionId ?? '',
       l.orderDetailResult ?? '',
-      l.orderDetailNote ?? ''
+      l.orderDetailNote ?? '',
+      l.orderDetailCompleted ?? '',
+      l.orderDetailRequiredBoxes ?? '',
+      l.orderDetailScannedBoxes ?? ''
     ]);
     const csv = [headers, ...rows]
       .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
