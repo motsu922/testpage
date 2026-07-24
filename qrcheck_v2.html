@@ -1453,6 +1453,23 @@
           </div>
         </div>
 
+        <div class="settings-card">
+          <div class="settings-card-title">📏 かんばん種類チェック</div>
+          <p style="font-size:12px; color:#888; margin-bottom:12px; line-height:1.6;">
+            1回目QRと2回目QRの文字数が設定範囲外の場合、かんばん種類違いとして照合前に止めます。
+          </p>
+          <div class="setting-row">
+            <span class="setting-label">文字数範囲チェック</span>
+            <div class="toggle-switch on" id="qrLengthGuardToggle" onclick="toggleQRLengthGuard()"></div>
+          </div>
+          <div class="range-inputs">
+            <div class="range-input-item"><label>1回目QR min</label><input type="number" id="qr1MinLen" min="0"></div>
+            <div class="range-input-item"><label>1回目QR max</label><input type="number" id="qr1MaxLen" min="0"></div>
+            <div class="range-input-item"><label>2回目QR min</label><input type="number" id="qr2MinLen" min="0"></div>
+            <div class="range-input-item"><label>2回目QR max</label><input type="number" id="qr2MaxLen" min="0"></div>
+          </div>
+        </div>
+
         <!-- ★ 照合方向設定カード -->
         <div class="settings-card">
           <div class="settings-card-title">↔️ 照合方向（1対1モード）</div>
@@ -1768,6 +1785,11 @@
     },
     duplicateCheckEnabled: false,   // ★ 重複監視モード
     shortQRCheckEnabled: true,
+    qrLengthGuard: {
+      enabled: true,
+      qr1: { minLen: 1, maxLen: 9999 },
+      qr2: { minLen: 1, maxLen: 9999 }
+    },
     scanMode: '1to1',               // ★ '1to1' | '1toN'
     matchDirection: 'qr2_to_qr1',  // ★ 'qr2_to_qr1' | 'qr1_to_qr2'
     photoMap: [],                   // ★ [{ id, partNumber, url }]
@@ -2360,6 +2382,8 @@
       return;
     }
     if (currentStep === 1) {
+      const lengthError = getQRLengthGuardError(decoded, 1);
+      if (lengthError) { showKanbanTypeError(lengthError); return; }
       const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'extract' : 'search';
       const shortInfo = getShortQRInfo(decoded, scanRole);
       if (shortInfo) { showShortQRError(shortInfo); return; }
@@ -2374,6 +2398,8 @@
       updateScanUI();
       focusScanInputSoon();
     } else if (currentStep === 2) {
+      const lengthError = getQRLengthGuardError(decoded, 2);
+      if (lengthError) { showKanbanTypeError(lengthError); return; }
       const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'search' : 'extract';
       const shortInfo = getShortQRInfo(decoded, scanRole);
       if (shortInfo) { showShortQRError(shortInfo); return; }
@@ -2561,6 +2587,13 @@
     settings.shortQRCheckEnabled = !settings.shortQRCheckEnabled;
     const tog = document.getElementById('shortQRCheckToggle');
     if (tog) tog.className = settings.shortQRCheckEnabled ? 'toggle-switch on' : 'toggle-switch';
+  }
+
+  function toggleQRLengthGuard() {
+    normalizeQRLengthGuard();
+    settings.qrLengthGuard.enabled = !settings.qrLengthGuard.enabled;
+    const tog = document.getElementById('qrLengthGuardToggle');
+    if (tog) tog.className = settings.qrLengthGuard.enabled ? 'toggle-switch on' : 'toggle-switch';
   }
 
   function toggleScanModeSettings() {
@@ -3030,6 +3063,7 @@
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
     if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;
     if (settings.shortQRCheckEnabled === undefined) settings.shortQRCheckEnabled = true;
+    normalizeQRLengthGuard();
     if (!settings.scanMode) settings.scanMode = '1to1';
     if (!settings.aliasMap) settings.aliasMap = [];
     if (!settings.matchDirection) settings.matchDirection = 'qr2_to_qr1';
@@ -3065,6 +3099,23 @@
     return { minLen, maxLen, startPos, charCount, prefix };
   }
 
+  function sanitizeLengthRange(range) {
+    const source = range || {};
+    const minLen = Math.max(0, parseInt(source.minLen ?? 1) || 0);
+    const rawMax = parseInt(source.maxLen ?? 9999);
+    const maxLen = Math.max(minLen, Number.isFinite(rawMax) ? rawMax : 9999);
+    return { minLen, maxLen };
+  }
+
+  function normalizeQRLengthGuard() {
+    const guard = settings.qrLengthGuard || {};
+    settings.qrLengthGuard = {
+      enabled: guard.enabled !== false,
+      qr1: sanitizeLengthRange(guard.qr1),
+      qr2: sanitizeLengthRange(guard.qr2)
+    };
+  }
+
   function applySettingsToForm() {
     document.getElementById('releasePIN').value = String(settings.releasePIN || '0000').padStart(4,'0');
     document.getElementById('soundToggle').className     = settings.soundEnabled     ? 'toggle-switch on' : 'toggle-switch';
@@ -3087,6 +3138,17 @@
     // ★ 照合方向トグル
     const shortToggle = document.getElementById('shortQRCheckToggle');
     if (shortToggle) shortToggle.className = settings.shortQRCheckEnabled ? 'toggle-switch on' : 'toggle-switch';
+    normalizeQRLengthGuard();
+    const guardToggle = document.getElementById('qrLengthGuardToggle');
+    if (guardToggle) guardToggle.className = settings.qrLengthGuard.enabled ? 'toggle-switch on' : 'toggle-switch';
+    const qr1Min = document.getElementById('qr1MinLen');
+    const qr1Max = document.getElementById('qr1MaxLen');
+    const qr2Min = document.getElementById('qr2MinLen');
+    const qr2Max = document.getElementById('qr2MaxLen');
+    if (qr1Min) qr1Min.value = settings.qrLengthGuard.qr1.minLen;
+    if (qr1Max) qr1Max.value = settings.qrLengthGuard.qr1.maxLen;
+    if (qr2Min) qr2Min.value = settings.qrLengthGuard.qr2.minLen;
+    if (qr2Max) qr2Max.value = settings.qrLengthGuard.qr2.maxLen;
     const mdToggle = document.getElementById('matchDirectionToggle');
     if (mdToggle) mdToggle.className = settings.matchDirection === 'qr1_to_qr2' ? 'toggle-switch on' : 'toggle-switch';
     const mdLabel = document.getElementById('matchDirectionLabel');
@@ -3389,6 +3451,21 @@
     }));
   }
 
+  function collectQRLengthGuard() {
+    const current = settings.qrLengthGuard || {};
+    return {
+      enabled: current.enabled !== false,
+      qr1: sanitizeLengthRange({
+        minLen: document.getElementById('qr1MinLen')?.value,
+        maxLen: document.getElementById('qr1MaxLen')?.value
+      }),
+      qr2: sanitizeLengthRange({
+        minLen: document.getElementById('qr2MinLen')?.value,
+        maxLen: document.getElementById('qr2MaxLen')?.value
+      })
+    };
+  }
+
   function saveAllSettings() {
     const newPassword = document.getElementById('adminPassword').value.trim();
     if (newPassword) settings.adminPassword = newPassword;
@@ -3399,6 +3476,7 @@
     settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
     settings.firebase.projectId   = document.getElementById('fbProjectId').value.trim();
     settings.extractRules = collectExtractRules();
+    settings.qrLengthGuard = collectQRLengthGuard();
     // ★ scanMode は toggleScanModeSettings() で既に settings に反映済み
     // ★ duplicateCheckEnabled はトグル操作で既に settings に反映済み
     const saveKey = getSettingsKey(activeCompanyId);
@@ -3690,6 +3768,86 @@
       return { qr, minLen: 6, actualLen: qr.length, note: 'too_short_search' };
     }
     return null;
+  }
+
+  function getQRLengthGuardError(qrRaw, stepNo) {
+    normalizeQRLengthGuard();
+    if (!settings.qrLengthGuard.enabled) return null;
+    const qr = normalizeQR(qrRaw);
+    const range = stepNo === 1 ? settings.qrLengthGuard.qr1 : settings.qrLengthGuard.qr2;
+    if (!range) return null;
+    const actualLen = qr.length;
+    if (actualLen < range.minLen || actualLen > range.maxLen) {
+      return {
+        qr,
+        stepNo,
+        actualLen,
+        minLen: range.minLen,
+        maxLen: range.maxLen
+      };
+    }
+    return null;
+  }
+
+  function saveKanbanTypeErrorLog(info) {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      qr1_raw: info.stepNo === 1 ? info.qr : value1,
+      qr2_raw: info.stepNo === 2 ? info.qr : '',
+      qr1: info.stepNo === 1 ? info.qr : normalizeQR(value1),
+      qr2: info.stepNo === 2 ? info.qr : '',
+      partNumber: 'KANBAN_TYPE_ERROR',
+      qr1Length: info.stepNo === 1 ? info.actualLen : (normalizeQR(value1).length || 0),
+      qr2Length: info.stepNo === 2 ? info.actualLen : 0,
+      scanMode: settings.scanMode || '1to1',
+      matchedRule: null,
+      extractStart0: null,
+      extractNote: `kanban_type_error_step${info.stepNo}:${info.actualLen}/${info.minLen}-${info.maxLen}`,
+      result: 'NG',
+      isDuplicate: false,
+      dupType: ''
+    };
+    scanLog.unshift(logEntry);
+    if (scanLog.length > 120) scanLog.pop();
+    saveLog();
+    renderLog();
+    saveLogToFirebase(logEntry);
+  }
+
+  function showKanbanTypeError(info) {
+    const overlay = document.getElementById('resultOverlay');
+    const symbol = document.getElementById('resultSymbol');
+    const text = document.getElementById('resultText');
+    const detail = document.getElementById('resultDetail');
+    const adminArea = document.getElementById('adminArea');
+
+    if (shortQrTimer) {
+      clearTimeout(shortQrTimer);
+      shortQrTimer = null;
+    }
+    saveKanbanTypeErrorLog(info);
+    isNGLocked = false;
+    overlay.className = 'result-overlay show ng';
+    symbol.textContent = '×';
+    text.textContent = 'かんばん種類違い';
+    detail.innerHTML = `
+      <p class="label">${escapeHtml(info.stepNo)}回目QRの文字数が設定範囲外です</p>
+      <p class="label" style="margin-top:10px;">読み取り文字数: ${escapeHtml(info.actualLen)} / 設定範囲: ${escapeHtml(info.minLen)}〜${escapeHtml(info.maxLen)}</p>
+      <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(info.qr || '(空)')}</p>
+      <p class="label" style="margin-top:12px;">QRの種類、読み取り順、または設定範囲を確認してください。</p>
+    `;
+    if (adminArea) adminArea.style.display = 'none';
+    playSound('ng');
+    vibrate([180, 70, 180]);
+
+    shortQrTimer = setTimeout(() => {
+      overlay.classList.remove('show');
+      shortQrTimer = null;
+      if (info.stepNo === 2) value2 = '';
+      clearScannerBuffer();
+      updateScanUI();
+      focusScanInputSoon();
+    }, 3200);
   }
 
   function showShortQRError(info) {
