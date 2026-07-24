@@ -322,6 +322,11 @@
       background: #351818;
       color: #ff9b9b;
     }
+    .order-detail-btn.complete {
+      border-color: #2f6b46;
+      background: #12351f;
+      color: #93efad;
+    }
     .order-detail-summary {
       display: none;
       grid-template-columns: repeat(4, 1fr);
@@ -1275,7 +1280,8 @@
           <div class="order-detail-head">
             <div class="order-detail-title">注文明細照合</div>
             <div class="order-detail-actions">
-              <button class="order-detail-btn danger" onclick="clearOrderDetail()">クリア</button>
+              <button class="order-detail-btn complete" id="orderDetailCompleteBtn" onclick="completeOrderDetail()" style="display:none;">完了</button>
+              <button class="order-detail-btn danger" id="orderDetailResetBtn" onclick="resetOrderDetailResults()" style="display:none;">初期化</button>
             </div>
           </div>
           <button class="order-detail-btn order-detail-primary" onclick="startOrderDetailScan()">明細QR読込</button>
@@ -3918,8 +3924,7 @@
     startScanning(true);
   }
 
-  function clearOrderDetail() {
-    if (orderDetailSession.lines.length && !confirm('注文明細をクリアしますか？')) return;
+  function leaveOrderDetailSession() {
     if (orderDetailRef) {
       orderDetailRef.off('value');
       orderDetailRef = null;
@@ -3931,6 +3936,99 @@
     saveOrderDetailSession();
     renderOrderDetailPanel();
     focusScanInputSoon();
+  }
+
+  function saveOrderDetailActionLog(action, note, session) {
+    const target = session || orderDetailSession;
+    const required = orderRequiredBoxesFrom(target);
+    const scanned = orderScannedBoxesFrom(target);
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      qr1_raw: '', qr2_raw: '', qr1: '', qr2: '',
+      partNumber: 'ORDER_DETAIL_' + action,
+      qr1Length: 0, qr2Length: 0,
+      scanMode: settings.scanMode || '1to1',
+      matchedRule: null,
+      extractStart0: null,
+      extractNote: note || '',
+      orderDetailActive: true,
+      orderDetailAction: action,
+      orderDetailSessionId: target.sessionId || '',
+      orderDetailRequiredBoxes: required,
+      orderDetailScannedBoxes: scanned,
+      orderDetailLineCount: (target.lines || []).length,
+      terminalInputMode,
+      result: 'OK',
+      isDuplicate: false,
+      dupType: ''
+    };
+    scanLog.unshift(logEntry);
+    if (scanLog.length > 120) scanLog.pop();
+    saveLog();
+    renderLog();
+    saveLogToFirebase(logEntry);
+  }
+
+  function completeOrderDetail() {
+    if (!orderDetailSession.lines.length) {
+      startOrderDetailScan();
+      return;
+    }
+    const required = orderRequiredBoxes();
+    const scanned = orderScannedBoxes();
+    const remaining = Math.max(0, required - scanned);
+    const message = remaining
+      ? `未照合が${remaining}箱あります。\nこの端末では現在の明細を完了し、次の明細QR読込へ進みますか？\n他の端末の照合状況は変更しません。`
+      : '現在の明細を完了し、次の明細QR読込へ進みますか？';
+    if (!confirm(message)) return;
+
+    saveOrderDetailActionLog('MANUAL_COMPLETE', `manual_complete:${scanned}/${required}`);
+    leaveOrderDetailSession();
+    startOrderDetailScan();
+  }
+
+  function resetOrderDetailSessionData(source) {
+    const target = normalizeOrderDetailSessionData(source, source && source.sessionId);
+    target.lines = target.lines.map(line => ({ ...line, scanned: 0 }));
+    target.scannedIds = {};
+    target.completedAt = '';
+    target.completeLoggedAt = '';
+    target.updatedAt = new Date().toISOString();
+    return target;
+  }
+
+  async function resetOrderDetailResults() {
+    if (!orderDetailSession.lines.length) return;
+    const required = orderRequiredBoxes();
+    const scanned = orderScannedBoxes();
+    if (!confirm(`この明細の照合結果 ${scanned}/${required} を初期化しますか？\n同じ明細を開いている他の端末にも反映されます。`)) return;
+
+    const beforeReset = normalizeOrderDetailSessionData(orderDetailSession, orderDetailSession.sessionId);
+    const root = getOrderDetailSessionsRef();
+    if (root && orderDetailSession.sessionId) {
+      try {
+        const ref = root.child(orderDetailSession.sessionId);
+        const tx = await ref.transaction(current => resetOrderDetailSessionData(current || orderDetailSession));
+        const data = tx.snapshot && tx.snapshot.val();
+        if (!data) throw new Error('reset result is empty');
+        orderDetailSession = normalizeOrderDetailSessionData(data, orderDetailSession.sessionId);
+        saveOrderDetailSession();
+        renderOrderDetailPanel();
+        updateScanUI();
+        saveOrderDetailActionLog('RESET', `reset:${scanned}/${required}`, beforeReset);
+        return;
+      } catch (err) {
+        console.error('Order detail reset error:', err);
+        alert('初期化できませんでした。Firebase接続を確認してください。');
+        return;
+      }
+    }
+
+    orderDetailSession = resetOrderDetailSessionData(orderDetailSession);
+    saveOrderDetailSession();
+    renderOrderDetailPanel();
+    updateScanUI();
+    saveOrderDetailActionLog('RESET', `reset:${scanned}/${required}`, beforeReset);
   }
 
   function saveOrderDetailSession() {
@@ -4042,7 +4140,11 @@
   function renderOrderDetailPanel() {
     const target = document.getElementById('orderDetailContent');
     const appendBtn = document.getElementById('orderDetailAppendBtn');
+    const completeBtn = document.getElementById('orderDetailCompleteBtn');
+    const resetBtn = document.getElementById('orderDetailResetBtn');
     if (appendBtn) appendBtn.style.display = orderDetailSession.lines.length ? '' : 'none';
+    if (completeBtn) completeBtn.style.display = orderDetailSession.lines.length ? '' : 'none';
+    if (resetBtn) resetBtn.style.display = orderDetailSession.lines.length ? '' : 'none';
     if (!target) return;
     if (!orderDetailSession.lines.length) {
       target.className = 'order-detail-empty';
