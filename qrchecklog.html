@@ -347,6 +347,143 @@
       border: 1px solid var(--border);
     }
 
+    .detail-board {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .detail-board-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-board-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--mono);
+    }
+    .detail-board-sub {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--mono);
+    }
+    .detail-session-list {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+    .detail-session-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      cursor: pointer;
+      background: #fbfcfe;
+      transition: border-color .15s, background .15s;
+    }
+    .detail-session-card:hover { border-color: var(--accent); background: #f3f9ff; }
+    .detail-session-card.active { border-color: var(--accent); background: #eef7ff; }
+    .detail-session-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .detail-session-name {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+      font-family: var(--mono);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .detail-status {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .detail-status.done { background: var(--ok-dim); color: var(--ok); border: 1px solid #a8d5aa; }
+    .detail-status.active { background: #e6f2ff; color: var(--accent2); border: 1px solid #b8dafa; }
+    .detail-status.empty { background: var(--bg3); color: var(--text3); border: 1px solid var(--border); }
+    .detail-progress-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 74px;
+      gap: 10px;
+      align-items: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text2);
+    }
+    .detail-progress-bar {
+      height: 8px;
+      background: var(--bg3);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .detail-progress-fill {
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+    }
+    .detail-session-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      color: var(--text3);
+      font-size: 10px;
+      font-family: var(--mono);
+    }
+    .detail-lines {
+      margin-top: 8px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .detail-line-chip {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text2);
+      border-radius: 6px;
+      padding: 3px 6px;
+      font-size: 10px;
+      font-family: var(--mono);
+    }
+    .detail-line-chip.done {
+      background: var(--ok-bg);
+      border-color: #a8d5aa;
+      color: var(--ok);
+    }
+    .detail-filter-note {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid #b8dafa;
+      border-radius: 8px;
+      background: #eef7ff;
+      color: var(--accent2);
+      font-size: 12px;
+      font-family: var(--mono);
+    }
+    .detail-filter-note.show { display: flex; }
+
     /* ── 詳細モーダル ── */
     .modal-overlay {
       position: fixed;
@@ -470,6 +607,7 @@
       .sidebar { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
       .summary-grid { grid-template-columns: repeat(3, 1fr); }
       .main { padding: 16px; }
+      .detail-progress-row { grid-template-columns: 66px 1fr 64px; }
     }
   </style>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -567,6 +705,26 @@
     </div>
 
     <!-- テーブル -->
+    <div class="detail-board">
+      <div class="detail-board-header">
+        <div>
+          <div class="detail-board-title">注文明細の進捗</div>
+          <div class="detail-board-sub" id="detailSessionCount">0件</div>
+        </div>
+        <button class="filter-btn" onclick="clearOrderSessionFilter()">全ログ表示</button>
+      </div>
+      <div class="detail-session-list" id="detailSessionList">
+        <div class="empty-state" style="padding:24px 12px;">
+          <div class="empty-text">会社を選択してください</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-filter-note" id="detailFilterNote">
+      <span id="detailFilterText">明細セッションで絞り込み中</span>
+      <button class="filter-btn" onclick="clearOrderSessionFilter()">解除</button>
+    </div>
+
     <div class="table-wrap">
       <div class="table-header">
         <div class="table-title" id="tableTitle">— ログ</div>
@@ -582,11 +740,12 @@
               <th>QR1（正規化）</th>
               <th>QR2（正規化）</th>
               <th>QR1文字数</th>
+              <th>明細</th>
               <th>ルール</th>
             </tr>
           </thead>
           <tbody id="logTableBody">
-            <tr class="loading-row"><td colspan="7">会社を選択してください</td></tr>
+            <tr class="loading-row"><td colspan="8">会社を選択してください</td></tr>
           </tbody>
         </table>
       </div>
@@ -620,6 +779,8 @@
   let database      = null;
   let allLogs       = [];      // 現在選択中の会社の全ログ
   let filteredLogs  = [];      // フィルタ後
+  let orderSessions = [];
+  let activeOrderSessionId = '';
   let companies     = [];
   let activeCompany = null;
   let currentPage   = 1;
@@ -679,15 +840,19 @@
 
   function selectCompany(company) {
     activeCompany = company;
+    activeOrderSessionId = '';
+    orderSessions = [];
     renderCompanyList();
     document.getElementById('tableTitle').textContent = company.name + ' ログ';
+    renderOrderSessions();
     loadLogs(company.id);
+    loadOrderSessions(company.id);
   }
 
   // ── ログ読み込み ──
   function loadLogs(companyId) {
     document.getElementById('logTableBody').innerHTML =
-      '<tr class="loading-row"><td colspan="7">読み込み中...</td></tr>';
+      '<tr class="loading-row"><td colspan="8">読み込み中...</td></tr>';
     resetSummary();
 
     database.ref('qr_match_logs/' + companyId)
@@ -696,21 +861,162 @@
         const data = snap.val();
         if (!data) {
           allLogs = [];
+          renderOrderSessions();
           applyFilter();
           return;
         }
         allLogs = Object.entries(data)
           .map(([key, val]) => ({ ...val, _key: key }))
           .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+        renderOrderSessions();
         applyFilter();
       }, err => {
         console.error(err);
         document.getElementById('logTableBody').innerHTML =
-          '<tr class="loading-row"><td colspan="7">読み込みエラー: ' + escHtml(err.message) + '</td></tr>';
+          '<tr class="loading-row"><td colspan="8">読み込みエラー: ' + escHtml(err.message) + '</td></tr>';
       });
   }
 
   // ── フィルタ ──
+  function loadOrderSessions(companyId) {
+    const list = document.getElementById('detailSessionList');
+    if (list) {
+      list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">明細進捗を読み込み中...</div></div>';
+    }
+
+    database.ref('qr_match_companies/order_detail_sessions/' + companyId)
+      .orderByChild('updatedAt')
+      .once('value', snap => {
+        const data = snap.val();
+        orderSessions = data
+          ? Object.entries(data).map(([key, val]) => normalizeOrderSession({ ...val, sessionId: val.sessionId || key }))
+          : [];
+        orderSessions.sort((a,b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+        renderOrderSessions();
+      }, err => {
+        console.error(err);
+        if (list) {
+          list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">明細進捗の読み込みエラー: ' + escHtml(err.message) + '</div></div>';
+        }
+      });
+  }
+
+  function normalizeOrderSession(source) {
+    const lines = Array.isArray(source.lines) ? source.lines : Object.values(source.lines || {});
+    return {
+      sessionId: source.sessionId || '',
+      meta: source.meta || {},
+      details: Array.isArray(source.details) ? source.details : Object.values(source.details || {}),
+      lines: lines.map((line, index) => ({
+        no: line.no || index + 1,
+        backNo: line.backNo || '',
+        partNo: line.partNo || '',
+        packQty: Number(line.packQty) || 0,
+        totalQty: Number(line.totalQty) || 0,
+        requiredBoxes: Number(line.requiredBoxes) || 0,
+        scanned: Number(line.scanned) || 0
+      })),
+      scannedIds: source.scannedIds || {},
+      completedAt: source.completedAt || '',
+      completeLoggedAt: source.completeLoggedAt || '',
+      createdAt: source.createdAt || '',
+      updatedAt: source.updatedAt || ''
+    };
+  }
+
+  function orderRequiredBoxes(session) {
+    return (session.lines || []).reduce((sum, line) => sum + (Number(line.requiredBoxes) || 0), 0);
+  }
+
+  function orderScannedBoxes(session) {
+    return (session.lines || []).reduce((sum, line) => sum + (Number(line.scanned) || 0), 0);
+  }
+
+  function renderOrderSessions() {
+    const list = document.getElementById('detailSessionList');
+    const count = document.getElementById('detailSessionCount');
+    if (count) count.textContent = orderSessions.length.toLocaleString() + '件';
+    if (!list) return;
+
+    if (!orderSessions.length) {
+      list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">注文明細の進捗データはありません</div></div>';
+      renderDetailFilterNote();
+      return;
+    }
+
+    list.innerHTML = orderSessions.map(session => {
+      const required = orderRequiredBoxes(session);
+      const scanned = orderScannedBoxes(session);
+      const rate = required > 0 ? Math.min(100, Math.round(scanned / required * 100)) : 0;
+      const done = required > 0 && scanned >= required;
+      const statusClass = done ? 'done' : (scanned > 0 ? 'active' : 'empty');
+      const statusText = done ? '完了' : (scanned > 0 ? '処理中' : '未着手');
+      const updated = session.updatedAt || session.createdAt;
+      const updatedText = updated ? new Date(updated).toLocaleString('ja-JP') : '-';
+      const detailCount = Array.isArray(session.details) ? session.details.length : 0;
+      const chips = (session.lines || []).slice(0, 8).map(line => {
+        const lineDone = Number(line.requiredBoxes) > 0 && Number(line.scanned) >= Number(line.requiredBoxes);
+        return `<span class="detail-line-chip ${lineDone ? 'done' : ''}">${escHtml(line.partNo || '-')} ${Number(line.scanned)||0}/${Number(line.requiredBoxes)||0}</span>`;
+      }).join('');
+      const more = session.lines.length > 8 ? `<span class="detail-line-chip">+${session.lines.length - 8}</span>` : '';
+      return `
+        <div class="detail-session-card ${session.sessionId === activeOrderSessionId ? 'active' : ''}"
+             onclick="selectOrderSession('${escJs(session.sessionId)}')">
+          <div class="detail-session-top">
+            <div class="detail-session-name">${escHtml(session.sessionId || '-')}</div>
+            <span class="detail-status ${statusClass}">${statusText}</span>
+          </div>
+          <div class="detail-progress-row">
+            <span>${escHtml(scanned)} / ${escHtml(required)}</span>
+            <div class="detail-progress-bar"><div class="detail-progress-fill" style="width:${rate}%"></div></div>
+            <span>${rate}%</span>
+          </div>
+          <div class="detail-session-meta">
+            <span>更新: ${escHtml(updatedText)}</span>
+            <span>明細: ${escHtml(session.lines.length)}</span>
+            <span>QR枚数: ${escHtml(detailCount)}</span>
+            <span>ログ: ${escHtml(countLogsForSession(session.sessionId))}</span>
+          </div>
+          <div class="detail-lines">${chips}${more}</div>
+        </div>`;
+    }).join('');
+    renderDetailFilterNote();
+  }
+
+  function countLogsForSession(sessionId) {
+    return allLogs.filter(l => l.orderDetailSessionId === sessionId).length;
+  }
+
+  function selectOrderSession(sessionId) {
+    activeOrderSessionId = sessionId || '';
+    currentPage = 1;
+    renderOrderSessions();
+    applyFilter();
+    document.querySelector('.table-wrap')?.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+
+  function clearOrderSessionFilter() {
+    activeOrderSessionId = '';
+    currentPage = 1;
+    renderOrderSessions();
+    applyFilter();
+  }
+
+  function renderDetailFilterNote() {
+    const note = document.getElementById('detailFilterNote');
+    const text = document.getElementById('detailFilterText');
+    if (!note || !text) return;
+    if (!activeOrderSessionId) {
+      note.classList.remove('show');
+      return;
+    }
+    const session = orderSessions.find(s => s.sessionId === activeOrderSessionId);
+    const required = session ? orderRequiredBoxes(session) : 0;
+    const scanned = session ? orderScannedBoxes(session) : 0;
+    text.textContent = `明細セッションで絞り込み中: ${activeOrderSessionId} (${scanned}/${required})`;
+    note.classList.add('show');
+  }
+
   function applyFilter() {
     const result   = document.getElementById('filterResult').value;
     const dateFrom = document.getElementById('filterDateFrom').value;
@@ -718,6 +1024,7 @@
     const part     = document.getElementById('filterPart').value.trim().toLowerCase();
 
     filteredLogs = allLogs.filter(l => {
+      if (activeOrderSessionId && l.orderDetailSessionId !== activeOrderSessionId) return false;
       if (result !== 'all') {
         const isDup = l.result === 'DUP' || l.isDuplicate;
         if (result === 'DUP' && !isDup) return false;
@@ -794,6 +1101,23 @@
   }
 
   // ── テーブル描画 ──
+  function formatOrderDetailLogText(l) {
+    if (!l.orderDetailActive && !l.orderDetailSessionId) return '—';
+    if (l.orderDetailRead) {
+      return `明細QR:${l.orderDetailReadResult || l.result || '-'} 行:${l.orderDetailLineCount ?? '-'}`;
+    }
+    if (l.orderDetailAction) {
+      return `${l.orderDetailAction} ${l.orderDetailScannedBoxes ?? '-'}/${l.orderDetailRequiredBoxes ?? '-'}`;
+    }
+    if (l.orderDetailCompleted) {
+      return `完了 ${l.orderDetailScannedBoxes ?? '-'}/${l.orderDetailRequiredBoxes ?? '-'}`;
+    }
+    const status = l.orderDetailResult ? `明細${l.orderDetailResult}` : '明細';
+    const count = l.orderDetailRequiredBoxes ? ` ${l.orderDetailScannedBoxes ?? 0}/${l.orderDetailRequiredBoxes}` : '';
+    const note = l.orderDetailNote ? ` ${l.orderDetailNote}` : '';
+    return `${status}${count}${note}`;
+  }
+
   function renderTable() {
     const total    = filteredLogs.length;
     const totalPages = Math.max(1, Math.ceil(total / perPage));
@@ -806,7 +1130,7 @@
 
     if (total === 0) {
       document.getElementById('logTableBody').innerHTML =
-        '<tr class="loading-row"><td colspan="7">' +
+        '<tr class="loading-row"><td colspan="8">' +
         (allLogs.length === 0 ? 'データがありません' : 'フィルタ条件に一致するログがありません') +
         '</td></tr>';
       document.getElementById('pagination').style.display = 'none';
@@ -826,6 +1150,7 @@
         : '—';
       const qr1short = (l.qr1 || '').slice(0, 30) + ((l.qr1||'').length > 30 ? '…' : '');
       const qr2short = (l.qr2 || '').slice(0, 30) + ((l.qr2||'').length > 30 ? '…' : '');
+      const detailText = formatOrderDetailLogText(l);
       return `
         <tr onclick="openModal(${start + i})">
           <td class="td-time">${t}</td>
@@ -834,6 +1159,7 @@
           <td class="td-qr">${escHtml(qr1short)}</td>
           <td class="td-qr">${escHtml(qr2short)}</td>
           <td style="color:var(--text3)">${l.qr1Length ?? l.qr2Length ?? '—'}</td>
+          <td class="td-qr">${escHtml(detailText)}</td>
           <td><span class="rule-text">${escHtml(rule)}</span></td>
         </tr>`;
     }).join('');
@@ -903,6 +1229,11 @@
       ['QR2文字数',    l.qr2Length ?? '—'],
       ['適用ルール',   rule],
       ['note',         l.extractNote || '—'],
+      ['明細セッション', l.orderDetailSessionId || '—'],
+      ['明細結果',      l.orderDetailResult || l.orderDetailReadResult || '—'],
+      ['明細メモ',      l.orderDetailNote || l.orderDetailAction || '—'],
+      ['明細進捗',      l.orderDetailRequiredBoxes ? `${l.orderDetailScannedBoxes ?? 0}/${l.orderDetailRequiredBoxes}` : '—'],
+      ['明細完了',      l.orderDetailCompleted ? 'YES' : '—'],
       ['重複タイプ',   l.dupType || '—'],
     ];
 
@@ -928,7 +1259,7 @@
     if (!activeCompany) { alert('会社を選択してください'); return; }
     if (filteredLogs.length === 0) { alert('出力するデータがありません'); return; }
 
-    const headers = ['日時','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note'];
+    const headers = ['日時','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','明細結果','明細メモ','明細完了','明細必要','明細読込'];
     const rows = filteredLogs.map(l => {
       const isDup = l.result === 'DUP' || l.isDuplicate;
       const rule = l.matchedRule ? JSON.stringify(l.matchedRule) : '';
@@ -940,7 +1271,13 @@
         l.qr1_raw ?? '', l.qr2_raw ?? '',
         l.qr1 ?? '', l.qr2 ?? '',
         l.qr1Length ?? '', l.qr2Length ?? '',
-        rule, l.extractNote ?? ''
+        rule, l.extractNote ?? '',
+        l.orderDetailSessionId ?? '',
+        l.orderDetailResult ?? l.orderDetailReadResult ?? '',
+        l.orderDetailNote ?? l.orderDetailAction ?? '',
+        l.orderDetailCompleted ?? '',
+        l.orderDetailRequiredBoxes ?? '',
+        l.orderDetailScannedBoxes ?? ''
       ];
     });
 
@@ -957,6 +1294,9 @@
   function escHtml(s) {
     return String(s).replace(/[&<>"']/g, m =>
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+  function escJs(s) {
+    return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, ' ');
   }
 </script>
 </body>
