@@ -1026,6 +1026,20 @@
           </div>
         </div>
 
+        <div class="settings-card">
+          <div class="settings-card-title">📟 読み取り受付待ち時間</div>
+          <div class="setting-row" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <span class="setting-label">
+              QR読み取り後の受付待ち時間
+              <small>Enter/Tabが送られない端末では、最後の文字を受け取ってからこの時間で照合を開始します。</small>
+            </span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <input type="range" id="scannerIdleMs" min="900" max="3000" step="100" value="900" oninput="previewScannerIdleMs(this.value)" style="flex:1; accent-color:#4fc3f7;">
+              <strong id="scannerIdleMsValue" style="width:68px; text-align:right; color:#4fc3f7; font-family:ui-monospace,monospace; font-size:14px;">900 ms</strong>
+            </div>
+          </div>
+        </div>
+
         <!-- ★ 照合方向設定カード -->
         <div class="settings-card">
           <div class="settings-card-title">↔️ 照合方向（1対1モード）</div>
@@ -1296,7 +1310,9 @@
   let logsRef = null;
   let scannerBuffer = '';
   let scannerIdleTimer = null;
-  const SCANNER_IDLE_MS = 1500;
+  const SCANNER_IDLE_MS_DEFAULT = 900;
+  const SCANNER_IDLE_MS_MIN = 900;
+  const SCANNER_IDLE_MS_MAX = 3000;
   let nModeQR2Count = 0;       // 1対Nモード：現QR1に対してOK済みのQR2枚数
   let nModePartNumber = '';    // 1対Nモード：QR1から切り出した品番（固定）
   let nModeEx = null;          // 1対Nモード：QR1の抽出メタ情報（ログ用）
@@ -1317,6 +1333,7 @@
       dup:  'buu'                // 重複
     },
     duplicateCheckEnabled: false,   // ★ 重複監視モード
+    scannerIdleMs: SCANNER_IDLE_MS_DEFAULT,
     scanMode: '1to1',               // ★ '1to1' | '1toN'
     matchDirection: 'qr2_to_qr1',  // ★ 'qr2_to_qr1' | 'qr1_to_qr2'
     photoMap: [],                   // ★ [{ id, partNumber, url }]
@@ -1556,7 +1573,25 @@
   function scheduleScannerSubmit() {
     clearTimeout(scannerIdleTimer);
     if (!scannerBuffer.trim()) return;
-    scannerIdleTimer = setTimeout(submitScannerBuffer, SCANNER_IDLE_MS);
+    scannerIdleTimer = setTimeout(submitScannerBuffer, getScannerIdleMs());
+  }
+
+  function clampScannerIdleMs(value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return SCANNER_IDLE_MS_DEFAULT;
+    return Math.min(SCANNER_IDLE_MS_MAX, Math.max(SCANNER_IDLE_MS_MIN, parsed));
+  }
+
+  function getScannerIdleMs() {
+    return clampScannerIdleMs(settings.scannerIdleMs);
+  }
+
+  function previewScannerIdleMs(value) {
+    const ms = clampScannerIdleMs(value);
+    const input = document.getElementById('scannerIdleMs');
+    const label = document.getElementById('scannerIdleMsValue');
+    if (input) input.value = ms;
+    if (label) label.textContent = ms + ' ms';
   }
 
   function submitScannerBuffer() {
@@ -2245,6 +2280,7 @@
     settings.firebase.databaseURL = settings.firebase.databaseURL || "https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app";
     settings.firebase.projectId   = settings.firebase.projectId   || "miyamaunitec-fb87a";
     if (settings.duplicateCheckEnabled === undefined) settings.duplicateCheckEnabled = false;
+    settings.scannerIdleMs = clampScannerIdleMs(settings.scannerIdleMs);
     if (!settings.scanMode) settings.scanMode = '1to1';
     if (!settings.aliasMap) settings.aliasMap = [];
     if (!settings.matchDirection) settings.matchDirection = 'qr2_to_qr1';
@@ -2293,6 +2329,7 @@
     document.getElementById('fbAuthDomain').value  = settings.firebase.authDomain  || '';
     document.getElementById('fbDatabaseURL').value = settings.firebase.databaseURL || '';
     document.getElementById('fbProjectId').value   = settings.firebase.projectId   || '';
+    previewScannerIdleMs(settings.scannerIdleMs);
     // ★ 重複監視トグル
     document.getElementById('dupCheckToggle').className =
       settings.duplicateCheckEnabled ? 'toggle-switch dup-on' : 'toggle-switch';
@@ -2612,6 +2649,8 @@
     settings.firebase.databaseURL = document.getElementById('fbDatabaseURL').value.trim();
     settings.firebase.projectId   = document.getElementById('fbProjectId').value.trim();
     settings.extractRules = collectExtractRules();
+    settings.scannerIdleMs = clampScannerIdleMs(document.getElementById('scannerIdleMs').value);
+    previewScannerIdleMs(settings.scannerIdleMs);
     // ★ scanMode は toggleScanModeSettings() で既に settings に反映済み
     // ★ duplicateCheckEnabled はトグル操作で既に settings に反映済み
     const saveKey = getSettingsKey(activeCompanyId);
