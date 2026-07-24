@@ -2334,7 +2334,6 @@
       }
       return;
     }
-    if(isOKPending){isOKPending=false;const t=document.getElementById('okToast');if(t)t.classList.remove('show');}
     if (orderDetailAwaiting) {
       handleOrderDetailScan(decoded).catch(err => {
         console.error('Order detail scan error:', err);
@@ -3552,6 +3551,7 @@
   }
 
   function _playSoundKind(kind, now) {
+    const soundLevel = level => Math.min(1, level * 2);
     if (kind === 'beep') {
       // ピッ：高め・短くシャープ
       const osc = audioCtx.createOscillator();
@@ -3561,8 +3561,8 @@
       osc.frequency.setValueAtTime(3200, now);
       osc.frequency.linearRampToValueAtTime(3000, now + 0.06);
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.45, now + 0.008);
-      gain.gain.setValueAtTime(0.45, now + 0.05);
+      gain.gain.linearRampToValueAtTime(soundLevel(0.45), now + 0.008);
+      gain.gain.setValueAtTime(soundLevel(0.45), now + 0.05);
       gain.gain.linearRampToValueAtTime(0, now + 0.10);
       osc.start(now); osc.stop(now + 0.11);
 
@@ -3576,8 +3576,8 @@
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, t);
         gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(0.38, t + 0.01);
-        gain.gain.setValueAtTime(0.38, t + 0.07);
+        gain.gain.linearRampToValueAtTime(soundLevel(0.38), t + 0.01);
+        gain.gain.setValueAtTime(soundLevel(0.38), t + 0.07);
         gain.gain.linearRampToValueAtTime(0, t + 0.13);
         osc.start(t); osc.stop(t + 0.14);
       });
@@ -3592,8 +3592,8 @@
         osc.type = 'square';
         osc.frequency.setValueAtTime(160, t);
         gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(0.30, t + 0.01);
-        gain.gain.setValueAtTime(0.30, t + 0.16);
+        gain.gain.linearRampToValueAtTime(soundLevel(0.30), t + 0.01);
+        gain.gain.setValueAtTime(soundLevel(0.30), t + 0.16);
         gain.gain.linearRampToValueAtTime(0, t + 0.20);
         osc.start(t); osc.stop(t + 0.21);
       });
@@ -3608,7 +3608,7 @@
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, t);
         gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(0.32, t + 0.01);
+        gain.gain.linearRampToValueAtTime(soundLevel(0.32), t + 0.01);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
         osc.start(t); osc.stop(t + 0.36);
       });
@@ -4131,9 +4131,8 @@
     okAutoTimer = setTimeout(() => {
       overlay.classList.remove('show');
       okAutoTimer = null;
-      clearScannerBuffer();
-      updateScanUI();
-      focusScanInputSoon();
+      leaveOrderDetailSession();
+      startOrderDetailScan();
     }, 3600);
   }
 
@@ -4369,6 +4368,7 @@
 
     if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
 
+    const toast=document.getElementById('okToast');
     if (isOK) {
       if (logEntry.orderDetailCompleted) {
         value1 = '';
@@ -4382,7 +4382,6 @@
       const toastPn=document.getElementById('okToastPn'), toastPhoto=document.getElementById('okToastPhoto');
       if(toastPn) toastPn.textContent = partNumber ? '品番: '+partNumber : '';
       if(toastPhoto){ if(photoUrl){toastPhoto.src=photoUrl;toastPhoto.style.display='block';toastPhoto.onclick=()=>showPhotoModal(photoUrl,partNumber);}else{toastPhoto.style.display='none';} }
-      const toast=document.getElementById('okToast');
       if(toast){toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show');}
       isOKPending=true; playSound('ok');
       if(settings.scanMode==='1toN'){value2='';nModeQR2Count++;currentStep=2;updateScanUI();}
@@ -4390,6 +4389,7 @@
       focusScanInputSoon();
 
     } else if (isDup) {
+      isOKPending=false;if(toast)toast.classList.remove('show');
       // ★ 重複NG
       overlay.className = 'result-overlay show dup ng-locked';
       symbol.textContent = '⚠';
@@ -4414,6 +4414,7 @@
       resetPinUI();
 
     } else {
+      isOKPending=false;if(toast)toast.classList.remove('show');
       // 通常NG
       overlay.className = 'result-overlay show ng ng-locked';
       symbol.textContent = '×';
