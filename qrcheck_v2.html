@@ -1753,7 +1753,8 @@
   let nModePartNumber = '';    // 1対Nモード：QR1から切り出した品番（固定）
   let nModeEx = null;          // 1対Nモード：QR1の抽出メタ情報（ログ用）
   const ORDER_DETAIL_KEY = 'qrcheck_v2_order_detail_session';
-  const ORDER_LINE_RE = /P(\d{4})P([^Q]+)Q(\d+)Q(\d+)/g;
+  const ORDER_LINE_RE = /P(\d{4})P([^Q]+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
+  const ORDER_LINE_ALT_RE = /K(\d{4})20P(.+?)P([1-9][0-9A-Z]{4,}-.+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
   let orderDetailAwaiting = false;
   let orderDetailAppendMode = false;
   let orderDetailSession = {
@@ -3923,7 +3924,6 @@
 
   function decodeOrderQty(raw) {
     let value = String(raw || '').trim();
-    if (value.length > 2 && /[24]$/.test(value)) value = value.slice(0, -1);
     return Number(value) || 0;
   }
 
@@ -3998,19 +3998,27 @@
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const lines = [];
-    for (const match of qr.matchAll(ORDER_LINE_RE)) {
-      const packQty = decodeOrderQty(match[3]);
-      const totalQty = decodeOrderQty(match[4]);
-      if (!match[1] || !match[2] || !packQty || !totalQty) continue;
+
+    const addOrderLine = (backNo, partNo, packRaw, totalRaw) => {
+      const packQty = decodeOrderQty(packRaw);
+      const totalQty = decodeOrderQty(totalRaw);
+      if (!backNo || !partNo || !packQty || !totalQty) return;
       lines.push({
         no: lines.length + 1,
-        backNo: match[1],
-        partNo: match[2].trim(),
+        backNo: String(backNo).trim(),
+        partNo: String(partNo).trim(),
         packQty,
         totalQty,
         requiredBoxes: Math.ceil(totalQty / packQty),
         scanned: 0
       });
+    };
+
+    for (const match of qr.matchAll(ORDER_LINE_RE)) {
+      addOrderLine(match[1], match[2], match[3], match[4]);
+    }
+    for (const match of qr.matchAll(ORDER_LINE_ALT_RE)) {
+      addOrderLine(match[2] || match[1], match[3], match[4], match[5]);
     }
     return {
       orderQr: qr,
