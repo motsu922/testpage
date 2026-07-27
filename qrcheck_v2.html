@@ -1840,11 +1840,19 @@
     focusScanInputSoon();
   }
 
+  function shouldLockScanInputFocus() {
+    if (terminalInputMode !== 'inputconnection') return false;
+    if (currentTab !== 'scan') return false;
+    const blockedOverlayIds = ['companyAuthOverlay', 'companyModalOverlay', 'photoModalOverlay'];
+    return !blockedOverlayIds.some(id => document.getElementById(id)?.classList.contains('show'));
+  }
+
   function focusScanInputSoon(){
-    if (terminalInputMode !== 'inputconnection') return;
+    if (!shouldLockScanInputFocus()) return;
     setTimeout(() => {
+      if (!shouldLockScanInputFocus()) return;
       const input = document.getElementById('scanInput');
-      if (input) input.focus();
+      if (input && document.activeElement !== input) input.focus({ preventScroll: true });
     }, 40);
   }
 
@@ -2213,7 +2221,15 @@
         inputConnectionComposing = false;
         scheduleInputConnectionSubmit();
       });
+      scanInput.addEventListener('blur', () => focusScanInputSoon());
     }
+    document.addEventListener('pointerup', () => focusScanInputSoon(), true);
+    document.addEventListener('touchend', () => focusScanInputSoon(), true);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) focusScanInputSoon();
+    });
+    window.addEventListener('focus', () => focusScanInputSoon());
+    setInterval(() => focusScanInputSoon(), 1200);
   }
 
   function handleGlobalScannerKey(e) {
