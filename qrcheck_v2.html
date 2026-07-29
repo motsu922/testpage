@@ -4416,6 +4416,7 @@
 
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
+    const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
     const lines = [];
     const seenLineKeys = new Set();
 
@@ -4442,11 +4443,28 @@
       });
     };
 
-    for (const match of qr.matchAll(ORDER_LINE_RE)) {
-      addOrderLine(match[1], match[2], match[3], match[4]);
+    for (let i = 0; i < fields.length; i++) {
+      const kMatch = fields[i].match(/^K([0-9A-Z]{4,})$/i);
+      if (!kMatch) continue;
+      const backField = fields[i + 1] || '';
+      const partField = fields[i + 2] || '';
+      const packField = fields[i + 3] || '';
+      const totalField = fields[i + 4] || '';
+      if (!/^P/i.test(partField) || !/^Q/i.test(packField) || !/^4?Q/i.test(totalField)) continue;
+      const backNo = backField.replace(/^\d*P/i, '');
+      const partNo = partField.replace(/^P/i, '');
+      const packRaw = packField.replace(/^Q/i, '');
+      const totalRaw = totalField.replace(/^4?Q/i, '');
+      addOrderLine(backNo || kMatch[1], partNo, packRaw, totalRaw);
     }
-    for (const match of qr.matchAll(ORDER_LINE_ALT_RE)) {
-      addOrderLine(match[2] || match[1], match[3], match[4], match[5]);
+
+    if (!lines.length) {
+      for (const match of qr.matchAll(ORDER_LINE_RE)) {
+        addOrderLine(match[1], match[2], match[3], match[4]);
+      }
+      for (const match of qr.matchAll(ORDER_LINE_ALT_RE)) {
+        addOrderLine(match[2] || match[1], match[3], match[4], match[5]);
+      }
     }
     return {
       orderQr: qr,
