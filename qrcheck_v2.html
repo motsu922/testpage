@@ -1328,6 +1328,7 @@
                  placeholder="QRリーダーで読み取り"
                  autocomplete="off"
                  inputmode="none"
+                 virtualkeyboardpolicy="manual"
                  autocapitalize="none"
                  spellcheck="false"
                  readonly
@@ -1853,6 +1854,9 @@
       if (!shouldLockScanInputFocus()) return;
       const input = document.getElementById('scanInput');
       if (input && document.activeElement !== input) input.focus({ preventScroll: true });
+      if (navigator.virtualKeyboard && navigator.virtualKeyboard.hide) {
+        navigator.virtualKeyboard.hide();
+      }
     }, 40);
   }
 
@@ -2308,7 +2312,8 @@
     const inputConnection = terminalInputMode === 'inputconnection';
     input.readOnly = !inputConnection;
     input.tabIndex = inputConnection ? 0 : -1;
-    input.setAttribute('inputmode', inputConnection ? 'text' : 'none');
+    input.setAttribute('inputmode', 'none');
+    input.setAttribute('virtualkeyboardpolicy', 'manual');
     btn.textContent = inputConnection ? 'InputConnection' : 'HID';
     desc.textContent = inputConnection
       ? '入力欄へ直接入る文字列を受けます。Enter/Tabまたは入力停止で確定します'
@@ -4014,11 +4019,20 @@
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const lines = [];
+    const seenLineKeys = new Set();
 
     const addOrderLine = (backNo, partNo, packRaw, totalRaw) => {
       const packQty = decodeOrderQty(packRaw);
       const totalQty = decodeOrderQty(totalRaw);
       if (!backNo || !partNo || !packQty || !totalQty) return;
+      const lineKey = [
+        String(backNo).trim(),
+        canonicalPart(partNo),
+        String(packRaw).trim(),
+        String(totalRaw).trim()
+      ].join('|');
+      if (seenLineKeys.has(lineKey)) return;
+      seenLineKeys.add(lineKey);
       lines.push({
         no: lines.length + 1,
         backNo: String(backNo).trim(),
