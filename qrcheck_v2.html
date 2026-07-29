@@ -1749,6 +1749,7 @@
   let terminalInputMode = localStorage.getItem(TERMINAL_INPUT_MODE_KEY) || 'hid';
   let inputConnectionTimer = null;
   let inputConnectionComposing = false;
+  let suppressScanInputRefocusUntil = 0;
   let nModeQR2Count = 0;       // 1対Nモード：現QR1に対してOK済みのQR2枚数
   let nModePartNumber = '';    // 1対Nモード：QR1から切り出した品番（固定）
   let nModeEx = null;          // 1対Nモード：QR1の抽出メタ情報（ログ用）
@@ -1841,6 +1842,7 @@
   }
 
   function shouldLockScanInputFocus() {
+    if (Date.now() < suppressScanInputRefocusUntil) return false;
     if (terminalInputMode !== 'inputconnection') return false;
     if (currentTab !== 'scan') return false;
     const blockedOverlayIds = ['companyAuthOverlay', 'companyModalOverlay', 'photoModalOverlay'];
@@ -1854,6 +1856,20 @@
       const input = document.getElementById('scanInput');
       if (input && document.activeElement !== input) input.focus({ preventScroll: true });
     }, 40);
+  }
+
+  function dismissKeyboardThenRefocusScanInput() {
+    if (terminalInputMode !== 'inputconnection') {
+      focusScanInputSoon();
+      return;
+    }
+    const input = document.getElementById('scanInput');
+    suppressScanInputRefocusUntil = Date.now() + 240;
+    if (input && document.activeElement === input) input.blur();
+    setTimeout(() => {
+      suppressScanInputRefocusUntil = 0;
+      focusScanInputSoon();
+    }, 260);
   }
 
   function normalizeQR(str){
@@ -4135,6 +4151,7 @@
     orderDetailAppendMode = false;
     playSound('ok');
     startScanning(true);
+    dismissKeyboardThenRefocusScanInput();
   }
 
   function leaveOrderDetailSession() {
