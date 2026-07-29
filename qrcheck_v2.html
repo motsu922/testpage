@@ -84,6 +84,27 @@
 
     /* モードバッジ */
     .mode-badge-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 14px; }
+    .scan-box > .company-badge,
+    .scan-box > .mode-badge-row {
+      display: none;
+    }
+    .scan-box.meta-open > .company-badge,
+    .scan-box.meta-open > .mode-badge-row {
+      display: flex;
+    }
+    .scan-meta-toggle {
+      display: block;
+      margin: 0 0 6px auto;
+      padding: 4px 8px;
+      border: 1px solid #333;
+      border-radius: 999px;
+      background: #222;
+      color: #9ed8ff;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .scan-meta-toggle:active { background: #2f3f4f; }
     .mode-badge {
       display: inline-flex;
       align-items: center;
@@ -1340,6 +1361,7 @@
   <div class="tab-content active" id="tab-scan">
     <div class="scan-screen" id="scanScreen">
       <div class="scan-box">
+        <button class="scan-meta-toggle" id="scanMetaToggle" onclick="toggleScanMetaPanel()">情報</button>
         <!-- 会社バッジ -->
         <div id="companyBadge" class="company-badge" onclick="onCompanyBadgeTap()">
           🏭 <span class="badge-name" id="companyBadgeName">---</span>
@@ -1813,9 +1835,11 @@
   let scannerIdleTimer = null;
   const SCANNER_IDLE_MS = 900;
   const TERMINAL_INPUT_MODE_KEY = 'qrcheck_v2_terminal_input_mode';
+  const FIREBASE_QUEUE_KEY = 'qrcheck_v2_firebase_write_queue';
   let terminalInputMode = localStorage.getItem(TERMINAL_INPUT_MODE_KEY) || 'hid';
   let inputConnectionTimer = null;
   let inputConnectionComposing = false;
+  let firebaseQueueFlushing = false;
   let suppressScanInputRefocusUntil = 0;
   let nModeQR2Count = 0;       // 1対Nモード：現QR1に対してOK済みのQR2枚数
   let nModePartNumber = '';    // 1対Nモード：QR1から切り出した品番（固定）
@@ -1883,6 +1907,7 @@
     loadOrderDetailSession();
     setupInputListeners();
     initFirebase();
+    renderOfflineQueueStatus();
     startScanning(true);
     renderOrderDetailPanel();
     cleanOldDuplicates();        // ★ 古い日付の重複リストを削除
@@ -2040,8 +2065,10 @@
         _updateLogsRef();
         setupRealtimeSync();
         initCompaniesRef();
+        flushFirebaseQueue();
       } else {
         updateFirebaseStatus('disconnected', '🔌 Firebase未接続');
+        renderOfflineQueueStatus();
         companiesRef = null;
         setSyncBadge('offline');
       }
@@ -2085,9 +2112,148 @@
     alert('接続テストを実行しました。上部のステータスを確認してください。');
   }
 
+  function getFirebaseQueue() {
+    try {
+      return JSON.parse(localStorage.getItem(FIREBASE_QUEUE_KEY) || '[]') || [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveFirebaseQueue(queue) {
+    localStorage.setItem(FIREBASE_QUEUE_KEY, JSON.stringify((queue || []).slice(-600)));
+    renderOfflineQueueStatus();
+  }
+
+  function enqueueFirebaseWrite(op) {
+    const queue = getFirebaseQueue();
+    queue.push({
+      id: 'fbq_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      createdAt: new Date().toISOString(),
+      companyId: activeCompanyId || 'default',
+      ...op
+    });
+    saveFirebaseQueue(queue);
+    setSyncBadge('offline');
+  }
+
+  function renderOfflineQueueStatus() {
+    const pending = getFirebaseQueue().length;
+    if (pending > 0) {
+      updateFirebaseStatus('disconnected', `📦 オフライン保存中 ${pending}件`);
+    }
+  }
+
+  function mergeQueuedOrderDetailSession(current, queued) {
+    const local = normalizeOrderDetailSessionData(queued, queued && queued.sessionId);
+    if (!current) return local;
+    const remote = normalizeOrderDetailSessionData(current, local.sessionId);
+    const merged = {
+      ...remote,
+      orderQr: remote.orderQr || local.orderQr,
+      meta: Object.keys(remote.meta || {}).length ? remote.meta : local.meta,
+      sourceHashes: { ...(remote.sourceHashes || {}), ...(local.sourceHashes || {}) },
+      scannedIds: { ...(remote.scannedIds || {}), ...(local.scannedIds || {}) },
+      completedAt: remote.completedAt || local.completedAt || '',
+      completeLoggedAt: remote.completeLoggedAt || local.completeLoggedAt || '',
+      updatedAt: new Date().toISOString()
+    };
+    const detailMap = new Map();
+    [...(remote.details || []), ...(local.details || [])].forEach(detail => {
+      const key = detail && (detail.qrHash || JSON.stringify(detail));
+      if (key) detailMap.set(key, detail);
+    });
+    merged.details = [...detailMap.values()];
+    const lineMap = new Map();
+    [...(remote.lines || []), ...(local.lines || [])].forEach(line => {
+      const key = canonicalPart(line.partNo);
+      const existing = lineMap.get(key);
+      if (existing) {
+        existing.backNo = [existing.backNo, line.backNo].filter(Boolean).join('+');
+        existing.packQty = existing.packQty || line.packQty;
+        existing.totalQty = Math.max(Number(existing.totalQty) || 0, Number(line.totalQty) || 0);
+        existing.requiredBoxes = Math.max(Number(existing.requiredBoxes) || 0, Number(line.requiredBoxes) || 0);
+        existing.scanned = Math.max(Number(existing.scanned) || 0, Number(line.scanned) || 0);
+      } else {
+        lineMap.set(key, { ...line });
+      }
+    });
+    merged.lines = [...lineMap.values()].map((line, index) => {
+      const counted = Object.values(merged.scannedIds || {})
+        .filter(scan => scan && partsEquivalent(scan.partNumber, line.partNo))
+        .length;
+      return {
+        ...line,
+        no: index + 1,
+        scanned: Math.min(Number(line.requiredBoxes) || 0, Math.max(Number(line.scanned) || 0, counted))
+      };
+    });
+    const required = orderRequiredBoxesFrom(merged);
+    const scanned = orderScannedBoxesFrom(merged);
+    if (required > 0 && scanned >= required && !merged.completedAt) merged.completedAt = new Date().toISOString();
+    return merged;
+  }
+
+  async function flushFirebaseQueue() {
+    if (firebaseQueueFlushing || !database) return;
+    const queue = getFirebaseQueue();
+    if (!queue.length) return;
+    firebaseQueueFlushing = true;
+    setSyncBadge('syncing');
+    try {
+      const remaining = [];
+      for (const op of queue) {
+        try {
+          const ref = database.ref(op.path);
+          if (op.type === 'push') await ref.push(op.value);
+          else if (op.type === 'set') await ref.set(op.value);
+          else if (op.type === 'update') await ref.update(op.value);
+          else if (op.type === 'remove') await ref.remove();
+          else if (op.type === 'orderSessionMerge') await ref.transaction(current => mergeQueuedOrderDetailSession(current, op.value));
+        } catch (err) {
+          remaining.push(op);
+        }
+      }
+      saveFirebaseQueue(remaining);
+      if (remaining.length) {
+        setSyncBadge('offline');
+        updateFirebaseStatus('disconnected', `📦 未送信 ${remaining.length}件`);
+      } else {
+        setSyncBadge('synced');
+        updateFirebaseStatus('connected', '🟢 Firebase接続中');
+      }
+    } finally {
+      firebaseQueueFlushing = false;
+    }
+  }
+
+  function queueLogWrite(companyId, logEntry) {
+    enqueueFirebaseWrite({
+      type: 'push',
+      path: 'qr_match_logs/' + (companyId || activeCompanyId || 'default'),
+      value: logEntry
+    });
+  }
+
+  function queueOrderDetailSessionWrite(session, type = 'orderSessionMerge') {
+    if (!session || !session.sessionId) return;
+    enqueueFirebaseWrite({
+      type,
+      path: 'qr_match_companies/order_detail_sessions/' + (activeCompanyId || 'default') + '/' + session.sessionId,
+      value: normalizeOrderDetailSessionData(session, session.sessionId)
+    });
+  }
+
   function saveLogToFirebase(logEntry) {
-    if (!logsRef) return;
-    logsRef.push(logEntry).catch(err => console.error('Firebase保存エラー:', err));
+    const companyId = activeCompanyId || 'default';
+    if (!logsRef) {
+      queueLogWrite(companyId, logEntry);
+      return;
+    }
+    logsRef.push(logEntry).catch(err => {
+      console.error('Firebase保存エラー:', err);
+      queueLogWrite(companyId, logEntry);
+    });
   }
 
   function saveOrderDetailReadLog(status, qr, parsed, note) {
@@ -2275,7 +2441,10 @@
 
   function upsertOrderDetailSessionToFirebase(session, parsedToMerge = null) {
     const root = getOrderDetailSessionsRef();
-    if (!root || !session.sessionId) return Promise.resolve(session);
+    if (!root || !session.sessionId) {
+      queueOrderDetailSessionWrite(session);
+      return Promise.resolve(session);
+    }
     const ref = root.child(session.sessionId);
     const now = new Date().toISOString();
     return ref.transaction(current => {
@@ -2311,6 +2480,7 @@
       return orderDetailSession;
     }).catch(err => {
       console.error('Order detail session sync error:', err);
+      queueOrderDetailSessionWrite(session);
       return session;
     });
   }
@@ -2342,6 +2512,7 @@
       if (!document.hidden) focusScanInputSoon();
     });
     window.addEventListener('focus', () => focusScanInputSoon());
+    window.addEventListener('online', () => flushFirebaseQueue());
     setInterval(() => focusScanInputSoon(), 1200);
   }
 
@@ -4446,7 +4617,12 @@
         return;
       } catch (err) {
         console.error('Order detail reset error:', err);
-        alert('初期化できませんでした。Firebase接続を確認してください。');
+        orderDetailSession = resetOrderDetailSessionData(orderDetailSession);
+        saveOrderDetailSession();
+        renderOrderDetailPanel();
+        updateScanUI();
+        queueOrderDetailSessionWrite(orderDetailSession, 'set');
+        saveOrderDetailActionLog('RESET', `reset:${scanned}/${required}`, beforeReset);
         return;
       }
     }
@@ -4455,6 +4631,7 @@
     saveOrderDetailSession();
     renderOrderDetailPanel();
     updateScanUI();
+    queueOrderDetailSessionWrite(orderDetailSession, 'set');
     saveOrderDetailActionLog('RESET', `reset:${scanned}/${required}`, beforeReset);
   }
 
@@ -4581,7 +4758,10 @@
     const required = orderRequiredBoxes();
     const scanned = orderScannedBoxes();
     const detailCount = Array.isArray(orderDetailSession.details) ? orderDetailSession.details.length : 1;
-    const syncText = database && orderDetailSession.sessionId
+    const pendingQueue = getFirebaseQueue().length;
+    const syncText = pendingQueue
+      ? `未送信 ${pendingQueue}件`
+      : database && orderDetailSession.sessionId
       ? (orderDetailSyncReady ? 'Firebase同期中' : 'Firebase同期準備中')
       : 'この端末のみ';
     target.innerHTML = `
@@ -4638,6 +4818,7 @@
       const result = localCheck(orderDetailSession);
       saveOrderDetailSession();
       renderOrderDetailPanel();
+      if (result.ok) queueOrderDetailSessionWrite(orderDetailSession);
       return result;
     }
 
@@ -4646,6 +4827,7 @@
       const result = localCheck(orderDetailSession);
       saveOrderDetailSession();
       renderOrderDetailPanel();
+      if (result.ok) queueOrderDetailSessionWrite(orderDetailSession);
       return result;
     }
 
@@ -4671,7 +4853,12 @@
       return txResult;
     } catch (err) {
       console.error('Order detail transaction error:', err);
-      return { active: true, ok: false, note: '明細同期エラー' };
+      const result = localCheck(orderDetailSession);
+      saveOrderDetailSession();
+      renderOrderDetailPanel();
+      updateScanUI();
+      if (result.ok) queueOrderDetailSessionWrite(orderDetailSession);
+      return result;
     }
   }
 
@@ -4766,7 +4953,12 @@
       saveOrderDetailSession();
       const root = getOrderDetailSessionsRef();
       if (root && orderDetailSession.sessionId) {
-        root.child(orderDetailSession.sessionId).update({ completeLoggedAt });
+        root.child(orderDetailSession.sessionId).update({ completeLoggedAt }).catch(err => {
+          console.error('Order detail complete sync error:', err);
+          queueOrderDetailSessionWrite(orderDetailSession);
+        });
+      } else {
+        queueOrderDetailSessionWrite(orderDetailSession);
       }
       saveOrderDetailCompleteLog(logEntry);
     }
@@ -4936,6 +5128,15 @@
   }
 
   // ★ モードバッジ表示更新
+  function toggleScanMetaPanel() {
+    const box = document.querySelector('.scan-box');
+    const btn = document.getElementById('scanMetaToggle');
+    if (!box) return;
+    const open = box.classList.toggle('meta-open');
+    if (btn) btn.textContent = open ? '閉じる' : '情報';
+    restoreScanInputFocusNow();
+  }
+
   function updateModeBadge() {
     const badge = document.getElementById('modeBadge');
     if (!badge) return;
