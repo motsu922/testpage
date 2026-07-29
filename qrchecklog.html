@@ -361,7 +361,9 @@
       gap: 12px;
       padding: 9px 12px;
       border-bottom: 1px solid var(--border);
+      cursor: pointer;
     }
+    .detail-board.collapsed .detail-board-header { border-bottom: none; }
     .detail-board-title {
       font-size: 13px;
       font-weight: 700;
@@ -379,6 +381,19 @@
       gap: 8px;
       flex-wrap: wrap;
       justify-content: flex-end;
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+      background: #fbfcfe;
+    }
+    .detail-board-toggle {
+      min-width: 96px;
+      justify-content: center;
+    }
+    .detail-board-body {
+      display: block;
+    }
+    .detail-board.collapsed .detail-board-body {
+      display: none;
     }
     .master-editor {
       display: grid;
@@ -739,12 +754,15 @@
     </div>
 
     <!-- テーブル -->
-    <div class="detail-board">
-      <div class="detail-board-header">
+    <div class="detail-board collapsed" id="detailBoard">
+      <div class="detail-board-header" onclick="toggleDetailBoard()">
         <div>
           <div class="detail-board-title">注文明細の進捗</div>
           <div class="detail-board-sub" id="detailSessionCount">0件</div>
         </div>
+        <button class="filter-btn detail-board-toggle" id="detailBoardToggle" onclick="toggleDetailBoard(event)">表示</button>
+      </div>
+      <div class="detail-board-body">
         <div class="detail-board-controls">
           <select class="filter-select" id="detailSortSelect" onchange="changeOrderSessionSort()">
             <option value="updated_desc">更新順</option>
@@ -755,10 +773,10 @@
           <button class="filter-btn" onclick="openCustomerMasterModal()">顧客名マスタ</button>
           <button class="filter-btn" onclick="clearOrderSessionFilter()">全ログ表示</button>
         </div>
-      </div>
-      <div class="detail-session-list" id="detailSessionList">
-        <div class="empty-state" style="padding:24px 12px;">
-          <div class="empty-text">会社を選択してください</div>
+        <div class="detail-session-list" id="detailSessionList">
+          <div class="empty-state" style="padding:24px 12px;">
+            <div class="empty-text">会社を選択してください</div>
+          </div>
         </div>
       </div>
     </div>
@@ -825,6 +843,7 @@
   let orderSessions = [];
   let activeOrderSessionId = '';
   let orderSessionSort = 'updated_desc';
+  let detailBoardOpen = false;
   let customerNameMaster = {};
   let companies     = [];
   let activeCompany = null;
@@ -1055,6 +1074,20 @@
     renderOrderSessions();
   }
 
+  function toggleDetailBoard(event) {
+    if (event) event.stopPropagation();
+    detailBoardOpen = !detailBoardOpen;
+    renderDetailBoardState();
+  }
+
+  function renderDetailBoardState() {
+    const board = document.getElementById('detailBoard');
+    const toggle = document.getElementById('detailBoardToggle');
+    if (!board) return;
+    board.classList.toggle('collapsed', !detailBoardOpen);
+    if (toggle) toggle.textContent = detailBoardOpen ? '閉じる' : '表示';
+  }
+
   function formatYmd(value) {
     const text = String(value || '');
     const match = text.match(/^(\d{4})(\d{2})(\d{2})$/);
@@ -1082,9 +1115,16 @@
   function renderOrderSessions() {
     const list = document.getElementById('detailSessionList');
     const count = document.getElementById('detailSessionCount');
-    if (count) count.textContent = orderSessions.length.toLocaleString() + '件';
+    const incomplete = orderSessions.filter(session => {
+      const required = orderRequiredBoxes(session);
+      return required > 0 && orderScannedBoxes(session) < required;
+    }).length;
+    if (count) {
+      count.textContent = orderSessions.length.toLocaleString() + '件 / 未完了 ' + incomplete.toLocaleString() + '件';
+    }
     const sortSelect = document.getElementById('detailSortSelect');
     if (sortSelect) sortSelect.value = orderSessionSort || 'updated_desc';
+    renderDetailBoardState();
     if (!list) return;
 
     if (!orderSessions.length) {
