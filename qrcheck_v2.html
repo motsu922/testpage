@@ -157,6 +157,50 @@
       text-align: center;
     }
     .scan-message.step2 { color: #ffb74d; }
+    .scan-state-banner {
+      width: 100%;
+      margin: 0 0 10px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 2px solid #2d7fb8;
+      background: #06263d;
+      color: #e8f7ff;
+      text-align: center;
+      font-weight: 900;
+      line-height: 1.25;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+    }
+    .scan-state-main {
+      display: block;
+      font-size: clamp(19px, 6vw, 30px);
+      letter-spacing: 0;
+    }
+    .scan-state-sub {
+      display: block;
+      margin-top: 4px;
+      font-size: clamp(11px, 3.4vw, 14px);
+      color: rgba(232,247,255,0.78);
+    }
+    .scan-state-banner.detail {
+      border-color: #28b6f6;
+      background: #06263d;
+    }
+    .scan-state-banner.kanban1 {
+      border-color: #00c853;
+      background: #062f1c;
+    }
+    .scan-state-banner.kanban2 {
+      border-color: #ffb74d;
+      background: #3a2305;
+    }
+    .scan-state-banner.complete {
+      border-color: #29d36b;
+      background: #093019;
+    }
+    .scan-state-banner.error {
+      border-color: #ef5350;
+      background: #3b0909;
+    }
     .scan-input-area { position: relative; margin-bottom: 20px; }
     .scan-input {
       width: 100%;
@@ -1321,6 +1365,10 @@
             <div class="step2-photo-hint-pn" id="step2HintPn">---</div>
           </div>
         </div>
+        <div class="scan-state-banner detail" id="scanStateBanner">
+          <span class="scan-state-main" id="scanStateMain">明細QR待ち</span>
+          <span class="scan-state-sub" id="scanStateSub">最初に注文の明細QRを読み取ってください</span>
+        </div>
         <div class="scan-step" id="scanStep">STEP 1 / 2</div>
         <div class="scan-message" id="scanMessage">1回目を読み取ってください</div>
         <div class="scan-input-area">
@@ -1879,6 +1927,19 @@
     }, 360);
   }
 
+  function restoreScanInputFocusNow() {
+    suppressScanInputRefocusUntil = 0;
+    const input = document.getElementById('scanInput');
+    if (input && terminalInputMode === 'inputconnection') {
+      input.readOnly = false;
+      input.setAttribute('inputmode', 'text');
+      input.focus({ preventScroll: true });
+      setTimeout(() => input.focus({ preventScroll: true }), 80);
+      return;
+    }
+    focusScanInputSoon();
+  }
+
   function normalizeQR(str){
     return String(str ?? '')
       .normalize('NFKC')
@@ -2403,6 +2464,40 @@
     if (scanInput) scanInput.value = '';
   }
 
+  function classifyScannedQR(qrRaw) {
+    const parsed = parseOrderDetailQR(qrRaw);
+    if (parsed.lines.length) return 'orderDetail';
+    return 'kanban';
+  }
+
+  function showWorkflowScanError(title, note) {
+    const overlay = document.getElementById('resultOverlay');
+    const symbol = document.getElementById('resultSymbol');
+    const text = document.getElementById('resultText');
+    const detail = document.getElementById('resultDetail');
+    const adminArea = document.getElementById('adminArea');
+    if (shortQrTimer) {
+      clearTimeout(shortQrTimer);
+      shortQrTimer = null;
+    }
+    isNGLocked = false;
+    overlay.className = 'result-overlay show ng';
+    symbol.textContent = '×';
+    text.textContent = title;
+    detail.innerHTML = `<p class="label">${escapeHtml(note)}</p>`;
+    if (adminArea) adminArea.style.display = 'none';
+    updateScanStateBanner('error', title, note);
+    playSound('ng');
+    vibrate([160, 60, 160]);
+    shortQrTimer = setTimeout(() => {
+      overlay.classList.remove('show');
+      shortQrTimer = null;
+      clearScannerBuffer();
+      updateScanUI();
+      restoreScanInputFocusNow();
+    }, 2600);
+  }
+
   function handleScan(decoded) {
     if (document.getElementById('resultOverlay').classList.contains('show')) {
       if (isNGLocked) {
@@ -2412,7 +2507,7 @@
           isNGLocked=false;playSound('ok');vibrate([80,40,80]);
           pinBuffer='';updatePinDots();
           document.getElementById('resultOverlay').classList.remove('show');
-          if(settings.scanMode==='1toN'&&currentStep===2){value2='';updateScanUI();focusScanInputSoon();}
+          if(settings.scanMode==='1toN'&&currentStep===2){value2='';updateScanUI();restoreScanInputFocusNow();}
           else{startScanning(true);}
         }
       }
@@ -2424,11 +2519,45 @@
         orderDetailAwaiting = false;
         currentStep = 1;
         updateScanUI();
+        restoreScanInputFocusNow();
       });
       return;
     }
+    const qrKind = classifyScannedQR(decoded);
     if (isOrderDetailComplete()) {
+      if (qrKind === 'orderDetail') {
+        orderDetailAwaiting = true;
+        orderDetailAppendMode = false;
+        handleOrderDetailScan(decoded).catch(err => {
+          console.error('Order detail scan error:', err);
+          orderDetailAwaiting = false;
+          currentStep = 1;
+          updateScanUI();
+          restoreScanInputFocusNow();
+        });
+        return;
+      }
       showOrderDetailCompleteOverlay();
+      return;
+    }
+    if (!orderDetailSession.lines.length) {
+      if (qrKind === 'orderDetail') {
+        orderDetailAwaiting = true;
+        orderDetailAppendMode = false;
+        handleOrderDetailScan(decoded).catch(err => {
+          console.error('Order detail scan error:', err);
+          orderDetailAwaiting = false;
+          currentStep = 1;
+          updateScanUI();
+          restoreScanInputFocusNow();
+        });
+        return;
+      }
+      showWorkflowScanError('先に明細QRを読み取ってください', '明細が未読込のため、かんばんQRは受け付けできません。');
+      return;
+    }
+    if (qrKind === 'orderDetail') {
+      showWorkflowScanError('現在はかんばん照合中です', '明細QRを追加する場合は「明細QR追加」を押してから読み取ってください。');
       return;
     }
     if (currentStep === 1) {
@@ -2507,7 +2636,7 @@
       if (settings.scanMode === '1toN' && currentStep === 2) {
         value2 = '';
         updateScanUI();
-        focusScanInputSoon();
+        restoreScanInputFocusNow();
       } else {
         startScanning(true);
       }
@@ -2537,7 +2666,7 @@
     vibrate([80, 40, 80]);
     document.getElementById('resultOverlay').classList.remove('show');
     if (settings.scanMode === '1toN' && currentStep === 2) {
-      value2=''; updateScanUI(); focusScanInputSoon();
+      value2=''; updateScanUI(); restoreScanInputFocusNow();
     } else { startScanning(true); }
   }
 
@@ -3896,7 +4025,7 @@
       if (info.stepNo === 2) value2 = '';
       clearScannerBuffer();
       updateScanUI();
-      focusScanInputSoon();
+      restoreScanInputFocusNow();
     }, 3200);
   }
 
@@ -3930,7 +4059,7 @@
       shortQrTimer = null;
       clearScannerBuffer();
       updateScanUI();
-      focusScanInputSoon();
+      restoreScanInputFocusNow();
     }, 2600);
   }
 
@@ -3967,7 +4096,7 @@
       shortQrTimer = null;
       clearScannerBuffer();
       updateScanUI();
-      focusScanInputSoon();
+      restoreScanInputFocusNow();
     }, 4200);
   }
 
@@ -4102,7 +4231,8 @@
     const message = document.getElementById('scanMessage');
     if (step) step.textContent = '明細QR';
     if (message) message.textContent = append ? '追加する明細QRを読み取ってください' : '明細QRを読み取ってください';
-    focusScanInputSoon();
+    updateScanStateBanner('detail', append ? '明細QR追加待ち' : '明細QR待ち', append ? '追加する明細QRだけを読み取ってください' : '注文の明細QRを読み取ってください');
+    restoreScanInputFocusNow();
   }
 
   async function handleOrderDetailScan(decoded) {
@@ -4698,7 +4828,7 @@
     currentStep = 1;
     updateScanUI();
     if (!boot) playSound('beep');
-    focusScanInputSoon();
+    restoreScanInputFocusNow();
   }
 
   function stopAndReset() {
@@ -4715,7 +4845,7 @@
     currentStep = 2;
     nModeQR2Count++;
     updateScanUI();
-    focusScanInputSoon();
+    restoreScanInputFocusNow();
   }
 
   // ★ 1対Nモード：QR1を変更（step1へ完全リセット）
@@ -4757,6 +4887,16 @@
     }
   }
 
+  function updateScanStateBanner(kind, main, sub) {
+    const banner = document.getElementById('scanStateBanner');
+    const mainEl = document.getElementById('scanStateMain');
+    const subEl = document.getElementById('scanStateSub');
+    if (!banner || !mainEl || !subEl) return;
+    banner.className = 'scan-state-banner ' + kind;
+    mainEl.textContent = main;
+    subEl.textContent = sub;
+  }
+
   function showNGOverlay() {
     const overlay = document.getElementById('resultOverlay');
     overlay.className = 'result-overlay show ng ng-locked';
@@ -4777,6 +4917,15 @@
     const input   = document.getElementById('scanInput');
     const panel   = document.getElementById('qr1InfoPanel');
     const changePnBtn = document.getElementById('changePnBtn');
+    if (orderDetailAwaiting || !orderDetailSession.lines.length) {
+      updateScanStateBanner('detail', '明細QR待ち', '最初に注文の明細QRを読み取ってください');
+    } else if (isOrderDetailComplete()) {
+      updateScanStateBanner('complete', '明細照合完了', '次の注文の明細QRを読み取ってください');
+    } else if (currentStep === 2) {
+      updateScanStateBanner('kanban2', isNMode ? '社内かんばん待ち' : '2回目かんばん待ち', '現在の明細に対して照合します');
+    } else {
+      updateScanStateBanner('kanban1', isNMode ? '顧客かんばん待ち' : '1回目かんばん待ち', '明細QRは追加ボタンを押してから読み取ってください');
+    }
     if (isOrderDetailComplete()) {
       step.textContent = '明細照合完了';
       message.textContent = '次の注文は「明細QR読込」から開始してください';
