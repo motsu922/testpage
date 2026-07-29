@@ -4160,6 +4160,47 @@
     return matches[0];
   }
 
+  function findOrderDetailPartPair(qrA, qrB) {
+    if (!orderDetailSession.lines.length) return null;
+    const matches = orderDetailSession.lines.map(line => {
+      const inA = qrContainsPart(qrA, line.partNo);
+      const inB = qrContainsPart(qrB, line.partNo);
+      const variants = partVariants(line.partNo).sort((a, b) => b.length - a.length);
+      return {
+        line,
+        inA,
+        inB,
+        score: (inA ? 1 : 0) + (inB ? 1 : 0),
+        hit: variants[0] || canonicalPart(line.partNo)
+      };
+    }).filter(item => item.score > 0);
+    if (!matches.length) return null;
+    matches.sort((a, b) =>
+      b.score - a.score ||
+      canonicalPart(b.line.partNo).length - canonicalPart(a.line.partNo).length
+    );
+    return matches[0];
+  }
+
+  function extractOrderDetailPartForPair(qrA, qrB) {
+    const pairHit = findOrderDetailPartPair(qrA, qrB);
+    if (pairHit) {
+      return {
+        ex: {
+          part: pairHit.line.partNo,
+          rule: null,
+          totalLen: normalizeQR(qrA).length,
+          start0: null,
+          note: pairHit.inA && pairHit.inB ? 'order_detail_pair_search' : 'order_detail_one_side_search',
+          orderDetailSearchHit: pairHit.hit
+        },
+        isQROK: pairHit.inA && pairHit.inB
+      };
+    }
+    const ex = extractPartNumberForMatch(qrA);
+    return { ex, isQROK: qrContainsPart(qrB, ex.part) };
+  }
+
   function extractPartNumberForMatch(qrRaw) {
     const detailHit = findOrderDetailPartInQR(qrRaw);
     if (detailHit) {
@@ -4653,9 +4694,10 @@
     let ex, partNumber, isQROK;
 
     if (orderDetailSession.lines.length) {
-      ex = extractPartNumberForMatch(value1);
+      const detailPair = extractOrderDetailPartForPair(value1, value2);
+      ex = detailPair.ex;
       partNumber = ex.part;
-      isQROK = qrContainsPart(v2, partNumber);
+      isQROK = detailPair.isQROK;
     } else if (settings.scanMode === '1toN') {
       // ★ 1対Nモード：QR1から切り出した品番（固定済み）がQR2に含まれているか
       ex = nModeEx || extractPartNumberForMatch(value1);
