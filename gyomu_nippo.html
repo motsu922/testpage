@@ -513,6 +513,10 @@
         <div class="card">
             <h3>🏷️ デフォルトタスク</h3>
             <p style="font-size:12px;color:#666;margin-bottom:10px;">使わない標準タスクは入力ボタンから非表示にできます。過去の実績は残ります。</p>
+            <div class="form-group">
+                <label>担当者</label>
+                <select id="defaultTaskMember" onchange="renderDefaultTasks()"></select>
+            </div>
             <div id="defaultTaskList"></div>
         </div>
         <div class="card">
@@ -667,7 +671,7 @@ const CUSTOM_COLORS = ['#f43f5e','#a855f7','#6366f1','#0ea5e9','#22c55e','#eab30
 const WORK_START_MIN = 8*60, WORK_END_MIN = 17*60;
 const LOCATION_OPTIONS = ['社内', '客先', '物流倉庫', 'その他'];
 
-let members=['担当者1'], customTasks={}, customIcons={}, hiddenDefaultTasks=[], records=[], activeTimers={}, currentMember=null, editingId=null;
+let members=['担当者1'], customTasks={}, customIcons={}, hiddenDefaultTasksByMember={}, records=[], activeTimers={}, currentMember=null, editingId=null;
 let breakList = [], addRecordDateStr = null;
 let cases = [], newCasePhotos = [], currentCaseFilter = 'all';
 let fs = null, docRef = null, fbUnsubscribe = null, fbConnected = false, fbUpdating = false;
@@ -689,12 +693,32 @@ function getTaskColor(task){
     return idx >= 0 ? CUSTOM_COLORS[idx % CUSTOM_COLORS.length] : '#667eea';
 }
 
-function getVisibleDefaultTasks(){
-    return DEFAULT_TASKS.filter(t => !hiddenDefaultTasks.includes(t));
+function normalizeHiddenDefaultTasks(value){
+    if (Array.isArray(value)) {
+        const legacyHidden = value.filter(t => DEFAULT_TASKS.includes(t));
+        const converted = {};
+        members.forEach(m => { converted[m] = [...legacyHidden]; });
+        return converted;
+    }
+    const normalized = {};
+    Object.entries(value || {}).forEach(([member, tasks]) => {
+        normalized[member] = Array.isArray(tasks) ? tasks.filter(t => DEFAULT_TASKS.includes(t)) : [];
+    });
+    members.forEach(m => { if (!normalized[m]) normalized[m] = []; });
+    return normalized;
+}
+
+function getHiddenDefaultTasks(member){
+    return hiddenDefaultTasksByMember[member] || [];
+}
+
+function getVisibleDefaultTasks(member){
+    const hidden = getHiddenDefaultTasks(member);
+    return DEFAULT_TASKS.filter(t => !hidden.includes(t));
 }
 
 function getTaskOptionsForMember(member){
-    return [...getVisibleDefaultTasks(), ...(customTasks[member] || [])];
+    return [...getVisibleDefaultTasks(member), ...(customTasks[member] || [])];
 }
 
 function parseDateMs(value){
@@ -870,7 +894,7 @@ function loadData(){
         members = JSON.parse(localStorage.getItem('tt_members') || '["担当者1"]');
         customTasks = JSON.parse(localStorage.getItem('tt_customTasks') || '{}');
         customIcons = JSON.parse(localStorage.getItem('tt_customIcons') || '{}');
-        hiddenDefaultTasks = JSON.parse(localStorage.getItem('tt_hiddenDefaultTasks') || '[]');
+        hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(JSON.parse(localStorage.getItem('tt_hiddenDefaultTasksByMember') || localStorage.getItem('tt_hiddenDefaultTasks') || '{}'));
         records = JSON.parse(localStorage.getItem('tt_records') || '[]');
         activeTimers = JSON.parse(localStorage.getItem('tt_activeTimers') || '{}');
         taskList = JSON.parse(localStorage.getItem('tt_taskList') || '[]');
@@ -890,7 +914,9 @@ function saveDataLocal(){
     localStorage.setItem('tt_members', JSON.stringify(members));
     localStorage.setItem('tt_customTasks', JSON.stringify(customTasks));
     localStorage.setItem('tt_customIcons', JSON.stringify(customIcons));
-    localStorage.setItem('tt_hiddenDefaultTasks', JSON.stringify(hiddenDefaultTasks));
+    hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(hiddenDefaultTasksByMember);
+    localStorage.setItem('tt_hiddenDefaultTasksByMember', JSON.stringify(hiddenDefaultTasksByMember));
+    localStorage.removeItem('tt_hiddenDefaultTasks');
     localStorage.setItem('tt_records', JSON.stringify(records));
     localStorage.setItem('tt_activeTimers', JSON.stringify(activeTimers));
     localStorage.setItem('tt_stoppedTimers', JSON.stringify(stoppedTimers));
@@ -1554,6 +1580,7 @@ function renderRecordList(listId,summaryId,recs,showAdd){
 // ===== 設定 =====
 function renderSettings(){
     const ml = document.getElementById('memberList'); if (ml) ml.innerHTML = members.map(m=>`<div class="setting-item"><span>${m}</span><button class="btn btn-danger btn-sm" onclick="deleteMember('${m}')">削除</button></div>`).join('');
+    const dsel = document.getElementById('defaultTaskMember'); if (dsel){ const v = dsel.value || currentMember; dsel.innerHTML = members.map(m=>`<option value="${m}">${m}</option>`).join(''); dsel.value = members.includes(v) ? v : (currentMember || members[0]); }
     const sel = document.getElementById('customTaskMember'); if (sel){ const v = sel.value; sel.innerHTML = members.map(m=>`<option value="${m}">${m}</option>`).join(''); sel.value = v || members[0]; renderCustomTasks(); }
     renderDefaultTasks();
     renderBreaks();
@@ -1561,11 +1588,14 @@ function renderSettings(){
 
 function renderDefaultTasks(){
     const el = document.getElementById('defaultTaskList'); if (!el) return;
+    const member = document.getElementById('defaultTaskMember')?.value || currentMember || members[0];
+    const hiddenTasks = getHiddenDefaultTasks(member);
+    if (!member){ el.innerHTML = '<div style="color:#888;font-size:12px;">担当者を登録してください</div>'; return; }
     el.innerHTML = DEFAULT_TASKS.map(t => {
-        const hidden = hiddenDefaultTasks.includes(t);
+        const hidden = hiddenTasks.includes(t);
         const btnClass = hidden ? 'btn-secondary' : 'btn-danger';
         const btnText = hidden ? '復元' : '削除';
-        const action = hidden ? `restoreDefaultTask('${t}')` : `hideDefaultTask('${t}')`;
+        const action = hidden ? `restoreDefaultTask('${member}','${t}')` : `hideDefaultTask('${member}','${t}')`;
         return `<div class="setting-item" style="${hidden?'opacity:0.55;':''}"><span>${getTaskIcon(t)} ${t}${hidden?'（非表示）':''}</span><button class="btn ${btnClass} btn-sm" onclick="${action}">${btnText}</button></div>`;
     }).join('');
 }
@@ -1576,17 +1606,20 @@ function renderCustomTasks(){
     el.innerHTML = tasks.length ? tasks.map(t=>`<div class="setting-item"><span>${t}</span><button class="btn btn-danger btn-sm" onclick="deleteCustomTask('${m}','${t}')">削除</button></div>`).join('') : '<div style="color:#888;font-size:12px;">なし</div>';
 }
 
-function hideDefaultTask(task){
+function hideDefaultTask(member, task){
+    if (!member) return;
     if (!DEFAULT_TASKS.includes(task)) return;
-    const isRunning = Object.values(activeTimers).some(timer => timer && timer.task === task);
-    const message = isRunning ? `${task} は実行中の担当者がいます。入力ボタンから非表示にしますか？` : `${task} を入力ボタンから削除しますか？`;
+    const isRunning = activeTimers[member] && activeTimers[member].task === task;
+    const message = isRunning ? `${member} は ${task} を実行中です。入力ボタンから非表示にしますか？` : `${member} の ${task} を入力ボタンから削除しますか？`;
     if (!confirm(message)) return;
-    if (!hiddenDefaultTasks.includes(task)) hiddenDefaultTasks.push(task);
+    if (!hiddenDefaultTasksByMember[member]) hiddenDefaultTasksByMember[member] = [];
+    if (!hiddenDefaultTasksByMember[member].includes(task)) hiddenDefaultTasksByMember[member].push(task);
     saveData(); render(); toast('✓ デフォルトタスクを非表示にしました');
 }
 
-function restoreDefaultTask(task){
-    hiddenDefaultTasks = hiddenDefaultTasks.filter(t => t !== task);
+function restoreDefaultTask(member, task){
+    if (!member) return;
+    hiddenDefaultTasksByMember[member] = getHiddenDefaultTasks(member).filter(t => t !== task);
     saveData(); render(); toast('✓ デフォルトタスクを復元しました');
 }
 
@@ -1847,7 +1880,7 @@ function addMember(){
 }
 function deleteMember(m){
     if (!confirm(`${m}を削除？`)) return;
-    members=members.filter(x=>x!==m); delete customTasks[m]; delete activeTimers[m]; delete stoppedTimers[m]; records=records.filter(r=>r.member!==m);
+    members=members.filter(x=>x!==m); delete customTasks[m]; delete hiddenDefaultTasksByMember[m]; delete activeTimers[m]; delete stoppedTimers[m]; records=records.filter(r=>r.member!==m);
     if (currentMember===m) currentMember=members[0]||null; saveData(); render(); toast('🗑 削除');
 }
 function addCustomTask(){
@@ -1958,7 +1991,7 @@ function queueSyncPush(){
 
 function createStatePayload(newVersion, extra){
     return Object.assign({
-        members, customTasks, customIcons, hiddenDefaultTasks, activeTimers, stoppedTimers, taskList, breakList, cases,
+        members, customTasks, customIcons, hiddenDefaultTasksByMember, activeTimers, stoppedTimers, taskList, breakList, cases,
         storageMode: 'dailyRecords',
         dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}',
         lastUpdatedVersion: newVersion,
@@ -2033,7 +2066,7 @@ function setupFBListener(){
         const serverData = snapshot.data() || {}, serverVersion = serverData.lastUpdatedVersion || 0;
         if (serverVersion > localVersion) {
             fbUpdating = true;
-            members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {}; hiddenDefaultTasks = serverData.hiddenDefaultTasks || [];
+            members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {}; hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(serverData.hiddenDefaultTasksByMember || serverData.hiddenDefaultTasks || {});
             if (Array.isArray(serverData.records) && serverData.records.length) {
                 records = serverData.records;
             }
@@ -2094,7 +2127,7 @@ function forceReload(){
     docRef.get().then(async snap => {
         if (!snap.exists) { toast('⚠️ サーバーにデータがありません'); updateSyncStatus('connected'); return; }
         const serverData = snap.data();
-        members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {}; hiddenDefaultTasks = serverData.hiddenDefaultTasks || [];
+        members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {}; hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(serverData.hiddenDefaultTasksByMember || serverData.hiddenDefaultTasks || {});
         if (Array.isArray(serverData.records) && serverData.records.length) {
             records = serverData.records;
         }
@@ -2110,7 +2143,7 @@ function forceReload(){
 
 // ===== エクスポート/インポート/削除 =====
 function exportData(){
-    const data = { members, customTasks, customIcons, hiddenDefaultTasks, records, activeTimers, stoppedTimers, taskList, breakList, cases, version: localVersion, exported: new Date().toISOString(), deviceId: getDeviceId() };
+    const data = { members, customTasks, customIcons, hiddenDefaultTasksByMember, records, activeTimers, stoppedTimers, taskList, breakList, cases, version: localVersion, exported: new Date().toISOString(), deviceId: getDeviceId() };
     const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})); a.download=`日報入力_${formatDate(new Date())}.json`; a.click(); toast('✓ エクスポート');
 }
 
@@ -2121,7 +2154,7 @@ function importData(){
         reader.onload=ev=>{
             try{
                 const data=JSON.parse(ev.target.result); if (!confirm('上書きしますか？')) return;
-                members = data.members || members; customTasks = data.customTasks || {}; customIcons = data.customIcons || {}; hiddenDefaultTasks = data.hiddenDefaultTasks || [];
+                members = data.members || members; customTasks = data.customTasks || {}; customIcons = data.customIcons || {}; hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(data.hiddenDefaultTasksByMember || data.hiddenDefaultTasks || {});
                 records = data.records || []; activeTimers = data.activeTimers || {}; stoppedTimers = data.stoppedTimers || {}; taskList = data.taskList || [];
                 breakList = data.breakList || []; cases = data.cases || [];
                 localVersion = (data.version || 0) + 1; saveData(); render(); updateVersionDisplay(); toast('✓ インポート');
@@ -2134,7 +2167,7 @@ function importData(){
 
 function clearData(){
     if (!confirm('全削除しますか？')) return; if (!confirm('本当に？')) return;
-    members=['担当者1']; customTasks={}; customIcons={}; hiddenDefaultTasks=[]; records=[]; activeTimers={}; stoppedTimers={}; taskList=[]; breakList=[]; cases=[];
+    members=['担当者1']; customTasks={}; customIcons={}; hiddenDefaultTasksByMember={}; records=[]; activeTimers={}; stoppedTimers={}; taskList=[]; breakList=[]; cases=[];
     currentMember=members[0]; localVersion = localVersion + 1; saveData(); render(); updateVersionDisplay(); toast('🗑 削除');
 }
 
