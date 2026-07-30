@@ -1948,6 +1948,7 @@
     if (Date.now() < suppressScanInputRefocusUntil) return false;
     if (terminalInputMode !== 'inputconnection') return false;
     if (currentTab !== 'scan') return false;
+    if (isNGLocked) return false;
     const blockedOverlayIds = ['companyAuthOverlay', 'companyModalOverlay', 'photoModalOverlay'];
     return !blockedOverlayIds.some(id => document.getElementById(id)?.classList.contains('show'));
   }
@@ -2006,6 +2007,24 @@
     input.setAttribute('inputmode', 'text');
     input.focus({ preventScroll: true });
     setTimeout(() => input.focus({ preventScroll: true }), 20);
+  }
+
+  function enterPinUnlockMode() {
+    if (terminalInputMode !== 'inputconnection') return;
+    const input = document.getElementById('scanInput');
+    if (!input) return;
+    suppressScanInputRefocusUntil = Date.now() + 600000;
+    input.readOnly = true;
+    input.setAttribute('inputmode', 'none');
+    input.blur();
+  }
+
+  function exitPinUnlockMode() {
+    suppressScanInputRefocusUntil = 0;
+    const input = document.getElementById('scanInput');
+    if (!input) return;
+    input.readOnly = false;
+    input.setAttribute('inputmode', terminalInputMode === 'inputconnection' ? 'text' : 'none');
   }
 
   function normalizeQR(str){
@@ -2740,6 +2759,7 @@
         if(normalized===expected){
           isNGLocked=false;playSound('ok');vibrate([80,40,80]);
           pinBuffer='';updatePinDots();
+          exitPinUnlockMode();
           document.getElementById('resultOverlay').classList.remove('show');
           if(settings.scanMode==='1toN'&&currentStep===2){value2='';updateScanUI();restoreScanInputFocusNow();}
           else{startScanning(true);}
@@ -2865,6 +2885,7 @@
       vibrate([80, 40, 80]);
       pinBuffer = '';
       updatePinDots();
+      exitPinUnlockMode();
       document.getElementById('resultOverlay').classList.remove('show');
       // ★ 1対Nモード：QR1を保持してQR2スキャンに戻る
       if (settings.scanMode === '1toN' && currentStep === 2) {
@@ -2898,6 +2919,7 @@
     isNGLocked = false;
     playSound('ok');
     vibrate([80, 40, 80]);
+    exitPinUnlockMode();
     document.getElementById('resultOverlay').classList.remove('show');
     if (settings.scanMode === '1toN' && currentStep === 2) {
       value2=''; updateScanUI(); restoreScanInputFocusNow();
@@ -5094,6 +5116,7 @@
       document.getElementById('dupReleaseBtn').style.display = 'block';
       document.getElementById('ngReleaseHint').style.display = 'none';
       isNGLocked = true;
+      enterPinUnlockMode();
       playSound('dup');
       resetPinUI();
 
@@ -5128,6 +5151,7 @@
       document.getElementById('dupReleaseBtn').style.display = 'none';
       document.getElementById('ngReleaseHint').style.display = 'block';
       isNGLocked = true;
+      enterPinUnlockMode();
       playSound('ng');
       resetPinUI();
     }
@@ -5169,6 +5193,7 @@
   function resetToStep1() {
     clearScannerBuffer();
     isNGLocked = false;
+    exitPinUnlockMode();
     value1 = ''; value2 = '';
     nModeQR2Count = 0;
     nModePartNumber = '';
@@ -5226,6 +5251,7 @@
   function showNGOverlay() {
     const overlay = document.getElementById('resultOverlay');
     overlay.className = 'result-overlay show ng ng-locked';
+    isNGLocked = true;
     document.getElementById('resultSymbol').textContent = '×';
     document.getElementById('resultText').textContent = 'エラー状態';
     document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
@@ -5233,6 +5259,7 @@
     document.getElementById('adminAreaMsg').textContent = '⚠️ 暗証番号で解除してください';
     document.getElementById('dupReleaseBtn').style.display = 'none';
     document.getElementById('ngReleaseHint').style.display = 'block';
+    enterPinUnlockMode();
     resetPinUI();
   }
 
