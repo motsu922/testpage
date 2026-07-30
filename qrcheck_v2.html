@@ -1834,6 +1834,7 @@
   let okAutoTimer = null;
   let shortQrTimer = null;
   let isOKPending = false;
+  let orderDetailCompleteNoticeShowing = false;
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
@@ -2713,6 +2714,26 @@
 
   function handleScan(decoded) {
     if (document.getElementById('resultOverlay').classList.contains('show')) {
+      if (orderDetailCompleteNoticeShowing) {
+        const qrKind = classifyScannedQR(decoded);
+        if (qrKind === 'orderDetail') {
+          document.getElementById('resultOverlay').classList.remove('show');
+          orderDetailCompleteNoticeShowing = false;
+          leaveOrderDetailSession();
+          orderDetailAwaiting = true;
+          orderDetailAppendMode = false;
+          handleOrderDetailScan(decoded).catch(err => {
+            console.error('Order detail scan error:', err);
+            orderDetailAwaiting = false;
+            currentStep = 1;
+            updateScanUI();
+            restoreScanInputFocusNow();
+          });
+          return;
+        }
+        keepScanInputReadyNow();
+        return;
+      }
       if (isNGLocked) {
         const normalized=normalizeQR(decoded).replace(/\D/g,'').slice(0,4).padStart(4,'0');
         const expected=String(settings.releasePIN).padStart(4,'0');
@@ -4558,6 +4579,11 @@
     await upsertOrderDetailSessionToFirebase(orderDetailSession, parsed);
     orderDetailAwaiting = false;
     orderDetailAppendMode = false;
+    if (isOrderDetailComplete()) {
+      updateScanUI();
+      showOrderDetailCompleteOverlay();
+      return;
+    }
     playSound('ok');
     startScanning(true);
     dismissKeyboardThenRefocusScanInput();
@@ -4761,6 +4787,7 @@
     if (shortQrTimer) { clearTimeout(shortQrTimer); shortQrTimer = null; }
     isOKPending = false;
     isNGLocked = false;
+    orderDetailCompleteNoticeShowing = true;
     overlay.className = 'result-overlay show ok';
     symbol.textContent = 'OK';
     text.textContent = '明細照合完了';
@@ -4772,13 +4799,7 @@
     if (adminArea) adminArea.style.display = 'none';
     playSound('ok');
     vibrate([80, 40, 80, 40, 160]);
-
-    okAutoTimer = setTimeout(() => {
-      overlay.classList.remove('show');
-      okAutoTimer = null;
-      leaveOrderDetailSession();
-      startOrderDetailScan();
-    }, 3600);
+    keepScanInputReadyNow();
   }
 
   function renderOrderDetailPanel() {
@@ -5114,7 +5135,7 @@
     if (isNGLocked) { showNGOverlay(); return; }
     if (shortQrTimer) { clearTimeout(shortQrTimer); shortQrTimer = null; }
     clearScannerBuffer();
-    isOKPending=false;const t=document.getElementById('okToast');if(t)t.classList.remove('show');
+    isOKPending=false;orderDetailCompleteNoticeShowing=false;const t=document.getElementById('okToast');if(t)t.classList.remove('show');
     value1=''; value2='';
     nModeQR2Count = 0;
     nModePartNumber = '';
