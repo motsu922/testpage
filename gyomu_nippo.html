@@ -905,6 +905,7 @@ function loadData(){
         currentMember = JSON.parse(localStorage.getItem('tt_currentMember')) || members[0] || null;
         localVersion = parseInt(localStorage.getItem('tt_version') || '0', 10) || 0;
         lastSyncTime = parseInt(localStorage.getItem('tt_lastSyncTime') || '0', 10) || 0;
+        pendingLocalChanges = localStorage.getItem('tt_pendingLocalChanges') === 'true';
     }catch(e){ console.error('loadData error:', e); }
 }
 
@@ -926,10 +927,13 @@ function saveDataLocal(){
     localStorage.setItem('tt_currentMember', JSON.stringify(currentMember));
     localStorage.setItem('tt_version', String(localVersion));
     localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
+    localStorage.setItem('tt_pendingLocalChanges', String(pendingLocalChanges));
 }
 
 function saveData(){
-    saveDataLocal(); pendingLocalChanges = true;
+    pendingLocalChanges = true;
+    localVersion = localVersion + 1;
+    saveDataLocal();
     if (!fbUpdating && fbConnected) queueSyncPush();
     updateVersionDisplay();
 }
@@ -1914,13 +1918,33 @@ function getVisibleDates(){
     return [...new Set([today, historyDate, ganttDateValue].filter(Boolean))];
 }
 
-function setRecordsForDate(date, dayRecords){
+function mergeRecordArrays(date, serverRecords, preserveLocalDeletions){
+    const serverList = Array.isArray(serverRecords) ? serverRecords : [];
+    const localList = getRecordsForDate(date);
+    const merged = new Map();
+    serverList.forEach(r => { if (r && r.id != null) merged.set(String(r.id), r); });
+    localList.forEach(r => { if (r && r.id != null) merged.set(String(r.id), r); });
+    if (preserveLocalDeletions) {
+        const localIds = new Set(localList.filter(r => r && r.id != null).map(r => String(r.id)));
+        (dailyServerBaseline[date] || []).map(String).forEach(id => {
+            if (!localIds.has(id)) merged.delete(id);
+        });
+    }
+    return [...merged.values()].sort((a,b) =>
+        String(a.date || '').localeCompare(String(b.date || '')) ||
+        String(a.member || '').localeCompare(String(b.member || '')) ||
+        String(a.startTime || '').localeCompare(String(b.startTime || ''))
+    );
+}
+
+function setRecordsForDate(date, dayRecords, baselineRecords){
     const incoming = Array.isArray(dayRecords) ? dayRecords : [];
     records = records.filter(r => r.date !== date).concat(incoming);
     dailyRecordCache[date] = { loaded: true, loading: false, recordCount: incoming.length, loadedAt: Date.now() };
     // Remember which record ids the server had for this date, so a later merge can tell
     // "deleted locally" apart from "added by another device".
-    dailyServerBaseline[date] = incoming.map(r => String(r.id));
+    const baseline = Array.isArray(baselineRecords) ? baselineRecords : incoming;
+    dailyServerBaseline[date] = baseline.filter(r => r && r.id != null).map(r => String(r.id));
 }
 
 async function loadDailyRecords(date, renderAfter){
@@ -1932,7 +1956,9 @@ async function loadDailyRecords(date, renderAfter){
         const snap = await getDailyDocRef(date).get();
         if (snap.exists) {
             const data = snap.data() || {};
-            setRecordsForDate(date, data.records || []);
+            const serverRecords = data.records || [];
+            const mergedRecords = mergeRecordArrays(date, serverRecords, pendingLocalChanges || syncInProgress);
+            setRecordsForDate(date, mergedRecords, serverRecords);
             saveDataLocal();
         } else {
             dailyRecordCache[date] = { loaded: true, loading: false, recordCount: records.filter(r => r.date === date).length, missing: true };
@@ -1987,6 +2013,48 @@ function notifySyncError(e, label){
 function queueSyncPush(){
     if (syncInProgress) { syncQueued = true; return; }
     syncPushToServer();
+}
+
+function uniqueArray(values){
+    return [...new Set((values || []).filter(v => v != null && v !== ''))];
+}
+
+function mergeCustomTaskMap(serverMap, localMap){
+    const merged = {};
+    const keys = uniqueArray([...Object.keys(serverMap || {}), ...Object.keys(localMap || {})]);
+    keys.forEach(k => { merged[k] = uniqueArray([...((serverMap || {})[k] || []), ...((localMap || {})[k] || [])]); });
+    return merged;
+}
+
+function mergeObjectsById(serverItems, localItems){
+    const merged = new Map();
+    (serverItems || []).forEach(item => { if (item && item.id != null) merged.set(String(item.id), item); });
+    (localItems || []).forEach(item => { if (item && item.id != null) merged.set(String(item.id), item); });
+    return [...merged.values()];
+}
+
+function mergeBreakList(serverBreaks, localBreaks){
+    const merged = new Map();
+    [...(serverBreaks || []), ...(localBreaks || [])].forEach(b => {
+        if (b && b.start && b.end) merged.set(`${b.start}-${b.end}`, b);
+    });
+    return [...merged.values()];
+}
+
+function mergeStateFromServer(serverData, options){
+    const preserveLocal = !!(options && options.preserveLocal);
+    members = uniqueArray([...(serverData.members || ['担当者1']), ...members]);
+    customTasks = mergeCustomTaskMap(serverData.customTasks || {}, customTasks);
+    customIcons = Object.assign({}, serverData.customIcons || {}, customIcons);
+    const serverHiddenDefaults = normalizeHiddenDefaultTasks(serverData.hiddenDefaultTasksByMember || serverData.hiddenDefaultTasks || {});
+    const localHiddenDefaults = normalizeHiddenDefaultTasks(hiddenDefaultTasksByMember || {});
+    hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(Object.assign({}, serverHiddenDefaults, localHiddenDefaults));
+    mergeStoppedTimers(serverData.stoppedTimers || {});
+    activeTimers = mergeServerActiveTimers(serverData.activeTimers || {}, { preserveLocal });
+    taskList = mergeObjectsById(serverData.taskList || [], taskList || []);
+    breakList = mergeBreakList(serverData.breakList || [], breakList || []);
+    cases = mergeObjectsById(serverData.cases || [], cases || []);
+    if (!currentMember || !members.includes(currentMember)) currentMember = members[0] || null;
 }
 
 function createStatePayload(newVersion, extra){
@@ -2066,19 +2134,18 @@ function setupFBListener(){
         const serverData = snapshot.data() || {}, serverVersion = serverData.lastUpdatedVersion || 0;
         if (serverVersion > localVersion) {
             if (pendingLocalChanges || syncInProgress) {
-                showConflictBanner();
-                updateSyncStatus('connected');
-                toast('⚠️ 未送信の入力があるため、サーバーデータで上書きしませんでした');
+                mergeStateFromServer(serverData, { preserveLocal: true });
+                localVersion = serverVersion;
+                saveDataLocal();
+                queueSyncPush();
+                updateSyncStatus('syncing');
                 return;
             }
             fbUpdating = true;
-            members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {}; hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(serverData.hiddenDefaultTasksByMember || serverData.hiddenDefaultTasks || {});
+            mergeStateFromServer(serverData, { preserveLocal: false });
             if (Array.isArray(serverData.records) && serverData.records.length) {
                 records = serverData.records;
             }
-            mergeStoppedTimers(serverData.stoppedTimers || {});
-            activeTimers = mergeServerActiveTimers(serverData.activeTimers || {}, { preserveLocal: pendingLocalChanges || syncInProgress }); taskList = serverData.taskList || [];
-            breakList = serverData.breakList || []; cases = serverData.cases || [];
             localVersion = serverVersion; lastSyncTime = Date.now();
             dailyRecordCache = {};
             await loadVisibleDailyRecords();
@@ -2094,13 +2161,12 @@ async function syncPushToServer(){
     try {
         const datesToWrite = getRecordDatesForUpload();
         const snap = await docRef.get(), serverData = snap.exists ? snap.data() : {}, serverVersion = serverData.lastUpdatedVersion || 0;
-        if (serverVersion > localVersion) throw new Error('CONFLICT');
+        if (serverVersion > localVersion) mergeStateFromServer(serverData, { preserveLocal: true });
         const newVersion = Math.max(serverVersion, localVersion) + 1;
         await writeDailyRecordsForDates(datesToWrite, newVersion);
         await docRef.set(createStatePayload(newVersion), { merge: true });
         localVersion = newVersion; lastSyncTime = Date.now();
-        localStorage.setItem('tt_version', String(localVersion)); localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
-        pendingLocalChanges = false; updateSyncStatus('connected'); updateVersionDisplay();
+        pendingLocalChanges = false; saveDataLocal(); updateSyncStatus('connected'); updateVersionDisplay();
     } catch (e) {
         if (e.message === 'CONFLICT') { showConflictBanner(); updateSyncStatus('connected'); toast('⚠️ 他の端末で更新があります。最新データを取得してください。'); }
         else { notifySyncError(e, '[Sync] Push error:'); }
@@ -2119,7 +2185,7 @@ async function forcePushToServer(){
         await writeDailyRecordsForDates(getRecordDatesForUpload(), newVersion);
         await docRef.set(createStatePayload(newVersion, { forcePushed: true }), { merge: true });
         localVersion = newVersion; lastSyncTime = Date.now();
-        localStorage.setItem('tt_version', String(localVersion)); localStorage.setItem('tt_lastSyncTime', String(lastSyncTime));
+        pendingLocalChanges = false; saveDataLocal();
         hideConflictBanner(); updateSyncStatus('connected'); updateVersionDisplay(); toast('✓ 強制アップロード完了');
     } catch (e) { alert('アップロードに失敗しました: ' + getFirebaseErrorMessage(e)); notifySyncError(e, '[Sync] Force push error:'); }
 }
