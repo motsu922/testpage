@@ -1996,6 +1996,9 @@ function getFirebaseErrorMessage(e){
     if (code.includes('permission-denied') || message.includes('Missing or insufficient permissions')) {
         return '権限エラーです。Firestoreルールで timeTracker/state/dailyRecords/{date} の書き込み許可を確認してください。';
     }
+    if (message.includes('Unsupported field value') || message.includes('undefined')) {
+        return '送信データに未定義の値が含まれていました。データを整えて再送信します。';
+    }
     if (message === 'CONFLICT') {
         return '他の端末で更新があります。最新データを取得してから再送信してください。';
     }
@@ -2006,6 +2009,8 @@ function notifySyncError(e, label){
     const msg = getFirebaseErrorMessage(e);
     console.error(label || '[Sync] error:', e);
     updateSyncStatus('disconnected');
+    pendingLocalChanges = true;
+    saveDataLocal();
     toast(`⚠️ Firebase送信失敗: ${msg}`);
     return msg;
 }
@@ -2057,15 +2062,44 @@ function mergeStateFromServer(serverData, options){
     if (!currentMember || !members.includes(currentMember)) currentMember = members[0] || null;
 }
 
+function sanitizeForFirestore(value){
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'object') return value;
+    if (value instanceof Date) return value.toISOString();
+    if (Array.isArray(value)) {
+        return value.map(item => sanitizeForFirestore(item)).filter(item => item !== undefined);
+    }
+    const out = {};
+    Object.entries(value).forEach(([key, item]) => {
+        const sanitized = sanitizeForFirestore(item);
+        if (sanitized !== undefined) out[key] = sanitized;
+    });
+    return out;
+}
+
 function createStatePayload(newVersion, extra){
-    return Object.assign({
+    const payload = sanitizeForFirestore(Object.assign({
         members, customTasks, customIcons, hiddenDefaultTasksByMember, activeTimers, stoppedTimers, taskList, breakList, cases,
         storageMode: 'dailyRecords',
         dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}',
         lastUpdatedVersion: newVersion,
-        lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         lastUpdatedBy: getDeviceId()
-    }, extra || {});
+    }, extra || {}));
+    payload.lastUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
+    return payload;
+}
+
+function createLegacyStatePayload(newVersion, extra){
+    const payload = sanitizeForFirestore(Object.assign({
+        members, customTasks, customIcons, hiddenDefaultTasksByMember, records, activeTimers, stoppedTimers, taskList, breakList, cases,
+        storageMode: 'legacyRecords',
+        lastUpdatedVersion: newVersion,
+        lastUpdatedBy: getDeviceId()
+    }, extra || {}));
+    payload.lastUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
+    return payload;
 }
 
 async function writeDailyRecordsForDates(dates, version){
@@ -2091,14 +2125,15 @@ async function writeDailyRecordsForDates(dates, version){
             // 3) honor local deletions: ids we had loaded from the server but removed locally
             baseline.forEach(id => { if (!localById.has(id)) merged.delete(id); });
             finalRecords = [...merged.values()];
-            tx.set(ref, {
+            const dayPayload = sanitizeForFirestore({
                 date,
                 records: finalRecords,
                 recordCount: finalRecords.length,
                 lastUpdatedVersion: version,
-                lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
                 lastUpdatedBy: getDeviceId()
-            }, { merge: false });
+            });
+            dayPayload.lastUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
+            tx.set(ref, dayPayload, { merge: false });
         });
         // reflect the merged result locally (also refreshes the server baseline for this date)
         setRecordsForDate(date, finalRecords);
@@ -2163,8 +2198,13 @@ async function syncPushToServer(){
         const snap = await docRef.get(), serverData = snap.exists ? snap.data() : {}, serverVersion = serverData.lastUpdatedVersion || 0;
         if (serverVersion > localVersion) mergeStateFromServer(serverData, { preserveLocal: true });
         const newVersion = Math.max(serverVersion, localVersion) + 1;
-        await writeDailyRecordsForDates(datesToWrite, newVersion);
-        await docRef.set(createStatePayload(newVersion), { merge: true });
+        try {
+            await writeDailyRecordsForDates(datesToWrite, newVersion);
+            await docRef.set(createStatePayload(newVersion), { merge: true });
+        } catch (dailyError) {
+            console.warn('[Sync] dailyRecords write failed, falling back to legacy records payload:', dailyError);
+            await docRef.set(createLegacyStatePayload(newVersion, { fallbackReason: getFirebaseErrorMessage(dailyError) }), { merge: true });
+        }
         localVersion = newVersion; lastSyncTime = Date.now();
         pendingLocalChanges = false; saveDataLocal(); updateSyncStatus('connected'); updateVersionDisplay();
     } catch (e) {
@@ -2182,8 +2222,13 @@ async function forcePushToServer(){
     updateSyncStatus('syncing');
     try {
         const snap = await docRef.get(), serverData = snap.exists ? snap.data() : {}, newVersion = Math.max(serverData.lastUpdatedVersion || 0, localVersion) + 1;
-        await writeDailyRecordsForDates(getRecordDatesForUpload(), newVersion);
-        await docRef.set(createStatePayload(newVersion, { forcePushed: true }), { merge: true });
+        try {
+            await writeDailyRecordsForDates(getRecordDatesForUpload(), newVersion);
+            await docRef.set(createStatePayload(newVersion, { forcePushed: true }), { merge: true });
+        } catch (dailyError) {
+            console.warn('[Sync] dailyRecords force push failed, falling back to legacy records payload:', dailyError);
+            await docRef.set(createLegacyStatePayload(newVersion, { forcePushed: true, fallbackReason: getFirebaseErrorMessage(dailyError) }), { merge: true });
+        }
         localVersion = newVersion; lastSyncTime = Date.now();
         pendingLocalChanges = false; saveDataLocal();
         hideConflictBanner(); updateSyncStatus('connected'); updateVersionDisplay(); toast('✓ 強制アップロード完了');
