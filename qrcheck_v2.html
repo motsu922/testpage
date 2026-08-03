@@ -2016,7 +2016,8 @@
   let scannerBuffer = '';
   let scannerIdleTimer = null;
   const SCANNER_IDLE_MS = 900;
-  const KANBAN_STEP1_IDLE_MS = 80;
+  const KANBAN_STEP1_IDLE_MS = 10;
+  const KANBAN_STEP1_INCOMPLETE_IDLE_MS = 180;
   const KANBAN_STEP2_IDLE_MS = 220;
   const ORDER_DETAIL_SCANNER_IDLE_MS = 1200;
   const TERMINAL_INPUT_MODE_KEY = 'qrcheck_v2_terminal_input_mode';
@@ -2930,11 +2931,24 @@
   }
 
   function getInputConnectionIdleMs() {
-    return orderDetailAwaiting ? 4500 : getKanbanScannerIdleMs();
+    if (orderDetailAwaiting) return 4500;
+    if (currentStep === 1) {
+      const input = document.getElementById('scanInput');
+      return looksLikeCompleteStep1Kanban(input ? input.value : scannerBuffer)
+        ? KANBAN_STEP1_IDLE_MS
+        : KANBAN_STEP1_INCOMPLETE_IDLE_MS;
+    }
+    return getKanbanScannerIdleMs();
   }
 
   function getKanbanScannerIdleMs() {
     return currentStep === 1 ? KANBAN_STEP1_IDLE_MS : KANBAN_STEP2_IDLE_MS;
+  }
+
+  function getStep1ScannerIdleMs() {
+    return looksLikeCompleteStep1Kanban(scannerBuffer)
+      ? KANBAN_STEP1_IDLE_MS
+      : KANBAN_STEP1_INCOMPLETE_IDLE_MS;
   }
 
   function scheduleInputConnectionSubmit() {
@@ -3013,7 +3027,9 @@
   function scheduleScannerSubmit() {
     clearTimeout(scannerIdleTimer);
     if (!scannerBuffer.trim()) return;
-    const idleMs = orderDetailAwaiting ? ORDER_DETAIL_SCANNER_IDLE_MS : getKanbanScannerIdleMs();
+    const idleMs = orderDetailAwaiting
+      ? ORDER_DETAIL_SCANNER_IDLE_MS
+      : (currentStep === 1 ? getStep1ScannerIdleMs() : getKanbanScannerIdleMs());
     scannerIdleTimer = setTimeout(submitScannerBuffer, idleMs);
   }
 
@@ -3028,6 +3044,15 @@
   function looksLikeInternalKanban(qrRaw) {
     const qr = normalizeQR(qrRaw);
     return /^'?\s*[A-Z]\d{3}\s+[0-9A-Z]+-[0-9A-Z-]+\s+\d{4}\s+\d{5}\s+[0-9A-Z]+/i.test(qr);
+  }
+
+  function looksLikeCompleteStep1Kanban(qrRaw) {
+    const qr = normalizeQR(qrRaw);
+    if (!qr) return false;
+    if (findInternalKanbanStart(qr) > 0) return true;
+    if (/^\[>\)/.test(qr) && /[\x04]$/.test(qr)) return true;
+    if (/^@>/.test(qr) && qr.length >= 80 && /P[0-9A-Z-]{5,}Q\d+/i.test(qr) && /E$/i.test(qr)) return true;
+    return false;
   }
 
   function findInternalKanbanStart(qr) {
