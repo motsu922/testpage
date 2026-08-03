@@ -2038,6 +2038,18 @@ function mergeObjectsById(serverItems, localItems){
     return [...merged.values()];
 }
 
+function shouldUseLegacyRecords(serverData){
+    if (!serverData || !Array.isArray(serverData.records) || !serverData.records.length) return false;
+    // Newer sync stores records in timeTracker/state/dailyRecords/{date}. The old
+    // parent records field may still exist, so only trust it for legacy payloads.
+    return serverData.storageMode !== 'dailyRecords';
+}
+
+function mergeLegacyRecordsFromServer(serverData){
+    if (!shouldUseLegacyRecords(serverData)) return;
+    records = mergeObjectsById(serverData.records, records);
+}
+
 function mergeBreakList(serverBreaks, localBreaks){
     const merged = new Map();
     [...(serverBreaks || []), ...(localBreaks || [])].forEach(b => {
@@ -2178,9 +2190,7 @@ function setupFBListener(){
             }
             fbUpdating = true;
             mergeStateFromServer(serverData, { preserveLocal: false });
-            if (Array.isArray(serverData.records) && serverData.records.length) {
-                records = serverData.records;
-            }
+            mergeLegacyRecordsFromServer(serverData);
             localVersion = serverVersion; lastSyncTime = Date.now();
             dailyRecordCache = {};
             await loadVisibleDailyRecords();
@@ -2245,9 +2255,7 @@ function forceReload(){
         if (!snap.exists) { toast('⚠️ サーバーにデータがありません'); updateSyncStatus('connected'); return; }
         const serverData = snap.data();
         members = serverData.members || ['担当者1']; customTasks = serverData.customTasks || {}; customIcons = serverData.customIcons || {}; hiddenDefaultTasksByMember = normalizeHiddenDefaultTasks(serverData.hiddenDefaultTasksByMember || serverData.hiddenDefaultTasks || {});
-        if (Array.isArray(serverData.records) && serverData.records.length) {
-            records = serverData.records;
-        }
+        mergeLegacyRecordsFromServer(serverData);
         mergeStoppedTimers(serverData.stoppedTimers || {});
         activeTimers = mergeServerActiveTimers(serverData.activeTimers || {}); taskList = serverData.taskList || [];
         breakList = serverData.breakList || []; cases = serverData.cases || [];
