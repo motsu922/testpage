@@ -467,6 +467,18 @@
     .detail-status.done { background: var(--ok-dim); color: var(--ok); border: 1px solid #a8d5aa; }
     .detail-status.active { background: #e6f2ff; color: var(--accent2); border: 1px solid #b8dafa; }
     .detail-status.empty { background: var(--bg3); color: var(--text3); border: 1px solid var(--border); }
+    .detail-delete-btn {
+      border: 1px solid #f0b6b6;
+      background: #fff4f4;
+      color: #b42318;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .detail-delete-btn:hover { background: #ffe7e7; border-color: #e47c7c; }
     .detail-progress-row {
       display: grid;
       grid-template-columns: 64px 1fr 46px;
@@ -1140,6 +1152,9 @@
       const done = required > 0 && scanned >= required;
       const statusClass = done ? 'done' : (scanned > 0 ? 'active' : 'empty');
       const statusText = done ? '完了' : (scanned > 0 ? '処理中' : '未着手');
+      const deleteButton = !done
+        ? `<button class="detail-delete-btn" onclick="deleteOrderSession(event,'${escJs(session.sessionId)}')">削除</button>`
+        : '';
       const customer = getOrderCustomerLabel(session);
       const instructionDate = getOrderInstructionDate(session);
       const deliveryBin = getOrderDeliveryBin(session);
@@ -1156,7 +1171,10 @@
              onclick="selectOrderSession('${escJs(session.sessionId)}')">
           <div class="detail-session-top">
             <div class="detail-session-name">${escHtml(customer)} / ${escHtml(session.sessionId || '-')}</div>
-            <span class="detail-status ${statusClass}">${statusText}</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="detail-status ${statusClass}">${statusText}</span>
+              ${deleteButton}
+            </div>
           </div>
           <div class="detail-progress-row">
             <span>${escHtml(scanned)} / ${escHtml(required)}</span>
@@ -1179,6 +1197,57 @@
 
   function countLogsForSession(sessionId) {
     return allLogs.filter(l => l.orderDetailSessionId === sessionId).length;
+  }
+
+  async function verifyCompanyAdminPassword() {
+    if (!activeCompany || !database) return false;
+    const input = prompt('管理者パスワードを入力してください');
+    if (input === null) return false;
+    try {
+      const snap = await database.ref('qr_match_companies/settings/' + activeCompany.id + '/adminPassword').once('value');
+      const adminPassword = snap.val() || 'admin';
+      if (String(input) === String(adminPassword)) return true;
+      alert('パスワードが違います');
+      return false;
+    } catch (err) {
+      console.error('管理者パスワード確認エラー:', err);
+      alert('パスワード確認に失敗しました');
+      return false;
+    }
+  }
+
+  async function deleteOrderSession(event, sessionId) {
+    if (event) event.stopPropagation();
+    if (!activeCompany || !sessionId) return;
+    const session = orderSessions.find(s => s.sessionId === sessionId);
+    if (!session) {
+      alert('対象の明細データが見つかりません');
+      return;
+    }
+    const required = orderRequiredBoxes(session);
+    const scanned = orderScannedBoxes(session);
+    if (required > 0 && scanned >= required) {
+      alert('完了済みの明細データは削除できません');
+      return;
+    }
+    const customer = getOrderCustomerLabel(session);
+    if (!confirm(`未処理の明細データを削除しますか？\n\n${customer}\n${sessionId}\n進捗 ${scanned}/${required}\n\n※照合ログ自体は残ります。`)) return;
+    const ok = await verifyCompanyAdminPassword();
+    if (!ok) return;
+    try {
+      await database.ref('qr_match_companies/order_detail_sessions/' + activeCompany.id + '/' + sessionId).remove();
+      orderSessions = orderSessions.filter(s => s.sessionId !== sessionId);
+      if (activeOrderSessionId === sessionId) {
+        activeOrderSessionId = '';
+        currentPage = 1;
+      }
+      renderOrderSessions();
+      applyFilter();
+      alert('未処理の明細データを削除しました');
+    } catch (err) {
+      console.error('明細データ削除エラー:', err);
+      alert('削除に失敗しました: ' + err.message);
+    }
   }
 
   function selectOrderSession(sessionId) {
