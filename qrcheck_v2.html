@@ -1786,22 +1786,22 @@
         <div class="settings-card">
           <div class="settings-card-title">🔁 重複監視モード</div>
           <p style="font-size:12px; color:#888; margin-bottom:12px; line-height:1.6;">
-            有効にすると、<b>同日内に同じ2回目QRが再スキャンされた場合</b>に照合NGとして扱います。<br>
-            翌日0時になると自動リセットされます。
+            <b>同じ明細の中で同じ社内かんばんQRが再スキャンされた場合</b>に照合NGとして扱います。<br>
+            違う明細で同じ社内かんばんQRを読み取った場合は許可します。
           </p>
           <div class="setting-row">
             <span class="setting-label">
               重複監視を有効にする
-              <small>同日内の重複スキャンをNG判定</small>
+              <small>同一明細内の重複スキャンをNG判定</small>
             </span>
             <div class="toggle-switch" id="dupCheckToggle" onclick="toggleDupCheck()"></div>
           </div>
           <div style="margin-top: 14px; padding: 10px; background: #0a0a0a; border-radius: 8px; border: 1px solid #333;">
-            <div style="font-size: 12px; color: #888; margin-bottom: 8px;">📊 本日スキャン済み件数</div>
+            <div style="font-size: 12px; color: #888; margin-bottom: 8px;">📊 現在の明細内スキャン済み件数</div>
             <div id="dupStatsArea" style="font-size: 22px; font-weight: 700; color: #ffb74d; text-align: center; padding: 6px 0;">—</div>
             <div id="dupResetTime" style="font-size: 11px; color: #666; text-align: center; margin-top: 4px;"></div>
           </div>
-          <button class="dup-clear-btn" onclick="clearTodayDuplicates()">🗑️ 本日の重複リストをクリア</button>
+          <button class="dup-clear-btn" onclick="clearTodayDuplicates()">🗑️ 現在の明細内リストをクリア</button>
         </div>
 
         <div class="settings-card">
@@ -3344,18 +3344,23 @@
 
   // ========= 重複監視 =========
   function getDupStorageKey() {
-    // 日付ベースのキー（YYYY-MM-DD）
+    // 互換用。現在の重複監視は明細セッション内で判定する。
     const now = new Date();
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, '0');
     const d = String(now.getDate()).padStart(2, '0');
-    return `qrDup_${y}-${m}-${d}`;
+    const sessionId = orderDetailSession.sessionId || 'no_session';
+    return `qrDup_${y}-${m}-${d}_${activeCompanyId || 'default'}_${sessionId}`;
   }
 
   function cleanOldDuplicates() {
-    const todayKey = getDupStorageKey();
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const todayPrefix = `qrDup_${y}-${m}-${d}`;
     Object.keys(localStorage).forEach(k => {
-      if (k.startsWith('qrDup_') && k !== todayKey) {
+      if (k.startsWith('qrDup_') && !k.startsWith(todayPrefix)) {
         localStorage.removeItem(k);
       }
     });
@@ -3373,26 +3378,18 @@
   }
 
   function addTodayScanned(v1, v2) {
-    const set = getTodayScannedSet();
-    set.add('q1:' + v1);
-    set.add('q2:' + v2);
-    saveTodayScannedSet(set);
+    // 明細セッションをまたぐ重複は許可するため、日別リストには登録しない。
   }
 
   function isDuplicateToday(v1, v2) {
-    // 戻り値: null(問題なし) / 'qr1'(QR1単体重複) / 'qr2'(QR2単体重複) / 'vs'(QR1とQR2が同値)
+    // 戻り値: null(問題なし) / 'vs'(QR1とQR2が同値)
     // ★ QR1=QR2（同じQRを2回読んだ）は設定に関わらず常にNG
     if (v1 === v2) return 'vs';
-    // 以下は重複監視が有効な場合のみ
-    if (!settings.duplicateCheckEnabled) return null;
-    const set = getTodayScannedSet();
-    if (set.has('q1:' + v1)) return 'qr1';
-    if (set.has('q2:' + v2)) return 'qr2';
     return null;
   }
 
   function clearTodayDuplicates() {
-    if (!confirm('本日の重複リストをクリアしますか？\n（すでにスキャン済みの記録が消えます）')) return;
+    if (!confirm('現在の明細内の重複監視リストをクリアしますか？\n（通常は使用しません）')) return;
     localStorage.removeItem(getDupStorageKey());
     updateDupStats();
     alert('✅ クリアしました');
@@ -3414,15 +3411,11 @@
     const statsEl = document.getElementById('dupStatsArea');
     const resetEl = document.getElementById('dupResetTime');
     if (!statsEl) return;
-    const count = getTodayScannedSet().size;
+    const count = Object.keys(orderDetailSession.scannedIds || {}).length;
     statsEl.textContent = count + ' 件';
-    // 翌日0時までの残り時間
-    const now   = new Date();
-    const tmrw  = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const diff  = tmrw - now;
-    const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
-    const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
-    if (resetEl) resetEl.textContent = `翌日0時(約${h}時間${m}分後)に自動リセット`;
+    if (resetEl) resetEl.textContent = orderDetailSession.sessionId
+      ? `明細ID: ${orderDetailSession.sessionId}`
+      : '明細QRを読み込むとカウントされます';
   }
 
   function toggleDupCheck() {
@@ -5300,6 +5293,7 @@
     if (appendBtn) appendBtn.style.display = orderDetailSession.lines.length ? '' : 'none';
     if (completeBtn) completeBtn.style.display = orderDetailSession.lines.length ? '' : 'none';
     if (resetBtn) resetBtn.style.display = orderDetailSession.lines.length ? '' : 'none';
+    updateDupStats();
     if (!target) return;
     if (!orderDetailSession.lines.length) {
       target.className = 'order-detail-empty';
@@ -5337,17 +5331,18 @@
 
   async function checkOrderDetailMatch(partNumber, qr1, qr2) {
     if (!orderDetailSession.lines.length) return { active: false, ok: true, note: '' };
-    const key = `${canonicalPart(partNumber)}|${normalizeQR(qr1)}|${normalizeQR(qr2)}`;
+    const key = `${canonicalPart(partNumber)}|${normalizeQR(qr2)}`;
     const scanKey = 'scan_' + hashString(key);
+    const legacyPairKey = 'scan_' + hashString(`${canonicalPart(partNumber)}|${normalizeQR(qr1)}|${normalizeQR(qr2)}`);
     const attemptId = 'attempt_' + hashString(key + '|' + Date.now() + '|' + Math.random());
     const localCheck = (session) => {
       const line = session.lines.find(item => partsEquivalent(item.partNo, partNumber));
       if (!line) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
-      const existingScan = session.scannedIds && session.scannedIds[scanKey];
+      const existingScan = session.scannedIds && (session.scannedIds[scanKey] || session.scannedIds[legacyPairKey]);
       if (existingScan && existingScan.attemptId === attemptId) {
         return { active: true, ok: true, completed: !!session.completedAt, note: `明細OK: ${partNumber}` };
       }
-      if (existingScan) return { active: true, ok: false, note: `明細重複: ${partNumber}` };
+      if (existingScan) return { active: true, ok: false, duplicate: true, dupType: 'qr2', note: `明細内重複: ${partNumber}` };
       if (line.scanned >= line.requiredBoxes) return { active: true, ok: false, note: `数量超過: ${line.partNo} ${line.scanned + 1}/${line.requiredBoxes}` };
       line.scanned += 1;
       session.scannedIds = session.scannedIds || {};
@@ -5355,6 +5350,7 @@
         attemptId,
         partNumber,
         qrHash: hashString(normalizeQR(qr1) + '|' + normalizeQR(qr2)),
+        qr2Hash: hashString(normalizeQR(qr2)),
         timestamp: new Date().toISOString(),
         terminalInputMode
       };
@@ -5452,16 +5448,18 @@
       }
     }
 
-    // ② 重複チェック（QR1単体・QR2単体・QR1+QR2ペアの3種すべて監視）
-    const dupType = isDuplicateToday(v1, v2); // null / 'qr1' / 'qr2' / 'pair'
+    // ② 重複チェック
+    // QR1=QR2 は常にNG。同じ社内かんばんの重複は、同じ明細セッション内だけNG。
+    const preDupType = isDuplicateToday(v1, v2); // null / 'vs'
+    const orderCheck = (isQROK && !preDupType) ? await checkOrderDetailMatch(partNumber, v1, v2) : { active: false, ok: true, note: '' };
+    const dupType = preDupType || (orderCheck.duplicate ? (orderCheck.dupType || 'qr2') : null);
     const isDup = dupType !== null;
-    const orderCheck = (isQROK && !isDup) ? await checkOrderDetailMatch(partNumber, v1, v2) : { active: false, ok: true, note: '' };
 
     // 最終判定
     const isOK = isQROK && !isDup && orderCheck.ok;
     const orderJustCompleted = isOK && orderCheck.active && isOrderDetailComplete() && !orderDetailSession.completeLoggedAt;
 
-    // 品番一致 かつ 非重複 → 本日スキャン済みリストに登録（3種すべて）
+    // 品番一致 かつ 非重複 → 明細セッション側へ登録済み
     if (isOK) {
       addTodayScanned(v1, v2);
     }
@@ -5561,8 +5559,8 @@
       overlay.className = 'result-overlay show dup ng-locked';
       symbol.textContent = '⚠';
       const dupLabels = {
-        qr1:  { title: '1回目QR 重複',      msg: '本日すでに使用された1回目QRです',         val: logEntry.qr1 },
-        qr2:  { title: '2回目QR 重複',      msg: '本日すでに使用された2回目QRです',         val: logEntry.qr2 },
+        qr1:  { title: '1回目QR 重複',      msg: 'この明細内ですでに使用された1回目QRです', val: logEntry.qr1 },
+        qr2:  { title: '2回目QR 重複',      msg: 'この明細内ですでに使用された社内かんばんQRです', val: logEntry.qr2 },
         vs:   { title: '1回目＝2回目 一致', msg: '1回目と2回目に同じQRが読み取られました', val: logEntry.qr1 },
       };
       const dl = dupLabels[dupType] || dupLabels['vs'];
