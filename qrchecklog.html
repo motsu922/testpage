@@ -545,6 +545,94 @@
     }
     .detail-filter-note.show { display: flex; }
 
+    .current-work-board {
+      background: #fff;
+      border: 1px solid #b8dafa;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(30, 50, 80, .06);
+    }
+    .current-work-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 12px;
+      background: #eef7ff;
+      border-bottom: 1px solid #d8eafa;
+    }
+    .current-work-title {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--accent2);
+      font-family: var(--mono);
+    }
+    .current-work-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--ok);
+      font-size: 10px;
+      font-weight: 800;
+      font-family: var(--mono);
+    }
+    .current-work-live::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 0 3px rgba(46, 125, 50, .12);
+    }
+    .current-work-list {
+      display: grid;
+      gap: 6px;
+      padding: 8px;
+    }
+    .current-work-empty {
+      padding: 12px;
+      color: var(--text3);
+      font-size: 12px;
+      font-family: var(--mono);
+      text-align: center;
+      background: #fbfcfe;
+    }
+    .current-work-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fbfcfe;
+      cursor: pointer;
+    }
+    .current-work-card:hover {
+      border-color: var(--accent);
+      background: #f3f9ff;
+    }
+    .current-work-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .current-work-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--text);
+      font-family: var(--mono);
+    }
+    .current-work-time {
+      color: var(--text3);
+      font-size: 10px;
+      font-family: var(--mono);
+      white-space: nowrap;
+    }
+
     /* ── 詳細モーダル ── */
     .modal-overlay {
       position: fixed;
@@ -765,6 +853,16 @@
       </div>
     </div>
 
+    <div class="current-work-board" id="currentWorkBoard">
+      <div class="current-work-head">
+        <div class="current-work-title">現在作業中の明細</div>
+        <div class="current-work-live" id="currentWorkLive">リアルタイム</div>
+      </div>
+      <div class="current-work-list" id="currentWorkList">
+        <div class="current-work-empty">会社を選択してください</div>
+      </div>
+    </div>
+
     <!-- テーブル -->
     <div class="detail-board collapsed" id="detailBoard">
       <div class="detail-board-header" onclick="toggleDetailBoard()">
@@ -861,6 +959,8 @@
   let activeCompany = null;
   let currentPage   = 1;
   let perPage       = 100;
+  let logsRef       = null;
+  let orderSessionsRef = null;
 
   // ── 初期化 ──
   window.addEventListener('DOMContentLoaded', () => {
@@ -922,6 +1022,7 @@
   }
 
   function selectCompany(company) {
+    detachRealtimeListeners();
     activeCompany = company;
     activeOrderSessionId = '';
     orderSessions = [];
@@ -933,15 +1034,25 @@
     loadCustomerNameMaster(company.id);
   }
 
+  function detachRealtimeListeners() {
+    if (logsRef) {
+      logsRef.off();
+      logsRef = null;
+    }
+    if (orderSessionsRef) {
+      orderSessionsRef.off();
+      orderSessionsRef = null;
+    }
+  }
+
   // ── ログ読み込み ──
   function loadLogs(companyId) {
     document.getElementById('logTableBody').innerHTML =
       '<tr class="loading-row"><td colspan="8">読み込み中...</td></tr>';
     resetSummary();
 
-    database.ref('qr_match_logs/' + companyId)
-      .orderByChild('timestamp')
-      .once('value', snap => {
+    logsRef = database.ref('qr_match_logs/' + companyId).orderByChild('timestamp');
+    logsRef.on('value', snap => {
         const data = snap.val();
         if (!data) {
           allLogs = [];
@@ -968,9 +1079,8 @@
       list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">明細進捗を読み込み中...</div></div>';
     }
 
-    database.ref('qr_match_companies/order_detail_sessions/' + companyId)
-      .orderByChild('updatedAt')
-      .once('value', snap => {
+    orderSessionsRef = database.ref('qr_match_companies/order_detail_sessions/' + companyId).orderByChild('updatedAt');
+    orderSessionsRef.on('value', snap => {
         const data = snap.val();
         orderSessions = data
           ? Object.entries(data).map(([key, val]) => normalizeOrderSession({ ...val, sessionId: val.sessionId || key }))
@@ -1134,6 +1244,7 @@
     if (count) {
       count.textContent = orderSessions.length.toLocaleString() + '件 / 未完了 ' + incomplete.toLocaleString() + '件';
     }
+    renderCurrentWorkSessions();
     const sortSelect = document.getElementById('detailSortSelect');
     if (sortSelect) sortSelect.value = orderSessionSort || 'updated_desc';
     renderDetailBoardState();
@@ -1193,6 +1304,68 @@
         </div>`;
     }).join('');
     renderDetailFilterNote();
+  }
+
+  function renderCurrentWorkSessions() {
+    const list = document.getElementById('currentWorkList');
+    const live = document.getElementById('currentWorkLive');
+    if (!list) return;
+    if (live) live.textContent = database ? 'リアルタイム' : '未接続';
+
+    const activeSessions = orderSessions
+      .filter(session => {
+        const required = orderRequiredBoxes(session);
+        const scanned = orderScannedBoxes(session);
+        return required > 0 && scanned < required;
+      })
+      .sort((a, b) => {
+        const aScanned = orderScannedBoxes(a);
+        const bScanned = orderScannedBoxes(b);
+        const aWorking = aScanned > 0 ? 1 : 0;
+        const bWorking = bScanned > 0 ? 1 : 0;
+        if (aWorking !== bWorking) return bWorking - aWorking;
+        return new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0);
+      })
+      .slice(0, 5);
+
+    if (!activeSessions.length) {
+      list.innerHTML = '<div class="current-work-empty">現在作業中の明細はありません</div>';
+      return;
+    }
+
+    list.innerHTML = activeSessions.map(session => {
+      const required = orderRequiredBoxes(session);
+      const scanned = orderScannedBoxes(session);
+      const rate = required > 0 ? Math.min(100, Math.round(scanned / required * 100)) : 0;
+      const customer = getOrderCustomerLabel(session);
+      const updated = session.updatedAt || session.createdAt;
+      const updatedText = updated ? new Date(updated).toLocaleString('ja-JP') : '-';
+      const instructionDate = getOrderInstructionDate(session);
+      const deliveryBin = getOrderDeliveryBin(session);
+      const chips = (session.lines || [])
+        .filter(line => Number(line.requiredBoxes) > 0 && Number(line.scanned) < Number(line.requiredBoxes))
+        .slice(0, 4)
+        .map(line => `<span class="detail-line-chip">${escHtml(line.partNo || '-')} ${Number(line.scanned)||0}/${Number(line.requiredBoxes)||0}</span>`)
+        .join('');
+      return `
+        <div class="current-work-card" onclick="selectOrderSession('${escJs(session.sessionId)}')">
+          <div class="current-work-top">
+            <div class="current-work-name">${escHtml(customer)} / ${escHtml(session.sessionId || '-')}</div>
+            <div class="current-work-time">${escHtml(updatedText)}</div>
+          </div>
+          <div class="detail-progress-row">
+            <span>${escHtml(scanned)} / ${escHtml(required)}</span>
+            <div class="detail-progress-bar"><div class="detail-progress-fill" style="width:${rate}%"></div></div>
+            <span>${rate}%</span>
+          </div>
+          <div class="detail-session-meta">
+            <span>指示日 ${escHtml(instructionDate)}</span>
+            <span>便 ${escHtml(deliveryBin)}</span>
+            <span>ログ ${escHtml(countLogsForSession(session.sessionId))}</span>
+          </div>
+          <div class="detail-lines">${chips}</div>
+        </div>`;
+    }).join('');
   }
 
   function countLogsForSession(sessionId) {
