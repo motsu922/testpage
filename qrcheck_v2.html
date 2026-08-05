@@ -583,6 +583,15 @@
       font-size: 11px;
     }
     .order-detail-line.done { color: #93efad; background: #0a2111; }
+    .order-detail-line.excluded {
+      color: #7d8790;
+      background: #151515;
+      opacity: .72;
+    }
+    .order-detail-line.excluded span {
+      text-decoration: line-through;
+      text-decoration-thickness: 2px;
+    }
     .order-detail-empty { display: none; }
     .settings-locked { text-align: center; padding: 40px 20px; }
     .lock-icon { font-size: 64px; margin-bottom: 16px; }
@@ -2033,6 +2042,13 @@
   const ORDER_DETAIL_KEY = 'qrcheck_v2_order_detail_session';
   const ORDER_LINE_RE = /P(\d{4})P([^Q]+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
   const ORDER_LINE_ALT_RE = /K(\d{4})\d+P(.+?)P([1-9][0-9A-Z]{4,}-.+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
+  const PASS_THROUGH_CUSTOMER_ID = '400079164-1';
+  const PASS_THROUGH_PARTS = new Set([
+    '72611X7V01',
+    '72612X7V01',
+    '72611X7V03',
+    '72612X7V03'
+  ]);
   let orderDetailAwaiting = false;
   let orderDetailAppendMode = false;
   let orderDetailSession = {
@@ -2724,11 +2740,17 @@
     const lines = Array.isArray(source.lines)
       ? source.lines
       : Object.values(source.lines || {});
-    return {
+    const baseSession = {
       sessionId: source.sessionId || sessionId || '',
       orderQr: source.orderQr || '',
       meta: source.meta || {},
-      details: Array.isArray(source.details) ? source.details : Object.values(source.details || {}),
+      details: Array.isArray(source.details) ? source.details : Object.values(source.details || {})
+    };
+    return {
+      sessionId: baseSession.sessionId,
+      orderQr: baseSession.orderQr,
+      meta: baseSession.meta,
+      details: baseSession.details,
       sourceHashes: source.sourceHashes || {},
       lines: lines.map((line, index) => ({
         no: line.no || index + 1,
@@ -2737,7 +2759,9 @@
         packQty: Number(line.packQty) || 0,
         totalQty: Number(line.totalQty) || 0,
         requiredBoxes: Number(line.requiredBoxes) || 0,
-        scanned: Number(line.scanned) || 0
+        scanned: Number(line.scanned) || 0,
+        excluded: !!line.excluded || isPassThroughOrderLine(baseSession, line),
+        excludeReason: line.excludeReason || (isPassThroughOrderLine(baseSession, line) ? '仕入先パススルー' : '')
       })),
       scannedIds: source.scannedIds || {},
       completedAt: source.completedAt || '',
@@ -2782,6 +2806,8 @@
       if (existing) {
         existing.totalQty = (Number(existing.totalQty) || 0) + (Number(line.totalQty) || 0);
         existing.requiredBoxes = (Number(existing.requiredBoxes) || 0) + (Number(line.requiredBoxes) || 0);
+        existing.excluded = !!existing.excluded || !!line.excluded || isPassThroughOrderLine(target, existing);
+        existing.excludeReason = existing.excludeReason || line.excludeReason || (existing.excluded ? '仕入先パススルー' : '');
         if (!String(existing.backNo || '').includes(line.backNo)) {
           existing.backNo = [existing.backNo, line.backNo].filter(Boolean).join('+');
         }
@@ -2799,11 +2825,11 @@
   }
 
   function orderRequiredBoxesFrom(session) {
-    return (session.lines || []).reduce((sum, line) => sum + (Number(line.requiredBoxes) || 0), 0);
+    return (session.lines || []).reduce((sum, line) => sum + (line.excluded ? 0 : (Number(line.requiredBoxes) || 0)), 0);
   }
 
   function orderScannedBoxesFrom(session) {
-    return (session.lines || []).reduce((sum, line) => sum + (Number(line.scanned) || 0), 0);
+    return (session.lines || []).reduce((sum, line) => sum + (line.excluded ? 0 : (Number(line.scanned) || 0)), 0);
   }
 
   function subscribeOrderDetailSession(sessionId) {
@@ -4847,6 +4873,30 @@
     return av.some(x => bv.includes(x));
   }
 
+  function extractCustomerIdFromOrderQr(qr) {
+    const text = String(qr || '');
+    const match = text.match(/[VL](\d{9})\s*([0-9A-Z])\b/);
+    if (match) return `${match[1]}-${match[2]}`;
+    const fallback = text.match(/[VL](\d{9})/);
+    return fallback ? fallback[1] : '';
+  }
+
+  function getOrderDetailCustomerId(session) {
+    const meta = session && session.meta ? session.meta : {};
+    if (meta.customerId) return String(meta.customerId);
+    const fromOrder = extractCustomerIdFromOrderQr(session && session.orderQr);
+    if (fromOrder) return fromOrder;
+    const detailQr = (session && Array.isArray(session.details) ? session.details : [])
+      .map(d => d && d.orderQr)
+      .find(Boolean);
+    return extractCustomerIdFromOrderQr(detailQr || '');
+  }
+
+  function isPassThroughOrderLine(session, line) {
+    if (getOrderDetailCustomerId(session) !== PASS_THROUGH_CUSTOMER_ID) return false;
+    return partVariants(line && line.partNo).some(part => PASS_THROUGH_PARTS.has(part));
+  }
+
   function findOrderDetailPartInQR(qrRaw) {
     if (!orderDetailSession.lines.length) return null;
     const tokens = partSearchTokens(qrRaw);
@@ -4991,15 +5041,22 @@
         addOrderLine(match[2] || match[1], match[3], match[4], match[5]);
       }
     }
-    return {
+    const meta = {
+      customerId: extractCustomerIdFromOrderQr(qr),
+      orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || '',
+      deliveryDate: (qr.match(/12D(\d{8})/) || [])[1] || '',
+      shipDate: (qr.match(/16D(\d{8})/) || [])[1] || ''
+    };
+    const parsed = {
       orderQr: qr,
-      meta: {
-        orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || '',
-        deliveryDate: (qr.match(/12D(\d{8})/) || [])[1] || '',
-        shipDate: (qr.match(/16D(\d{8})/) || [])[1] || ''
-      },
+      meta,
       lines
     };
+    parsed.lines = parsed.lines.map(line => {
+      const excluded = isPassThroughOrderLine(parsed, line);
+      return excluded ? { ...line, excluded: true, excludeReason: '仕入先パススルー' } : line;
+    });
+    return parsed;
   }
 
   function startOrderDetailScan(append = false) {
@@ -5320,9 +5377,9 @@
       <div class="order-detail-sync">${escapeHtml(syncText)} / 明細${escapeHtml(detailCount)}枚 / ${escapeHtml(scanned)} / ${escapeHtml(required)}</div>
       <div class="order-detail-lines">
         ${orderDetailSession.lines.map(line => `
-          <div class="order-detail-line ${line.scanned >= line.requiredBoxes ? 'done' : ''}">
-            <span>${escapeHtml(line.partNo)} / 背${escapeHtml(line.backNo)} / ${line.packQty}入</span>
-            <strong>${line.scanned}/${line.requiredBoxes}</strong>
+          <div class="order-detail-line ${line.excluded ? 'excluded' : (line.scanned >= line.requiredBoxes ? 'done' : '')}">
+            <span>${escapeHtml(line.partNo)} / 背${escapeHtml(line.backNo)} / ${line.packQty}入${line.excluded ? ' / 対象外' : ''}</span>
+            <strong>${line.excluded ? '対象外' : `${line.scanned}/${line.requiredBoxes}`}</strong>
           </div>
         `).join('')}
       </div>
@@ -5338,6 +5395,12 @@
     const localCheck = (session) => {
       const line = session.lines.find(item => partsEquivalent(item.partNo, partNumber));
       if (!line) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
+      if (line.excluded || isPassThroughOrderLine(session, line)) {
+        line.excluded = true;
+        line.excludeReason = line.excludeReason || '仕入先パススルー';
+        session.updatedAt = new Date().toISOString();
+        return { active: true, ok: true, excluded: true, completed: !!session.completedAt, note: `明細対象外: ${line.partNo}` };
+      }
       const existingScan = session.scannedIds && (session.scannedIds[scanKey] || session.scannedIds[legacyPairKey]);
       if (existingScan && existingScan.attemptId === attemptId) {
         return { active: true, ok: true, completed: !!session.completedAt, note: `明細OK: ${partNumber}` };
@@ -5354,8 +5417,8 @@
         timestamp: new Date().toISOString(),
         terminalInputMode
       };
-      const required = session.lines.reduce((sum, item) => sum + item.requiredBoxes, 0);
-      const scanned = session.lines.reduce((sum, item) => sum + item.scanned, 0);
+      const required = orderRequiredBoxesFrom(session);
+      const scanned = orderScannedBoxesFrom(session);
       const completed = session.lines.length > 0 && required > 0 && scanned >= required;
       if (completed && !session.completedAt) session.completedAt = new Date().toISOString();
       session.updatedAt = new Date().toISOString();

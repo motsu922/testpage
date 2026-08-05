@@ -529,6 +529,12 @@
       border-color: #a8d5aa;
       color: var(--ok);
     }
+    .detail-line-chip.excluded {
+      background: #f0f2f5;
+      color: var(--text3);
+      text-decoration: line-through;
+      text-decoration-thickness: 2px;
+    }
     .detail-filter-note {
       display: none;
       align-items: center;
@@ -961,6 +967,13 @@
   let perPage       = 100;
   let logsRef       = null;
   let orderSessionsRef = null;
+  const PASS_THROUGH_CUSTOMER_ID = '400079164-1';
+  const PASS_THROUGH_PARTS = new Set([
+    '72611X7V01',
+    '72612X7V01',
+    '72611X7V03',
+    '72612X7V03'
+  ]);
 
   // ── 初期化 ──
   window.addEventListener('DOMContentLoaded', () => {
@@ -1097,11 +1110,17 @@
 
   function normalizeOrderSession(source) {
     const lines = Array.isArray(source.lines) ? source.lines : Object.values(source.lines || {});
-    return {
+    const baseSession = {
       sessionId: source.sessionId || '',
       orderQr: source.orderQr || '',
       meta: source.meta || {},
-      details: Array.isArray(source.details) ? source.details : Object.values(source.details || {}),
+      details: Array.isArray(source.details) ? source.details : Object.values(source.details || {})
+    };
+    return {
+      sessionId: baseSession.sessionId,
+      orderQr: baseSession.orderQr,
+      meta: baseSession.meta,
+      details: baseSession.details,
       lines: lines.map((line, index) => ({
         no: line.no || index + 1,
         backNo: line.backNo || '',
@@ -1109,7 +1128,9 @@
         packQty: Number(line.packQty) || 0,
         totalQty: Number(line.totalQty) || 0,
         requiredBoxes: Number(line.requiredBoxes) || 0,
-        scanned: Number(line.scanned) || 0
+        scanned: Number(line.scanned) || 0,
+        excluded: !!line.excluded || isPassThroughOrderLine(baseSession, line),
+        excludeReason: line.excludeReason || (isPassThroughOrderLine(baseSession, line) ? '仕入先パススルー' : '')
       })),
       scannedIds: source.scannedIds || {},
       completedAt: source.completedAt || '',
@@ -1120,11 +1141,11 @@
   }
 
   function orderRequiredBoxes(session) {
-    return (session.lines || []).reduce((sum, line) => sum + (Number(line.requiredBoxes) || 0), 0);
+    return (session.lines || []).reduce((sum, line) => sum + (line.excluded ? 0 : (Number(line.requiredBoxes) || 0)), 0);
   }
 
   function orderScannedBoxes(session) {
-    return (session.lines || []).reduce((sum, line) => sum + (Number(line.scanned) || 0), 0);
+    return (session.lines || []).reduce((sum, line) => sum + (line.excluded ? 0 : (Number(line.scanned) || 0)), 0);
   }
 
   function orderProgressRate(session) {
@@ -1165,10 +1186,32 @@
 
   function extractCustomerIdFromOrderQr(qr) {
     const text = String(qr || '');
-    const match = text.match(/[VL](\d{9})\s*([0-9])\b/);
+    const match = text.match(/[VL](\d{9})\s*([0-9A-Z])\b/);
     if (match) return `${match[1]}-${match[2]}`;
     const fallback = text.match(/[VL](\d{9})/);
     return fallback ? fallback[1] : '';
+  }
+
+  function canonicalPart(value) {
+    return String(value || '')
+      .normalize('NFKC')
+      .toUpperCase()
+      .replace(/[\u2010-\u2015\u2212\uFE58\uFE63]/g, '-')
+      .replace(/[^0-9A-Z]/g, '');
+  }
+
+  function partVariants(partNo) {
+    const raw = String(partNo || '').normalize('NFKC').toUpperCase();
+    const base = canonicalPart(raw);
+    const variants = new Set([base]);
+    if (/-00$/.test(raw)) variants.add(canonicalPart(raw.replace(/-00$/, '')));
+    else if (/0$/.test(base)) variants.add(base.slice(0, -1));
+    return [...variants].filter(Boolean);
+  }
+
+  function isPassThroughOrderLine(session, line) {
+    if (getOrderCustomerId(session) !== PASS_THROUGH_CUSTOMER_ID) return false;
+    return partVariants(line && line.partNo).some(part => PASS_THROUGH_PARTS.has(part));
   }
 
   function sortedOrderSessions() {
@@ -1274,7 +1317,9 @@
       const detailCount = Array.isArray(session.details) ? session.details.length : 0;
       const chips = (session.lines || []).slice(0, 5).map(line => {
         const lineDone = Number(line.requiredBoxes) > 0 && Number(line.scanned) >= Number(line.requiredBoxes);
-        return `<span class="detail-line-chip ${lineDone ? 'done' : ''}">${escHtml(line.partNo || '-')} ${Number(line.scanned)||0}/${Number(line.requiredBoxes)||0}</span>`;
+        const lineClass = line.excluded ? 'excluded' : (lineDone ? 'done' : '');
+        const countText = line.excluded ? '対象外' : `${Number(line.scanned)||0}/${Number(line.requiredBoxes)||0}`;
+        return `<span class="detail-line-chip ${lineClass}">${escHtml(line.partNo || '-')} ${escHtml(countText)}</span>`;
       }).join('');
       const more = session.lines.length > 5 ? `<span class="detail-line-chip">+${session.lines.length - 5}</span>` : '';
       return `
@@ -1343,7 +1388,7 @@
       const instructionDate = getOrderInstructionDate(session);
       const deliveryBin = getOrderDeliveryBin(session);
       const chips = (session.lines || [])
-        .filter(line => Number(line.requiredBoxes) > 0 && Number(line.scanned) < Number(line.requiredBoxes))
+        .filter(line => !line.excluded && Number(line.requiredBoxes) > 0 && Number(line.scanned) < Number(line.requiredBoxes))
         .slice(0, 4)
         .map(line => `<span class="detail-line-chip">${escHtml(line.partNo || '-')} ${Number(line.scanned)||0}/${Number(line.requiredBoxes)||0}</span>`)
         .join('');
