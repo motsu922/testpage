@@ -910,7 +910,8 @@ function loadData(){
 }
 
 function saveDataLocal(){
-    normalizeRecordsNoOverlap();
+    // Records are evidence entered by the user. Do not silently trim or remove an
+    // overlapping record during an unrelated save or a background sync.
     pruneStoppedTimers();
     localStorage.setItem('tt_members', JSON.stringify(members));
     localStorage.setItem('tt_customTasks', JSON.stringify(customTasks));
@@ -1656,7 +1657,7 @@ function endWorkToday(){
     const gaps=[]; let cursor = WORK_START_MIN;
     merged.forEach(int=>{ if (int.start>cursor) gaps.push({start:cursor,end:int.start}); cursor=Math.max(cursor,int.end); });
     if (cursor<nowMin) gaps.push({start:cursor,end:nowMin});
-    gaps.forEach(g=>{ if (g.end<=g.start) return; records.push({ id:Date.now()+Math.floor(Math.random()*1000), member:currentMember, task:'その他', date:todayStr, startTime:minutesToTime(g.start), endTime:minutesToTime(g.end), source:'Manual', autoFilled:true, autoFilledTag:'endWork' }); });
+    gaps.forEach(g=>{ if (g.end<=g.start) return; records.push({ id:createRecordId(), member:currentMember, task:'その他', date:todayStr, startTime:minutesToTime(g.start), endTime:minutesToTime(g.end), source:'Manual', autoFilled:true, autoFilledTag:'endWork' }); });
     saveData(); render(); toast('✓ 業務終了：空白時間を「その他」で登録しました');
 }
 
@@ -1692,7 +1693,7 @@ function stopTimer(){
 function saveTimerAsRecord(member,timer){
     const start = new Date(timer.startTime), end=new Date();
     if (end-start<60000) return false;
-    records.push({ id:Date.now(), member, task:String(timer.task), date:formatDate(start), startTime:formatTime(start), endTime:formatTime(end), source:'TimerTracker' });
+    records.push({ id:createRecordId(), member, task:String(timer.task), date:formatDate(start), startTime:formatTime(start), endTime:formatTime(end), source:'TimerTracker' });
     return true;
 }
 
@@ -1751,7 +1752,7 @@ function addRecord(){
     if (!date){ alert('日付を入力してください'); return; }
     if (!member){ alert('担当者を選択してください'); return; }
     if (e<=s){ alert('終了は開始より後に'); return; }
-    records.push({ id:Date.now(), member, task:t, date, startTime:s, endTime:e, source:'Manual' });
+    records.push({ id:createRecordId(), member, task:t, date, startTime:s, endTime:e, source:'Manual' });
     saveData(); closeAddModal(); render(); toast('✓ 追加');
 }
 
@@ -1826,13 +1827,12 @@ function importPcSummary(summary){
     if (!currentMember) currentMember = member;
 
     const validSegments = summary.segments.filter(seg => seg && seg.task && seg.startTime && seg.endTime && seg.endTime > seg.startTime && seg.task !== '休憩' && seg.sourceType !== 'break');
-    const baseId = Date.now() * 100;
     const importedAt = new Date().toISOString();
-    const imported = validSegments.map((seg, idx) => {
+    const imported = validSegments.map(seg => {
         const task = String(seg.task);
         ensureTaskForMember(member, task);
         return {
-            id: baseId + idx,
+            id: createRecordId(),
             member,
             task,
             date,
@@ -1983,7 +1983,14 @@ async function loadVisibleDailyRecords(){
 }
 
 function getRecordDatesForUpload(){
-    return [...new Set(records.map(r => r.date).filter(Boolean))];
+    // Include dates already known to the device as well. This makes deleting the
+    // last record of a day persist as an empty daily document instead of restoring
+    // the old server copy on the next refresh.
+    return [...new Set([
+        ...records.map(r => r.date),
+        ...Object.keys(dailyRecordCache),
+        ...Object.keys(dailyServerBaseline)
+    ].filter(Boolean))];
 }
 
 function getRecordsForDate(date){
@@ -2036,6 +2043,11 @@ function mergeObjectsById(serverItems, localItems){
     (serverItems || []).forEach(item => { if (item && item.id != null) merged.set(String(item.id), item); });
     (localItems || []).forEach(item => { if (item && item.id != null) merged.set(String(item.id), item); });
     return [...merged.values()];
+}
+
+function createRecordId(){
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return `record_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
 function shouldUseLegacyRecords(serverData){
@@ -2182,6 +2194,7 @@ function setupFBListener(){
         if (serverVersion > localVersion) {
             if (pendingLocalChanges || syncInProgress) {
                 mergeStateFromServer(serverData, { preserveLocal: true });
+                mergeLegacyRecordsFromServer(serverData);
                 localVersion = serverVersion;
                 saveDataLocal();
                 queueSyncPush();
@@ -2206,7 +2219,10 @@ async function syncPushToServer(){
     try {
         const datesToWrite = getRecordDatesForUpload();
         const snap = await docRef.get(), serverData = snap.exists ? snap.data() : {}, serverVersion = serverData.lastUpdatedVersion || 0;
-        if (serverVersion > localVersion) mergeStateFromServer(serverData, { preserveLocal: true });
+        if (serverVersion > localVersion) {
+            mergeStateFromServer(serverData, { preserveLocal: true });
+            mergeLegacyRecordsFromServer(serverData);
+        }
         const newVersion = Math.max(serverVersion, localVersion) + 1;
         try {
             await writeDailyRecordsForDates(datesToWrite, newVersion);
@@ -2318,7 +2334,7 @@ function completePendingTask(member){
     const m=endTimeInput.match(/^(\d{1,2}):(\d{2})$/); if (!m){ alert('正しい時刻形式で入力してください'); return; }
     const endTime=`${String(parseInt(m[1])).padStart(2,'0')}:${m[2]}`;
     if (endTime<=startTimeStr){ alert('終了時刻は開始時刻より後にしてください'); return; }
-    records.push({ id:Date.now(), member, task:timer.task, date:startDate, startTime:startTimeStr, endTime, source:'TimerTracker' });
+    records.push({ id:createRecordId(), member, task:timer.task, date:startDate, startTime:startTimeStr, endTime, source:'TimerTracker' });
     markTimerStopped(member);
     delete activeTimers[member]; saveData(); render(); toast(`✓ ${startDate}の記録を保存しました`);
 }
