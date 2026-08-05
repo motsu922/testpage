@@ -2031,6 +2031,7 @@
   const ORDER_DETAIL_SCANNER_IDLE_MS = 1200;
   const TERMINAL_INPUT_MODE_KEY = 'qrcheck_v2_terminal_input_mode';
   const FIREBASE_QUEUE_KEY = 'qrcheck_v2_firebase_write_queue';
+  const PASS_THROUGH_MASTER_KEY = 'qrcheck_v2_pass_through_part_master';
   let terminalInputMode = localStorage.getItem(TERMINAL_INPUT_MODE_KEY) || 'hid';
   let inputConnectionTimer = null;
   let inputConnectionComposing = false;
@@ -2042,13 +2043,10 @@
   const ORDER_DETAIL_KEY = 'qrcheck_v2_order_detail_session';
   const ORDER_LINE_RE = /P(\d{4})P([^Q]+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
   const ORDER_LINE_ALT_RE = /K(\d{4})\d+P(.+?)P([1-9][0-9A-Z]{4,}-.+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
-  const PASS_THROUGH_CUSTOMER_ID = '400079164-1';
-  const PASS_THROUGH_PARTS = new Set([
-    '72611X7V01',
-    '72612X7V01',
-    '72611X7V03',
-    '72612X7V03'
-  ]);
+  const DEFAULT_PASS_THROUGH_PART_MASTER = {
+    '400079164-1': ['72612-X1C24-00', '72611-X1C36-00', '72611-X1C37-00', '72612-X1C25-00']
+  };
+  let passThroughPartMaster = {};
   let orderDetailAwaiting = false;
   let orderDetailAppendMode = false;
   let orderDetailSession = {
@@ -2110,6 +2108,7 @@
     applyScanOnlyModeUI();
     loadCompanyProfiles();
     loadSettings();
+    loadPassThroughPartMasterLocal();
     loadLog();
     loadOrderDetailSession();
     setupInputListeners();
@@ -2760,7 +2759,7 @@
         totalQty: Number(line.totalQty) || 0,
         requiredBoxes: Number(line.requiredBoxes) || 0,
         scanned: Number(line.scanned) || 0,
-        excluded: !!line.excluded || isPassThroughOrderLine(baseSession, line),
+        excluded: isPassThroughOrderLine(baseSession, line),
         excludeReason: line.excludeReason || (isPassThroughOrderLine(baseSession, line) ? '仕入先パススルー' : '')
       })),
       scannedIds: source.scannedIds || {},
@@ -3603,6 +3602,7 @@
         );
         Promise.all(tasks).then(() => {
           loadSettings();
+          syncPassThroughPartMasterFromFirebase();
           initFirebase();
           updateDupBadge();
           updateDupStats();
@@ -3612,6 +3612,7 @@
         }).catch(e => {
           console.warn('設定一括取得エラー:', e);
           loadSettings();
+          loadPassThroughPartMasterLocal();
           setSyncBadge('synced');
         });
 
@@ -3624,6 +3625,7 @@
         saveCompanyProfilesLocal();
         saveCompanyProfiles();   // Firebase にも書き込む
         loadSettings();          // デフォルト設定でロード
+        loadPassThroughPartMasterLocal();
         updateCompanyBadge();
         applyFixedCompanyUI();
         setSyncBadge('synced');
@@ -3637,6 +3639,7 @@
       isNewDevice = false;
       saveCompanyProfilesLocal();
       loadSettings();
+      loadPassThroughPartMasterLocal();
       updateCompanyBadge();
       setSyncBadge('offline');
     });
@@ -3696,6 +3699,7 @@
         // Firebase未登録 → ローカル設定をpush
         pushSettingsToFirebase(activeCompanyId, settings);
       }
+      syncPassThroughPartMasterFromFirebase();
       if (callback) callback();
     }, err => {
       console.warn('設定取得エラー:', err);
@@ -3852,6 +3856,7 @@
 
     // まず localStorage から即時反映
     loadSettings();
+    loadPassThroughPartMasterLocal();
     loadLog();             // ★ 会社別ログを読み込み
     updateCompanyBadge();
     renderOperatorBadge();
@@ -3870,6 +3875,7 @@
           renderOperatorBadge();
           saveSettingsLocal();
         }
+        syncPassThroughPartMasterFromFirebase();
         initFirebase();    // ★ initFirebase が logsRef も会社別に再設定する
         setSyncBadge('synced');
         updateDupBadge();
@@ -3909,6 +3915,7 @@
     if (activeCompanyId === id) {
       activeCompanyId = companyProfiles[0].id;
       loadSettings();
+      loadPassThroughPartMasterLocal();
       initFirebase();
       updateCompanyBadge();
       updateDupBadge();
@@ -4867,6 +4874,51 @@
     return [...variants].filter(Boolean);
   }
 
+  function normalizePassThroughPartMaster(source, useDefault = true) {
+    if (source && source._empty) return {};
+    const keys = Object.keys(source || {}).filter(key => !key.startsWith('_'));
+    const src = keys.length ? source : (useDefault ? DEFAULT_PASS_THROUGH_PART_MASTER : {});
+    const next = {};
+    Object.entries(src || {}).forEach(([customerId, parts]) => {
+      if (customerId.startsWith('_')) return;
+      const list = Array.isArray(parts) ? parts : String(parts || '').split(/[\s,、]+/);
+      const clean = [...new Set(list.map(v => String(v || '').trim()).filter(Boolean))];
+      if (customerId && clean.length) next[customerId] = clean;
+    });
+    return next;
+  }
+
+  function getPassThroughMasterStorageKey() {
+    return `${PASS_THROUGH_MASTER_KEY}_${activeCompanyId || 'default'}`;
+  }
+
+  function loadPassThroughPartMasterLocal() {
+    try {
+      const saved = localStorage.getItem(getPassThroughMasterStorageKey());
+      passThroughPartMaster = saved
+        ? normalizePassThroughPartMaster(JSON.parse(saved), false)
+        : normalizePassThroughPartMaster(null);
+    } catch (e) {
+      console.warn('pass-through master parse error:', e);
+      passThroughPartMaster = normalizePassThroughPartMaster(null);
+    }
+  }
+
+  function syncPassThroughPartMasterFromFirebase() {
+    loadPassThroughPartMasterLocal();
+    if (!companiesRef || !activeCompanyId) return;
+    companiesRef.child('pass_through_part_master/' + activeCompanyId).once('value', snapshot => {
+      passThroughPartMaster = normalizePassThroughPartMaster(snapshot.val(), !snapshot.exists());
+      localStorage.setItem(getPassThroughMasterStorageKey(), JSON.stringify(passThroughPartMaster));
+      orderDetailSession = normalizeOrderDetailSessionData(orderDetailSession, orderDetailSession.sessionId);
+      saveOrderDetailSession();
+      renderOrderDetailPanel();
+      updateScanUI();
+    }, err => {
+      console.warn('除外品番マスタ取得エラー:', err);
+    });
+  }
+
   function partsEquivalent(a, b) {
     const av = partVariants(a);
     const bv = partVariants(b);
@@ -4893,8 +4945,11 @@
   }
 
   function isPassThroughOrderLine(session, line) {
-    if (getOrderDetailCustomerId(session) !== PASS_THROUGH_CUSTOMER_ID) return false;
-    return partVariants(line && line.partNo).some(part => PASS_THROUGH_PARTS.has(part));
+    const customerId = getOrderDetailCustomerId(session);
+    const parts = (passThroughPartMaster && passThroughPartMaster[customerId]) || [];
+    if (!parts.length) return false;
+    const targets = new Set(parts.flatMap(partVariants));
+    return partVariants(line && line.partNo).some(part => targets.has(part));
   }
 
   function findOrderDetailPartInQR(qrRaw) {

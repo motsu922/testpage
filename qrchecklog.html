@@ -887,6 +887,7 @@
             <option value="progress_desc">進捗順</option>
           </select>
           <button class="filter-btn" onclick="openCustomerMasterModal()">顧客名マスタ</button>
+          <button class="filter-btn" onclick="openPassThroughMasterModal()">除外品番マスタ</button>
           <button class="filter-btn" onclick="clearOrderSessionFilter()">全ログ表示</button>
         </div>
         <div class="detail-session-list" id="detailSessionList">
@@ -961,19 +962,16 @@
   let orderSessionSort = 'updated_desc';
   let detailBoardOpen = false;
   let customerNameMaster = {};
+  let passThroughPartMaster = {};
   let companies     = [];
   let activeCompany = null;
   let currentPage   = 1;
   let perPage       = 100;
   let logsRef       = null;
   let orderSessionsRef = null;
-  const PASS_THROUGH_CUSTOMER_ID = '400079164-1';
-  const PASS_THROUGH_PARTS = new Set([
-    '72611X7V01',
-    '72612X7V01',
-    '72611X7V03',
-    '72612X7V03'
-  ]);
+  const DEFAULT_PASS_THROUGH_PART_MASTER = {
+    '400079164-1': ['72612-X1C24-00', '72611-X1C36-00', '72611-X1C37-00', '72612-X1C25-00']
+  };
 
   // ── 初期化 ──
   window.addEventListener('DOMContentLoaded', () => {
@@ -1045,6 +1043,7 @@
     loadLogs(company.id);
     loadOrderSessions(company.id);
     loadCustomerNameMaster(company.id);
+    loadPassThroughPartMaster(company.id);
   }
 
   function detachRealtimeListeners() {
@@ -1129,7 +1128,7 @@
         totalQty: Number(line.totalQty) || 0,
         requiredBoxes: Number(line.requiredBoxes) || 0,
         scanned: Number(line.scanned) || 0,
-        excluded: !!line.excluded || isPassThroughOrderLine(baseSession, line),
+        excluded: isPassThroughOrderLine(baseSession, line),
         excludeReason: line.excludeReason || (isPassThroughOrderLine(baseSession, line) ? '仕入先パススルー' : '')
       })),
       scannedIds: source.scannedIds || {},
@@ -1210,8 +1209,11 @@
   }
 
   function isPassThroughOrderLine(session, line) {
-    if (getOrderCustomerId(session) !== PASS_THROUGH_CUSTOMER_ID) return false;
-    return partVariants(line && line.partNo).some(part => PASS_THROUGH_PARTS.has(part));
+    const customerId = getOrderCustomerId(session);
+    const parts = (passThroughPartMaster && passThroughPartMaster[customerId]) || [];
+    if (!parts.length) return false;
+    const targets = new Set(parts.flatMap(partVariants));
+    return partVariants(line && line.partNo).some(part => targets.has(part));
   }
 
   function sortedOrderSessions() {
@@ -1570,6 +1572,101 @@
       .catch(err => {
         console.error('顧客名マスタ保存エラー:', err);
         alert('顧客名マスタを保存できませんでした');
+      });
+  }
+
+  function normalizePassThroughMaster(source, useDefault = true) {
+    if (source && source._empty) return {};
+    const keys = Object.keys(source || {}).filter(key => !key.startsWith('_'));
+    const src = keys.length ? source : (useDefault ? DEFAULT_PASS_THROUGH_PART_MASTER : {});
+    const next = {};
+    Object.entries(src || {}).forEach(([customerId, parts]) => {
+      if (customerId.startsWith('_')) return;
+      const list = Array.isArray(parts) ? parts : String(parts || '').split(/[\s,、]+/);
+      const clean = [...new Set(list.map(v => String(v || '').trim()).filter(Boolean))];
+      if (customerId && clean.length) next[customerId] = clean;
+    });
+    return next;
+  }
+
+  function loadPassThroughPartMaster(companyId) {
+    passThroughPartMaster = normalizePassThroughMaster(null);
+    if (!database || !companyId) return;
+    database.ref('qr_match_companies/pass_through_part_master/' + companyId).once('value', snap => {
+      passThroughPartMaster = normalizePassThroughMaster(snap.val(), !snap.exists());
+      renderOrderSessions();
+    }, err => {
+      console.error('除外品番マスタ読み込みエラー:', err);
+      renderOrderSessions();
+    });
+  }
+
+  function collectPassThroughCustomerIds() {
+    const ids = new Set([
+      ...Object.keys(passThroughPartMaster || {}),
+      ...collectCustomerIdsFromSessions()
+    ]);
+    return [...ids].sort((a, b) => a.localeCompare(b, 'ja', { numeric: true }));
+  }
+
+  function openPassThroughMasterModal() {
+    if (!activeCompany) {
+      alert('会社を選択してください');
+      return;
+    }
+    const ids = collectPassThroughCustomerIds();
+    document.getElementById('modalTitle').textContent = '除外品番マスタ編集';
+    document.getElementById('modalBody').innerHTML = `
+      <div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px;">
+        顧客IDごとに、照合対象外にする品番を改行またはカンマ区切りで登録します。
+      </div>
+      <div class="master-editor" id="passThroughMasterRows">
+        ${ids.map(id => passThroughMasterRowHtml(id, passThroughPartMaster[id] || [])).join('')}
+      </div>
+      <div class="master-actions">
+        <button class="filter-btn" onclick="addPassThroughMasterRow()">追加</button>
+        <button class="filter-btn primary" onclick="savePassThroughPartMaster()">保存</button>
+      </div>
+    `;
+    document.getElementById('modalOverlay').classList.add('show');
+  }
+
+  function passThroughMasterRowHtml(customerId = '', parts = []) {
+    const value = (Array.isArray(parts) ? parts : []).join('\n');
+    return `
+      <div class="master-row" style="grid-template-columns:140px 1fr 64px;align-items:start;">
+        <input class="master-input pass-customer-id-input" placeholder="顧客ID" value="${escHtml(customerId)}">
+        <textarea class="master-input pass-parts-input" placeholder="除外品番（改行区切り）" rows="4" style="resize:vertical;min-height:74px;">${escHtml(value)}</textarea>
+        <button class="filter-btn" onclick="this.closest('.master-row').remove()">削除</button>
+      </div>`;
+  }
+
+  function addPassThroughMasterRow() {
+    const rows = document.getElementById('passThroughMasterRows');
+    if (!rows) return;
+    rows.insertAdjacentHTML('beforeend', passThroughMasterRowHtml('', []));
+  }
+
+  function savePassThroughPartMaster() {
+    if (!activeCompany || !database) return;
+    const rows = [...document.querySelectorAll('#passThroughMasterRows .master-row')];
+    const next = {};
+    rows.forEach(row => {
+      const id = row.querySelector('.pass-customer-id-input')?.value.trim();
+      const text = row.querySelector('.pass-parts-input')?.value || '';
+      const parts = [...new Set(text.split(/[\s,、]+/).map(v => v.trim()).filter(Boolean))];
+      if (id && parts.length) next[id] = parts;
+    });
+    const payload = Object.keys(next).length ? next : { _empty: true };
+    database.ref('qr_match_companies/pass_through_part_master/' + activeCompany.id).set(payload)
+      .then(() => {
+        passThroughPartMaster = normalizePassThroughMaster(payload, false);
+        renderOrderSessions();
+        closeModal();
+      })
+      .catch(err => {
+        console.error('除外品番マスタ保存エラー:', err);
+        alert('除外品番マスタを保存できませんでした');
       });
   }
 
