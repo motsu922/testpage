@@ -2690,6 +2690,8 @@
       orderDetailLineCandidates: detailLineCandidates,
       orderDetailQtyCandidates: qtyCandidates,
       orderDetailLineCount: parsed && parsed.lines ? parsed.lines.length : 0,
+      orderDetailDestinationCode: parsed && parsed.meta ? (parsed.meta.destinationCode || '') : '',
+      orderDetailReceivingCode: parsed && parsed.meta ? (parsed.meta.receivingCode || '') : '',
       terminalInputMode: terminalInputMode,
       result: status === 'OK' ? 'OK' : 'NG',
       isDuplicate: false,
@@ -5073,6 +5075,18 @@
     return match ? String(Number(match[1])) : '';
   }
 
+  function parseToyotaDestinationCode(text) {
+    const compact = normalizeToyotaDetailText(text).replace(/\s+/g, '');
+    const match = compact.match(/W[0-9A-Z](\d{4})([A-Z])/i);
+    return match ? `${match[1]}-${match[2].toUpperCase()}` : '';
+  }
+
+  function parseToyotaReceivingCode(text) {
+    const compact = normalizeToyotaDetailText(text).replace(/\s+/g, '');
+    const match = compact.match(/W[0-9A-Z]\d{4}[A-Z]R(\d)/i);
+    return match ? `R${Number(match[1])}` : '';
+  }
+
   function parseToyotaQtyTriplet(raw) {
     const spaced = String(raw || '').trim().match(/^(\d{1,4})\s+(\d{1,4})\s+(\d{1,7})$/);
     if (spaced) {
@@ -5154,6 +5168,7 @@
     const lines = [];
     const seen = new Set();
     const toyotaPartPattern = '[0-9A-Z]{5}-[0-9A-Z]{5}-[0-9A-Z]{2}';
+    const hasToyotaDetailHeader = /かんばん明細|KANBAN\s*DETAIL|\b\d{2}JT[0-9A-Z]{15}\b/i.test(text);
 
     const fixedRows = text.match(/\b\d{36,39}\b/g) || [];
     fixedRows.forEach(row => addToyotaFixedOrderLine(lines, seen, row));
@@ -5167,6 +5182,8 @@
       const totalQty = Number(match[5]) || 0;
       addToyotaOrderLine(lines, seen, backNo, partNo, packQty, sheetCount, totalQty);
     }
+
+    if (!hasToyotaDetailHeader && !lines.length) return lines;
 
     const compact = text.replace(/\s+/g, '');
     const partRe = new RegExp(toyotaPartPattern, 'gi');
@@ -5253,6 +5270,8 @@
       deliveryDate: (qr.match(/12D(\d{8})/) || [])[1] || '',
       shipDate: (qr.match(/16D(\d{8})/) || [])[1] || '',
       deliveryBin: parseToyotaDeliveryBin(qrRaw),
+      destinationCode: parseToyotaDestinationCode(qrRaw),
+      receivingCode: parseToyotaReceivingCode(qrRaw),
       detailType: lines.some(line => line.detailType === 'toyota_kanban_detail') ? 'toyota_kanban_detail' : ''
     };
     if (!meta.deliveryDate && meta.detailType === 'toyota_kanban_detail') meta.deliveryDate = parseToyotaDeliveryDate(qrRaw);
