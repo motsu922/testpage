@@ -263,6 +263,7 @@
         <select class="filter-input" id="filter-type">
           <option value="">すべて</option>
           <option value="通常検査">通常検査</option>
+          <option value="__NON_NORMAL__">通常検査以外</option>
           <option value="F">F - 初期流動</option>
           <option value="S">S - 選別</option>
           <option value="K">K - 工程変更</option>
@@ -282,6 +283,8 @@
       <button class="btn btn-primary" onclick="applyFilters()">絞り込み</button>
       <button class="btn btn-secondary" onclick="clearFilters()">クリア</button>
       <button class="btn btn-success" onclick="exportCSV()">CSV出力</button>
+      <button class="btn btn-success" onclick="exportCSV('normal')">CSV出力（通常検査のみ）</button>
+      <button class="btn btn-success" onclick="exportCSV('excludeSelection')">CSV出力（選別除く）</button>
     </div>
   </div>
 
@@ -704,6 +707,17 @@ function updateCols() {
 }
 
 /* ▼ 絞り込み・統計更新 */
+function getInspectionType(item) {
+  return (item.it2 && item.it2.trim()) ? item.it2.trim() : '通常検査';
+}
+
+function matchesInspectionType(item, type) {
+  const itemType = getInspectionType(item);
+  if (!type) return true;
+  if (type === '__NON_NORMAL__') return itemType !== '通常検査';
+  return itemType === type;
+}
+
 function applyFilters() {
   const startDate = document.getElementById('filter-start-date').value;
   const endDate = document.getElementById('filter-end-date').value;
@@ -716,13 +730,7 @@ function applyFilters() {
     if (startDate && itemDate < startDate) return false;
     if (endDate && itemDate > endDate) return false;
     if (product && item.on !== product) return false;
-    if (type) {
-      if (type === '通常検査') {
-        if (item.it2 && item.it2 !== '') return false;
-      } else {
-        if (item.it2 !== type) return false;
-      }
-    }
+    if (!matchesInspectionType(item, type)) return false;
     
     return true;
   });
@@ -1130,8 +1138,26 @@ function renderTable() {
 }
 
 /* ▼ CSV出力 */
-function exportCSV() {
-  if (filteredData.length === 0) {
+function getCSVTargetData(mode) {
+  if (mode === 'normal') {
+    return filteredData.filter(item => getInspectionType(item) === '通常検査');
+  }
+  if (mode === 'excludeSelection') {
+    return filteredData.filter(item => getInspectionType(item) !== 'S');
+  }
+  return filteredData;
+}
+
+function getCSVFileName(mode) {
+  const dateText = new Date().toISOString().split('T')[0];
+  if (mode === 'normal') return 'inspection_data_normal_' + dateText + '.csv';
+  if (mode === 'excludeSelection') return 'inspection_data_exclude_selection_' + dateText + '.csv';
+  return 'inspection_data_' + dateText + '.csv';
+}
+
+function exportCSV(mode) {
+  const targetData = getCSVTargetData(mode);
+  if (targetData.length === 0) {
     alert('エクスポートするデータがありません');
     return;
   }
@@ -1140,7 +1166,7 @@ function exportCSV() {
   const ngCols = Array.from(cols.keys()).sort();
   const allHeaders = headers.concat(ngCols).concat(['備考']);
   
-  const rows = filteredData.map(item => {
+  const rows = targetData.map(item => {
     const inspectorInfo = item.inspectors ? 
       item.inspectors.map(ins => {
         if (ins.timePeriods && ins.timePeriods.length > 0) {
@@ -1163,7 +1189,7 @@ function exportCSV() {
       item.ic || '0', 
       item.totalTime || '0', 
       item.ln || '', 
-      item.it2 || '通常検査', 
+      getInspectionType(item), 
       inspectorInfo
     ];
     
@@ -1181,7 +1207,7 @@ function exportCSV() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'inspection_data_' + new Date().toISOString().split('T')[0] + '.csv';
+  a.download = getCSVFileName(mode);
   a.click();
   URL.revokeObjectURL(url);
 }
