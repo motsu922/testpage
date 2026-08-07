@@ -1279,6 +1279,30 @@
     return fromQr || '-';
   }
 
+  function parseToyotaDestinationCodeFromText(text) {
+    const compact = String(text || '').normalize('NFKC').replace(/\s+/g, '');
+    const match = compact.match(/W[0-9A-Z](\d{4})([A-Z])/i);
+    return match ? `${match[1]}-${match[2].toUpperCase()}` : '';
+  }
+
+  function parseToyotaReceivingCodeFromText(text) {
+    const compact = String(text || '').normalize('NFKC').replace(/\s+/g, '');
+    const match = compact.match(/W[0-9A-Z]\d{4}[A-Z]R(\d)/i);
+    return match ? `R${Number(match[1])}` : '';
+  }
+
+  function getOrderDestinationCode(session) {
+    const meta = session.meta || {};
+    return meta.destinationCode || meta.deliveryDestinationCode || meta.deliveryPlaceCode ||
+      parseToyotaDestinationCodeFromText(session.orderQr) || '-';
+  }
+
+  function getOrderReceivingCode(session) {
+    const meta = session.meta || {};
+    return meta.receivingCode || meta.acceptanceCode || meta.receiveCode ||
+      parseToyotaReceivingCodeFromText(session.orderQr) || '-';
+  }
+
   function renderOrderSessions() {
     const list = document.getElementById('detailSessionList');
     const count = document.getElementById('detailSessionCount');
@@ -1314,6 +1338,8 @@
       const customer = getOrderCustomerLabel(session);
       const instructionDate = getOrderInstructionDate(session);
       const deliveryBin = getOrderDeliveryBin(session);
+      const destinationCode = getOrderDestinationCode(session);
+      const receivingCode = getOrderReceivingCode(session);
       const updated = session.updatedAt || session.createdAt;
       const updatedText = updated ? new Date(updated).toLocaleString('ja-JP') : '-';
       const detailCount = Array.isArray(session.details) ? session.details.length : 0;
@@ -1343,6 +1369,8 @@
             <span>更新 ${escHtml(updatedText)}</span>
             <span>指示日 ${escHtml(instructionDate)}</span>
             <span>便 ${escHtml(deliveryBin)}</span>
+            <span>納入先 ${escHtml(destinationCode)}</span>
+            <span>受入 ${escHtml(receivingCode)}</span>
             <span>行 ${escHtml(session.lines.length)}</span>
             <span>QR ${escHtml(detailCount)}</span>
             <span>ログ ${escHtml(countLogsForSession(session.sessionId))}</span>
@@ -1389,6 +1417,8 @@
       const updatedText = updated ? new Date(updated).toLocaleString('ja-JP') : '-';
       const instructionDate = getOrderInstructionDate(session);
       const deliveryBin = getOrderDeliveryBin(session);
+      const destinationCode = getOrderDestinationCode(session);
+      const receivingCode = getOrderReceivingCode(session);
       const chips = (session.lines || [])
         .filter(line => !line.excluded && Number(line.requiredBoxes) > 0 && Number(line.scanned) < Number(line.requiredBoxes))
         .slice(0, 4)
@@ -1408,6 +1438,8 @@
           <div class="detail-session-meta">
             <span>指示日 ${escHtml(instructionDate)}</span>
             <span>便 ${escHtml(deliveryBin)}</span>
+            <span>納入先 ${escHtml(destinationCode)}</span>
+            <span>受入 ${escHtml(receivingCode)}</span>
             <span>ログ ${escHtml(countLogsForSession(session.sessionId))}</span>
           </div>
           <div class="detail-lines">${chips}</div>
@@ -1870,6 +1902,9 @@
     const rule = l.matchedRule
       ? `[${l.matchedRule.minLen}-${l.matchedRule.maxLen}] start=${l.matchedRule.startPos} count=${l.matchedRule.charCount}${l.matchedRule.prefix ? ' prefix="'+l.matchedRule.prefix+'"' : ''}`
       : '(ルールなし)';
+    const detailQrText = l.qr1_raw || l.qr1 || '';
+    const destinationCode = l.orderDetailDestinationCode || parseToyotaDestinationCodeFromText(detailQrText) || '—';
+    const receivingCode = l.orderDetailReceivingCode || parseToyotaReceivingCodeFromText(detailQrText) || '—';
 
     const rows = [
       ['日時',         new Date(l.timestamp).toLocaleString('ja-JP')],
@@ -1885,6 +1920,8 @@
       ['明細セッション', l.orderDetailSessionId || '—'],
       ['明細結果',      l.orderDetailResult || l.orderDetailReadResult || '—'],
       ['明細メモ',      l.orderDetailNote || l.orderDetailAction || '—'],
+      ['納入先コード',  destinationCode],
+      ['受入',          receivingCode],
       ['明細進捗',      l.orderDetailRequiredBoxes ? `${l.orderDetailScannedBoxes ?? 0}/${l.orderDetailRequiredBoxes}` : '—'],
       ['明細完了',      l.orderDetailCompleted ? 'YES' : '—'],
       ['重複タイプ',   l.dupType || '—'],
@@ -1912,10 +1949,11 @@
     if (!activeCompany) { alert('会社を選択してください'); return; }
     if (filteredLogs.length === 0) { alert('出力するデータがありません'); return; }
 
-    const headers = ['日時','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','明細結果','明細メモ','明細完了','明細必要','明細読込'];
+    const headers = ['日時','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
     const rows = filteredLogs.map(l => {
       const isDup = l.result === 'DUP' || l.isDuplicate;
       const rule = l.matchedRule ? JSON.stringify(l.matchedRule) : '';
+      const detailQrText = l.qr1_raw || l.qr1 || '';
       return [
         new Date(l.timestamp).toLocaleString('ja-JP'),
         isDup ? 'DUP' : (l.result || ''),
@@ -1928,6 +1966,8 @@
         l.orderDetailSessionId ?? '',
         l.orderDetailResult ?? l.orderDetailReadResult ?? '',
         l.orderDetailNote ?? l.orderDetailAction ?? '',
+        l.orderDetailDestinationCode || parseToyotaDestinationCodeFromText(detailQrText) || '',
+        l.orderDetailReceivingCode || parseToyotaReceivingCodeFromText(detailQrText) || '',
         l.orderDetailCompleted ?? '',
         l.orderDetailRequiredBoxes ?? '',
         l.orderDetailScannedBoxes ?? ''
