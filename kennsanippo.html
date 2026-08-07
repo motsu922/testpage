@@ -54,6 +54,9 @@
   #settings-view .alert{ padding:14px; border-radius:8px; margin-bottom:15px; font-size:15px; }
   #settings-view .alert-success{ background:#d4edda; border:1px solid #c3e6cb; color:#155724; }
   #settings-view .alert-error{ background:#f8d7da; border:1px solid #f5c6cb; color:#721c24; }
+  #settings-view .master-toggle{ display:flex; align-items:center; gap:8px; margin-top:8px; font-size:13px; color:#374151; font-weight:600; }
+  #settings-view .master-toggle input{ width:18px; height:18px; cursor:pointer; }
+  #settings-view .master-toggle span{ min-width:52px; }
 
   #qr-view .qr-card{ background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:18px; }
   #qr-view .qr-bigLabel{ font-size:18px; font-weight:700; margin-bottom:8px; }
@@ -937,7 +940,11 @@ function init(){
       master = {};
       snapshot.forEach(doc => {
         const d = doc.data();
-        master[doc.id] = { piecesPerBox: d.piecesPerBox || 0, ngItems: d.ngItems || [] };
+        master[doc.id] = {
+          piecesPerBox: d.piecesPerBox || 0,
+          ngItems: d.ngItems || [],
+          isRegisteredMaster: d.isRegisteredMaster !== false
+        };
       });
       updateProductSelect();
       updateProductList();
@@ -1212,6 +1219,10 @@ function updateLoadStatus() {
 }
 
 // ===== 製品マスタ管理 =====
+function isProductMasterRegistered(productData) {
+  return !productData || productData.isRegisteredMaster !== false;
+}
+
 function addProduct() {
   if(!db) { showProductAlert('error', 'Firebaseに接続されていません'); return; }
   const code = document.getElementById('productCode').value.trim();
@@ -1234,8 +1245,12 @@ function addProduct() {
   const uniqueItems = [];
   const seen = new Set();
   ngItems.forEach(item => { if (!seen.has(item.code)) { seen.add(item.code); uniqueItems.push(item); } });
+  const isRegisteredMaster = editingProductCode && master[editingProductCode]
+    ? isProductMasterRegistered(master[editingProductCode])
+    : true;
   db.collection('productMaster').doc(code).set({
     piecesPerBox: parseInt(piecesPerBox), ngItems: uniqueItems,
+    isRegisteredMaster,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(() => {
     document.getElementById('productCode').value = '';
@@ -1279,6 +1294,16 @@ function deleteProduct(code) {
   }
 }
 
+function toggleProductMasterRegistration(code, checked) {
+  if(!db) { showProductAlert('error', 'Firebaseに接続されていません'); return; }
+  db.collection('productMaster').doc(code).update({
+    isRegisteredMaster: checked,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => {
+    showProductAlert('success', `製品マスター登録を${checked ? '有り' : '無し'}に変更しました`);
+  }).catch(error => { showProductAlert('error', 'エラー: ' + error.message); });
+}
+
 function updateProductList() {
   const list = document.getElementById('productList');
   const codes = Object.keys(master);
@@ -1288,8 +1313,11 @@ function updateProductList() {
     const productData = master[code];
     const piecesPerBox = productData.piecesPerBox || 0;
     const items = productData.ngItems || [];
+    const isRegistered = isProductMasterRegistered(productData);
+    const safeCode = JSON.stringify(code);
     html += '<div class="item"><div style="flex:1">';
     html += `<div class="item-name">${code} <span style="color:#2e7d32;font-size:13px;font-weight:normal">(${piecesPerBox}個/箱)</span></div>`;
+    html += `<label class="master-toggle"><input type="checkbox" ${isRegistered ? 'checked' : ''} onchange="toggleProductMasterRegistration(${safeCode}, this.checked)"><span>製品マスター登録 ${isRegistered ? '有り' : '無し'}</span></label>`;
     html += '<div class="item-details">';
     items.forEach(item => { html += `<span class="ng-tag">${item.code}:${item.name}</span>`; });
     html += '</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">';
