@@ -5126,11 +5126,32 @@
     });
   }
 
+  function decodeToyotaFixedQty(raw, scale) {
+    const value = Number(String(raw || '').replace(/\D/g, '')) || 0;
+    return scale ? value / scale : value;
+  }
+
+  function addToyotaFixedOrderLine(lines, seen, row) {
+    const digits = String(row || '').replace(/\D/g, '');
+    if (!/^\d{38}$/.test(digits)) return;
+    const backNo = digits.slice(0, 3);
+    const partNo = `${digits.slice(3, 8)}-${digits.slice(8, 13)}-${digits.slice(13, 15)}`;
+    const packQty = decodeToyotaFixedQty(digits.slice(15, 21), 10);
+    const sheetCount = decodeToyotaFixedQty(digits.slice(21, 25), 100);
+    const totalQty = decodeToyotaFixedQty(digits.slice(25, 31), 10);
+    if (!Number.isInteger(packQty) || !Number.isInteger(sheetCount) || !Number.isInteger(totalQty)) return;
+    addToyotaOrderLine(lines, seen, backNo, partNo, packQty, sheetCount, totalQty);
+  }
+
   function parseToyotaOrderDetailLines(qrRaw) {
     const text = normalizeToyotaDetailText(qrRaw);
     const lines = [];
     const seen = new Set();
     const toyotaPartPattern = '[0-9A-Z]{5}-[0-9A-Z]{5}-[0-9A-Z]{2}';
+
+    const fixedRows = text.match(/\b\d{38}\b/g) || [];
+    fixedRows.forEach(row => addToyotaFixedOrderLine(lines, seen, row));
+
     const rowRe = new RegExp(`(?:^|\\s)(?:\\d{1,2}\\s+)?([0-9A-Z]{2,8})\\s+(${toyotaPartPattern})\\s+(\\d{1,4})\\s+(\\d{1,4})\\s+(\\d{1,7})(?=\\s|$)`, 'gi');
     for (const match of text.matchAll(rowRe)) {
       const backNo = match[1];
