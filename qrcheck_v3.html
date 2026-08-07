@@ -4865,6 +4865,10 @@
     return normalizeQR(value).toUpperCase().replace(/[^0-9A-Z]/g, '');
   }
 
+  function normalizeOrderDetailPartNo(value) {
+    return normalizeQR(value).toUpperCase().replace(/-00$/, '');
+  }
+
   function partVariants(partNo) {
     const raw = normalizeQR(partNo).toUpperCase();
     const base = canonicalPart(partNo);
@@ -5111,13 +5115,14 @@
   function addToyotaOrderLine(lines, seen, backNo, partNo, packQty, sheetCount, totalQty) {
     if (!backNo || !partNo || !packQty || !sheetCount || !totalQty) return;
     if (Math.abs((packQty * sheetCount) - totalQty) > Math.max(1, packQty)) return;
-    const key = `${backNo}|${canonicalPart(partNo)}|${packQty}|${sheetCount}|${totalQty}`;
+    const normalizedPartNo = normalizeOrderDetailPartNo(partNo);
+    const key = `${backNo}|${canonicalPart(normalizedPartNo)}|${packQty}|${sheetCount}|${totalQty}`;
     if (seen.has(key)) return;
     seen.add(key);
     lines.push({
       no: lines.length + 1,
       backNo,
-      partNo,
+      partNo: normalizedPartNo,
       packQty,
       totalQty,
       requiredBoxes: sheetCount,
@@ -5195,9 +5200,10 @@
       const packQty = decodeOrderQty(packRaw);
       const totalQty = decodeOrderQty(totalRaw);
       if (!backNo || !partNo || !packQty || !totalQty) return;
+      const normalizedPartNo = normalizeOrderDetailPartNo(partNo);
       const lineKey = [
         String(backNo).trim(),
-        canonicalPart(partNo),
+        canonicalPart(normalizedPartNo),
         String(packRaw).trim(),
         String(totalRaw).trim()
       ].join('|');
@@ -5206,7 +5212,7 @@
       lines.push({
         no: lines.length + 1,
         backNo: String(backNo).trim(),
-        partNo: String(partNo).trim(),
+        partNo: normalizedPartNo,
         packQty,
         totalQty,
         requiredBoxes: Math.ceil(totalQty / packQty),
