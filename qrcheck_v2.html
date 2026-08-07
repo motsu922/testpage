@@ -4865,6 +4865,10 @@
     return normalizeQR(value).toUpperCase().replace(/[^0-9A-Z]/g, '');
   }
 
+  function normalizeOrderDetailPartNo(value) {
+    return normalizeQR(value).toUpperCase().replace(/-00$/, '');
+  }
+
   function partVariants(partNo) {
     const raw = normalizeQR(partNo).toUpperCase();
     const base = canonicalPart(partNo);
@@ -5044,6 +5048,148 @@
       .filter(Boolean);
   }
 
+  function normalizeToyotaDetailText(qrRaw) {
+    return String(qrRaw ?? '')
+      .normalize('NFKC')
+      .replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/g, '')
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63]/g, '-')
+      .replace(/[\x1d\x1e\x04\t,、，]+/g, ' ')
+      .replace(/\r?\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function parseToyotaDeliveryDate(text) {
+    const explicit = text.match(/(?:20)?(\d{2})[\/年-](\d{1,2})[\/月-](\d{1,2})/);
+    if (explicit) {
+      const year = Number(explicit[1]) < 100 ? 2000 + Number(explicit[1]) : Number(explicit[1]);
+      return `${year}${String(explicit[2]).padStart(2, '0')}${String(explicit[3]).padStart(2, '0')}`;
+    }
+    return '';
+  }
+
+  function parseToyotaDeliveryBin(text) {
+    const match = text.match(/(\d{1,2})\s*(?:便|BIN|BINNO|BINNO\.|BIN NO)/i);
+    return match ? String(Number(match[1])) : '';
+  }
+
+  function parseToyotaQtyTriplet(raw) {
+    const spaced = String(raw || '').trim().match(/^(\d{1,4})\s+(\d{1,4})\s+(\d{1,7})$/);
+    if (spaced) {
+      const packQty = Number(spaced[1]) || 0;
+      const sheetCount = Number(spaced[2]) || 0;
+      const totalQty = Number(spaced[3]) || 0;
+      if (packQty && sheetCount && totalQty && Math.abs((packQty * sheetCount) - totalQty) <= Math.max(1, packQty)) {
+        return { packQty, sheetCount, totalQty };
+      }
+      return null;
+    }
+    const digits = String(raw || '').replace(/\D/g, '');
+    const candidates = [];
+    for (let i = 1; i <= Math.min(4, digits.length - 2); i++) {
+      for (let j = i + 1; j <= Math.min(i + 4, digits.length - 1); j++) {
+        const packQty = Number(digits.slice(0, i)) || 0;
+        const sheetCount = Number(digits.slice(i, j)) || 0;
+        const totalQty = Number(digits.slice(j)) || 0;
+        if (!packQty || !sheetCount || !totalQty) continue;
+        if (packQty * sheetCount !== totalQty) continue;
+        const commonPackScore = [5, 8, 10, 12, 20, 24, 30, 40].includes(packQty) ? 0 : 1;
+        candidates.push({ packQty, sheetCount, totalQty, score: commonPackScore + String(sheetCount).length / 10 });
+      }
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    return candidates[0] || null;
+  }
+
+  function parseToyotaQtyTripletPrefix(raw) {
+    const digits = String(raw || '').replace(/\D/g, '');
+    const candidates = [];
+    for (let len = 3; len <= Math.min(12, digits.length); len++) {
+      const parsed = parseToyotaQtyTriplet(digits.slice(0, len));
+      if (parsed) candidates.push(parsed);
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    return candidates[0] || null;
+  }
+
+  function addToyotaOrderLine(lines, seen, backNo, partNo, packQty, sheetCount, totalQty) {
+    if (!backNo || !partNo || !packQty || !sheetCount || !totalQty) return;
+    if (Math.abs((packQty * sheetCount) - totalQty) > Math.max(1, packQty)) return;
+    const normalizedPartNo = normalizeOrderDetailPartNo(partNo);
+    const key = `${backNo}|${canonicalPart(normalizedPartNo)}|${packQty}|${sheetCount}|${totalQty}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    lines.push({
+      no: lines.length + 1,
+      backNo,
+      partNo: normalizedPartNo,
+      packQty,
+      totalQty,
+      requiredBoxes: sheetCount,
+      scanned: 0,
+      detailType: 'toyota_kanban_detail'
+    });
+  }
+
+  function decodeToyotaFixedQty(raw, scale) {
+    const value = Number(String(raw || '').replace(/\D/g, '')) || 0;
+    return scale ? value / scale : value;
+  }
+
+  function addToyotaFixedOrderLine(lines, seen, row) {
+    const digits = String(row || '').replace(/\D/g, '');
+    if (!/^\d{38}$/.test(digits)) return;
+    const backNo = digits.slice(0, 3);
+    const partNo = `${digits.slice(3, 8)}-${digits.slice(8, 13)}-${digits.slice(13, 15)}`;
+    const packQty = decodeToyotaFixedQty(digits.slice(15, 21), 10);
+    const sheetCount = decodeToyotaFixedQty(digits.slice(21, 25), 100);
+    const totalQty = decodeToyotaFixedQty(digits.slice(25, 31), 10);
+    if (!Number.isInteger(packQty) || !Number.isInteger(sheetCount) || !Number.isInteger(totalQty)) return;
+    addToyotaOrderLine(lines, seen, backNo, partNo, packQty, sheetCount, totalQty);
+  }
+
+  function parseToyotaOrderDetailLines(qrRaw) {
+    const text = normalizeToyotaDetailText(qrRaw);
+    const lines = [];
+    const seen = new Set();
+    const toyotaPartPattern = '[0-9A-Z]{5}-[0-9A-Z]{5}-[0-9A-Z]{2}';
+
+    const fixedRows = text.match(/\b\d{38}\b/g) || [];
+    fixedRows.forEach(row => addToyotaFixedOrderLine(lines, seen, row));
+
+    const rowRe = new RegExp(`(?:^|\\s)(?:\\d{1,2}\\s+)?([0-9A-Z]{2,8})\\s+(${toyotaPartPattern})\\s+(\\d{1,4})\\s+(\\d{1,4})\\s+(\\d{1,7})(?=\\s|$)`, 'gi');
+    for (const match of text.matchAll(rowRe)) {
+      const backNo = match[1];
+      const partNo = match[2];
+      const packQty = Number(match[3]) || 0;
+      const sheetCount = Number(match[4]) || 0;
+      const totalQty = Number(match[5]) || 0;
+      addToyotaOrderLine(lines, seen, backNo, partNo, packQty, sheetCount, totalQty);
+    }
+
+    const compact = text.replace(/\s+/g, '');
+    const partRe = new RegExp(toyotaPartPattern, 'gi');
+    for (const match of compact.matchAll(partRe)) {
+      const before = compact.slice(Math.max(0, match.index - 8), match.index);
+      let backNo = (before.match(/[0-9A-Z]{2,8}$/i) || [''])[0];
+      if (/^\d{4,}$/.test(backNo)) backNo = backNo.slice(-3);
+      const qty = parseToyotaQtyTripletPrefix(compact.slice(match.index + match[0].length));
+      if (!qty) continue;
+      addToyotaOrderLine(lines, seen, backNo, match[0], qty.packQty, qty.sheetCount, qty.totalQty);
+    }
+
+    const tokens = text.match(/[0-9A-Z]+(?:-[0-9A-Z]+){2}|[0-9A-Z]+/gi) || [];
+    for (let i = 0; i < tokens.length; i++) {
+      if (!(new RegExp(`^${toyotaPartPattern}$`, 'i')).test(tokens[i])) continue;
+      const backNo = tokens[i - 1] || '';
+      const qty = parseToyotaQtyTriplet(tokens.slice(i + 1, i + 4).join(' ')) ||
+        parseToyotaQtyTriplet(tokens.slice(i + 1, i + 6).join(''));
+      if (!qty) continue;
+      addToyotaOrderLine(lines, seen, backNo, tokens[i], qty.packQty, qty.sheetCount, qty.totalQty);
+    }
+    return lines;
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
@@ -5054,9 +5200,10 @@
       const packQty = decodeOrderQty(packRaw);
       const totalQty = decodeOrderQty(totalRaw);
       if (!backNo || !partNo || !packQty || !totalQty) return;
+      const normalizedPartNo = normalizeOrderDetailPartNo(partNo);
       const lineKey = [
         String(backNo).trim(),
-        canonicalPart(partNo),
+        canonicalPart(normalizedPartNo),
         String(packRaw).trim(),
         String(totalRaw).trim()
       ].join('|');
@@ -5065,7 +5212,7 @@
       lines.push({
         no: lines.length + 1,
         backNo: String(backNo).trim(),
-        partNo: String(partNo).trim(),
+        partNo: normalizedPartNo,
         packQty,
         totalQty,
         requiredBoxes: Math.ceil(totalQty / packQty),
@@ -5096,12 +5243,18 @@
         addOrderLine(match[2] || match[1], match[3], match[4], match[5]);
       }
     }
+    if (!lines.length) {
+      parseToyotaOrderDetailLines(qrRaw).forEach(line => lines.push(line));
+    }
     const meta = {
       customerId: extractCustomerIdFromOrderQr(qr),
       orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || '',
       deliveryDate: (qr.match(/12D(\d{8})/) || [])[1] || '',
-      shipDate: (qr.match(/16D(\d{8})/) || [])[1] || ''
+      shipDate: (qr.match(/16D(\d{8})/) || [])[1] || '',
+      deliveryBin: parseToyotaDeliveryBin(qrRaw),
+      detailType: lines.some(line => line.detailType === 'toyota_kanban_detail') ? 'toyota_kanban_detail' : ''
     };
+    if (!meta.deliveryDate && meta.detailType === 'toyota_kanban_detail') meta.deliveryDate = parseToyotaDeliveryDate(qrRaw);
     const parsed = {
       orderQr: qr,
       meta,
