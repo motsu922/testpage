@@ -515,6 +515,9 @@
           <input type="number" inputmode="numeric" pattern="[0-9]*" class="form-input" id="piecesPerBox" placeholder="例: 100">
         </div>
         <div class="form-group">
+          <label class="master-toggle"><input type="checkbox" id="isRegisteredMaster" checked onchange="updateProductMasterRegistrationLabel()"><span>製品マスター登録 有り</span></label>
+        </div>
+        <div class="form-group">
           <label class="form-label">NG項目 (1行に1項目: コード:名称)</label>
           <textarea class="form-input form-textarea" id="productNGItems" placeholder="18個:18個&#10;19個:19個&#10;125:クラック黒"></textarea>
           <div style="font-size:13px;color:#6c757d;margin-top:6px;">注意: 「30:落下」と「52:その他」は自動追加されます</div>
@@ -1228,6 +1231,7 @@ function addProduct() {
   const code = document.getElementById('productCode').value.trim();
   const piecesPerBox = document.getElementById('piecesPerBox').value.trim();
   const ngItemsText = document.getElementById('productNGItems').value.trim();
+  const isRegisteredMaster = document.getElementById('isRegisteredMaster').checked;
   if (!code) { showProductAlert('error', '品番コードを入力してください'); return; }
   if (!piecesPerBox || parseInt(piecesPerBox) <= 0) { showProductAlert('error', '収容数を正しく入力してください'); return; }
   let ngItems = [];
@@ -1247,11 +1251,14 @@ function addProduct() {
   ngItems.forEach(item => { if (!seen.has(item.code)) { seen.add(item.code); uniqueItems.push(item); } });
   db.collection('productMaster').doc(code).set({
     piecesPerBox: parseInt(piecesPerBox), ngItems: uniqueItems,
+    isRegisteredMaster,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge: true }).then(() => {
     document.getElementById('productCode').value = '';
     document.getElementById('piecesPerBox').value = '';
     document.getElementById('productNGItems').value = '';
+    document.getElementById('isRegisteredMaster').checked = true;
+    updateProductMasterRegistrationLabel();
     const wasEditing = editingProductCode !== null;
     editingProductCode = null;
     showProductAlert('success', `製品「${code}」を${wasEditing ? '更新' : '追加'}しました`);
@@ -1269,6 +1276,8 @@ function editProduct(code) {
   const productData = master[code];
   if (productData) {
     document.getElementById('piecesPerBox').value = productData.piecesPerBox || '';
+    document.getElementById('isRegisteredMaster').checked = isProductMasterRegistered(productData);
+    updateProductMasterRegistrationLabel();
     const items = productData.ngItems || [];
     const customItems = items.filter(item => item.code !== '30' && item.code !== '52');
     document.getElementById('productNGItems').value = customItems.map(item => `${item.code}:${item.name}`).join('\n');
@@ -1290,43 +1299,9 @@ function deleteProduct(code) {
   }
 }
 
-async function toggleProductMasterRegistration(code, checked, checkbox) {
-  const label = checkbox ? checkbox.nextElementSibling : null;
-  const previousValue = master[code] ? isProductMasterRegistered(master[code]) : !checked;
-
-  if (master[code]) master[code].isRegisteredMaster = checked;
-  if (checkbox) {
-    checkbox.checked = checked;
-    checkbox.disabled = true;
-  }
-  if (label) label.textContent = '\u88fd\u54c1\u30de\u30b9\u30bf\u30fc\u767b\u9332 \u4fdd\u5b58\u4e2d...';
-
-  if(!db) {
-    if (master[code]) master[code].isRegisteredMaster = previousValue;
-    if (checkbox) {
-      checkbox.checked = previousValue;
-      checkbox.disabled = false;
-    }
-    if (label) label.textContent = `\u88fd\u54c1\u30de\u30b9\u30bf\u30fc\u767b\u9332 ${previousValue ? '\u6709\u308a' : '\u7121\u3057'}`;
-    showProductAlert('error', 'Firebase\u306b\u63a5\u7d9a\u3055\u308c\u3066\u3044\u307e\u305b\u3093');
-    return;
-  }
-
-  try {
-    await db.collection('productMaster').doc(code).set({
-      isRegisteredMaster: checked,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-    if (label) label.textContent = `\u88fd\u54c1\u30de\u30b9\u30bf\u30fc\u767b\u9332 ${checked ? '\u6709\u308a' : '\u7121\u3057'}`;
-    showProductAlert('success', `\u88fd\u54c1\u30de\u30b9\u30bf\u30fc\u767b\u9332\u3092${checked ? '\u6709\u308a' : '\u7121\u3057'}\u306b\u4fdd\u5b58\u3057\u307e\u3057\u305f`);
-  } catch(error) {
-    if (master[code]) master[code].isRegisteredMaster = previousValue;
-    if (checkbox) checkbox.checked = previousValue;
-    if (label) label.textContent = `\u88fd\u54c1\u30de\u30b9\u30bf\u30fc\u767b\u9332 ${previousValue ? '\u6709\u308a' : '\u7121\u3057'}`;
-    showProductAlert('error', '\u30a8\u30e9\u30fc: ' + error.message);
-  } finally {
-    if (checkbox) checkbox.disabled = false;
-  }
+function updateProductMasterRegistrationLabel() {
+  const checkbox = document.getElementById('isRegisteredMaster');
+  checkbox.nextElementSibling.textContent = `製品マスター登録 ${checkbox.checked ? '有り' : '無し'}`;
 }
 function updateProductList() {
   const list = document.getElementById('productList');
@@ -1337,11 +1312,9 @@ function updateProductList() {
     const productData = master[code];
     const piecesPerBox = productData.piecesPerBox || 0;
     const items = productData.ngItems || [];
-    const isRegistered = isProductMasterRegistered(productData);
-    const safeCode = JSON.stringify(code);
     html += '<div class="item"><div style="flex:1">';
     html += `<div class="item-name">${code} <span style="color:#2e7d32;font-size:13px;font-weight:normal">(${piecesPerBox}個/箱)</span></div>`;
-    html += `<label class="master-toggle"><input type="checkbox" ${isRegistered ? 'checked' : ''} onclick="toggleProductMasterRegistration(${safeCode}, this.checked, this)"><span>製品マスター登録 ${isRegistered ? '有り' : '無し'}</span></label>`;
+    html += `<div style="font-size:13px;color:${isProductMasterRegistered(productData) ? '#2e7d32' : '#6c757d'}">製品マスター登録: ${isProductMasterRegistered(productData) ? '有り' : '無し'}</div>`;
     html += '<div class="item-details">';
     items.forEach(item => { html += `<span class="ng-tag">${item.code}:${item.name}</span>`; });
     html += '</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">';
