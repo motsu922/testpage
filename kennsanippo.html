@@ -1290,14 +1290,36 @@ function deleteProduct(code) {
   }
 }
 
-function toggleProductMasterRegistration(code, checked) {
-  if(!db) { showProductAlert('error', 'Firebaseに接続されていません'); return; }
+async function toggleProductMasterRegistration(code, checked, checkbox) {
+  const label = checkbox ? checkbox.nextElementSibling : null;
+  const previousValue = master[code] ? isProductMasterRegistered(master[code]) : !checked;
+  if (checkbox) checkbox.disabled = true;
+  if (label) label.textContent = '製品マスター登録 保存中...';
+  if(!db) {
+    if (checkbox) {
+      checkbox.checked = previousValue;
+      checkbox.disabled = false;
+    }
+    if (label) label.textContent = `製品マスター登録 ${previousValue ? '有り' : '無し'}`;
+    showProductAlert('error', 'Firebaseに接続されていません');
+    return;
+  }
   db.collection('productMaster').doc(code).update({
     isRegisteredMaster: checked,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(() => {
+    if (master[code]) master[code].isRegisteredMaster = checked;
+    if (label) label.textContent = `製品マスター登録 ${checked ? '有り' : '無し'}`;
+    if (checkbox) checkbox.disabled = false;
     showProductAlert('success', `製品マスター登録を${checked ? '有り' : '無し'}に変更しました`);
-  }).catch(error => { showProductAlert('error', 'エラー: ' + error.message); });
+  }).catch(error => {
+    if (checkbox) {
+      checkbox.checked = previousValue;
+      checkbox.disabled = false;
+    }
+    if (label) label.textContent = `製品マスター登録 ${previousValue ? '有り' : '無し'}`;
+    showProductAlert('error', 'エラー: ' + error.message);
+  });
 }
 
 function updateProductList() {
@@ -1313,7 +1335,7 @@ function updateProductList() {
     const safeCode = JSON.stringify(code);
     html += '<div class="item"><div style="flex:1">';
     html += `<div class="item-name">${code} <span style="color:#2e7d32;font-size:13px;font-weight:normal">(${piecesPerBox}個/箱)</span></div>`;
-    html += `<label class="master-toggle"><input type="checkbox" ${isRegistered ? 'checked' : ''} onchange="toggleProductMasterRegistration(${safeCode}, this.checked)"><span>製品マスター登録 ${isRegistered ? '有り' : '無し'}</span></label>`;
+    html += `<label class="master-toggle"><input type="checkbox" ${isRegistered ? 'checked' : ''} onchange="toggleProductMasterRegistration(${safeCode}, this.checked, this)"><span>製品マスター登録 ${isRegistered ? '有り' : '無し'}</span></label>`;
     html += '<div class="item-details">';
     items.forEach(item => { html += `<span class="ng-tag">${item.code}:${item.name}</span>`; });
     html += '</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">';
