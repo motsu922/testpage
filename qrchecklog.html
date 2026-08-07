@@ -886,6 +886,9 @@
             <option value="progress_asc">未完了順</option>
             <option value="progress_desc">進捗順</option>
           </select>
+          <select class="filter-select" id="detailCustomerFilter" onchange="changeOrderSessionCustomerFilter()">
+            <option value="all">顧客すべて</option>
+          </select>
           <button class="filter-btn" onclick="openCustomerMasterModal()">顧客名マスタ</button>
           <button class="filter-btn" onclick="openPassThroughMasterModal()">除外品番マスタ</button>
           <button class="filter-btn" onclick="clearOrderSessionFilter()">全ログ表示</button>
@@ -960,6 +963,7 @@
   let orderSessions = [];
   let activeOrderSessionId = '';
   let orderSessionSort = 'updated_desc';
+  let orderSessionCustomerFilter = 'all';
   let detailBoardOpen = false;
   let customerNameMaster = {};
   let passThroughPartMaster = {};
@@ -1036,6 +1040,7 @@
     detachRealtimeListeners();
     activeCompany = company;
     activeOrderSessionId = '';
+    orderSessionCustomerFilter = 'all';
     orderSessions = [];
     renderCompanyList();
     document.getElementById('tableTitle').textContent = company.name + ' ログ';
@@ -1183,6 +1188,34 @@
     return extractCustomerIdFromOrderQr(detailQr || '');
   }
 
+  function getOrderCustomerFilterKey(session) {
+    const customerId = getOrderCustomerId(session);
+    return customerId || `label:${getOrderCustomerLabel(session)}`;
+  }
+
+  function getFilteredOrderSessions() {
+    if (!orderSessionCustomerFilter || orderSessionCustomerFilter === 'all') return [...orderSessions];
+    return orderSessions.filter(session => getOrderCustomerFilterKey(session) === orderSessionCustomerFilter);
+  }
+
+  function renderOrderCustomerFilterOptions() {
+    const select = document.getElementById('detailCustomerFilter');
+    if (!select) return;
+    const options = new Map();
+    orderSessions.forEach(session => {
+      const key = getOrderCustomerFilterKey(session);
+      if (!key) return;
+      if (!options.has(key)) options.set(key, getOrderCustomerLabel(session));
+    });
+    const sorted = [...options.entries()].sort((a, b) => a[1].localeCompare(b[1], 'ja', { numeric: true }));
+    if (orderSessionCustomerFilter !== 'all' && !options.has(orderSessionCustomerFilter)) {
+      orderSessionCustomerFilter = 'all';
+    }
+    select.innerHTML = '<option value="all">顧客すべて</option>' +
+      sorted.map(([key, label]) => `<option value="${escHtml(key)}">${escHtml(label)}</option>`).join('');
+    select.value = orderSessionCustomerFilter || 'all';
+  }
+
   function extractCustomerIdFromOrderQr(qr) {
     const text = String(qr || '');
     const match = text.match(/[VL](\d{9})\s*([0-9A-Z])\b/);
@@ -1217,7 +1250,7 @@
   }
 
   function sortedOrderSessions() {
-    const sorted = [...orderSessions];
+    const sorted = getFilteredOrderSessions();
     const sortMode = orderSessionSort || 'updated_desc';
     sorted.sort((a, b) => {
       if (sortMode === 'customer_asc') {
@@ -1238,6 +1271,12 @@
   function changeOrderSessionSort() {
     const select = document.getElementById('detailSortSelect');
     orderSessionSort = select ? select.value : 'updated_desc';
+    renderOrderSessions();
+  }
+
+  function changeOrderSessionCustomerFilter() {
+    const select = document.getElementById('detailCustomerFilter');
+    orderSessionCustomerFilter = select ? select.value : 'all';
     renderOrderSessions();
   }
 
@@ -1306,12 +1345,17 @@
   function renderOrderSessions() {
     const list = document.getElementById('detailSessionList');
     const count = document.getElementById('detailSessionCount');
-    const incomplete = orderSessions.filter(session => {
+    renderOrderCustomerFilterOptions();
+    const visibleSessions = getFilteredOrderSessions();
+    const incomplete = visibleSessions.filter(session => {
       const required = orderRequiredBoxes(session);
       return required > 0 && orderScannedBoxes(session) < required;
     }).length;
     if (count) {
-      count.textContent = orderSessions.length.toLocaleString() + '件 / 未完了 ' + incomplete.toLocaleString() + '件';
+      const totalText = visibleSessions.length === orderSessions.length
+        ? orderSessions.length.toLocaleString() + '件'
+        : `${visibleSessions.length.toLocaleString()}件 / 全${orderSessions.length.toLocaleString()}件`;
+      count.textContent = totalText + ' / 未完了 ' + incomplete.toLocaleString() + '件';
     }
     renderCurrentWorkSessions();
     const sortSelect = document.getElementById('detailSortSelect');
@@ -1321,6 +1365,12 @@
 
     if (!orderSessions.length) {
       list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">注文明細の進捗データはありません</div></div>';
+      renderDetailFilterNote();
+      return;
+    }
+
+    if (!visibleSessions.length) {
+      list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">選択した顧客の明細はありません</div></div>';
       renderDetailFilterNote();
       return;
     }
