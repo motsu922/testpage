@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>業務日報 | 新しい入力画面</title>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<style>
+:root{--ink:#17212b;--muted:#64748b;--line:#dbe3ea;--page:#f4f7f8;--panel:#fff;--teal:#0f766e;--teal-dark:#115e59;--soft:#e6f5f2;--danger:#c2413b;--shadow:0 10px 28px rgba(15,35,41,.08)}
+*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);font-family:"Yu Gothic UI","Noto Sans JP",sans-serif;font-size:14px}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #9fddd4;outline-offset:2px}
+.header{height:66px;background:#102d2e;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(16px,4vw,48px)}.brand{display:flex;align-items:center;gap:11px}.brand-mark{width:34px;height:34px;display:grid;place-items:center;background:#b7ebe4;color:#103031;border-radius:7px}.brand h1{font-size:17px;margin:0}.brand p{margin:2px 0 0;font-size:11px;color:#bbd6d2}.sync{font-size:12px;color:#d8efea;display:flex;align-items:center;gap:7px}.sync-dot{width:8px;height:8px;border-radius:50%;background:#6ee7b7}.sync.offline .sync-dot{background:#fca5a5}
+.page{max-width:1420px;margin:auto;padding:24px clamp(16px,4vw,48px) 42px}.filters{display:grid;grid-template-columns:1fr 210px auto auto auto;gap:12px;align-items:end;margin-bottom:18px}.date-nav{display:flex;gap:6px;align-items:center}.date-nav input{height:42px;width:172px}.label{display:block;margin:0 0 6px;color:var(--muted);font-size:11px;font-weight:700}.field,select{height:42px;width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);padding:0 11px;font-weight:600}.icon-btn{width:34px;height:34px;border:0;border-radius:6px;background:transparent;color:inherit;display:inline-grid;place-items:center}.icon-btn:hover{background:#e7f3f1}.header .icon-btn:hover{background:rgba(255,255,255,.12)}.button{height:42px;border:1px solid var(--line);border-radius:6px;padding:0 14px;background:#fff;color:#334155;font-weight:700;white-space:nowrap}.button:hover{border-color:#9bb9b5;background:#f7fbfa}.button.primary{border-color:var(--teal);background:var(--teal);color:#fff}.button.primary:hover{background:var(--teal-dark)}.button.danger{color:var(--danger);background:#fff1ef;border-color:#f4c4c0}.print-report-head{display:none}
+.grid{display:grid;grid-template-columns:minmax(360px,.9fr) minmax(480px,1.5fr);gap:18px;align-items:start}.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:var(--shadow);overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:17px 18px 13px;border-bottom:1px solid #e6edf1}.panel-head h2{font-size:15px;margin:0}.panel-head p{font-size:12px;color:var(--muted);margin:3px 0 0}.summary{display:grid;grid-template-columns:repeat(3,1fr);margin:14px 18px 0;border:1px solid #d5e9e5;border-radius:6px;background:#fbfefd;overflow:hidden}.metric{padding:10px;border-right:1px solid #d5e9e5}.metric:last-child{border:0}.metric small{color:var(--muted);font-size:10px;font-weight:700}.metric strong{display:block;color:#125d57;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.form{padding:18px}.task-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.task{height:48px;display:flex;align-items:center;gap:8px;padding:0 10px;overflow:hidden;text-align:left;border:1px solid var(--line);border-left:5px solid var(--color);border-radius:6px;background:#fff;font-weight:700}.task:hover{background:#f3faf8;border-color:#b7d8d3}.task.active{background:#ebf7f5;box-shadow:inset 0 0 0 1px var(--color);border-color:var(--color)}.task span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.task.add{justify-content:center;border-left:1px dashed var(--teal);color:var(--teal-dark)}
+.time-grid{display:grid;grid-template-columns:1fr 24px 1fr;gap:8px;align-items:end;margin-top:20px}.time{height:45px;font-size:17px}.dash{height:45px;display:grid;place-items:center;color:#94a3b8;font-weight:700}.adjust{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:7px}.adjust button,.quick button{height:29px;border:1px solid var(--line);border-radius:5px;background:#f8fafc;color:#475569;font-size:12px;font-weight:600}.adjust button:hover,.quick button:hover{background:var(--soft);border-color:#aad5ce}.quick{display:flex;gap:7px;flex-wrap:wrap;margin-top:16px}.actions{display:flex;gap:8px;margin-top:20px}.actions .primary{flex:1}.timeline{padding:3px 18px 16px;min-height:500px}.entry{display:grid;grid-template-columns:98px 1fr auto;gap:12px;align-items:center;min-height:76px;border-bottom:1px solid #e8edf1}.entry:last-child{border:0}.entry-time{font-size:12px;font-weight:700;line-height:1.6}.entry-time small{display:block;color:#94a3b8;font-size:10px;font-weight:500}.entry-body{display:flex;min-width:0;align-items:center;gap:10px}.entry-color{width:9px;height:42px;flex:0 0 auto;border-radius:3px;background:var(--color)}.entry-body strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.entry-body small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.entry-actions{display:flex;gap:2px}.entry-actions .icon-btn{color:#64748b}.entry-actions .icon-btn:hover{color:var(--teal-dark)}.entry-actions .delete:hover{color:var(--danger);background:#fff1ef}.empty{min-height:380px;display:grid;place-items:center;text-align:center;color:var(--muted)}.empty p{margin:6px 0;font-size:13px}
+dialog{border:0;border-radius:8px;padding:0;width:min(480px,calc(100vw - 32px));box-shadow:0 24px 64px rgba(15,23,42,.28)}dialog::backdrop{background:rgba(15,23,42,.45)}.dialog{padding:20px}.dialog h2{font-size:17px;margin:0 0 18px}.row{display:flex;gap:8px}.text{height:42px;width:100%;border:1px solid var(--line);border-radius:6px;padding:0 11px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.toast{position:fixed;right:20px;bottom:20px;padding:12px 14px;background:#163d3c;color:#fff;border-radius:7px;box-shadow:var(--shadow);font-size:13px;z-index:5}.toast.error{background:#8e302c}
+@media(max-width:860px){.filters{grid-template-columns:1fr auto}.member-field{grid-column:1/-1}.grid{grid-template-columns:1fr}}@media(max-width:520px){.header{padding:0 14px}.brand p,.sync span{display:none}.page{padding:16px 12px 30px}.task-grid{grid-template-columns:1fr}.panel-head,.form{padding-left:14px;padding-right:14px}.summary{margin-left:14px;margin-right:14px}.timeline{padding-left:14px;padding-right:14px}.entry{grid-template-columns:80px 1fr auto;gap:8px}.entry-actions .icon-btn{width:28px}.date-nav input{width:148px}}
+</style>
+</head>
+<body>
+<header class="header"><div class="brand"><div class="brand-mark"><i data-lucide="clipboard-pen-line"></i></div><div><h1>業務日報</h1><p>入力ワークスペース</p></div></div><div class="sync" id="sync"><span class="sync-dot"></span><span>接続中</span><button class="icon-btn" id="reload" title="最新のデータを読み込む" aria-label="最新のデータを読み込む"><i data-lucide="refresh-cw"></i></button></div></header>
+<main class="page"><section class="filters"><div class="date-nav"><button class="icon-btn" id="prev" title="前日" aria-label="前日"><i data-lucide="chevron-left"></i></button><input class="field" id="date" type="date" aria-label="対象日"><button class="icon-btn" id="next" title="翌日" aria-label="翌日"><i data-lucide="chevron-right"></i></button><button class="button" id="today">今日</button></div><div class="member-field"><label class="label" for="member">担当者</label><select id="member"></select></div><button class="button" id="allMembers"><i data-lucide="users-round"></i> 全員表示</button><button class="button" id="settings"><i data-lucide="settings-2"></i> タスク管理</button><button class="icon-btn" id="printReport" type="button" title="A4で印刷" aria-label="A4で印刷"><i data-lucide="printer"></i></button></section>
+<section class="grid"><section class="panel"><header class="panel-head"><div><h2>工数分析</h2><p id="analysisRangeLabel">対象期間を読み込み中</p></div></header><div class="analytics"><div class="analysis-tabs" role="tablist" aria-label="集計期間"><button type="button" class="analysis-tab active" data-analysis-range="day">一日</button><button type="button" class="analysis-tab" data-analysis-range="week">一週間</button><button type="button" class="analysis-tab" data-analysis-range="month">一か月</button></div><div class="analysis-head"><h3>タスク別内訳</h3><span id="analysisCount">0件</span></div><div class="analysis-breakdown" id="analysisBreakdown"></div><section class="todo-section"><div class="todo-head"><h3>Todo</h3><span id="todoCount">0件</span></div><div class="todo-add"><input class="text" id="todoInput" maxlength="120" placeholder="やることを追加"><button class="icon-btn" id="addTodo" type="button" title="Todoを追加" aria-label="Todoを追加"><i data-lucide="plus"></i></button></div><div class="todo-list" id="todoList"></div></section></div><div hidden aria-hidden="true"><input id="start" type="time"><input id="end" type="time"><button id="save" type="button"></button><button id="cancel" type="button"></button><button id="now" type="button"></button></div></section>
+<section class="panel"><header class="panel-head"><div><h2>当日の実績</h2><p id="subtitle">入力済みの実績を編集できます</p></div></header><div class="print-report-head"><h1>作業日報</h1><div><span>日付：<strong id="printDate"></strong></span><span>担当者：<strong id="printMember"></strong></span></div></div><div class="timeline" id="timeline"></div><section class="print-todos" id="printTodos" aria-label="未完了Todo"></section></section></section></main>
+<dialog id="dialog"><form class="dialog" method="dialog"><h2>担当者・タスク管理</h2><label class="label" for="newMember">担当者を追加</label><div class="row"><input class="text" id="newMember" maxlength="30"><button class="button" id="addMember" type="button">追加</button></div><div style="height:17px"></div><label class="label" for="newTask">選択中の担当者にタスクを追加</label><div class="row"><input class="text" id="newTask" maxlength="50"><button class="button" id="addTask" type="button">追加</button></div><div class="task-management"><div class="task-management-head"><strong>タスクリスト</strong><span id="managedTaskMember"></span></div><div id="managedTasks"></div></div><div class="dialog-actions"><button class="button">閉じる</button></div></form></dialog>
+<dialog id="blockDialog"><form class="dialog" method="dialog"><h2>ブロックを修正</h2><p id="blockRange" style="margin:0 0 18px;color:#64748b;font-size:13px"></p><label class="label" for="blockTask">タスク</label><select class="field" id="blockTask"></select><label class="label" for="blockNote" style="margin-top:14px">備考</label><textarea class="text-area" id="blockNote" maxlength="120" placeholder="任意"></textarea><div class="dialog-actions"><button class="button danger" id="deleteBlock" type="button">削除</button><button class="button" type="submit">閉じる</button><button class="button primary" id="updateBlock" type="button">保存</button></div></form></dialog>
+<dialog id="planDialog"><form class="dialog" method="dialog"><h2>予定を登録</h2><p id="planRange" style="margin:0 0 18px;color:#64748b;font-size:13px"></p><label class="label" for="planTask">タスク</label><select class="field" id="planTask"></select><label class="label" for="planNote" style="margin-top:14px">備考</label><textarea class="text-area" id="planNote" maxlength="120" placeholder="任意"></textarea><div class="dialog-actions"><button class="button danger" id="deletePlan" type="button">削除</button><button class="button" type="submit">閉じる</button><button class="button primary" id="savePlan" type="button">予定を保存</button></div></form></dialog>
+<dialog id="taskListDialog"><div class="dialog"><h2>タスクを選択</h2><p id="taskListRange" style="margin:0 0 16px;color:#64748b;font-size:13px"></p><label class="label" for="taskListNote">備考</label><textarea class="text-area" id="taskListNote" maxlength="120" placeholder="任意"></textarea><div class="modal-task-list" id="modalTaskList"></div><div class="dialog-actions"><button class="button" id="closeTaskList" type="button">閉じる</button></div></div></dialog>
+<dialog id="allMembersDialog" class="all-members-dialog"><div class="dialog"><div class="all-members-head"><div><h2>全員の日報</h2><p id="allMembersDate"></p></div><button class="icon-btn" id="closeAllMembers" type="button" title="閉じる" aria-label="閉じる"><i data-lucide="x"></i></button></div><div id="allMembersBoard" class="all-members-board"></div></div></dialog>
+<script>
+const cfg={apiKey:'AIzaSyAwZQMhF5qIv1XSADce2JiN_qAV88TxEQ8',projectId:'qcnippo'},defaults=['朝礼','打合せ','不具合対応','異常処置','保留品対応','資料作成','メール','外出','来客対応','その他'],colors={'朝礼':'#d97706','打合せ':'#2563eb','不具合対応':'#dc2626','異常処置':'#b91c1c','保留品対応':'#7c3aed','資料作成':'#059669','メール':'#0891b2','外出':'#0f766e','来客対応':'#db2777','その他':'#64748b'},palette=['#e11d48','#7c3aed','#2563eb','#0284c7','#16a34a','#ca8a04','#ea580c','#475569','#a16207','#65a30d'];
+let db,stateRef,dayRef,unsubState,unsubDay,state={members:['担当者1'],customTasks:{},customIcons:{},storageMode:'dailyRecords',records:[]},records=[],plans=[],todos=[],task='',editing=null;
+const $=id=>document.getElementById(id),pad=n=>String(n).padStart(2,'0'),dateString=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,esc=x=>String(x??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])),mins=t=>{const a=String(t||'').split(':').map(Number);return a[0]*60+a[1]},time=n=>{n=(n%1440+1440)%1440;return`${pad(n/60|0)}:${pad(n%60)}`},hours=r=>Math.max(0,(mins(r.endTime)-mins(r.startTime))/60),member=()=>$('member').value,day=()=>$('date').value;
+function id(){return crypto.randomUUID?crypto.randomUUID():`record_${Date.now()}_${Math.random().toString(36).slice(2)}`}function device(){let x=localStorage.getItem('tt_deviceId');if(!x){x=`v2_${id()}`;localStorage.setItem('tt_deviceId',x)}return x}function color(t){if(colors[t])return colors[t];let h=0;for(let i=0;i<String(t).length;i++)h=(h*31+String(t).charCodeAt(i))|0;return palette[(h>>>0)%palette.length]}function sync(ok,label){$('sync').classList.toggle('offline',!ok);$('sync').querySelectorAll('span')[1].textContent=label}function notice(text,error=false){const n=document.createElement('div');n.className=`toast${error?' error':''}`;n.textContent=text;document.body.append(n);setTimeout(()=>n.remove(),3200)}
+function initialTimes(){let d=new Date(),n=(d.getHours()*60+d.getMinutes())/5|0;$('start').value=time(n*5-30);$('end').value=time(n*5)}function tasks(){const currentMember=member();return[...new Set([...defaults,...((state.customTasks||{})[currentMember]||[]),...records.filter(r=>r.member===currentMember).map(r=>r.task).filter(Boolean)])]}
+function renderMembers(){const keep=member(),list=[...new Set((state.members||[]).filter(Boolean))];if(!list.length)list.push('担当者1');$('member').innerHTML=list.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');$('member').value=list.includes(keep)?keep:list[0]}
+function renderTasks(){const all=tasks();if(!task||!all.includes(task))task=all[0]||''}
+function renderList(){const view=records.filter(r=>r.member===member()).sort((a,b)=>mins(a.startTime)-mins(b.startTime)),sum=records.reduce((n,r)=>n+hours(r),0);$('count').textContent=`${records.length}件`;$('hours').textContent=`${sum.toFixed(1)}h`;$('selected').textContent=task||'未選択';$('editMessage').textContent=editing?'編集中：保存すると既存の実績を更新します':'タスクと時間を選択してください';$('save').innerHTML=editing?'<i data-lucide="save"></i> 変更を保存':'<i data-lucide="save"></i> 実績を登録';$('cancel').hidden=!editing;$('subtitle').textContent=`${member()||'担当者未選択'} / ${view.length}件`;$('timeline').innerHTML=view.length?view.map(r=>`<article class="entry" data-id="${esc(r.id)}"><div class="entry-time">${esc(r.startTime)} - ${esc(r.endTime)}<small>${hours(r).toFixed(1)}時間</small></div><div class="entry-body"><span class="entry-color" style="--color:${color(r.task)}"></span><div><strong>${esc(r.task)}</strong><small>${r.source==='TimerTracker'?'タイマー記録':r.source==='PCWorkTracker'?'PC作業記録':'手入力'}</small></div></div><div class="entry-actions"><button class="icon-btn edit" title="編集"><i data-lucide="pencil"></i></button><button class="icon-btn delete" title="削除"><i data-lucide="trash-2"></i></button></div></article>`).join(''):'<div class="empty"><div><i data-lucide="calendar-plus"></i><p>この日の実績はまだありません</p><p>左側から最初の実績を登録できます</p></div></div>';$('timeline').querySelectorAll('.edit').forEach(b=>b.onclick=()=>edit(b.closest('.entry').dataset.id));$('timeline').querySelectorAll('.delete').forEach(b=>b.onclick=()=>remove(b.closest('.entry').dataset.id))}
+function render(){renderMembers();renderTasks();renderList();renderManagedTasks();renderTodos();window.lucide&&lucide.createIcons()}
+function watchDay(){if(!db||!day())return;if(unsubDay)unsubDay();dayRef=db.doc(`timeTracker/state/dailyRecords/${day()}`);unsubDay=dayRef.onSnapshot(s=>{const data=s.exists?s.data():{};records=Array.isArray(data.records)?data.records:(state.storageMode!=='dailyRecords'&&Array.isArray(state.records)?state.records.filter(r=>r.date===day()):[]);plans=Array.isArray(data.plans)?data.plans:[];todos=Array.isArray(data.todos)?data.todos:[];render()},e=>{console.error(e);notice('日報データを取得できませんでした',true)})}
+async function connect(){try{if(!firebase.apps.length)firebase.initializeApp(cfg);db=firebase.firestore();stateRef=db.doc('timeTracker/state');sync(true,'接続中');unsubState=stateRef.onSnapshot(s=>{if(s.exists)state={...state,...s.data()};renderMembers();watchDay();render()},e=>{console.error(e);sync(false,'接続エラー')});await stateRef.get()}catch(e){console.error(e);sync(false,'接続エラー');notice('Firebaseの初期化に失敗しました',true)}}
+async function save(){const p={id:editing||id(),member:member(),task,date:day(),startTime:$('start').value,endTime:$('end').value,source:'Manual'};if(!p.member||!p.task||!p.date||!p.startTime||!p.endTime){notice('担当者・タスク・時間を入力してください',true);return}if(mins(p.endTime)<=mins(p.startTime)){notice('終了時刻は開始時刻より後にしてください',true);return}sync(true,'保存中');try{await db.runTransaction(async tx=>{const [parent,ds]=await Promise.all([tx.get(stateRef),tx.get(dayRef)]),base=parent.exists?parent.data():{},legacy=base.storageMode!=='dailyRecords'&&Array.isArray(base.records)?base.records.filter(r=>r.date===p.date):[],server=ds.exists&&Array.isArray(ds.data().records)?ds.data().records:legacy,serverPlans=ds.exists&&Array.isArray(ds.data().plans)?ds.data().plans:[],serverTodos=ds.exists&&Array.isArray(ds.data().todos)?ds.data().todos:[],map=new Map(server.filter(r=>r&&r.id!=null).map(r=>[String(r.id),r]));map.set(String(p.id),p);const all=[...map.values()],v=(Number(base.lastUpdatedVersion)||0)+1;tx.set(dayRef,{date:p.date,records:all,plans:serverPlans,todos:serverTodos,recordCount:all.length,lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()});tx.set(stateRef,{storageMode:'dailyRecords',dailyDocumentPathTemplate:'timeTracker/state/dailyRecords/{date}',lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})});editing=null;sync(true,'同期済み');notice('実績を保存しました')}catch(e){console.error(e);sync(false,'保存エラー');notice(`保存に失敗しました: ${e.message||'不明なエラー'}`,true)}render()}
+function edit(x){const r=records.find(r=>String(r.id)===String(x));if(!r)return;editing=r.id;task=r.task;$('start').value=r.startTime;$('end').value=r.endTime;render();document.querySelector('.panel').scrollIntoView({behavior:'smooth',block:'start'})}function cancel(){editing=null;task=tasks()[0]||'';initialTimes();render()}
+async function remove(x){const r=records.find(r=>String(r.id)===String(x));if(!r||!confirm(`${r.task}（${r.startTime} - ${r.endTime}）を削除しますか？`))return;sync(true,'削除中');try{await db.runTransaction(async tx=>{const [parent,ds]=await Promise.all([tx.get(stateRef),tx.get(dayRef)]),base=parent.exists?parent.data():{},server=ds.exists&&Array.isArray(ds.data().records)?ds.data().records:[],serverPlans=ds.exists&&Array.isArray(ds.data().plans)?ds.data().plans:[],serverTodos=ds.exists&&Array.isArray(ds.data().todos)?ds.data().todos:[],all=server.filter(r=>String(r.id)!==String(x)),v=(Number(base.lastUpdatedVersion)||0)+1;tx.set(dayRef,{date:day(),records:all,plans:serverPlans,todos:serverTodos,recordCount:all.length,lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()});tx.set(stateRef,{storageMode:'dailyRecords',lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})});if(String(editing)===String(x))cancel();sync(true,'同期済み');notice('実績を削除しました')}catch(e){console.error(e);sync(false,'削除エラー');notice('削除に失敗しました',true)}}
+async function add(kind){const input=$(kind==='member'?'newMember':'newTask'),value=input.value.trim();if(!value)return;try{await db.runTransaction(async tx=>{const s=await tx.get(stateRef),base=s.exists?s.data():{},v=(Number(base.lastUpdatedVersion)||0)+1;if(kind==='member'){tx.set(stateRef,{members:[...new Set([...(base.members||[]),value])],lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}else{const c={...(base.customTasks||{})};c[member()]=[...new Set([...(c[member()]||[]),value])];tx.set(stateRef,{customTasks:c,lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})}});if(kind==='task')task=value;input.value='';notice(kind==='member'?'担当者を追加しました':'タスクを追加しました')}catch(e){console.error(e);notice('追加に失敗しました',true)}}
+function renderManagedTasks(){const target=$('managedTasks');if(!target)return;const currentMember=member(),custom=new Set((state.customTasks||{})[currentMember]||[]);$('managedTaskMember').textContent=currentMember||'担当者未選択';target.innerHTML=tasks().map(item=>`<div class="managed-task"><span class="managed-task-color" style="--managed-color:${color(item)}"></span><span class="managed-task-name">${esc(item)}</span>${custom.has(item)?`<button class="icon-btn managed-task-delete" type="button" data-managed-task="${esc(item)}" title="タスクを削除" aria-label="${esc(item)}を削除"><i data-lucide="trash-2"></i></button>`:'<small>標準</small>'}</div>`).join('')||'<p class="managed-empty">登録タスクはありません</p>';target.querySelectorAll('[data-managed-task]').forEach(button=>button.addEventListener('click',()=>removeManagedTask(button.dataset.managedTask)));}
+async function removeManagedTask(taskName){const currentMember=member();if(!taskName||!currentMember||!confirm(`タスクリストから「${taskName}」を削除しますか？\n既に登録済みの実績は削除されません。`))return;try{await db.runTransaction(async tx=>{const snapshot=await tx.get(stateRef),base=snapshot.exists?snapshot.data():{},customTasks={...(base.customTasks||{})};customTasks[currentMember]=(customTasks[currentMember]||[]).filter(item=>item!==taskName);const version=(Number(base.lastUpdatedVersion)||0)+1;tx.set(stateRef,{customTasks,lastUpdatedVersion:version,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});});if(task===taskName)task=tasks().find(item=>item!==taskName)||'';notice('タスクをタスクリストから削除しました')}catch(error){console.error(error);notice('タスクを削除できませんでした',true)}}
+function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);$('date').value=dateString(d);editing=null;watchDay();render()}document.addEventListener('DOMContentLoaded',()=>{$('date').value=dateString(new Date());initialTimes();$('prev').onclick=()=>move(-1);$('next').onclick=()=>move(1);$('today').onclick=()=>{$('date').value=dateString(new Date());editing=null;watchDay();render()};$('date').onchange=()=>{editing=null;watchDay();render()};$('member').onchange=()=>{editing=null;render()};$('save').onclick=save;$('cancel').onclick=cancel;$('reload').onclick=()=>{watchDay();notice('最新データを読み込みました')};document.querySelectorAll('[data-time]').forEach(b=>b.onclick=()=>{const [target,amount]=b.dataset.time.split(':');$(target).value=time(mins($(target).value)+Number(amount))});document.querySelectorAll('[data-duration]').forEach(b=>b.onclick=()=>{$('end').value=time(mins($('start').value)+Number(b.dataset.duration))});$('now').onclick=()=>{const d=new Date();$('end').value=time(d.getHours()*60+d.getMinutes())};$('settings').onclick=()=>$('dialog').showModal();$('addMember').onclick=()=>add('member');$('addTask').onclick=()=>add('task');render();connect()});
+</script>
+<style>
+  /* 15-minute block input mode */
+  .grid > .panel:first-child .time-grid,
+  .grid > .panel:first-child .quick,
+  .grid > .panel:first-child .actions { display: none; }
+  .block-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 16px 0; }
+  .block-period { min-width: 0; }
+  .period-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 8px; padding-bottom: 7px; border-bottom: 2px solid #d7eae6; color: #155e59; font-size: 14px; font-weight: 700; }
+  .period-heading small { color: #64748b; font-size: 11px; font-weight: 600; }
+  .block-column { display: grid; gap: 6px; }
+  .time-block { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px dashed #cbd5dc; border-radius: 6px; background: #fbfcfc; color: #64748b; text-align: left; }
+  .time-block:hover { border-color: #329d92; background: #effaf8; color: #155e59; }
+  .time-block.filled { border-style: solid; border-color: var(--block-color); background: color-mix(in srgb, var(--block-color) 11%, #fff); color: #1f2937; }
+  .time-block.selected { border: 2px solid #0f766e; background: #dff5f1; color: #115e59; }
+  .block-actions { display: flex; gap: 8px; margin-top: 16px; }
+  .block-actions .primary { flex: 1; }
+  .text-area { width: 100%; min-height: 66px; resize: vertical; border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; color: var(--ink); }
+  .modal-task-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 420px; margin-top: 14px; overflow-y: auto; }
+  .modal-task { min-height: 46px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; overflow: hidden; border: 1px solid var(--line); border-left: 5px solid var(--modal-color); border-radius: 6px; background: #fff; color: var(--ink); font-weight: 700; text-align: left; }
+  .modal-task:hover { border-color: var(--modal-color); background: color-mix(in srgb, var(--modal-color) 10%, #fff); }
+  .modal-task span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 520px) { .modal-task-list { grid-template-columns: 1fr; } }
+  .block-time { font-size: 11px; font-weight: 700; color: #64748b; }
+  .time-block.filled .block-time { color: var(--block-color); }
+  .block-task { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; text-align: right; }
+  .block-empty { color: #94a3b8; font-size: 12px; }
+  .block-note { margin: 14px 0 0; color: #64748b; font-size: 12px; }
+  .analytics { padding: 18px; }
+  .analysis-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .analysis-tab { height: 36px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: #64748b; font-weight: 700; }
+  .analysis-tab:hover { border-color: #9bb9b5; background: #f7fbfa; }
+  .analysis-tab.active { border-color: var(--teal); background: var(--teal); color: #fff; }
+  .analytics .summary { margin: 16px 0 0; }
+  .analysis-head { display: flex; justify-content: space-between; align-items: baseline; margin: 20px 0 10px; }
+  .analysis-head h3 { margin: 0; font-size: 13px; }
+  .analysis-head span { color: var(--muted); font-size: 11px; font-weight: 700; }
+  .analysis-breakdown { display: grid; gap: 11px; }
+  .analysis-row { display: grid; gap: 5px; }
+  .analysis-row-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+  .analysis-row-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .analysis-row-head span { flex: 0 0 auto; color: var(--muted); font-weight: 700; }
+  .analysis-bar { height: 8px; overflow: hidden; border-radius: 4px; background: #e8eef0; }
+  .analysis-bar span { display: block; height: 100%; border-radius: inherit; background: var(--analysis-color); }
+  .analysis-empty { margin: 28px 0; color: var(--muted); font-size: 13px; text-align: center; }
+  .todo-section { margin-top: 22px; padding-top: 16px; border-top: 1px solid #e4ecee; }
+  .todo-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .todo-head h3 { margin: 0; font-size: 13px; }
+  .todo-head span { color: var(--muted); font-size: 11px; font-weight: 700; }
+  .todo-add { display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 7px; margin-top: 9px; }
+  .todo-add .text { height: 36px; }
+  .todo-add .icon-btn { width: 36px; height: 36px; border: 1px solid var(--teal); border-radius: 6px; background: var(--teal); color: #fff; }
+  .todo-add .icon-btn:hover { background: var(--teal-dark); }
+  .todo-list { display: grid; gap: 5px; margin-top: 10px; }
+  .todo-item { display: grid; grid-template-columns: 22px minmax(0, 1fr) 30px; align-items: center; gap: 6px; min-height: 34px; border-bottom: 1px solid #edf1f2; }
+  .todo-item input { width: 16px; height: 16px; accent-color: var(--teal); }
+  .todo-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
+  .todo-item.done span { color: #94a3b8; text-decoration: line-through; }
+  .todo-delete { width: 28px; height: 28px; color: #94a3b8; }
+  .todo-delete:hover { color: var(--danger); background: #fff1ef; }
+  .todo-empty { margin: 12px 0; color: #94a3b8; font-size: 12px; }
+  .task-management { margin-top: 20px; border-top: 1px solid #e6edf1; padding-top: 15px; }
+  .task-management-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 13px; }
+  .task-management-head span { color: var(--muted); font-size: 11px; }
+  #managedTasks { display: grid; gap: 5px; max-height: 210px; overflow-y: auto; }
+  .managed-task { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 36px; padding: 0 4px; border-bottom: 1px solid #eef2f4; }
+  .managed-task-color { width: 7px; height: 20px; border-radius: 3px; background: var(--managed-color); }
+  .managed-task-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  .managed-task small { color: #94a3b8; font-size: 10px; font-weight: 700; }
+  .managed-task-delete { width: 30px; height: 30px; color: var(--danger); }
+  .managed-task-delete:hover { background: #fff1ef; }
+  .managed-empty { margin: 12px 0; color: var(--muted); font-size: 12px; }
+  dialog.all-members-dialog { width: min(1040px, calc(100vw - 32px)); max-height: min(860px, calc(100vh - 32px)); }
+  .all-members-dialog .dialog { padding: 20px; }
+  .all-members-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .all-members-head h2 { margin-bottom: 3px; }
+  .all-members-head p { margin: 0; color: var(--muted); font-size: 12px; }
+  .all-members-board { display: grid; gap: 12px; margin-top: 16px; max-height: calc(min(860px, 100vh - 32px) - 112px); overflow-y: auto; padding-right: 4px; }
+  .all-member { border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+  .all-member-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; background: #f7fbfa; border-bottom: 1px solid #e4ecee; }
+  .all-member-head strong { font-size: 14px; }
+  .all-member-totals { display: flex; gap: 10px; color: var(--muted); font-size: 11px; font-weight: 700; }
+  .all-member-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .all-member-column { min-width: 0; padding: 10px 12px; }
+  .all-member-column + .all-member-column { border-left: 1px solid #e4ecee; }
+  .all-member-column h3 { margin: 0 0 7px; color: #52636a; font-size: 11px; }
+  .all-member-entry { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; align-items: center; min-height: 25px; font-size: 12px; }
+  .all-member-entry time { color: #64748b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; font-weight: 700; }
+  .all-member-entry span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-left: 4px solid var(--member-color); padding-left: 7px; font-weight: 700; }
+  .all-member-empty { margin: 10px 0; color: #94a3b8; font-size: 12px; }
+  @media (max-width: 640px) { .all-member-columns { grid-template-columns: 1fr; } .all-member-column + .all-member-column { border-left: 0; border-top: 1px solid #e4ecee; } .all-member-head { align-items: flex-start; } .all-member-totals { display: grid; gap: 2px; text-align: right; } }
+  .day-board { display: grid; grid-template-columns: 70px minmax(0, 1fr) minmax(0, 1fr); margin: 16px 0 0; border: 1px solid #b8c5ca; }
+  .day-board-head, .day-row, .day-divider { display: contents; }
+  .day-board-head > span { display: grid; min-height: 38px; place-items: center; border-right: 1px solid #b8c5ca; border-bottom: 1px solid #94a3a8; background: #eef5f4; color: #284d4b; font-size: 12px; font-weight: 800; }
+  .day-board-head > span:last-child { border-right: 0; }
+  .day-time { display: flex; align-items: flex-start; justify-content: center; padding-top: 5px; border-right: 1px solid #b8c5ca; border-bottom: 1px dotted #94a3a8; color: #155e59; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 800; }
+  .day-cell { min-width: 0; min-height: 35px; padding: 3px 8px; border: 0; border-right: 1px solid #b8c5ca; border-bottom: 1px dotted #94a3a8; background: #fff; color: #1f2937; font-size: 12px; font-weight: 700; text-align: left; }
+  .day-cell:last-child { border-right: 0; }
+  .day-cell:hover { background: #eef8f6; }
+  .day-cell.plan-cell { background: #fcfdfd; }
+  .day-cell.filled { border-left: 5px solid var(--cell-color); background: color-mix(in srgb, var(--cell-color) 10%, #fff); }
+  .day-cell.filled.merge-start, .day-cell.filled.merge-middle { border-bottom-color: transparent; }
+  .day-cell.filled.merge-middle, .day-cell.filled.merge-end { padding-top: 0; }
+  .day-cell.actual-cell.selected { outline: 2px solid #0f766e; outline-offset: -2px; background: #dff5f1; }
+  .day-cell.plan-cell.selected { outline: 2px solid #2563eb; outline-offset: -2px; background: #e6f0ff; }
+  .day-cell span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .day-divider > * { min-height: 29px; border-right: 1px solid #b8c5ca; border-bottom: 1px solid #94a3a8; background: #edf1f2; }
+  .day-divider > *:last-child { border-right: 0; }
+  .day-divider strong { display: grid; place-items: center; color: #52636a; font-size: 11px; }
+  @media (max-width: 520px) { .day-board { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr); } .day-cell { min-height: 34px; padding: 3px 5px; font-size: 11px; } .day-time { font-size: 10px; } }
+  @page { size: A4 portrait; margin: 9mm; }
+  @media print {
+    body { background: #fff; color: #000; font-size: 9pt; }
+    .header, .filters, .grid > .panel:first-child, .block-actions, .block-note, dialog, .toast { display: none !important; }
+    .page { max-width: none; margin: 0; padding: 0; }
+    .grid { display: block; }
+    .grid > .panel:nth-child(2) { border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+    .grid > .panel:nth-child(2) .panel-head { display: none; }
+    .print-report-head { display: flex; align-items: flex-end; justify-content: space-between; margin: 0 0 4mm; padding-bottom: 2.5mm; border-bottom: .4mm solid #000; }
+    .print-report-head h1 { margin: 0; font-size: 18pt; }
+    .print-report-head div { display: flex; gap: 7mm; font-size: 10pt; }
+    .timeline { min-height: 0; padding: 0; }
+    .day-board { grid-template-columns: 21mm minmax(0, 1fr) minmax(0, 1fr); margin: 0; border-color: #000; }
+    .day-board-head > span { min-height: 6mm; border-color: #000; background: #fff; color: #000; font-size: 9pt; }
+    .day-time { min-height: 4mm; padding-top: .6mm; border-color: #777; color: #000; font-size: 7.5pt; }
+    .day-cell { min-height: 4mm; padding: .4mm 1.2mm; border-color: #777; background: #fff !important; color: #000; font-size: 7.5pt; }
+    .day-cell.filled { border-left-width: 1.3mm; }
+    .day-divider > * { min-height: 4.5mm; border-color: #000; background: #fff; }
+    .day-divider strong { color: #000; font-size: 7.5pt; }
+    .day-cell.selected { outline: 0; }
+    .print-todos { display: block !important; margin-top: 4mm; padding-top: 2.5mm; border-top: .4mm solid #000; break-inside: avoid; }
+    .print-todos h2 { margin: 0 0 1.5mm; font-size: 10pt; }
+    .print-todos ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2mm 5mm; margin: 0; padding: 0; list-style: none; font-size: 8.5pt; }
+    .print-todos li { display: flex; gap: 1.5mm; align-items: flex-start; }
+    .print-todos li::before { content: '□'; line-height: 1; }
+    .print-todos p { margin: 0; font-size: 8.5pt; }
+  }
+  .print-todos { display: none; }
+  @media (max-width: 520px) { .block-board { gap: 8px; } .time-block { min-height: 46px; padding: 7px 5px; } .block-time { font-size: 10px; } .block-task { font-size: 11px; } .period-heading { font-size: 12px; } .period-heading small { display: none; } }
+</style>
+<script>
+  const BLOCK_MINUTES = 15;
+  const BLOCK_PERIODS = [
+    { label: '午前', start: 8 * 60, end: 12 * 60 },
+    { label: '午後', start: 13 * 60, end: 17 * 60 },
+    { label: '残業', start: 17 * 60, end: 22 * 60 }
+  ];
+  let activeBlock = null;
+  let activePlan = null;
+  let selectedBlockStarts = new Set();
+  let blockPointerStart = null;
+  let blockPointerDown = false;
+  let blockSelectionKind = null;
+  let selectedPlanStarts = new Set();
+  let planPointerStart = null;
+  let planPointerDown = false;
+  let planSelectionKind = null;
+  let analysisRange = 'day';
+  let analysisRequest = 0;
+  let analysisTimer = null;
+
+  function recordForBlock(memberName, startMinute) {
+    return records.find(record => record.member === memberName && mins(record.startTime) <= startMinute && mins(record.endTime) >= startMinute + BLOCK_MINUTES);
+  }
+
+  function planForBlock(memberName, startMinute) {
+    return plans.find(plan => plan.member === memberName && mins(plan.startTime) <= startMinute && mins(plan.endTime) >= startMinute + BLOCK_MINUTES);
+  }
+
+  function isVisibleBlockStart(minute) {
+    return BLOCK_PERIODS.some(period => minute >= period.start && minute < period.end);
+  }
+
+  function mergeState(itemAtBlock, memberName, startMinute) {
+    const item = itemAtBlock(memberName, startMinute);
+    if (!item) return null;
+    const sameGroup = candidate => candidate && candidate.note === item.note && (item.batchId ? candidate.batchId === item.batchId : (candidate.batchId ? false : candidate.member === item.member && candidate.task === item.task));
+    const previous = isVisibleBlockStart(startMinute - BLOCK_MINUTES) && sameGroup(itemAtBlock(memberName, startMinute - BLOCK_MINUTES));
+    const next = isVisibleBlockStart(startMinute + BLOCK_MINUTES) && sameGroup(itemAtBlock(memberName, startMinute + BLOCK_MINUTES));
+    return { item, continuation: previous, className: previous && next ? ' merge-middle' : previous ? ' merge-end' : next ? ' merge-start' : ' merge-single' };
+  }
+
+  function taskLabel(item) {
+    return item.note ? `${item.task} - ${item.note}` : item.task;
+  }
+
+  function openPlanModal(blockStarts = [...selectedPlanStarts], preferredTask = '') {
+    const starts = [...new Set(blockStarts)].sort((a, b) => a - b);
+    if (!starts.length) return;
+    const firstPlan = planForBlock(member(), starts[0]);
+    activePlan = { startMinutes: starts };
+    const select = $('planTask');
+    const selectedTask = preferredTask || firstPlan?.task || task;
+    select.innerHTML = tasks().map(item => `<option value="${esc(item)}" ${item === selectedTask ? 'selected' : ''}>${esc(item)}</option>`).join('');
+    $('planNote').value = firstPlan?.note || '';
+    $('planRange').textContent = starts.length === 1
+      ? `${time(starts[0])} - ${time(starts[0] + BLOCK_MINUTES)}${firstPlan ? ` / ${firstPlan.task}` : ''}`
+      : `${starts.length}枠 / ${time(starts[0])} - ${time(starts.at(-1) + BLOCK_MINUTES)}`;
+    $('deletePlan').disabled = !starts.some(startMinute => planForBlock(member(), startMinute));
+    $('planDialog').showModal();
+  }
+
+  async function saveActivePlan(action) {
+    if (!activePlan) return;
+    const selectedStarts = activePlan.startMinutes;
+    const selectedTask = $('planTask').value;
+    const selectedNote = $('planNote').value.trim();
+    const date = day();
+    const memberName = member();
+    sync(true, action === 'delete' ? '削除中' : '保存中');
+    try {
+      const changed = await db.runTransaction(async transaction => {
+        const [parentSnapshot, daySnapshot] = await Promise.all([transaction.get(stateRef), transaction.get(dayRef)]);
+        const parent = parentSnapshot.exists ? parentSnapshot.data() : {};
+        const legacyRecords = parent.storageMode !== 'dailyRecords' && Array.isArray(parent.records) ? parent.records.filter(record => record.date === date) : [];
+        const serverRecords = daySnapshot.exists && Array.isArray(daySnapshot.data().records) ? daySnapshot.data().records : legacyRecords;
+        const serverPlans = daySnapshot.exists && Array.isArray(daySnapshot.data().plans) ? daySnapshot.data().plans : [];
+        const serverTodos = daySnapshot.exists && Array.isArray(daySnapshot.data().todos) ? daySnapshot.data().todos : [];
+        const matchingPlans = serverPlans.filter(plan => plan.member === memberName && selectedStarts.some(startMinute => mins(plan.startTime) <= startMinute && mins(plan.endTime) >= startMinute + BLOCK_MINUTES));
+        if (action === 'delete' && !matchingPlans.length) return false;
+        const matchingIds = new Set(matchingPlans.map(plan => String(plan.id)));
+        const nextPlans = serverPlans.filter(plan => !matchingIds.has(String(plan.id)));
+        if (action === 'save') {
+          const batchId = id();
+          selectedStarts.forEach(startMinute => {
+            const existingPlan = matchingPlans.find(plan => mins(plan.startTime) <= startMinute && mins(plan.endTime) >= startMinute + BLOCK_MINUTES);
+            nextPlans.push({ id: existingPlan?.id || id(), batchId: existingPlan?.batchId || batchId, member: memberName, task: selectedTask, note: selectedNote, date, startTime: time(startMinute), endTime: time(startMinute + BLOCK_MINUTES), source: 'PlanEntry' });
+          });
+        }
+        const version = (Number(parent.lastUpdatedVersion) || 0) + 1;
+        transaction.set(dayRef, { date, records: serverRecords, plans: nextPlans, todos: serverTodos, recordCount: serverRecords.length, lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        transaction.set(stateRef, { storageMode: 'dailyRecords', dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}', lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        return true;
+      });
+      $('planDialog').close();
+      activePlan = null;
+      selectedPlanStarts.clear();
+      planSelectionKind = null;
+      sync(true, '同期済み');
+      notice(changed ? (action === 'delete' ? '予定を削除しました' : '予定を保存しました') : '予定は別の端末で更新されています');
+    } catch (error) {
+      console.error(error);
+      sync(false, action === 'delete' ? '削除エラー' : '保存エラー');
+      notice('予定を更新できませんでした', true);
+    }
+  }
+
+  async function fillEmptyBlock(startMinute) {
+    const date = day();
+    const memberName = member();
+    if (!task || !memberName || !date) { notice('担当者とタスクを選択してください', true); return; }
+    sync(true, '保存中');
+    try {
+      const written = await db.runTransaction(async transaction => {
+        const [parentSnapshot, daySnapshot] = await Promise.all([transaction.get(stateRef), transaction.get(dayRef)]);
+        const parent = parentSnapshot.exists ? parentSnapshot.data() : {};
+        const legacy = parent.storageMode !== 'dailyRecords' && Array.isArray(parent.records) ? parent.records.filter(record => record.date === date) : [];
+        const serverRecords = daySnapshot.exists && Array.isArray(daySnapshot.data().records) ? daySnapshot.data().records : legacy;
+        const serverPlans = daySnapshot.exists && Array.isArray(daySnapshot.data().plans) ? daySnapshot.data().plans : [];
+        const serverTodos = daySnapshot.exists && Array.isArray(daySnapshot.data().todos) ? daySnapshot.data().todos : [];
+        const occupied = serverRecords.some(record => record.member === memberName && mins(record.startTime) < startMinute + BLOCK_MINUTES && mins(record.endTime) > startMinute);
+        if (occupied) return false;
+        const nextRecords = [...serverRecords, { id: id(), member: memberName, task, date, startTime: time(startMinute), endTime: time(startMinute + BLOCK_MINUTES), source: 'BlockEntry' }];
+        const version = (Number(parent.lastUpdatedVersion) || 0) + 1;
+        transaction.set(dayRef, { date, records: nextRecords, plans: serverPlans, todos: serverTodos, recordCount: nextRecords.length, lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        transaction.set(stateRef, { storageMode: 'dailyRecords', dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}', lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        return true;
+      });
+      sync(true, '同期済み');
+      notice(written ? `${time(startMinute)}に「${task}」を登録しました` : 'このブロックは別の端末で入力済みです');
+    } catch (error) {
+      console.error(error);
+      sync(false, '保存エラー');
+      notice('ブロックを保存できませんでした', true);
+    }
+  }
+
+  function renderBlockActions() {
+    let actions = document.getElementById('blockActions');
+    if (!actions) {
+      actions = document.createElement('div');
+      actions.id = 'blockActions';
+      actions.className = 'block-actions';
+      $('timeline').append(actions);
+    }
+    const count = selectedBlockStarts.size;
+    const isFilledSelection = blockSelectionKind === 'filled';
+    actions.innerHTML = `<button class="button" type="button" id="clearBlocks" ${count ? '' : 'disabled'}>選択解除</button><button class="button primary" type="button" id="openTaskList" ${count ? '' : 'disabled'}>${count ? (isFilledSelection ? '選択ブロックを修正' : 'タスクを選択') : 'ブロックを選択'}</button>`;
+    $('clearBlocks').addEventListener('click', clearBlockSelection);
+    $('openTaskList').addEventListener('click', isFilledSelection ? openSelectedBlocksModal : openTaskListModal);
+  }
+
+  function clearBlockSelection() {
+    selectedBlockStarts.clear();
+    blockSelectionKind = null;
+    selectedPlanStarts.clear();
+    planSelectionKind = null;
+    renderList();
+  }
+
+  function openTaskListModal() {
+    const count = selectedBlockStarts.size;
+    if (!count) return;
+    $('taskListRange').textContent = `${count}枠 / ${time(Math.min(...selectedBlockStarts))} - ${time(Math.max(...selectedBlockStarts) + BLOCK_MINUTES)}`;
+    $('taskListNote').value = '';
+    $('modalTaskList').innerHTML = tasks().map(item => `<button class="modal-task" type="button" data-modal-task="${esc(item)}" style="--modal-color:${color(item)}"><span>${esc((state.customIcons || {})[item] || '•')}</span><span>${esc(item)}</span></button>`).join('');
+    $('modalTaskList').querySelectorAll('[data-modal-task]').forEach(button => {
+      button.addEventListener('click', async () => {
+        task = button.dataset.modalTask;
+        $('taskListDialog').close();
+        await saveSelectedBlocks($('taskListNote').value.trim());
+      });
+    });
+    $('taskListDialog').showModal();
+  }
+
+  function selectBlockRange(endMinute) {
+    if (blockPointerStart == null) return;
+    const start = Math.min(blockPointerStart, endMinute);
+    const end = Math.max(blockPointerStart, endMinute);
+    selectedBlockStarts.clear();
+    for (let minute = start; minute <= end; minute += BLOCK_MINUTES) {
+      const visibleBlock = BLOCK_PERIODS.some(period => minute >= period.start && minute < period.end);
+      const isFilled = Boolean(recordForBlock(member(), minute));
+      if (visibleBlock && (blockSelectionKind === 'filled') === isFilled) selectedBlockStarts.add(minute);
+    }
+    $('timeline').querySelectorAll('[data-block-start]').forEach(button => {
+      button.classList.toggle('selected', selectedBlockStarts.has(Number(button.dataset.blockStart)));
+    });
+    renderBlockActions();
+  }
+
+  function selectPlanRange(endMinute) {
+    if (planPointerStart == null) return;
+    const start = Math.min(planPointerStart, endMinute);
+    const end = Math.max(planPointerStart, endMinute);
+    selectedPlanStarts.clear();
+    for (let minute = start; minute <= end; minute += BLOCK_MINUTES) {
+      const visibleBlock = BLOCK_PERIODS.some(period => minute >= period.start && minute < period.end);
+      const isFilled = Boolean(planForBlock(member(), minute));
+      if (visibleBlock && (planSelectionKind === 'filled') === isFilled) selectedPlanStarts.add(minute);
+    }
+    $('timeline').querySelectorAll('[data-plan-start]').forEach(button => {
+      button.classList.toggle('selected', selectedPlanStarts.has(Number(button.dataset.planStart)));
+    });
+  }
+
+  async function saveSelectedBlocks(note = '') {
+    const selected = [...selectedBlockStarts].sort((a, b) => a - b);
+    if (!selected.length || !task) { notice('タスクとブロックを選択してください', true); return; }
+    const date = day();
+    const memberName = member();
+    sync(true, '保存中');
+    try {
+      const added = await db.runTransaction(async transaction => {
+        const [parentSnapshot, daySnapshot] = await Promise.all([transaction.get(stateRef), transaction.get(dayRef)]);
+        const parent = parentSnapshot.exists ? parentSnapshot.data() : {};
+        const legacy = parent.storageMode !== 'dailyRecords' && Array.isArray(parent.records) ? parent.records.filter(record => record.date === date) : [];
+        const serverRecords = daySnapshot.exists && Array.isArray(daySnapshot.data().records) ? daySnapshot.data().records : legacy;
+        const serverPlans = daySnapshot.exists && Array.isArray(daySnapshot.data().plans) ? daySnapshot.data().plans : [];
+        const serverTodos = daySnapshot.exists && Array.isArray(daySnapshot.data().todos) ? daySnapshot.data().todos : [];
+        const nextRecords = [...serverRecords];
+        const batchId = id();
+        let count = 0;
+        selected.forEach(startMinute => {
+          const occupied = nextRecords.some(record => record.member === memberName && mins(record.startTime) < startMinute + BLOCK_MINUTES && mins(record.endTime) > startMinute);
+          if (occupied) return;
+          nextRecords.push({ id: id(), batchId, member: memberName, task, note, date, startTime: time(startMinute), endTime: time(startMinute + BLOCK_MINUTES), source: 'BlockEntry' });
+          count += 1;
+        });
+        if (!count) return 0;
+        const version = (Number(parent.lastUpdatedVersion) || 0) + 1;
+        transaction.set(dayRef, { date, records: nextRecords, plans: serverPlans, todos: serverTodos, recordCount: nextRecords.length, lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        transaction.set(stateRef, { storageMode: 'dailyRecords', dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}', lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        return count;
+      });
+      selectedBlockStarts.clear();
+      sync(true, '同期済み');
+      notice(added ? `${added}枠を「${task}」で登録しました` : '選択したブロックはすでに入力済みです');
+      renderList();
+    } catch (error) {
+      console.error(error);
+      sync(false, '保存エラー');
+      notice('ブロックを保存できませんでした', true);
+    }
+  }
+
+  function openBlockModal(record, startMinute) {
+    openSelectedBlocksModal([startMinute], record.task);
+  }
+
+  function openSelectedBlocksModal(blockStarts = [...selectedBlockStarts], preferredTask = '') {
+    const starts = [...new Set(blockStarts)].sort((a, b) => a - b);
+    if (!starts.length) return;
+    activeBlock = { startMinutes: starts };
+    const firstRecord = recordForBlock(member(), starts[0]);
+    const select = $('blockTask');
+    const selectedTask = preferredTask || firstRecord?.task || task;
+    select.innerHTML = tasks().map(item => `<option value="${esc(item)}" ${item === selectedTask ? 'selected' : ''}>${esc(item)}</option>`).join('');
+    $('blockNote').value = firstRecord?.note || '';
+    $('blockRange').textContent = starts.length === 1
+      ? `${time(starts[0])} - ${time(starts[0] + BLOCK_MINUTES)} / ${firstRecord?.task || ''}`
+      : `${starts.length}枠 / ${time(starts[0])} - ${time(starts.at(-1) + BLOCK_MINUTES)}`;
+    $('blockDialog').showModal();
+  }
+
+  function splitRecordForBlock(record, startMinute, action, replacementTask) {
+    const endMinute = startMinute + BLOCK_MINUTES;
+    const parts = [];
+    const addPart = fields => parts.push({ ...record, ...fields, id: parts.length ? id() : record.id });
+    if (mins(record.startTime) < startMinute) addPart({ endTime: time(startMinute) });
+    if (action === 'update') addPart({ task: replacementTask, startTime: time(startMinute), endTime: time(endMinute), source: 'BlockEntry' });
+    if (mins(record.endTime) > endMinute) addPart({ startTime: time(endMinute) });
+    return parts;
+  }
+
+  function splitRecordForBlocks(record, starts, action, replacementTask, replacementNote) {
+    const recordStarts = starts.filter(startMinute => mins(record.startTime) <= startMinute && mins(record.endTime) >= startMinute + BLOCK_MINUTES);
+    if (!recordStarts.length) return [record];
+    const parts = [];
+    const addPart = fields => parts.push({ ...record, ...fields, id: parts.length ? id() : record.id });
+    let cursor = mins(record.startTime);
+    recordStarts.forEach(startMinute => {
+      if (cursor < startMinute) addPart({ startTime: time(cursor), endTime: time(startMinute) });
+      if (action === 'update') addPart({ task: replacementTask, note: replacementNote, startTime: time(startMinute), endTime: time(startMinute + BLOCK_MINUTES), source: 'BlockEntry' });
+      cursor = startMinute + BLOCK_MINUTES;
+    });
+    if (cursor < mins(record.endTime)) addPart({ startTime: time(cursor), endTime: record.endTime });
+    return parts;
+  }
+
+  async function updateActiveBlock(action) {
+    if (!activeBlock) return;
+    const selectedTask = $('blockTask').value;
+    const selectedNote = $('blockNote').value.trim();
+    const selectedStarts = activeBlock.startMinutes;
+    const date = day();
+    const memberName = member();
+    sync(true, action === 'delete' ? '削除中' : '保存中');
+    try {
+      const updated = await db.runTransaction(async transaction => {
+        const [parentSnapshot, daySnapshot] = await Promise.all([transaction.get(stateRef), transaction.get(dayRef)]);
+        const parent = parentSnapshot.exists ? parentSnapshot.data() : {};
+        const legacy = parent.storageMode !== 'dailyRecords' && Array.isArray(parent.records) ? parent.records.filter(record => record.date === date) : [];
+        const serverRecords = daySnapshot.exists && Array.isArray(daySnapshot.data().records) ? daySnapshot.data().records : legacy;
+        const serverPlans = daySnapshot.exists && Array.isArray(daySnapshot.data().plans) ? daySnapshot.data().plans : [];
+        const serverTodos = daySnapshot.exists && Array.isArray(daySnapshot.data().todos) ? daySnapshot.data().todos : [];
+        const targetRecords = serverRecords.filter(record => record.member === memberName && selectedStarts.some(startMinute => mins(record.startTime) <= startMinute && mins(record.endTime) >= startMinute + BLOCK_MINUTES));
+        if (!targetRecords.length) return false;
+        const targetIds = new Set(targetRecords.map(record => String(record.id)));
+        const nextRecords = serverRecords
+          .filter(record => !targetIds.has(String(record.id)))
+          .concat(targetRecords.flatMap(record => splitRecordForBlocks(record, selectedStarts, action, selectedTask, selectedNote)));
+        const version = (Number(parent.lastUpdatedVersion) || 0) + 1;
+        transaction.set(dayRef, { date, records: nextRecords, plans: serverPlans, todos: serverTodos, recordCount: nextRecords.length, lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        transaction.set(stateRef, { storageMode: 'dailyRecords', dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}', lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        return true;
+      });
+      $('blockDialog').close();
+      activeBlock = null;
+      selectedBlockStarts.clear();
+      blockSelectionKind = null;
+      sync(true, '同期済み');
+      notice(updated ? (action === 'delete' ? 'ブロックを削除しました' : 'タスクを変更しました') : 'このブロックは別の端末で更新されています');
+    } catch (error) {
+      console.error(error);
+      sync(false, action === 'delete' ? '削除エラー' : '保存エラー');
+      notice('ブロックを更新できませんでした', true);
+    }
+  }
+
+  function compactMemberEntries(items, memberName) {
+    return items
+      .filter(item => item.member === memberName)
+      .sort((a, b) => mins(a.startTime) - mins(b.startTime))
+      .reduce((entries, item) => {
+        const previous = entries.at(-1);
+        if (previous && previous.task === item.task && previous.note === item.note && previous.endTime === item.startTime) {
+          previous.endTime = item.endTime;
+        } else {
+          entries.push({ ...item });
+        }
+        return entries;
+      }, []);
+  }
+
+  function renderAllMembers() {
+    const allMembers = [...new Set([...(state.members || []), ...plans.map(plan => plan.member), ...records.map(record => record.member)])].filter(Boolean);
+    $('allMembersDate').textContent = `${day()} / 予定と実績`;
+    $('allMembersBoard').innerHTML = allMembers.map(memberName => {
+      const memberPlans = compactMemberEntries(plans, memberName);
+      const memberRecords = compactMemberEntries(records, memberName);
+      const entriesHtml = (entries, emptyLabel) => entries.length
+        ? entries.map(entry => `<div class="all-member-entry"><time>${esc(entry.startTime)} - ${esc(entry.endTime)}</time><span style="--member-color:${color(entry.task)}">${esc(taskLabel(entry))}</span></div>`).join('')
+        : `<p class="all-member-empty">${emptyLabel}</p>`;
+      const plannedHours = memberPlans.reduce((sum, plan) => sum + hours(plan), 0);
+      const actualHours = memberRecords.reduce((sum, record) => sum + hours(record), 0);
+      return `<section class="all-member"><header class="all-member-head"><strong>${esc(memberName)}</strong><div class="all-member-totals"><span>予定 ${plannedHours.toFixed(1)}h</span><span>実績 ${actualHours.toFixed(1)}h</span></div></header><div class="all-member-columns"><section class="all-member-column"><h3>予定</h3>${entriesHtml(memberPlans, '予定はありません')}</section><section class="all-member-column"><h3>実績</h3>${entriesHtml(memberRecords, '実績はありません')}</section></div></section>`;
+    }).join('') || '<p class="analysis-empty">表示できる担当者がいません</p>';
+    window.lucide && lucide.createIcons();
+  }
+
+  function renderTodos() {
+    const memberTodos = todos.filter(todo => todo.member === member()).sort((a, b) => Number(a.done) - Number(b.done));
+    const unfinishedTodos = memberTodos.filter(todo => !todo.done);
+    $('todoCount').textContent = `${memberTodos.filter(todo => !todo.done).length}件`;
+    $('todoList').innerHTML = memberTodos.length
+      ? memberTodos.map(todo => `<div class="todo-item${todo.done ? ' done' : ''}"><input type="checkbox" data-todo-toggle="${esc(todo.id)}" ${todo.done ? 'checked' : ''} aria-label="${esc(todo.text)}を完了にする"><span>${esc(todo.text)}</span><button class="icon-btn todo-delete" type="button" data-todo-delete="${esc(todo.id)}" title="Todoを削除" aria-label="${esc(todo.text)}を削除"><i data-lucide="trash-2"></i></button></div>`).join('')
+      : '<p class="todo-empty">Todoはありません</p>';
+    $('printTodos').innerHTML = unfinishedTodos.length
+      ? `<h2>未完了Todo</h2><ul>${unfinishedTodos.map(todo => `<li>${esc(todo.text)}</li>`).join('')}</ul>`
+      : '';
+    $('todoList').querySelectorAll('[data-todo-toggle]').forEach(input => input.addEventListener('change', () => setTodoDone(input.dataset.todoToggle, input.checked)));
+    $('todoList').querySelectorAll('[data-todo-delete]').forEach(button => button.addEventListener('click', () => removeTodo(button.dataset.todoDelete)));
+  }
+
+  async function writeTodos(mutator, successMessage) {
+    const date = day();
+    sync(true, '保存中');
+    try {
+      await db.runTransaction(async transaction => {
+        const [parentSnapshot, daySnapshot] = await Promise.all([transaction.get(stateRef), transaction.get(dayRef)]);
+        const parent = parentSnapshot.exists ? parentSnapshot.data() : {};
+        const legacyRecords = parent.storageMode !== 'dailyRecords' && Array.isArray(parent.records) ? parent.records.filter(record => record.date === date) : [];
+        const serverRecords = daySnapshot.exists && Array.isArray(daySnapshot.data().records) ? daySnapshot.data().records : legacyRecords;
+        const serverPlans = daySnapshot.exists && Array.isArray(daySnapshot.data().plans) ? daySnapshot.data().plans : [];
+        const serverTodos = daySnapshot.exists && Array.isArray(daySnapshot.data().todos) ? daySnapshot.data().todos : [];
+        const nextTodos = mutator(serverTodos);
+        const version = (Number(parent.lastUpdatedVersion) || 0) + 1;
+        transaction.set(dayRef, { date, records: serverRecords, plans: serverPlans, todos: nextTodos, recordCount: serverRecords.length, lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        transaction.set(stateRef, { storageMode: 'dailyRecords', dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}', lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      });
+      sync(true, '同期済み');
+      notice(successMessage);
+    } catch (error) {
+      console.error(error);
+      sync(false, '保存エラー');
+      notice('Todoを更新できませんでした', true);
+    }
+  }
+
+  async function addTodo() {
+    const text = $('todoInput').value.trim();
+    if (!text || !member() || !day()) return;
+    await writeTodos(serverTodos => [...serverTodos, { id: id(), member: member(), text, done: false, date: day(), source: 'DailyTodo' }], 'Todoを追加しました');
+    $('todoInput').value = '';
+  }
+
+  function setTodoDone(todoId, done) {
+    writeTodos(serverTodos => serverTodos.map(todo => String(todo.id) === String(todoId) ? { ...todo, done } : todo), done ? 'Todoを完了しました' : 'Todoを未完了に戻しました');
+  }
+
+  function removeTodo(todoId) {
+    const todo = todos.find(item => String(item.id) === String(todoId));
+    if (!todo || !confirm(`「${todo.text}」を削除しますか？`)) return;
+    writeTodos(serverTodos => serverTodos.filter(item => String(item.id) !== String(todoId)), 'Todoを削除しました');
+  }
+
+  function analysisWindow() {
+    const selectedDate = new Date(`${day()}T00:00:00`);
+    if (analysisRange === 'day') return { start: day(), end: day(), days: 1, label: `${selectedDate.getFullYear()}年${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日` };
+    if (analysisRange === 'week') {
+      const start = new Date(selectedDate);
+      start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      return { start: dateString(start), end: dateString(end), days: 7, label: `${dateString(start)} - ${dateString(end)}` };
+    }
+    const start = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    const end = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+    return { start: dateString(start), end: dateString(end), days: end.getDate(), label: `${selectedDate.getFullYear()}年${selectedDate.getMonth() + 1}月` };
+  }
+
+  function renderAnalytics(analysisRecords, period) {
+    const total = analysisRecords.reduce((sum, record) => sum + hours(record), 0);
+    const byTask = new Map();
+    analysisRecords.forEach(record => byTask.set(record.task, (byTask.get(record.task) || 0) + hours(record)));
+    $('analysisCount').textContent = `${analysisRecords.length}件`;
+    const entries = [...byTask.entries()].sort((a, b) => b[1] - a[1]);
+    $('analysisBreakdown').innerHTML = entries.length
+      ? entries.map(([taskName, duration]) => `<div class="analysis-row"><div class="analysis-row-head"><strong>${esc(taskName)}</strong><span>${duration.toFixed(1)}h</span></div><div class="analysis-bar"><span style="--analysis-color:${color(taskName)};width:${Math.max(3, (duration / total) * 100)}%"></span></div></div>`).join('')
+      : '<p class="analysis-empty">この期間の実績はありません</p>';
+  }
+
+  async function refreshAnalytics() {
+    const period = analysisWindow();
+    const currentRequest = ++analysisRequest;
+    $('analysisRangeLabel').textContent = period.label;
+    if (analysisRange === 'day') {
+      renderAnalytics(records.filter(record => record.member === member()), period);
+      return;
+    }
+    $('analysisBreakdown').innerHTML = '<p class="analysis-empty">集計しています</p>';
+    if (!db) return;
+    try {
+      const snapshot = await db.collection('timeTracker/state/dailyRecords').where('date', '>=', period.start).where('date', '<=', period.end).get();
+      if (currentRequest !== analysisRequest) return;
+      const analysisRecords = snapshot.docs.flatMap(document => Array.isArray(document.data().records) ? document.data().records : []).filter(record => record.member === member());
+      renderAnalytics(analysisRecords, period);
+    } catch (error) {
+      console.error(error);
+      if (currentRequest !== analysisRequest) return;
+      $('analysisBreakdown').innerHTML = '<p class="analysis-empty">工数を集計できませんでした</p>';
+    }
+  }
+
+  function scheduleAnalytics() {
+    analysisRequest += 1;
+    clearTimeout(analysisTimer);
+    analysisTimer = setTimeout(refreshAnalytics, 120);
+  }
+
+  function renderList() {
+    const memberName = member();
+    $('subtitle').textContent = `${memberName || '担当者未選択'} / 時刻・予定・実績`;
+    $('printDate').textContent = day();
+    $('printMember').textContent = memberName || '未選択';
+    document.querySelector('.grid > .panel:first-child h2').textContent = '工数分析';
+    document.querySelector('.grid > .panel:nth-child(2) h2').textContent = '日報';
+
+    const rows = [];
+    BLOCK_PERIODS.forEach((period, periodIndex) => {
+      if (periodIndex) {
+        const label = period.start === 13 * 60 ? '昼休憩 12:00 - 13:00' : '残業 17:00 - 22:00';
+        rows.push(`<div class="day-divider"><span></span><strong>${label}</strong><span></span></div>`);
+      }
+      for (let startMinute = period.start; startMinute < period.end; startMinute += BLOCK_MINUTES) {
+        const planMerge = mergeState(planForBlock, memberName, startMinute);
+        const recordMerge = mergeState(recordForBlock, memberName, startMinute);
+        const plan = planMerge?.item;
+        const record = recordMerge?.item;
+        const timeLabel = startMinute % 60 === 0 ? time(startMinute) : '';
+        const ariaLabel = `${time(startMinute)} - ${time(startMinute + BLOCK_MINUTES)}`;
+        const planCell = plan
+          ? `<button class="day-cell plan-cell filled${planMerge.className}${selectedPlanStarts.has(startMinute) ? ' selected' : ''}" type="button" data-plan-start="${startMinute}" data-plan-id="${esc(plan.id)}" style="--cell-color:${color(plan.task)}" aria-label="予定 ${ariaLabel}: ${esc(taskLabel(plan))}"><span>${planMerge.continuation ? '' : esc(taskLabel(plan))}</span></button>`
+          : `<button class="day-cell plan-cell${selectedPlanStarts.has(startMinute) ? ' selected' : ''}" type="button" data-plan-start="${startMinute}" aria-label="予定 ${ariaLabel} を登録"><span> </span></button>`;
+        const actualCell = record
+          ? `<button class="day-cell actual-cell filled${recordMerge.className}${selectedBlockStarts.has(startMinute) ? ' selected' : ''}" type="button" data-block-start="${startMinute}" data-record-id="${esc(record.id)}" style="--cell-color:${color(record.task)}" aria-label="実績 ${ariaLabel}: ${esc(taskLabel(record))}"><span>${recordMerge.continuation ? '' : esc(taskLabel(record))}</span></button>`
+          : `<button class="day-cell actual-cell${selectedBlockStarts.has(startMinute) ? ' selected' : ''}" type="button" data-block-start="${startMinute}" aria-label="実績 ${ariaLabel} を登録"><span> </span></button>`;
+        rows.push(`<div class="day-row"><div class="day-time" aria-label="${ariaLabel}">${timeLabel}</div>${planCell}${actualCell}</div>`);
+      }
+    });
+    $('timeline').innerHTML = `<div class="day-board"><div class="day-board-head"><span>時刻</span><span>予定</span><span>実績</span></div>${rows.join('')}</div><p class="block-note">予定はセルをクリックして登録・変更します。実績は空き枠または登録済み枠をドラッグして選択できます。</p>`;
+    renderBlockActions();
+    $('timeline').querySelectorAll('[data-block-start]').forEach(button => {
+      button.addEventListener('pointerdown', event => {
+        const startMinute = Number(button.dataset.blockStart);
+        event.preventDefault();
+        blockPointerDown = true;
+        blockPointerStart = startMinute;
+        blockSelectionKind = button.dataset.recordId ? 'filled' : 'empty';
+        selectBlockRange(startMinute);
+      });
+      button.addEventListener('pointerenter', () => {
+        if (blockPointerDown) selectBlockRange(Number(button.dataset.blockStart));
+      });
+      button.addEventListener('pointermove', () => {
+        if (blockPointerDown) selectBlockRange(Number(button.dataset.blockStart));
+      });
+    });
+    $('timeline').querySelectorAll('[data-plan-start]').forEach(button => {
+      button.addEventListener('pointerdown', event => {
+        event.preventDefault();
+        const startMinute = Number(button.dataset.planStart);
+        planPointerDown = true;
+        planPointerStart = startMinute;
+        planSelectionKind = button.dataset.planId ? 'filled' : 'empty';
+        selectPlanRange(startMinute);
+      });
+      button.addEventListener('pointerenter', () => {
+        if (planPointerDown) selectPlanRange(Number(button.dataset.planStart));
+      });
+      button.addEventListener('pointermove', () => {
+        if (planPointerDown) selectPlanRange(Number(button.dataset.planStart));
+      });
+    });
+    if ($('allMembersDialog').open) renderAllMembers();
+    scheduleAnalytics();
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    $('updateBlock').addEventListener('click', () => updateActiveBlock('update'));
+    $('deleteBlock').addEventListener('click', () => updateActiveBlock('delete'));
+    $('savePlan').addEventListener('click', () => saveActivePlan('save'));
+    $('deletePlan').addEventListener('click', () => saveActivePlan('delete'));
+    $('addTodo').addEventListener('click', addTodo);
+    $('todoInput').addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addTodo();
+      }
+    });
+    $('allMembers').addEventListener('click', () => {
+      renderAllMembers();
+      $('allMembersDialog').showModal();
+    });
+    $('closeAllMembers').addEventListener('click', () => $('allMembersDialog').close());
+    $('printReport').addEventListener('click', () => window.print());
+    document.addEventListener('pointerup', () => {
+      const selectionKind = blockSelectionKind;
+      const shouldOpenModal = blockPointerDown && selectedBlockStarts.size > 0;
+      const shouldOpenPlanModal = planPointerDown && selectedPlanStarts.size > 0;
+      blockPointerDown = false;
+      blockPointerStart = null;
+      planPointerDown = false;
+      planPointerStart = null;
+      if (shouldOpenModal) {
+        if (selectionKind === 'filled') openSelectedBlocksModal();
+        else openTaskListModal();
+      }
+      if (shouldOpenPlanModal) openPlanModal();
+    });
+    $('date').addEventListener('change', clearBlockSelection);
+    $('member').addEventListener('change', clearBlockSelection);
+    $('closeTaskList').addEventListener('click', () => $('taskListDialog').close());
+    document.querySelectorAll('[data-analysis-range]').forEach(button => {
+      button.addEventListener('click', () => {
+        analysisRange = button.dataset.analysisRange;
+        document.querySelectorAll('[data-analysis-range]').forEach(tab => tab.classList.toggle('active', tab === button));
+        scheduleAnalytics();
+      });
+    });
+  });
+</script>
+</body>
+</html>
