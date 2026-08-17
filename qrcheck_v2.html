@@ -2757,6 +2757,7 @@
         no: line.no || index + 1,
         backNo: line.backNo || '',
         partNo: line.partNo || '',
+        altPartNo: line.altPartNo || '',
         packQty: Number(line.packQty) || 0,
         totalQty: Number(line.totalQty) || 0,
         requiredBoxes: Number(line.requiredBoxes) || 0,
@@ -4955,7 +4956,23 @@
     const parts = (passThroughPartMaster && passThroughPartMaster[customerId]) || [];
     if (!parts.length) return false;
     const targets = new Set(parts.flatMap(partVariants));
-    return partVariants(line && line.partNo).some(part => targets.has(part));
+    return orderLinePartValues(line).flatMap(partVariants).some(part => targets.has(part));
+  }
+
+  function orderLinePartValues(line) {
+    const values = [line && line.partNo, line && line.altPartNo]
+      .map(value => normalizeOrderDetailPartNo(value || ''))
+      .filter(Boolean);
+    return [...new Set(values)];
+  }
+
+  function orderLinePartVariants(line) {
+    return orderLinePartValues(line).flatMap(partVariants);
+  }
+
+  function qrContainsOrderLinePart(qrRaw, line) {
+    const tokens = partSearchTokens(qrRaw);
+    return orderLinePartVariants(line).some(part => part && tokens.some(token => token.includes(part)));
   }
 
   function findOrderDetailPartInQR(qrRaw) {
@@ -4963,7 +4980,7 @@
     const tokens = partSearchTokens(qrRaw);
     const matches = [];
     orderDetailSession.lines.forEach(line => {
-      const variants = partVariants(line.partNo).sort((a, b) => b.length - a.length);
+      const variants = orderLinePartVariants(line).sort((a, b) => b.length - a.length);
       for (const variant of variants) {
         const tokenIndex = tokens.findIndex(token => variant && token.includes(variant));
         if (tokenIndex >= 0) {
@@ -4980,9 +4997,9 @@
   function findOrderDetailPartPair(qrA, qrB) {
     if (!orderDetailSession.lines.length) return null;
     const matches = orderDetailSession.lines.map(line => {
-      const inA = qrContainsPart(qrA, line.partNo);
-      const inB = qrContainsPart(qrB, line.partNo);
-      const variants = partVariants(line.partNo).sort((a, b) => b.length - a.length);
+      const inA = qrContainsOrderLinePart(qrA, line);
+      const inB = qrContainsOrderLinePart(qrB, line);
+      const variants = orderLinePartVariants(line).sort((a, b) => b.length - a.length);
       return {
         line,
         inA,
@@ -4994,7 +5011,8 @@
     if (!matches.length) return null;
     matches.sort((a, b) =>
       b.score - a.score ||
-      canonicalPart(b.line.partNo).length - canonicalPart(a.line.partNo).length
+      Math.max(...orderLinePartVariants(b.line).map(part => part.length), 0) -
+      Math.max(...orderLinePartVariants(a.line).map(part => part.length), 0)
     );
     return matches[0];
   }
@@ -5208,6 +5226,62 @@
     return lines;
   }
 
+  function parseSummitQtyBlock(block) {
+    const digits = String(block || '').replace(/\D/g, '');
+    if (digits.length < 20) return null;
+    const totalQty = Number(digits.slice(0, 8)) || 0;
+    const packQty = Number(digits.slice(8, 15)) || 0;
+    const requiredBoxes = Number(digits.slice(15, 20)) || 0;
+    if (!totalQty || !packQty || !requiredBoxes) return null;
+    if (Math.abs((packQty * requiredBoxes) - totalQty) > Math.max(1, packQty)) return null;
+    return { totalQty, packQty, requiredBoxes };
+  }
+
+  function parseSummitOrderDetailQR(qrRaw) {
+    const text = String(qrRaw ?? '')
+      .normalize('NFKC')
+      .replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/g, '')
+      .replace(/[\x1d\x1e\x04\t,、，]+/g, ' ')
+      .replace(/\r?\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!/\bSNSJ\d{5,}\b/i.test(text)) return { meta: {}, lines: [] };
+    const lines = [];
+    const seen = new Set();
+    const rowRe = /(\d{7})(\d)\s+([0-9A-Z]{4,20})\s+([0-9A-Z]{4,20})\s+(\d{32})/gi;
+    for (const match of text.matchAll(rowRe)) {
+      const qty = parseSummitQtyBlock(match[5]);
+      if (!qty) continue;
+      const partNo = normalizeOrderDetailPartNo(match[3]);
+      const altPartNo = normalizeOrderDetailPartNo(match[4]);
+      const backNo = `${match[1]}-${match[2]}`;
+      const key = `${backNo}|${canonicalPart(partNo)}|${canonicalPart(altPartNo)}|${qty.packQty}|${qty.requiredBoxes}|${qty.totalQty}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push({
+        no: lines.length + 1,
+        backNo,
+        partNo,
+        altPartNo: altPartNo !== partNo ? altPartNo : '',
+        packQty: qty.packQty,
+        totalQty: qty.totalQty,
+        requiredBoxes: qty.requiredBoxes,
+        scanned: 0,
+        detailType: 'summit_detail'
+      });
+    }
+    const header = text.match(/\b(SNSJ\d{5,})\s+([0-9A-Z]{4,})\s+([0-9A-Z]{4,})\s+([0-9A-Z]{4,})\s+(\d{8})(\d{0,2})/i);
+    const meta = {
+      customerId: header ? header[2] : '',
+      orderNo: header ? header[1] : '',
+      destinationCode: header ? header[4] : '',
+      deliveryDate: header ? header[5] : '',
+      deliveryBin: header && header[6] ? String(Number(header[6])) : '',
+      detailType: lines.length ? 'summit_detail' : ''
+    };
+    return { meta, lines };
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
@@ -5264,15 +5338,20 @@
     if (!lines.length) {
       parseToyotaOrderDetailLines(qrRaw).forEach(line => lines.push(line));
     }
+    const summitDetail = !lines.length ? parseSummitOrderDetailQR(qrRaw) : { meta: {}, lines: [] };
+    if (!lines.length) {
+      summitDetail.lines.forEach(line => lines.push(line));
+    }
     const meta = {
-      customerId: extractCustomerIdFromOrderQr(qr),
-      orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || '',
-      deliveryDate: (qr.match(/12D(\d{8})/) || [])[1] || '',
+      customerId: extractCustomerIdFromOrderQr(qr) || summitDetail.meta.customerId || '',
+      orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || summitDetail.meta.orderNo || '',
+      deliveryDate: (qr.match(/12D(\d{8})/) || [])[1] || summitDetail.meta.deliveryDate || '',
       shipDate: (qr.match(/16D(\d{8})/) || [])[1] || '',
-      deliveryBin: parseToyotaDeliveryBin(qrRaw),
-      destinationCode: parseToyotaDestinationCode(qrRaw),
+      deliveryBin: parseToyotaDeliveryBin(qrRaw) || summitDetail.meta.deliveryBin || '',
+      destinationCode: parseToyotaDestinationCode(qrRaw) || summitDetail.meta.destinationCode || '',
       receivingCode: parseToyotaReceivingCode(qrRaw),
-      detailType: lines.some(line => line.detailType === 'toyota_kanban_detail') ? 'toyota_kanban_detail' : ''
+      detailType: lines.some(line => line.detailType === 'toyota_kanban_detail') ? 'toyota_kanban_detail' :
+        (lines.some(line => line.detailType === 'summit_detail') ? 'summit_detail' : '')
     };
     if (!meta.deliveryDate && meta.detailType === 'toyota_kanban_detail') meta.deliveryDate = parseToyotaDeliveryDate(qrRaw);
     const parsed = {
@@ -5606,7 +5685,7 @@
       <div class="order-detail-lines">
         ${orderDetailSession.lines.map(line => `
           <div class="order-detail-line ${line.excluded ? 'excluded' : (line.scanned >= line.requiredBoxes ? 'done' : '')}">
-            <span>${escapeHtml(line.partNo)} / 背${escapeHtml(line.backNo)} / ${line.packQty}入${line.excluded ? ' / 対象外' : ''}</span>
+            <span>${escapeHtml(`${line.partNo || ''}${line.altPartNo ? `(${line.altPartNo})` : ''}`)} / 背${escapeHtml(line.backNo)} / ${line.packQty}入${line.excluded ? ' / 対象外' : ''}</span>
             <strong>${line.excluded ? '対象外' : `${line.scanned}/${line.requiredBoxes}`}</strong>
           </div>
         `).join('')}
@@ -5621,7 +5700,9 @@
     const legacyPairKey = 'scan_' + hashString(`${canonicalPart(partNumber)}|${normalizeQR(qr1)}|${normalizeQR(qr2)}`);
     const attemptId = 'attempt_' + hashString(key + '|' + Date.now() + '|' + Math.random());
     const localCheck = (session) => {
-      const line = session.lines.find(item => partsEquivalent(item.partNo, partNumber));
+      const line = session.lines.find(item =>
+        orderLinePartValues(item).some(part => partsEquivalent(part, partNumber))
+      );
       if (!line) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
       if (line.excluded || isPassThroughOrderLine(session, line)) {
         line.excluded = true;
