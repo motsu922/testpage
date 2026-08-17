@@ -223,6 +223,7 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
   let planPointerStart = null;
   let planPointerDown = false;
   let planSelectionKind = null;
+  let planPointerPlanId = null;
   let analysisRange = 'day';
   let analysisRequest = 0;
   let analysisTimer = null;
@@ -331,6 +332,59 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
     }
   }
 
+  function isSamePlanGroup(candidate, plan) {
+    if (!candidate || candidate.recurring !== plan.recurring) return false;
+    if (plan.batchId) return candidate.batchId === plan.batchId;
+    return !candidate.batchId && candidate.member === plan.member && candidate.task === plan.task && candidate.note === plan.note;
+  }
+
+  function planGroupStarts(plan, selectedStart) {
+    const starts = [selectedStart];
+    for (let startMinute = selectedStart - BLOCK_MINUTES; isVisibleBlockStart(startMinute) && isSamePlanGroup(planForBlock(member(), startMinute), plan); startMinute -= BLOCK_MINUTES) starts.unshift(startMinute);
+    for (let startMinute = selectedStart + BLOCK_MINUTES; isVisibleBlockStart(startMinute) && isSamePlanGroup(planForBlock(member(), startMinute), plan); startMinute += BLOCK_MINUTES) starts.push(startMinute);
+    return starts;
+  }
+
+  async function completePlanAsActual(plan, selectedStart) {
+    if (!plan) return;
+    const selectedStarts = planGroupStarts(plan, selectedStart);
+    const date = day();
+    const memberName = member();
+    sync(true, '実績を登録中');
+    try {
+      const added = await db.runTransaction(async transaction => {
+        const [parentSnapshot, daySnapshot] = await Promise.all([transaction.get(stateRef), transaction.get(dayRef)]);
+        const parent = parentSnapshot.exists ? parentSnapshot.data() : {};
+        const legacyRecords = parent.storageMode !== 'dailyRecords' && Array.isArray(parent.records) ? parent.records.filter(record => record.date === date) : [];
+        const serverRecords = daySnapshot.exists && Array.isArray(daySnapshot.data().records) ? daySnapshot.data().records : legacyRecords;
+        const serverPlans = daySnapshot.exists && Array.isArray(daySnapshot.data().plans) ? daySnapshot.data().plans : [];
+        const serverTodos = daySnapshot.exists && Array.isArray(daySnapshot.data().todos) ? daySnapshot.data().todos : [];
+        const nextRecords = [...serverRecords];
+        const batchId = id();
+        let count = 0;
+        selectedStarts.forEach(startMinute => {
+          const occupied = nextRecords.some(record => record.member === memberName && mins(record.startTime) < startMinute + BLOCK_MINUTES && mins(record.endTime) > startMinute);
+          if (occupied) return;
+          nextRecords.push({ id: id(), batchId, member: memberName, task: plan.task, note: plan.note || '', date, startTime: time(startMinute), endTime: time(startMinute + BLOCK_MINUTES), source: 'PlanCompletion', planId: plan.id });
+          count += 1;
+        });
+        if (!count) return 0;
+        const version = (Number(parent.lastUpdatedVersion) || 0) + 1;
+        transaction.set(dayRef, { date, records: nextRecords, plans: serverPlans, todos: serverTodos, recordCount: nextRecords.length, lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        transaction.set(stateRef, { storageMode: 'dailyRecords', dailyDocumentPathTemplate: 'timeTracker/state/dailyRecords/{date}', lastUpdatedVersion: version, lastUpdatedBy: device(), lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        return count;
+      });
+      selectedPlanStarts.clear();
+      planSelectionKind = null;
+      sync(true, '同期済み');
+      notice(added ? `予定どおりに${added}枠の実績を登録しました` : 'この予定はすでに実績登録済みです');
+    } catch (error) {
+      console.error(error);
+      sync(false, '保存エラー');
+      notice('予定から実績を登録できませんでした', true);
+    }
+  }
+
   async function fillEmptyBlock(startMinute) {
     const date = day();
     const memberName = member();
@@ -424,8 +478,12 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
     for (let minute = start; minute <= end; minute += BLOCK_MINUTES) {
       const visibleBlock = BLOCK_PERIODS.some(period => minute >= period.start && minute < period.end);
       const currentPlan = planForBlock(member(), minute);
-      const isFilled = Boolean(currentPlan && !currentPlan.recurring);
-      if (visibleBlock && (planSelectionKind === 'filled') === isFilled) selectedPlanStarts.add(minute);
+      const matchesSelection = planSelectionKind === 'empty'
+        ? !currentPlan
+        : planSelectionKind === 'recurring'
+          ? Boolean(currentPlan?.recurring && String(currentPlan.id) === String(planPointerPlanId))
+          : Boolean(currentPlan && !currentPlan.recurring);
+      if (visibleBlock && matchesSelection) selectedPlanStarts.add(minute);
     }
     $('timeline').querySelectorAll('[data-plan-start]').forEach(button => {
       button.classList.toggle('selected', selectedPlanStarts.has(Number(button.dataset.planStart)));
@@ -812,7 +870,7 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
         const timeLabel = startMinute % 60 === 0 ? time(startMinute) : '';
         const ariaLabel = `${time(startMinute)} - ${time(startMinute + BLOCK_MINUTES)}`;
         const planCell = plan
-          ? `<button class="day-cell plan-cell filled${planMerge.className}${selectedPlanStarts.has(startMinute) ? ' selected' : ''}" type="button" data-plan-start="${startMinute}" data-plan-id="${esc(plan.id)}" style="--cell-color:${color(plan.task)}" aria-label="予定 ${ariaLabel}: ${esc(taskLabel(plan))}"><span>${planMerge.continuation ? '' : esc(taskLabel(plan))}</span></button>`
+          ? `<button class="day-cell plan-cell filled${planMerge.className}${selectedPlanStarts.has(startMinute) ? ' selected' : ''}" type="button" data-plan-start="${startMinute}" data-plan-id="${esc(plan.id)}" style="--cell-color:${color(plan.task)}" aria-label="予定 ${ariaLabel}: ${esc(taskLabel(plan))}。クリックで実績を登録"><span>${planMerge.continuation ? '' : esc(taskLabel(plan))}</span></button>`
           : `<button class="day-cell plan-cell${selectedPlanStarts.has(startMinute) ? ' selected' : ''}" type="button" data-plan-start="${startMinute}" aria-label="予定 ${ariaLabel} を登録"><span> </span></button>`;
         const actualCell = record
           ? `<button class="day-cell actual-cell filled${recordMerge.className}${selectedBlockStarts.has(startMinute) ? ' selected' : ''}" type="button" data-block-start="${startMinute}" data-record-id="${esc(record.id)}" style="--cell-color:${color(record.task)}" aria-label="実績 ${ariaLabel}: ${esc(taskLabel(record))}"><span>${recordMerge.continuation ? '' : esc(taskLabel(record))}</span></button>`
@@ -820,7 +878,7 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
         rows.push(`<div class="day-row"><div class="day-time" aria-label="${ariaLabel}">${timeLabel}</div>${planCell}${actualCell}</div>`);
       }
     });
-    $('timeline').innerHTML = `<div class="day-board"><div class="day-board-head"><span>時刻</span><span>予定</span><span>実績</span></div>${rows.join('')}</div><p class="block-note">予定はセルをクリックして登録・変更します。実績は空き枠または登録済み枠をドラッグして選択できます。</p>`;
+    $('timeline').innerHTML = `<div class="day-board"><div class="day-board-head"><span>時刻</span><span>予定</span><span>実績</span></div>${rows.join('')}</div>`;
     renderBlockActions();
     $('timeline').querySelectorAll('[data-block-start]').forEach(button => {
       button.addEventListener('pointerdown', event => {
@@ -845,11 +903,8 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
         planPointerDown = true;
         planPointerStart = startMinute;
         const currentPlan = planForBlock(member(), startMinute);
-        if (currentPlan?.recurring) {
-          notice('定期予定はタスク管理画面から変更できます');
-          return;
-        }
-        planSelectionKind = button.dataset.planId ? 'filled' : 'empty';
+        planSelectionKind = currentPlan?.recurring ? 'recurring' : button.dataset.planId ? 'filled' : 'empty';
+        planPointerPlanId = currentPlan?.id || null;
         selectPlanRange(startMinute);
       });
       button.addEventListener('pointerenter', () => {
@@ -892,15 +947,26 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
       const selectionKind = blockSelectionKind;
       const shouldOpenModal = blockPointerDown && selectedBlockStarts.size > 0;
       const shouldOpenPlanModal = planPointerDown && selectedPlanStarts.size > 0;
+      const planStartMinute = planPointerStart;
+      const currentPlanSelectionKind = planSelectionKind;
       blockPointerDown = false;
       blockPointerStart = null;
       planPointerDown = false;
       planPointerStart = null;
+      planPointerPlanId = null;
       if (shouldOpenModal) {
         if (selectionKind === 'filled') openSelectedBlocksModal();
         else openTaskListModal();
       }
-      if (shouldOpenPlanModal) openPlanModal();
+      if (shouldOpenPlanModal) {
+        if ((currentPlanSelectionKind === 'filled' || currentPlanSelectionKind === 'recurring') && selectedPlanStarts.size === 1) {
+          completePlanAsActual(planForBlock(member(), planStartMinute), planStartMinute);
+        } else if (currentPlanSelectionKind === 'recurring') {
+          notice('定期予定はタスク管理画面から変更できます');
+        } else {
+          openPlanModal();
+        }
+      }
     });
     $('date').addEventListener('change', clearBlockSelection);
     $('member').addEventListener('change', clearBlockSelection);
