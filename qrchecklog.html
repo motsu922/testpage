@@ -1501,6 +1501,40 @@
     return allLogs.filter(l => l.orderDetailSessionId === sessionId).length;
   }
 
+  function formatDateInputLocal(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function setLogDateFilterForOrderSession(sessionId) {
+    const session = orderSessions.find(s => s.sessionId === sessionId);
+    const dates = [];
+    const addDate = value => {
+      if (!value) return;
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) dates.push(date);
+    };
+    addDate(session && session.createdAt);
+    addDate(session && session.updatedAt);
+    (session && Array.isArray(session.details) ? session.details : []).forEach(detail => addDate(detail && detail.readAt));
+    allLogs
+      .filter(log => log.orderDetailSessionId === sessionId)
+      .forEach(log => addDate(log.timestamp));
+    if (!dates.length) return;
+    dates.sort((a, b) => a - b);
+    const from = new Date(dates[0]);
+    const to = new Date(dates[dates.length - 1]);
+    from.setDate(from.getDate() - 1);
+    to.setDate(to.getDate() + 1);
+    const fromInput = document.getElementById('filterDateFrom');
+    const toInput = document.getElementById('filterDateTo');
+    if (fromInput) fromInput.value = formatDateInputLocal(from);
+    if (toInput) toInput.value = formatDateInputLocal(to);
+  }
+
   async function verifyCompanyAdminPassword() {
     if (!activeCompany || !database) return false;
     const input = prompt('管理者パスワードを入力してください');
@@ -1555,6 +1589,7 @@
   function selectOrderSession(sessionId) {
     activeOrderSessionId = sessionId || '';
     currentPage = 1;
+    if (activeOrderSessionId) setLogDateFilterForOrderSession(activeOrderSessionId);
     renderOrderSessions();
     applyFilter();
     document.querySelector('.table-wrap')?.scrollIntoView({ behavior:'smooth', block:'start' });
