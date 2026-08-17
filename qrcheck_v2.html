@@ -5282,6 +5282,32 @@
     return { meta, lines };
   }
 
+  function parseAitesSimpleOrderDetailQR(qrRaw) {
+    const text = normalizeQR(qrRaw).normalize('NFKC').trim();
+    const fields = text.split('$').map(value => value.trim());
+    if (fields.length < 3) return { meta: {}, lines: [] };
+    const partNo = normalizeOrderDetailPartNo(fields[0]);
+    const packQty = Number(fields[1]) || 0;
+    const requiredBoxes = Number(fields[2]) || 0;
+    if (!/^[0-9A-Z][0-9A-Z-]{3,}$/i.test(partNo) || !packQty || !requiredBoxes) {
+      return { meta: {}, lines: [] };
+    }
+    return {
+      meta: { detailType: 'aites_simple_detail' },
+      lines: [{
+        no: 1,
+        backNo: partNo,
+        partNo,
+        altPartNo: '',
+        packQty,
+        totalQty: packQty * requiredBoxes,
+        requiredBoxes,
+        scanned: 0,
+        detailType: 'aites_simple_detail'
+      }]
+    };
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
@@ -5342,6 +5368,10 @@
     if (!lines.length) {
       summitDetail.lines.forEach(line => lines.push(line));
     }
+    const aitesDetail = !lines.length ? parseAitesSimpleOrderDetailQR(qrRaw) : { meta: {}, lines: [] };
+    if (!lines.length) {
+      aitesDetail.lines.forEach(line => lines.push(line));
+    }
     const meta = {
       customerId: extractCustomerIdFromOrderQr(qr) || summitDetail.meta.customerId || '',
       orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || summitDetail.meta.orderNo || '',
@@ -5351,7 +5381,8 @@
       destinationCode: parseToyotaDestinationCode(qrRaw) || summitDetail.meta.destinationCode || '',
       receivingCode: parseToyotaReceivingCode(qrRaw),
       detailType: lines.some(line => line.detailType === 'toyota_kanban_detail') ? 'toyota_kanban_detail' :
-        (lines.some(line => line.detailType === 'summit_detail') ? 'summit_detail' : '')
+        (lines.some(line => line.detailType === 'summit_detail') ? 'summit_detail' :
+        (lines.some(line => line.detailType === 'aites_simple_detail') ? 'aites_simple_detail' : ''))
     };
     if (!meta.deliveryDate && meta.detailType === 'toyota_kanban_detail') meta.deliveryDate = parseToyotaDeliveryDate(qrRaw);
     const parsed = {
