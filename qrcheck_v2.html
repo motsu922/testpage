@@ -5362,6 +5362,65 @@
     };
   }
 
+  // アラコ(トヨタ紡織 ARACO 東栄工場)のかんばんチケットQR。区切り文字を持たない固定長形式。
+  // 例: A00011C3970010572460  224116267364    260805012608030101MY171306X7V2200001500010001500000000
+  //   ヘッダ: A0001 1 C3970010(納入番号) 5(#) 7246-0(仕入先) [空白] 2241(支給先) 16(受入) 26(機番)
+  //           7364(支給元) [空白] 260805(納入日) 01(納入便) 260803(作成日) 01(作成便)
+  //   明細38桁の繰り返し: 01(行番号) MY1(背番号) 71306X7V2200(品番) 00150(収容数) 001(箱数) 000150(納入数) 0000000(分割納入数)
+  // 端末側(submitScannerBuffer→normalizeQR)で連続空白が1個に潰れるため、パディングは \s* で吸収する。
+  const ARAKO_HEADER_RE = /^A\d{4}\d([0-9A-Z]{8})\d(\d{4})(\d)\s*(\d{4})(\d{2})(\d{2})(\d{4})\s*(\d{6})(\d{2})(\d{6})(\d{2})/;
+  const ARAKO_LINE_LEN = 38;
+  const ARAKO_LINE_RE = /^(\d{2})([0-9A-Z ]{3})([0-9A-Z]{12})(\d{5})(\d{3})(\d{6})(\d{7})$/;
+
+  function parseArakoOrderDetailQR(qrRaw) {
+    const text = String(qrRaw ?? '')
+      .normalize('NFKC')
+      .replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/g, '')
+      .replace(/[\r\n\t]+/g, ' ')
+      .toUpperCase()
+      .trim();
+    const header = text.match(ARAKO_HEADER_RE);
+    if (!header) return { meta: {}, lines: [] };
+    const body = text.slice(header[0].length);
+    // 桁ずれを黙って通さない。合わなければ0行を返し、明細QR形式エラーとして操作者に気付かせる。
+    if (!body.length || body.length % ARAKO_LINE_LEN !== 0) return { meta: {}, lines: [] };
+    const lines = [];
+    for (let i = 0; i < body.length; i += ARAKO_LINE_LEN) {
+      const m = body.slice(i, i + ARAKO_LINE_LEN).match(ARAKO_LINE_RE);
+      if (!m) return { meta: {}, lines: [] };
+      if (Number(m[1]) !== lines.length + 1) return { meta: {}, lines: [] };
+      const packQty = Number(m[4]) || 0;
+      const requiredBoxes = Number(m[5]) || 0;
+      const totalQty = Number(m[6]) || 0;
+      if (!packQty || !requiredBoxes || !totalQty) return { meta: {}, lines: [] };
+      lines.push({
+        no: lines.length + 1,
+        backNo: m[2].trim(),
+        partNo: normalizeOrderDetailPartNo(m[3]),
+        altPartNo: '',
+        packQty,
+        totalQty,
+        requiredBoxes,
+        scanned: 0,
+        detailType: 'arako_detail'
+      });
+    }
+    if (!lines.length) return { meta: {}, lines: [] };
+    return {
+      meta: {
+        customerId: header[4],
+        orderNo: header[1].slice(0, 5),
+        deliveryDate: `20${header[8]}`,
+        shipDate: '',
+        deliveryBin: String(Number(header[9])),
+        destinationCode: '',
+        receivingCode: header[5],
+        detailType: 'arako_detail'
+      },
+      lines
+    };
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
@@ -5430,6 +5489,10 @@
     if (!lines.length) {
       iso15434Detail.lines.forEach(line => lines.push(line));
     }
+    const arakoDetail = !lines.length ? parseArakoOrderDetailQR(qrRaw) : { meta: {}, lines: [] };
+    if (!lines.length) {
+      arakoDetail.lines.forEach(line => lines.push(line));
+    }
     const meta = {
       customerId: extractCustomerIdFromOrderQr(qr) || summitDetail.meta.customerId || '',
       orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || summitDetail.meta.orderNo || '',
@@ -5444,6 +5507,8 @@
     };
     // この形式は 12D=発行日(作成日) / 16D=納入指示日 と汎用解釈が逆になるため、専用メタで上書きする
     if (iso15434Detail.lines.length) Object.assign(meta, iso15434Detail.meta);
+    // アラコは固定長でデータ識別子を持たないため、汎用抽出ではなく専用メタを使う
+    if (arakoDetail.lines.length) Object.assign(meta, arakoDetail.meta);
     if (!meta.deliveryDate && meta.detailType === 'toyota_kanban_detail') meta.deliveryDate = parseToyotaDeliveryDate(qrRaw);
     const parsed = {
       orderQr: qr,
