@@ -5856,10 +5856,16 @@
     const legacyPairKey = 'scan_' + hashString(`${canonicalPart(partNumber)}|${normalizeQR(qr1)}|${normalizeQR(qr2)}`);
     const attemptId = 'attempt_' + hashString(key + '|' + Date.now() + '|' + Math.random());
     const localCheck = (session) => {
-      const line = session.lines.find(item =>
+      // 同一品番が複数行に分かれた明細があるため、一致する行をすべて拾い、
+      // 先頭行が満杯になったら次の同一品番の行へ繰り越す(先頭行だけ見ると残りが読めなくなる)
+      const candidates = session.lines.filter(item =>
         orderLinePartValues(item).some(part => partsEquivalent(part, partNumber))
       );
-      if (!line) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
+      if (!candidates.length) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
+      // 空きのある有効行 > 満杯の有効行(数量超過) > 対象外行 の優先順で選ぶ
+      const line = candidates.find(item =>
+        !item.excluded && Number(item.scanned) < Number(item.requiredBoxes)
+      ) || candidates.find(item => !item.excluded) || candidates[0];
       if (line.excluded || isPassThroughOrderLine(session, line)) {
         line.excluded = true;
         line.excludeReason = line.excludeReason || '仕入先パススルー';
@@ -5871,7 +5877,13 @@
         return { active: true, ok: true, completed: !!session.completedAt, note: `明細OK: ${partNumber}` };
       }
       if (existingScan) return { active: true, ok: false, duplicate: true, dupType: 'qr2', note: `明細内重複: ${partNumber}` };
-      if (line.scanned >= line.requiredBoxes) return { active: true, ok: false, note: `数量超過: ${line.partNo} ${line.scanned + 1}/${line.requiredBoxes}` };
+      if (line.scanned >= line.requiredBoxes) {
+        // 同一品番の全行が満杯のときだけ超過。件数は行単位ではなく品番合計で出す
+        const active = candidates.filter(item => !item.excluded);
+        const requiredTotal = active.reduce((sum, item) => sum + (Number(item.requiredBoxes) || 0), 0);
+        const scannedTotal = active.reduce((sum, item) => sum + (Number(item.scanned) || 0), 0);
+        return { active: true, ok: false, note: `数量超過: ${line.partNo} ${scannedTotal + 1}/${requiredTotal}` };
+      }
       line.scanned += 1;
       session.scannedIds = session.scannedIds || {};
       session.scannedIds[scanKey] = {
