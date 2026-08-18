@@ -5014,6 +5014,14 @@
     return matches[0];
   }
 
+  // 背番号は区切り無しで1回目QRに入る(例: 背番号 4697513-1 → 'SBL346975131')。
+  // B508 や MY1 のような短い背番号は誤マッチしやすいので6文字以上のときだけ判定材料にする。
+  function qrContainsOrderLineBackNo(qrRaw, line) {
+    const backNo = canonicalPart(line && line.backNo);
+    if (backNo.length < 6) return false;
+    return partSearchTokens(qrRaw).some(token => token.includes(backNo));
+  }
+
   function findOrderDetailPartPair(qrA, qrB) {
     if (!orderDetailSession.lines.length) return null;
     const matches = orderDetailSession.lines.map(line => {
@@ -5025,12 +5033,17 @@
         inA,
         inB,
         score: (inA ? 1 : 0) + (inB ? 1 : 0),
+        // 代替品番を複数行で共有する明細があり(例: TQ27401/TQ27501/TQ27601 が同じ TQ17101)、
+        // 品番の一致だけでは全行が同点になって先頭行が選ばれてしまう。
+        // 主品番そのものと背番号が1回目QRに出ているかで、その同点を崩す。
+        rank: (qrContainsPart(qrA, line.partNo) ? 2 : 0) + (qrContainsOrderLineBackNo(qrA, line) ? 1 : 0),
         hit: variants[0] || canonicalPart(line.partNo)
       };
     }).filter(item => item.score > 0);
     if (!matches.length) return null;
     matches.sort((a, b) =>
       b.score - a.score ||
+      b.rank - a.rank ||
       Math.max(...orderLinePartVariants(b.line).map(part => part.length), 0) -
       Math.max(...orderLinePartVariants(a.line).map(part => part.length), 0)
     );
@@ -5913,10 +5926,16 @@
         orderLinePartValues(item).some(part => partsEquivalent(part, partNumber))
       );
       if (!candidates.length) return { active: true, ok: false, note: `注文明細外: ${partNumber}` };
+      // 代替品番を複数行で共有する明細では品番だけでは行を特定できないため、
+      // 主品番と背番号が1回目QRで裏付けられる行を先に見る(同順位なら明細の並び順のまま)。
+      const ranked = [...candidates].sort((a, b) =>
+        ((qrContainsPart(qr1, b.partNo) ? 2 : 0) + (qrContainsOrderLineBackNo(qr1, b) ? 1 : 0)) -
+        ((qrContainsPart(qr1, a.partNo) ? 2 : 0) + (qrContainsOrderLineBackNo(qr1, a) ? 1 : 0))
+      );
       // 空きのある有効行 > 満杯の有効行(数量超過) > 対象外行 の優先順で選ぶ
-      const line = candidates.find(item =>
+      const line = ranked.find(item =>
         !item.excluded && Number(item.scanned) < Number(item.requiredBoxes)
-      ) || candidates.find(item => !item.excluded) || candidates[0];
+      ) || ranked.find(item => !item.excluded) || ranked[0];
       if (line.excluded || isPassThroughOrderLine(session, line)) {
         line.excluded = true;
         line.excludeReason = line.excludeReason || '仕入先パススルー';
