@@ -5458,6 +5458,47 @@
     };
   }
 
+  // 空白区切りの固定長明細QR。明細1行が38桁で、
+  //   行番号3桁 + 品番10桁 + 収容数7桁 + 箱数3桁 + 納入数7桁 + 予備8桁
+  // 例: 14807246100124740L61573642026081701081803202608180 1  D130001001
+  //     10171121X7V410000050001000005000000000 10371122X7V410000050002000010000000000 …
+  //     -> 行101 品番71121X7V41 収容数50 箱数1 納入数50
+  //        行103 品番71122X7V41 収容数50 箱数2 納入数100
+  // 末尾に総箱数が入る(上例は 5 = 1+1+2+1)。
+  // 桁割りを 6/4/6/9 にしても「収容数x箱数=納入数」と総箱数の検算は通ってしまうので、
+  // 実際の収容数(50)で確定させている。桁割りを変えるときは伝票の印字と必ず突き合わせること。
+  const SPACED_FIXED_LINE_RE = /(?:^|\s)(\d{3})([0-9A-Z]{10})(\d{7})(\d{3})(\d{7})(\d{8})(?=\s|$)/g;
+
+  function parseSpacedFixedOrderDetailQR(qrRaw) {
+    const text = String(qrRaw ?? '')
+      .normalize('NFKC')
+      .replace(/[​‌‍﻿­]/g, '')
+      .replace(/[\r\n\t]+/g, ' ')
+      .toUpperCase();
+    const lines = [];
+    for (const match of text.matchAll(SPACED_FIXED_LINE_RE)) {
+      const packQty = Number(match[3]) || 0;
+      const requiredBoxes = Number(match[4]) || 0;
+      const totalQty = Number(match[5]) || 0;
+      if (!packQty || !requiredBoxes || !totalQty) continue;
+      const partNo = normalizeOrderDetailPartNo(match[2]);
+      if (!/^[0-9A-Z][0-9A-Z-]{3,}$/.test(partNo)) continue;
+      lines.push({
+        no: lines.length + 1,
+        backNo: match[1],
+        partNo,
+        altPartNo: '',
+        packQty,
+        totalQty,
+        requiredBoxes,
+        scanned: 0,
+        detailType: 'spaced_fixed_detail'
+      });
+    }
+    if (!lines.length) return { meta: {}, lines: [] };
+    return { meta: { detailType: 'spaced_fixed_detail' }, lines };
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
@@ -5530,6 +5571,10 @@
     if (!lines.length) {
       arakoDetail.lines.forEach(line => lines.push(line));
     }
+    const spacedFixedDetail = !lines.length ? parseSpacedFixedOrderDetailQR(qrRaw) : { meta: {}, lines: [] };
+    if (!lines.length) {
+      spacedFixedDetail.lines.forEach(line => lines.push(line));
+    }
     const meta = {
       customerId: extractCustomerIdFromOrderQr(qr) || summitDetail.meta.customerId || '',
       orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || summitDetail.meta.orderNo || '',
@@ -5546,6 +5591,7 @@
     if (iso15434Detail.lines.length) Object.assign(meta, iso15434Detail.meta);
     // アラコは固定長でデータ識別子を持たないため、汎用抽出ではなく専用メタを使う
     if (arakoDetail.lines.length) Object.assign(meta, arakoDetail.meta);
+    if (spacedFixedDetail.lines.length) Object.assign(meta, spacedFixedDetail.meta);
     if (!meta.deliveryDate && meta.detailType === 'toyota_kanban_detail') meta.deliveryDate = parseToyotaDeliveryDate(qrRaw);
     const parsed = {
       orderQr: qr,
