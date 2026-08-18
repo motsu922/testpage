@@ -5309,6 +5309,59 @@
     };
   }
 
+  // ISO 15434 フォーマット06(@>06...)＋ANSI MH10 データ識別子の明細QR。
+  // エース産業(支給先0603)の納品書と、トヨタ紡織精工 千代田岐阜(支給先4741)の支給チケットが同一形式。
+  // 例(エース): @>06Z;CB;1C2;1D1;K7;S01;1K7388;2K7388;3K;2C110KT451001001V72469V08V06033L0T1TY
+  //             16D20260701 9D01 12D20260630 20P000PC7422D134000Q100Z;D44Q400 20P000PC7422D135000Q100Z;D44Q400
+  // 例(千代田): @>06Z;CB;1C1;1D1;K5;S00;1K7364;2K7364;3K;2C110KZ038001001V72469V18V47413L504TB
+  //             16D20260821 9D01 12D20260817 20PF093UP81559X1C0300Q200Z;D34Q600
+  // 明細は 20P=背番号 / P=品番 / Q=収容数 / D=箱数 / 4Q=納入数。
+  // 区切りの制御文字は端末によって除去されたり ; などに化けたりするため、数字以外はまとめて読み飛ばす。
+  const ISO15434_LINE_RE = /20P([0-9A-Z]*?)P([0-9A-Z-]+?)Q(\d+)[^0-9]*(\d+?)4Q(\d+?)(?=20P|[^0-9]|$)/g;
+
+  function parseIso15434OrderDetailQR(qrRaw) {
+    const text = normalizeOrderDetailQR(qrRaw).toUpperCase().replace(/\s+/g, '');
+    if (!/16D\d{8}/.test(text) || !/20P[0-9A-Z]*P/.test(text)) return { meta: {}, lines: [] };
+    const lines = [];
+    for (const match of text.matchAll(ISO15434_LINE_RE)) {
+      const packQty = Number(match[3]) || 0;
+      const requiredBoxes = Number(match[4]) || 0;
+      const totalQty = Number(match[5]) || 0;
+      if (!packQty || !requiredBoxes || !totalQty) continue;
+      const partNo = normalizeOrderDetailPartNo(match[2]);
+      if (!/^[0-9A-Z][0-9A-Z-]{3,}$/.test(partNo)) continue;
+      lines.push({
+        no: lines.length + 1,
+        backNo: match[1] || partNo,
+        partNo,
+        altPartNo: '',
+        packQty,
+        totalQty,
+        requiredBoxes,
+        scanned: 0,
+        detailType: 'iso15434_detail'
+      });
+    }
+    if (!lines.length) return { meta: {}, lines: [] };
+    // 納品書No/納入番号は 英字1桁+9桁 で入るが、伝票に印字されるのは英字+先頭4桁(例 T451001001 → T4510)
+    const slipNo = (text.match(/K([A-Z]\d{9})(?=V)/) || text.match(/K([A-Z]\d{6,})/) || [])[1] || '';
+    // 8V=支給先(顧客)コード / 3L=納入場所 / 9D=納入指示便(16Dの直後に続く)
+    const bin = (text.match(/16D\d{8}9D(\d{1,2})/) || [])[1] || '';
+    return {
+      meta: {
+        customerId: (text.match(/8V(\d{4})3L/) || text.match(/8V(\d{4})/) || [])[1] || '',
+        orderNo: slipNo ? slipNo.slice(0, 5) : '',
+        deliveryDate: (text.match(/16D(\d{8})/) || [])[1] || '',
+        shipDate: '',
+        deliveryBin: bin ? String(Number(bin)) : '',
+        destinationCode: (text.match(/3L([0-9A-Z]+?)(?=1[26]D|9D|20P|$)/) || [])[1] || '',
+        receivingCode: '',
+        detailType: 'iso15434_detail'
+      },
+      lines
+    };
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
@@ -5373,6 +5426,10 @@
     if (!lines.length) {
       aitesDetail.lines.forEach(line => lines.push(line));
     }
+    const iso15434Detail = !lines.length ? parseIso15434OrderDetailQR(qrRaw) : { meta: {}, lines: [] };
+    if (!lines.length) {
+      iso15434Detail.lines.forEach(line => lines.push(line));
+    }
     const meta = {
       customerId: extractCustomerIdFromOrderQr(qr) || summitDetail.meta.customerId || '',
       orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || summitDetail.meta.orderNo || '',
@@ -5385,6 +5442,8 @@
         (lines.some(line => line.detailType === 'summit_detail') ? 'summit_detail' :
         (lines.some(line => line.detailType === 'aites_simple_detail') ? 'aites_simple_detail' : ''))
     };
+    // この形式は 12D=発行日(作成日) / 16D=納入指示日 と汎用解釈が逆になるため、専用メタで上書きする
+    if (iso15434Detail.lines.length) Object.assign(meta, iso15434Detail.meta);
     if (!meta.deliveryDate && meta.detailType === 'toyota_kanban_detail') meta.deliveryDate = parseToyotaDeliveryDate(qrRaw);
     const parsed = {
       orderQr: qr,
