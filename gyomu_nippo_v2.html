@@ -30,7 +30,7 @@ dialog{border:0;border-radius:8px;padding:0;width:min(480px,calc(100vw - 32px));
 <dialog id="allMembersDialog" class="all-members-dialog"><div class="dialog"><div class="all-members-head"><div><h2>全員の日報</h2><p id="allMembersDate"></p></div><button class="icon-btn" id="closeAllMembers" type="button" title="閉じる" aria-label="閉じる"><i data-lucide="x"></i></button></div><div id="allMembersBoard" class="all-members-board"></div></div></dialog>
 <script>
 const cfg={apiKey:'AIzaSyAwZQMhF5qIv1XSADce2JiN_qAV88TxEQ8',projectId:'qcnippo'},defaults=['朝礼','打合せ','不具合対応','異常処置','保留品対応','資料作成','メール','外出','来客対応','その他'],colors={'朝礼':'#d97706','打合せ':'#2563eb','不具合対応':'#dc2626','異常処置':'#b91c1c','保留品対応':'#7c3aed','資料作成':'#059669','メール':'#0891b2','外出':'#0f766e','来客対応':'#db2777','その他':'#64748b'},palette=['#e11d48','#7c3aed','#2563eb','#0284c7','#16a34a','#ca8a04','#ea580c','#475569','#a16207','#65a30d'];
-let db,stateRef,dayRef,unsubState,unsubDay,unsubTodos,state={members:['担当者1'],customTasks:{},customIcons:{},storageMode:'dailyRecords',records:[]},records=[],plans=[],todos=[],dayTodos=[],task='',editing=null,todoStorageRepairStarted=false;
+let db,stateRef,dayRef,unsubState,unsubDay,unsubTodos,state={members:['担当者1'],customTasks:{},customIcons:{},storageMode:'dailyRecords',records:[]},records=[],plans=[],todos=[],dayTodos=[],task='',editing=null,legacyRecordRepairStarted=false,todoStorageRepairStarted=false;
 const $=id=>document.getElementById(id),pad=n=>String(n).padStart(2,'0'),dateString=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`,esc=x=>String(x??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])),mins=t=>{const a=String(t||'').split(':').map(Number);return a[0]*60+a[1]},time=n=>{n=(n%1440+1440)%1440;return`${pad(n/60|0)}:${pad(n%60)}`},hours=r=>Math.max(0,(mins(r.endTime)-mins(r.startTime))/60),member=()=>$('member').value,day=()=>$('date').value;
 function id(){return crypto.randomUUID?crypto.randomUUID():`record_${Date.now()}_${Math.random().toString(36).slice(2)}`}function device(){let x=localStorage.getItem('tt_deviceId');if(!x){x=`v2_${id()}`;localStorage.setItem('tt_deviceId',x)}return x}function color(t){if(colors[t])return colors[t];let h=0;for(let i=0;i<String(t).length;i++)h=(h*31+String(t).charCodeAt(i))|0;return palette[(h>>>0)%palette.length]}function sync(ok,label){$('sync').classList.toggle('offline',!ok);$('sync').querySelectorAll('span')[1].textContent=label}function notice(text,error=false){const n=document.createElement('div');n.className=`toast${error?' error':''}`;n.textContent=text;document.body.append(n);setTimeout(()=>n.remove(),3200)}
 function initialTimes(){let d=new Date(),n=(d.getHours()*60+d.getMinutes())/5|0;$('start').value=time(n*5-30);$('end').value=time(n*5)}function tasks(){const currentMember=member();return[...new Set([...defaults,...((state.customTasks||{})[currentMember]||[]),...((state.recurringPlans||{})[currentMember]||[]).map(r=>r.task),...records.filter(r=>r.member===currentMember).map(r=>r.task).filter(Boolean)])]}
@@ -40,7 +40,7 @@ function renderList(){const view=records.filter(r=>r.member===member()).sort((a,
 function render(){renderMembers();renderTasks();renderList();renderManagedTasks();renderRecurringPlans();renderTodos();window.lucide&&lucide.createIcons()}
 function watchDay(){if(!db||!day())return;if(unsubDay)unsubDay();dayRef=db.doc(`timeTracker/state/dailyRecords/${day()}`);unsubDay=dayRef.onSnapshot(s=>{const data=s.exists?s.data():{};dayTodos=Array.isArray(data.todos)?data.todos:[];records=Array.isArray(data.records)?data.records:(state.storageMode!=='dailyRecords'&&Array.isArray(state.records)?state.records.filter(r=>r.date===day()):[]);plans=Array.isArray(data.plans)?data.plans:[];watchTodos();render()},e=>{console.error(e);notice('日報データを取得できませんでした',true)})}
 function watchTodos(){if(!db||!stateRef||!member())return;if(unsubTodos)unsubTodos();const selectedMember=member(),selectedDay=day();unsubTodos=stateRef.collection('todos').where('member','==',selectedMember).onSnapshot(s=>{const savedTodos=s.docs.map(d=>d.data()).filter(todo=>todo&&todo.id!=null);todos=[...new Map([...dayTodos,...savedTodos].filter(todo=>todo&&todo.id!=null).map(todo=>[String(todo.id),todo])).values()].filter(todo=>!todo.deleted&&(!todo.done||todo.date===selectedDay));renderTodos()},e=>{console.error(e);todos=dayTodos.filter(todo=>todo.member===selectedMember);renderTodos();notice('Todoデータを取得できませんでした',true)})}
-async function connect(){try{if(!firebase.apps.length)firebase.initializeApp(cfg);db=firebase.firestore();stateRef=db.doc('timeTracker/state');sync(true,'接続中');unsubState=stateRef.onSnapshot(s=>{if(s.exists)state={...state,...s.data()};renderMembers();watchDay();render()},e=>{console.error(e);sync(false,'接続エラー')});await stateRef.get();repairTodoStorage()}catch(e){console.error(e);sync(false,'接続エラー');notice('Firebaseの初期化に失敗しました',true)}}
+async function connect(){try{if(!firebase.apps.length)firebase.initializeApp(cfg);db=firebase.firestore();stateRef=db.doc('timeTracker/state');sync(true,'接続中');unsubState=stateRef.onSnapshot(s=>{if(s.exists)state={...state,...s.data()};renderMembers();watchDay();render()},e=>{console.error(e);sync(false,'接続エラー')});await stateRef.get();repairLegacyRecords()}catch(e){console.error(e);sync(false,'接続エラー');notice('Firebaseの初期化に失敗しました',true)}}
 async function save(){const p={id:editing||id(),member:member(),task,date:day(),startTime:$('start').value,endTime:$('end').value,source:'Manual'};if(!p.member||!p.task||!p.date||!p.startTime||!p.endTime){notice('担当者・タスク・時間を入力してください',true);return}if(mins(p.endTime)<=mins(p.startTime)){notice('終了時刻は開始時刻より後にしてください',true);return}sync(true,'保存中');try{await db.runTransaction(async tx=>{const ds=await tx.get(dayRef),data=ds.exists?ds.data():{},server=Array.isArray(data.records)?data.records:[],serverPlans=Array.isArray(data.plans)?data.plans:[],serverTodos=Array.isArray(data.todos)?data.todos:[],map=new Map(server.filter(r=>r&&r.id!=null).map(r=>[String(r.id),r]));map.set(String(p.id),p);const all=[...map.values()],v=(Number(data.lastUpdatedVersion)||0)+1;tx.set(dayRef,{date:p.date,records:all,plans:serverPlans,todos:serverTodos,recordCount:all.length,lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()})});editing=null;sync(true,'同期済み');notice('実績を保存しました')}catch(e){console.error(e);sync(false,'保存エラー');notice(`保存に失敗しました: ${e.message||'不明なエラー'}`,true)}render()}
 function edit(x){const r=records.find(r=>String(r.id)===String(x));if(!r)return;editing=r.id;task=r.task;$('start').value=r.startTime;$('end').value=r.endTime;render();document.querySelector('.panel').scrollIntoView({behavior:'smooth',block:'start'})}function cancel(){editing=null;task=tasks()[0]||'';initialTimes();render()}
 async function remove(x){const r=records.find(r=>String(r.id)===String(x));if(!r||!confirm(`${r.task}（${r.startTime} - ${r.endTime}）を削除しますか？`))return;sync(true,'削除中');try{await db.runTransaction(async tx=>{const ds=await tx.get(dayRef),data=ds.exists?ds.data():{},server=Array.isArray(data.records)?data.records:[],serverPlans=Array.isArray(data.plans)?data.plans:[],serverTodos=Array.isArray(data.todos)?data.todos:[],all=server.filter(r=>String(r.id)!==String(x)),v=(Number(data.lastUpdatedVersion)||0)+1;tx.set(dayRef,{date:day(),records:all,plans:serverPlans,todos:serverTodos,recordCount:all.length,lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()})});if(String(editing)===String(x))cancel();sync(true,'同期済み');notice('実績を削除しました')}catch(e){console.error(e);sync(false,'削除エラー');notice('削除に失敗しました',true)}}
@@ -793,6 +793,58 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
       : '';
     $('todoList').querySelectorAll('[data-todo-toggle]').forEach(input => input.addEventListener('change', () => setTodoDone(input.dataset.todoToggle, input.checked)));
     $('todoList').querySelectorAll('[data-todo-delete]').forEach(button => button.addEventListener('click', () => removeTodo(button.dataset.todoDelete)));
+  }
+
+  async function repairLegacyRecords() {
+    if (!db || !stateRef || legacyRecordRepairStarted) return;
+    legacyRecordRepairStarted = true;
+    try {
+      const stateSnapshot = await stateRef.get();
+      const parent = stateSnapshot.exists ? stateSnapshot.data() : {};
+      const legacyRecords = Array.isArray(parent.records) ? parent.records.filter(record => record && record.id != null && record.date) : [];
+      if (!legacyRecords.length) {
+        repairTodoStorage();
+        return;
+      }
+
+      const recordsByDate = new Map();
+      legacyRecords.forEach(record => {
+        if (!recordsByDate.has(record.date)) recordsByDate.set(record.date, []);
+        recordsByDate.get(record.date).push(record);
+      });
+
+      for (const [date, recordsForDate] of recordsByDate) {
+        const documentRef = stateRef.collection('dailyRecords').doc(date);
+        await db.runTransaction(async transaction => {
+          const daySnapshot = await transaction.get(documentRef);
+          const data = daySnapshot.exists ? daySnapshot.data() : {};
+          const savedRecords = Array.isArray(data.records) ? data.records : [];
+          const byId = new Map(recordsForDate.map(record => [String(record.id), record]));
+          savedRecords.forEach(record => {
+            if (record && record.id != null) byId.set(String(record.id), record);
+          });
+          if (byId.size === savedRecords.length) return;
+          transaction.set(documentRef, {
+            date,
+            records: [...byId.values()],
+            recordCount: byId.size,
+            lastUpdatedVersion: (Number(data.lastUpdatedVersion) || 0) + 1,
+            lastUpdatedBy: device(),
+            lastUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        });
+      }
+
+      await stateRef.update({
+        records: firebase.firestore.FieldValue.delete(),
+        legacyRecordsMigratedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      repairTodoStorage();
+    } catch (error) {
+      console.error(error);
+      legacyRecordRepairStarted = false;
+      notice('過去の実績データを修復できませんでした', true);
+    }
   }
 
   async function repairTodoStorage() {
