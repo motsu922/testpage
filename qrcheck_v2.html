@@ -5868,6 +5868,33 @@
     `;
   }
 
+  // 社内かんばんQRに入っている箱ごとの連番(4桁)。収容数(5桁)の直前に置かれる。
+  // 例: ' A485 7230D-X7V04 0176 00020 7230DX7V04' TP331  -> 0176
+  //     ' CY005 3056 34327-12012 0036 00060 3432712012' TP331(CY) -> 0036
+  // 品番の 34327-12012 を拾わないよう、5桁の直後が区切りであることまで確認する。
+  function extractKanbanSerial(qr) {
+    const match = normalizeQR(qr).match(/(\d{4})\s+\d{5}(?=\s|$)/);
+    return match ? match[1] : '';
+  }
+
+  function formatScanClock(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '';
+    return [date.getHours(), date.getMinutes(), date.getSeconds()]
+      .map(v => String(v).padStart(2, '0')).join(':');
+  }
+
+  // 重複時に「どのかんばんが・いつ登録済みか」を出す。
+  // 同じ明細に同一品番の箱が何十枚もあるため、品番だけでは作業者が判別できず、
+  // 解除して同じカードを読み直す→また重複、というループになっていた。
+  function buildDuplicateNote(partNumber, qr2, existingScan) {
+    const serial = extractKanbanSerial(qr2);
+    const at = formatScanClock(existingScan && existingScan.timestamp);
+    const parts = [serial ? `かんばん${serial}` : '', at ? `${at}に登録済み` : ''].filter(Boolean);
+    return `明細内重複: ${partNumber}${parts.length ? ` (${parts.join(' / ')})` : ''}`;
+  }
+
   async function checkOrderDetailMatch(partNumber, qr1, qr2) {
     if (!orderDetailSession.lines.length) return { active: false, ok: true, note: '' };
     const key = `${canonicalPart(partNumber)}|${normalizeQR(qr2)}`;
@@ -5895,7 +5922,12 @@
       if (existingScan && existingScan.attemptId === attemptId) {
         return { active: true, ok: true, completed: !!session.completedAt, note: `明細OK: ${partNumber}` };
       }
-      if (existingScan) return { active: true, ok: false, duplicate: true, dupType: 'qr2', note: `明細内重複: ${partNumber}` };
+      if (existingScan) {
+        return {
+          active: true, ok: false, duplicate: true, dupType: 'qr2',
+          note: buildDuplicateNote(partNumber, qr2, existingScan)
+        };
+      }
       if (line.scanned >= line.requiredBoxes) {
         // 同一品番の全行が満杯のときだけ超過。件数は行単位ではなく品番合計で出す
         const active = candidates.filter(item => !item.excluded);
@@ -6124,10 +6156,18 @@
       };
       const dl = dupLabels[dupType] || dupLabels['vs'];
       text.textContent = dl.title;
+      // 同一品番の箱が多数あるため、どのかんばんが既に登録済みかを大きく出す。
+      // これが無いと読み取り失敗と誤解され、解除→同じカードを再読込のループになる。
+      const dupSerial = extractKanbanSerial(dl.val);
       detail.innerHTML = `
         ${photoHtml}
         <p class="label">${escapeHtml(dl.msg)}</p>
-        <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(dl.val)}</p>
+        ${dupSerial ? `<p style="margin-top:10px; font-size:15px; color:#888;">かんばん番号</p>
+        <p style="font-size:34px; font-weight:700; color:#ffb74d; line-height:1.2;">${escapeHtml(dupSerial)}</p>` : ''}
+        ${logEntry.orderDetailNote ? `<p class="label" style="margin-top:8px;">${escapeHtml(logEntry.orderDetailNote)}</p>` : ''}
+        <p style="margin-top:12px; font-size:15px; font-weight:700; color:#ffb74d;">この箱は登録済みです</p>
+        <p class="label" style="margin-top:4px;">脇に置いて、次の箱のかんばんを読み取ってください</p>
+        <p style="margin-top:10px; font-size:12px; word-break:break-all;">${escapeHtml(dl.val)}</p>
       `;
       adminArea.style.display = 'block';
       document.getElementById('adminAreaMsg').textContent = '⚠️ 重複検知　暗証番号またはタップで解除';
