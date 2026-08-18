@@ -5302,20 +5302,23 @@
     return { meta, lines };
   }
 
+  // アイテス系の簡易明細QR。「品番$収容数$箱数」＋空フィールドの区切りが品番ごとに繰り返される。
+  // 例(1品番): 79919X1M16$30$3$$$$$
+  // 例(5品番): 72375X7V02$60$5$$$$$72376X7V02$60$6$$$$$72375X7V03$30$2$$$$$…
+  // 先頭3フィールドだけを見ると2品番目以降が落ちるため、繰り返し単位で拾う。
+  const AITES_LINE_RE = /([0-9A-Z][0-9A-Z-]{3,})\s*\$\s*(\d+)\s*\$\s*(\d+)/gi;
+
   function parseAitesSimpleOrderDetailQR(qrRaw) {
     const text = normalizeQR(qrRaw).normalize('NFKC').trim();
-    const fields = text.split('$').map(value => value.trim());
-    if (fields.length < 3) return { meta: {}, lines: [] };
-    const partNo = normalizeOrderDetailPartNo(fields[0]);
-    const packQty = Number(fields[1]) || 0;
-    const requiredBoxes = Number(fields[2]) || 0;
-    if (!/^[0-9A-Z][0-9A-Z-]{3,}$/i.test(partNo) || !packQty || !requiredBoxes) {
-      return { meta: {}, lines: [] };
-    }
-    return {
-      meta: { detailType: 'aites_simple_detail' },
-      lines: [{
-        no: 1,
+    if (!text.includes('$')) return { meta: {}, lines: [] };
+    const lines = [];
+    for (const match of text.matchAll(AITES_LINE_RE)) {
+      const partNo = normalizeOrderDetailPartNo(match[1]);
+      const packQty = Number(match[2]) || 0;
+      const requiredBoxes = Number(match[3]) || 0;
+      if (!/^[0-9A-Z][0-9A-Z-]{3,}$/i.test(partNo) || !packQty || !requiredBoxes) continue;
+      lines.push({
+        no: lines.length + 1,
         backNo: partNo,
         partNo,
         altPartNo: '',
@@ -5324,8 +5327,10 @@
         requiredBoxes,
         scanned: 0,
         detailType: 'aites_simple_detail'
-      }]
-    };
+      });
+    }
+    if (!lines.length) return { meta: {}, lines: [] };
+    return { meta: { detailType: 'aites_simple_detail' }, lines };
   }
 
   // ISO 15434 フォーマット06(@>06...)＋ANSI MH10 データ識別子の明細QR。
