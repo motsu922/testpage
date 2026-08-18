@@ -2753,18 +2753,23 @@
       meta: baseSession.meta,
       details: baseSession.details,
       sourceHashes: source.sourceHashes || {},
-      lines: lines.map((line, index) => ({
-        no: line.no || index + 1,
-        backNo: line.backNo || '',
-        partNo: line.partNo || '',
-        altPartNo: line.altPartNo || '',
-        packQty: Number(line.packQty) || 0,
-        totalQty: Number(line.totalQty) || 0,
-        requiredBoxes: Number(line.requiredBoxes) || 0,
-        scanned: Number(line.scanned) || 0,
-        excluded: isPassThroughOrderLine(baseSession, line),
-        excludeReason: line.excludeReason || (isPassThroughOrderLine(baseSession, line) ? '仕入先パススルー' : '')
-      })),
+      lines: lines.map((line, index) => {
+        // 明細QRの読取時に確定済みの除外フラグは消さない。
+        // セッション単位で再判定すると、まとめ読みで顧客コードが混在したとき除外が外れてしまう。
+        const excluded = !!line.excluded || isPassThroughOrderLine(baseSession, line);
+        return {
+          no: line.no || index + 1,
+          backNo: line.backNo || '',
+          partNo: line.partNo || '',
+          altPartNo: line.altPartNo || '',
+          packQty: Number(line.packQty) || 0,
+          totalQty: Number(line.totalQty) || 0,
+          requiredBoxes: Number(line.requiredBoxes) || 0,
+          scanned: Number(line.scanned) || 0,
+          excluded,
+          excludeReason: line.excludeReason || (excluded ? '仕入先パススルー' : '')
+        };
+      }),
       scannedIds: source.scannedIds || {},
       completedAt: source.completedAt || '',
       completeLoggedAt: source.completeLoggedAt || '',
@@ -2789,7 +2794,7 @@
         }));
         target.updatedAt = new Date().toISOString();
       }
-      return { session: target, added: false, duplicate: true };
+      return { session: normalizeOrderDetailSessionData(target, target.sessionId), added: false, duplicate: true };
     }
 
     const now = new Date().toISOString();
@@ -2823,7 +2828,9 @@
       target.completedAt = '';
       target.completeLoggedAt = '';
     }
-    return { session: target, added: true, duplicate: false };
+    // 追加した行にもセッション全体の顧客コードで除外判定を通す
+    // (明細QR単体では顧客コードが取れず、パース時に除外が付かないことがある)
+    return { session: normalizeOrderDetailSessionData(target, target.sessionId), added: true, duplicate: false };
   }
 
   function orderRequiredBoxesFrom(session) {
@@ -4941,20 +4948,32 @@
     return fallback ? fallback[1] : '';
   }
 
-  function getOrderDetailCustomerId(session) {
+  // 明細を複数まとめ読みすると、納入先枝番違いの顧客コードがセッション内に混在する
+  // (例: 1枚目 400079164-3 / 2枚目 400079164-1)。session.meta は1枚目のもので固定されるため、
+  // 除外判定は明細QRごとのコードも含めて全て見る。
+  function getOrderDetailCustomerIds(session) {
+    const ids = [];
+    const push = value => {
+      const id = String(value || '').trim();
+      if (id && !ids.includes(id)) ids.push(id);
+    };
     const meta = session && session.meta ? session.meta : {};
-    if (meta.customerId) return String(meta.customerId);
-    const fromOrder = extractCustomerIdFromOrderQr(session && session.orderQr);
-    if (fromOrder) return fromOrder;
-    const detailQr = (session && Array.isArray(session.details) ? session.details : [])
-      .map(d => d && d.orderQr)
-      .find(Boolean);
-    return extractCustomerIdFromOrderQr(detailQr || '');
+    push(meta.customerId);
+    push(extractCustomerIdFromOrderQr(session && session.orderQr));
+    (session && Array.isArray(session.details) ? session.details : []).forEach(detail => {
+      push(detail && detail.meta && detail.meta.customerId);
+      push(extractCustomerIdFromOrderQr(detail && detail.orderQr));
+    });
+    return ids;
+  }
+
+  function getOrderDetailCustomerId(session) {
+    return getOrderDetailCustomerIds(session)[0] || '';
   }
 
   function isPassThroughOrderLine(session, line) {
-    const customerId = getOrderDetailCustomerId(session);
-    const parts = (passThroughPartMaster && passThroughPartMaster[customerId]) || [];
+    const parts = getOrderDetailCustomerIds(session)
+      .flatMap(customerId => (passThroughPartMaster && passThroughPartMaster[customerId]) || []);
     if (!parts.length) return false;
     const targets = new Set(parts.flatMap(partVariants));
     return orderLinePartValues(line).flatMap(partVariants).some(part => targets.has(part));

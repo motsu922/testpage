@@ -1125,18 +1125,22 @@
       orderQr: baseSession.orderQr,
       meta: baseSession.meta,
       details: baseSession.details,
-      lines: lines.map((line, index) => ({
-        no: line.no || index + 1,
-        backNo: line.backNo || '',
-        partNo: line.partNo || '',
-        altPartNo: line.altPartNo || '',
-        packQty: Number(line.packQty) || 0,
-        totalQty: Number(line.totalQty) || 0,
-        requiredBoxes: Number(line.requiredBoxes) || 0,
-        scanned: Number(line.scanned) || 0,
-        excluded: isPassThroughOrderLine(baseSession, line),
-        excludeReason: line.excludeReason || (isPassThroughOrderLine(baseSession, line) ? '仕入先パススルー' : '')
-      })),
+      lines: lines.map((line, index) => {
+        // 照合側で確定済みの除外フラグは消さない(まとめ読みで顧客コードが混在するため)
+        const excluded = !!line.excluded || isPassThroughOrderLine(baseSession, line);
+        return {
+          no: line.no || index + 1,
+          backNo: line.backNo || '',
+          partNo: line.partNo || '',
+          altPartNo: line.altPartNo || '',
+          packQty: Number(line.packQty) || 0,
+          totalQty: Number(line.totalQty) || 0,
+          requiredBoxes: Number(line.requiredBoxes) || 0,
+          scanned: Number(line.scanned) || 0,
+          excluded,
+          excludeReason: line.excludeReason || (excluded ? '仕入先パススルー' : '')
+        };
+      }),
       scannedIds: source.scannedIds || {},
       completedAt: source.completedAt || '',
       completeLoggedAt: source.completeLoggedAt || '',
@@ -1180,13 +1184,25 @@
     return '顧客未設定';
   }
 
+  // 明細を複数まとめ読みすると納入先枝番違いの顧客コードが混在するため、全て拾う
+  // (例: 1枚目 400079164-3 / 2枚目 400079164-1)
+  function getOrderCustomerIds(session) {
+    const ids = [];
+    const push = value => {
+      const id = String(value || '').trim();
+      if (id && !ids.includes(id)) ids.push(id);
+    };
+    push(extractCustomerIdFromOrderQr(session && session.orderQr));
+    push(session && session.meta && session.meta.customerId);
+    ((session && session.details) || []).forEach(detail => {
+      push(extractCustomerIdFromOrderQr(detail && detail.orderQr));
+      push(detail && detail.meta && detail.meta.customerId);
+    });
+    return ids;
+  }
+
   function getOrderCustomerId(session) {
-    const fromOrder = extractCustomerIdFromOrderQr(session.orderQr || '');
-    if (fromOrder) return fromOrder;
-    const detailQr = (session.details || [])
-      .map(d => d && d.orderQr)
-      .find(Boolean);
-    return extractCustomerIdFromOrderQr(detailQr || '');
+    return getOrderCustomerIds(session)[0] || '';
   }
 
   function getOrderCustomerFilterKey(session) {
@@ -1243,8 +1259,8 @@
   }
 
   function isPassThroughOrderLine(session, line) {
-    const customerId = getOrderCustomerId(session);
-    const parts = (passThroughPartMaster && passThroughPartMaster[customerId]) || [];
+    const parts = getOrderCustomerIds(session)
+      .flatMap(customerId => (passThroughPartMaster && passThroughPartMaster[customerId]) || []);
     if (!parts.length) return false;
     const targets = new Set(parts.flatMap(partVariants));
     const lineParts = [line && line.partNo, line && line.altPartNo].filter(Boolean);
