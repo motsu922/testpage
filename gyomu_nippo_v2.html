@@ -39,7 +39,8 @@ function renderTasks(){const all=tasks();if(!task||!all.includes(task))task=all[
 function renderList(){const view=records.filter(r=>r.member===member()).sort((a,b)=>mins(a.startTime)-mins(b.startTime)),sum=records.reduce((n,r)=>n+hours(r),0);$('count').textContent=`${records.length}件`;$('hours').textContent=`${sum.toFixed(1)}h`;$('selected').textContent=task||'未選択';$('editMessage').textContent=editing?'編集中：保存すると既存の実績を更新します':'タスクと時間を選択してください';$('save').innerHTML=editing?'<i data-lucide="save"></i> 変更を保存':'<i data-lucide="save"></i> 実績を登録';$('cancel').hidden=!editing;$('subtitle').textContent=`${member()||'担当者未選択'} / ${view.length}件`;$('timeline').innerHTML=view.length?view.map(r=>`<article class="entry" data-id="${esc(r.id)}"><div class="entry-time">${esc(r.startTime)} - ${esc(r.endTime)}<small>${hours(r).toFixed(1)}時間</small></div><div class="entry-body"><span class="entry-color" style="--color:${color(r.task)}"></span><div><strong>${esc(r.task)}</strong><small>${r.source==='TimerTracker'?'タイマー記録':r.source==='PCWorkTracker'?'PC作業記録':'手入力'}</small></div></div><div class="entry-actions"><button class="icon-btn edit" title="編集"><i data-lucide="pencil"></i></button><button class="icon-btn delete" title="削除"><i data-lucide="trash-2"></i></button></div></article>`).join(''):'<div class="empty"><div><i data-lucide="calendar-plus"></i><p>この日の実績はまだありません</p><p>左側から最初の実績を登録できます</p></div></div>';$('timeline').querySelectorAll('.edit').forEach(b=>b.onclick=()=>edit(b.closest('.entry').dataset.id));$('timeline').querySelectorAll('.delete').forEach(b=>b.onclick=()=>remove(b.closest('.entry').dataset.id))}
 function render(){renderMembers();renderTasks();renderList();renderManagedTasks();renderRecurringPlans();renderTodos();window.lucide&&lucide.createIcons()}
 function watchDay(){if(!db||!day())return;if(unsubDay)unsubDay();dayRef=db.doc(`timeTracker/state/dailyRecords/${day()}`);unsubDay=dayRef.onSnapshot(s=>{const data=s.exists?s.data():{};dayTodos=Array.isArray(data.todos)?data.todos:[];records=Array.isArray(data.records)?data.records:(state.storageMode!=='dailyRecords'&&Array.isArray(state.records)?state.records.filter(r=>r.date===day()):[]);plans=Array.isArray(data.plans)?data.plans:[];watchTodos();render()},e=>{console.error(e);notice('日報データを取得できませんでした',true)})}
-function watchTodos(){if(!db||!stateRef||!member())return;if(unsubTodos)unsubTodos();const selectedMember=member(),selectedDay=day();unsubTodos=stateRef.collection('todos').where('member','==',selectedMember).onSnapshot(s=>{const savedTodos=s.docs.map(d=>d.data()).filter(todo=>todo&&todo.id!=null);todos=[...new Map([...dayTodos,...savedTodos].filter(todo=>todo&&todo.id!=null).map(todo=>[String(todo.id),todo])).values()].filter(todo=>!todo.deleted&&(!todo.done||todo.date===selectedDay));renderTodos()},e=>{console.error(e);todos=dayTodos.filter(todo=>todo.member===selectedMember);renderTodos();notice('Todoデータを取得できませんでした',true)})}
+function todoStoreRef(memberName=member()){return stateRef.collection('dailyRecords').doc(`_todos_${encodeURIComponent(memberName)}`)}
+function watchTodos(){if(!db||!stateRef||!member())return;if(unsubTodos)unsubTodos();const selectedMember=member(),selectedDay=day();unsubTodos=todoStoreRef(selectedMember).onSnapshot(s=>{const data=s.exists?s.data():{},savedTodos=Array.isArray(data.todos)?data.todos:[],legacyTodos=Array.isArray(state.todos)?state.todos:[];todos=[...new Map([...dayTodos,...legacyTodos,...savedTodos].filter(todo=>todo&&todo.id!=null).map(todo=>[String(todo.id),todo])).values()].filter(todo=>todo.member===selectedMember&&!todo.deleted&&(!todo.done||todo.date===selectedDay));renderTodos()},e=>{console.error(e);todos=[...dayTodos,...(Array.isArray(state.todos)?state.todos:[])].filter(todo=>todo.member===selectedMember&&!todo.deleted&&(!todo.done||todo.date===selectedDay));renderTodos();notice('Todoデータを取得できませんでした',true)})}
 async function connect(){try{if(!firebase.apps.length)firebase.initializeApp(cfg);db=firebase.firestore();stateRef=db.doc('timeTracker/state');sync(true,'接続中');unsubState=stateRef.onSnapshot(s=>{if(s.exists)state={...state,...s.data()};renderMembers();watchDay();render()},e=>{console.error(e);sync(false,'接続エラー')});await stateRef.get();repairLegacyRecords()}catch(e){console.error(e);sync(false,'接続エラー');notice('Firebaseの初期化に失敗しました',true)}}
 async function save(){const p={id:editing||id(),member:member(),task,date:day(),startTime:$('start').value,endTime:$('end').value,source:'Manual'};if(!p.member||!p.task||!p.date||!p.startTime||!p.endTime){notice('担当者・タスク・時間を入力してください',true);return}if(mins(p.endTime)<=mins(p.startTime)){notice('終了時刻は開始時刻より後にしてください',true);return}sync(true,'保存中');try{await db.runTransaction(async tx=>{const ds=await tx.get(dayRef),data=ds.exists?ds.data():{},server=Array.isArray(data.records)?data.records:[],serverPlans=Array.isArray(data.plans)?data.plans:[],serverTodos=Array.isArray(data.todos)?data.todos:[],map=new Map(server.filter(r=>r&&r.id!=null).map(r=>[String(r.id),r]));map.set(String(p.id),p);const all=[...map.values()],v=(Number(data.lastUpdatedVersion)||0)+1;tx.set(dayRef,{date:p.date,records:all,plans:serverPlans,todos:serverTodos,recordCount:all.length,lastUpdatedVersion:v,lastUpdatedBy:device(),lastUpdatedAt:firebase.firestore.FieldValue.serverTimestamp()})});editing=null;sync(true,'同期済み');notice('実績を保存しました')}catch(e){console.error(e);sync(false,'保存エラー');notice(`保存に失敗しました: ${e.message||'不明なエラー'}`,true)}render()}
 function edit(x){const r=records.find(r=>String(r.id)===String(x));if(!r)return;editing=r.id;task=r.task;$('start').value=r.startTime;$('end').value=r.endTime;render();document.querySelector('.panel').scrollIntoView({behavior:'smooth',block:'start'})}function cancel(){editing=null;task=tasks()[0]||'';initialTimes();render()}
@@ -880,12 +881,20 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
       const requiresRepair = legacyTodos.length || parent.todoStorageMode === 'global' || parent.todoMigrationCompleted;
       if (!requiresRepair) return;
 
-      for (let index = 0; index < legacyTodos.length; index += 400) {
-        const batch = db.batch();
-        legacyTodos.slice(index, index + 400).forEach(todo => {
-          batch.set(stateRef.collection('todos').doc(String(todo.id)), { ...todo, migratedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      const todosByMember = new Map();
+      legacyTodos.forEach(todo => {
+        if (!todosByMember.has(todo.member)) todosByMember.set(todo.member, []);
+        todosByMember.get(todo.member).push(todo);
+      });
+      for (const [memberName, memberTodos] of todosByMember) {
+        const documentRef = todoStoreRef(memberName);
+        await db.runTransaction(async transaction => {
+          const snapshot = await transaction.get(documentRef);
+          const data = snapshot.exists ? snapshot.data() : {};
+          const byId = new Map((Array.isArray(data.todos) ? data.todos : []).filter(todo => todo && todo.id != null).map(todo => [String(todo.id), todo]));
+          memberTodos.forEach(todo => byId.set(String(todo.id), todo));
+          transaction.set(documentRef, { todoOwner: memberName, todos: [...byId.values()], migratedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
         });
-        await batch.commit();
       }
 
       await stateRef.update({
@@ -904,7 +913,14 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
   async function writeTodo(todo, successMessage) {
     sync(true, '保存中');
     try {
-      await stateRef.collection('todos').doc(String(todo.id)).set({ ...todo, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      const documentRef = todoStoreRef(todo.member);
+      await db.runTransaction(async transaction => {
+        const snapshot = await transaction.get(documentRef);
+        const data = snapshot.exists ? snapshot.data() : {};
+        const byId = new Map((Array.isArray(data.todos) ? data.todos : []).filter(item => item && item.id != null).map(item => [String(item.id), item]));
+        byId.set(String(todo.id), { ...todo, updatedAt: new Date().toISOString() });
+        transaction.set(documentRef, { todoOwner: todo.member, todos: [...byId.values()], updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+      });
       sync(true, '同期済み');
       notice(successMessage);
     } catch (error) {
