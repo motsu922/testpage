@@ -2794,6 +2794,23 @@
     };
   }
 
+  // 同一品番の明細行は1行にまとめる。伝票では定番地違いなどで複数行に分かれるが、
+  // どの箱がどの行かはかんばんQRから判別できないため、品番単位で合算して扱う。
+  function mergeOrderLineInto(lines, line, session) {
+    const existing = lines.find(item => partsEquivalent(item.partNo, line.partNo));
+    if (!existing) {
+      lines.push({ ...line, no: lines.length + 1, scanned: 0 });
+      return;
+    }
+    existing.totalQty = (Number(existing.totalQty) || 0) + (Number(line.totalQty) || 0);
+    existing.requiredBoxes = (Number(existing.requiredBoxes) || 0) + (Number(line.requiredBoxes) || 0);
+    existing.excluded = !!existing.excluded || !!line.excluded || (session ? isPassThroughOrderLine(session, existing) : false);
+    existing.excludeReason = existing.excludeReason || line.excludeReason || (existing.excluded ? '仕入先パススルー' : '');
+    if (!String(existing.backNo || '').includes(line.backNo)) {
+      existing.backNo = [existing.backNo, line.backNo].filter(Boolean).join('+');
+    }
+  }
+
   function mergeParsedOrderDetail(session, parsed) {
     const target = normalizeOrderDetailSessionData(session, session && session.sessionId);
     const qrHash = hashString(parsed.orderQr || '');
@@ -2802,12 +2819,22 @@
     if (target.sourceHashes[qrHash]) {
       const sourceCount = Object.keys(target.sourceHashes || {}).length;
       if (sourceCount <= 1) {
-        const scannedByPart = new Map(target.lines.map(line => [canonicalPart(line.partNo), Number(line.scanned) || 0]));
-        target.lines = parsed.lines.map((line, index) => ({
-          ...line,
-          no: index + 1,
-          scanned: Math.min(scannedByPart.get(canonicalPart(line.partNo)) || 0, Number(line.requiredBoxes) || 0)
-        }));
+        // 同じ明細QRの読み直し。行定義は作り直すが、読取済み数は品番ごとの合計を引き継ぐ。
+        // 行ごとにコピーすると、同一品番が複数行あるときに読取数が行数ぶん水増しされる。
+        const scannedByPart = new Map();
+        target.lines.forEach(line => {
+          const key = canonicalPart(line.partNo);
+          scannedByPart.set(key, (scannedByPart.get(key) || 0) + (Number(line.scanned) || 0));
+        });
+        const rebuilt = [];
+        parsed.lines.forEach(line => mergeOrderLineInto(rebuilt, line, target));
+        target.lines = rebuilt.map((line, index) => {
+          const key = canonicalPart(line.partNo);
+          const remain = scannedByPart.get(key) || 0;
+          const take = Math.min(remain, Number(line.requiredBoxes) || 0);
+          scannedByPart.set(key, remain - take);
+          return { ...line, no: index + 1, scanned: take };
+        });
         target.updatedAt = new Date().toISOString();
       }
       return { session: normalizeOrderDetailSessionData(target, target.sessionId), added: false, duplicate: true };
@@ -2824,20 +2851,7 @@
     if (!target.orderQr) target.orderQr = parsed.orderQr || '';
     if (!target.meta || !Object.keys(target.meta).length) target.meta = parsed.meta || {};
 
-    parsed.lines.forEach(line => {
-      const existing = target.lines.find(item => partsEquivalent(item.partNo, line.partNo));
-      if (existing) {
-        existing.totalQty = (Number(existing.totalQty) || 0) + (Number(line.totalQty) || 0);
-        existing.requiredBoxes = (Number(existing.requiredBoxes) || 0) + (Number(line.requiredBoxes) || 0);
-        existing.excluded = !!existing.excluded || !!line.excluded || isPassThroughOrderLine(target, existing);
-        existing.excludeReason = existing.excludeReason || line.excludeReason || (existing.excluded ? '仕入先パススルー' : '');
-        if (!String(existing.backNo || '').includes(line.backNo)) {
-          existing.backNo = [existing.backNo, line.backNo].filter(Boolean).join('+');
-        }
-      } else {
-        target.lines.push({ ...line, no: target.lines.length + 1, scanned: 0 });
-      }
-    });
+    parsed.lines.forEach(line => mergeOrderLineInto(target.lines, line, target));
     target.lines.forEach((line, index) => { line.no = index + 1; });
     target.updatedAt = now;
     if (target.completedAt && orderScannedBoxesFrom(target) < orderRequiredBoxesFrom(target)) {
@@ -5583,21 +5597,14 @@
     const qr = normalizeOrderDetailQR(qrRaw);
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
     const lines = [];
-    const seenLineKeys = new Set();
 
+    // 内容が同じ行を捨ててはいけない。定番地違いなど、QRに出ない属性で伝票の行が
+    // 分かれることがあり(背番号・品番・収容数・納入数まで一致する)、捨てるとその分の箱数が丸ごと消える。
     const addOrderLine = (backNo, partNo, packRaw, totalRaw) => {
       const packQty = decodeOrderQty(packRaw);
       const totalQty = decodeOrderQty(totalRaw);
       if (!backNo || !partNo || !packQty || !totalQty) return;
       const normalizedPartNo = normalizeOrderDetailPartNo(partNo);
-      const lineKey = [
-        String(backNo).trim(),
-        canonicalPart(normalizedPartNo),
-        String(packRaw).trim(),
-        String(totalRaw).trim()
-      ].join('|');
-      if (seenLineKeys.has(lineKey)) return;
-      seenLineKeys.add(lineKey);
       lines.push({
         no: lines.length + 1,
         backNo: String(backNo).trim(),
@@ -5628,6 +5635,9 @@
       for (const match of qr.matchAll(ORDER_LINE_RE)) {
         addOrderLine(match[1], match[2], match[3], match[4]);
       }
+    }
+    // 2つの正規表現が同じ行を二重に拾わないよう、前段で取れた場合は動かさない
+    if (!lines.length) {
       for (const match of qr.matchAll(ORDER_LINE_ALT_RE)) {
         addOrderLine(match[2] || match[1], match[3], match[4], match[5]);
       }
@@ -5655,12 +5665,19 @@
     if (!lines.length) {
       spacedFixedDetail.lines.forEach(line => lines.push(line));
     }
+    // この系統も 12D=発行日 / 16D=納入指示日。16Dがあればそちらが納期(無い形式のために12Dへ退避)。
+    const issueDate = (qr.match(/12D(\d{8})/) || [])[1] || '';
+    const instructedDate = (qr.match(/16D(\d{8})/) || [])[1] || '';
+    // 納入指示便は納期の直後に 9D で続く。9D2 の後ろに 10K… が来るので便の桁を食わないようにする。
+    const genericBin = (qr.match(/16D\d{8}9D(\d{1,2})(?=10K|\D|$)/) || [])[1] || '';
+    // 納品書Noは 10K + 英字1桁 + 4桁(+枝番)。伝票には英字+4桁までが印字される(例 A273006 → A2730)。
+    const genericSlipNo = (qr.match(/10K([0-9A-Z]\d{4})\d*/) || [])[1] || '';
     const meta = {
       customerId: extractCustomerIdFromOrderQr(qr) || summitDetail.meta.customerId || '',
-      orderNo: (qr.match(/KA(\d{5,})/) || [])[1] || summitDetail.meta.orderNo || '',
-      deliveryDate: (qr.match(/12D(\d{8})/) || [])[1] || summitDetail.meta.deliveryDate || '',
-      shipDate: (qr.match(/16D(\d{8})/) || [])[1] || '',
-      deliveryBin: parseToyotaDeliveryBin(qrRaw) || summitDetail.meta.deliveryBin || '',
+      orderNo: genericSlipNo || (qr.match(/KA(\d{5,})/) || [])[1] || summitDetail.meta.orderNo || '',
+      deliveryDate: instructedDate || issueDate || summitDetail.meta.deliveryDate || '',
+      shipDate: instructedDate ? issueDate : '',
+      deliveryBin: parseToyotaDeliveryBin(qrRaw) || (genericBin ? String(Number(genericBin)) : '') || summitDetail.meta.deliveryBin || '',
       destinationCode: parseToyotaDestinationCode(qrRaw) || summitDetail.meta.destinationCode || '',
       receivingCode: parseToyotaReceivingCode(qrRaw),
       detailType: lines.some(line => line.detailType === 'toyota_kanban_detail') ? 'toyota_kanban_detail' :
