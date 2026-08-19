@@ -526,13 +526,17 @@
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
     }
     .order-detail-secondary {
+      /* 明細追加は読込より使用頻度が高いので、読込ボタン以上の大きさにする */
       width: 100%;
-      min-height: 40px;
+      min-height: 60px;
       margin-bottom: 8px;
-      border-color: #2f6b46;
-      background: #12351f;
-      color: #93efad;
-      font-size: 13px;
+      padding: 15px 14px;
+      border-color: #3f9160;
+      background: #164a2a;
+      color: #b6f7c9;
+      font-size: 18px;
+      border-radius: 8px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
     }
     .order-detail-btn.danger {
       flex: 0 0 auto;
@@ -1297,10 +1301,10 @@
         font-size: 14px;
       }
       .order-detail-secondary {
-        min-height: 34px;
+        min-height: 52px;
         margin-bottom: 6px;
-        font-size: 11px;
-        padding: 7px 8px;
+        font-size: 16px;
+        padding: 13px 10px;
       }
       .order-detail-btn.danger {
         min-width: 62px;
@@ -1888,6 +1892,14 @@
               </select>
               <button class="sound-preview-btn" onclick="previewSound('dup')">▶</button>
             </div>
+            <div class="sound-row" style="margin-top:12px; align-items:center;">
+              <label>🔊 音量</label>
+              <input type="range" id="soundVolumeRange" min="1" max="8" step="1"
+                     style="flex:1; min-width:110px;"
+                     oninput="onSoundVolumeChange(this.value)">
+              <span id="soundVolumeValue" style="min-width:2.2em; text-align:right; font-weight:900; color:#4fc3f7;">4</span>
+              <button class="sound-preview-btn" onclick="previewSound('ok')">▶</button>
+            </div>
           </div>
         </div>
 
@@ -2010,6 +2022,9 @@
   let scanLog = [];
   let audioCtx = null;
   let audioReady = false;
+  let soundMasterGain = null;   // 音量ブースト段(コンプレッサ経由で出力)
+  const SOUND_VOLUME_MIN = 1;
+  const SOUND_VOLUME_MAX = 8;
   let currentTab = 'scan';
   let okAutoTimer = null;
   let shortQrTimer = null;
@@ -2079,6 +2094,7 @@
       ng:   'buu',               // NG
       dup:  'buu'                // 重複
     },
+    soundVolume: 4,              // ★ 音量ブースト倍率(1〜8)
     duplicateCheckEnabled: false,   // ★ 重複監視モード
     shortQRCheckEnabled: true,
     qrLengthGuard: {
@@ -4014,6 +4030,11 @@
     document.getElementById('releasePIN').value = String(settings.releasePIN || '0000').padStart(4,'0');
     document.getElementById('soundToggle').className     = settings.soundEnabled     ? 'toggle-switch on' : 'toggle-switch';
     document.getElementById('vibrationToggle').className = settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
+    // ★ 音量
+    const volRange = document.getElementById('soundVolumeRange');
+    const volLabel = document.getElementById('soundVolumeValue');
+    if (volRange) volRange.value = String(getSoundVolume());
+    if (volLabel) volLabel.textContent = String(getSoundVolume());
     // ★ 音種別セレクト
     ['scan','ok','ng','dup'].forEach(k => {
       const el = document.getElementById('soundType_' + k);
@@ -4454,6 +4475,13 @@
     settings.soundConfig[key] = value;
   }
 
+  function onSoundVolumeChange(value) {
+    settings.soundVolume = Math.min(SOUND_VOLUME_MAX, Math.max(SOUND_VOLUME_MIN, Number(value) || 4));
+    const label = document.getElementById('soundVolumeValue');
+    if (label) label.textContent = String(settings.soundVolume);
+    if (audioCtx && soundMasterGain) soundMasterGain.gain.setValueAtTime(getSoundVolume(), audioCtx.currentTime);
+  }
+
   function previewSound(key) {
     if (!settings.soundConfig) return;
     const kind = settings.soundConfig[key] || 'off';
@@ -4567,6 +4595,30 @@
     audioReady = true;
   }
 
+  function getSoundVolume() {
+    const value = Number(settings.soundVolume);
+    if (!isFinite(value) || value <= 0) return 4;
+    return Math.min(SOUND_VOLUME_MAX, Math.max(SOUND_VOLUME_MIN, value));
+  }
+
+  // 各音は個別ゲインが上限1.0に張り付いていて、それ以上は素直に上げられない。
+  // マスター段で持ち上げてからコンプレッサで潰すことで、歪ませずに音量を稼ぐ。
+  function getSoundOutput() {
+    if (!soundMasterGain) {
+      const comp = audioCtx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-20, audioCtx.currentTime);
+      comp.knee.setValueAtTime(24, audioCtx.currentTime);
+      comp.ratio.setValueAtTime(12, audioCtx.currentTime);
+      comp.attack.setValueAtTime(0.003, audioCtx.currentTime);
+      comp.release.setValueAtTime(0.2, audioCtx.currentTime);
+      soundMasterGain = audioCtx.createGain();
+      soundMasterGain.connect(comp);
+      comp.connect(audioCtx.destination);
+    }
+    soundMasterGain.gain.setValueAtTime(getSoundVolume(), audioCtx.currentTime);
+    return soundMasterGain;
+  }
+
   function playSound(type) {
     if (!settings.soundEnabled) return;
     initAudio();
@@ -4595,7 +4647,7 @@
       // ピッ：高め・短くシャープ
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
-      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.connect(gain); gain.connect(getSoundOutput());
       osc.type = 'sine';
       osc.frequency.setValueAtTime(3200, now);
       osc.frequency.linearRampToValueAtTime(3000, now + 0.06);
@@ -4611,7 +4663,7 @@
         const t = now + i * 0.10;
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.connect(gain); gain.connect(getSoundOutput());
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, t);
         gain.gain.setValueAtTime(0, t);
@@ -4627,7 +4679,7 @@
         const t = now + offset;
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.connect(gain); gain.connect(getSoundOutput());
         osc.type = 'square';
         osc.frequency.setValueAtTime(160, t);
         gain.gain.setValueAtTime(0, t);
@@ -4643,7 +4695,7 @@
         const t = now + offset;
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
-        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.connect(gain); gain.connect(getSoundOutput());
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, t);
         gain.gain.setValueAtTime(0, t);
