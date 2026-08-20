@@ -917,6 +917,7 @@
             <tr>
               <th>日時</th>
               <th>結果</th>
+              <th>作業者</th>
               <th>品番</th>
               <th>QR1（正規化）</th>
               <th>QR2（正規化）</th>
@@ -1894,6 +1895,14 @@
   }
 
   // ── テーブル描画 ──
+  // 一覧に出す担当者。解除ログには処置者が入るので、作業者と併記する。
+  function personLabel(l) {
+    const worker = l.workerName || l.operatorName || '';
+    const resolver = l.resolverName || '';
+    if (worker && resolver) return `${worker} → ${resolver}`;
+    return worker || resolver || '—';
+  }
+
   function formatOrderDetailLogText(l) {
     if (!l.orderDetailActive && !l.orderDetailSessionId) return '—';
     if (l.orderDetailRead) {
@@ -1948,6 +1957,7 @@
         <tr onclick="openModal(${start + i})">
           <td class="td-time">${t}</td>
           <td><span class="result-badge ${resClass}">${resLabel}</span></td>
+          <td class="td-part">${escHtml(personLabel(l))}</td>
           <td class="td-part">${escHtml(l.partNumber || '—')}</td>
           <td class="td-qr">${escHtml(qr1short)}</td>
           <td class="td-qr">${escHtml(qr2short)}</td>
@@ -2014,8 +2024,15 @@
     const destinationCode = l.orderDetailDestinationCode || parseToyotaDestinationCodeFromText(detailQrText) || '—';
     const receivingCode = l.orderDetailReceivingCode || parseToyotaReceivingCodeFromText(detailQrText) || '—';
 
+    // 誰が読み、誰が解除したかを追えるようにする。
+    // 解除ログ(ERROR_RELEASE)では処置者、通常の読み取りでは作業者が入る。
+    const worker = l.workerName || l.operatorName || '—';
+    const resolver = l.resolverName || '—';
+
     const rows = [
       ['日時',         new Date(l.timestamp).toLocaleString('ja-JP')],
+      ['作業者',       worker],
+      ['処置者',       resolver],
       ['抽出品番',     l.partNumber || '—'],
       ['1回目QR(raw)', l.qr1_raw || '—'],
       ['2回目QR(raw)', l.qr2_raw || '—'],
@@ -2057,13 +2074,15 @@
     if (!activeCompany) { alert('会社を選択してください'); return; }
     if (filteredLogs.length === 0) { alert('出力するデータがありません'); return; }
 
-    const headers = ['日時','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
+    const headers = ['日時','作業者','処置者','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
     const rows = filteredLogs.map(l => {
       const isDup = l.result === 'DUP' || l.isDuplicate;
       const rule = l.matchedRule ? JSON.stringify(l.matchedRule) : '';
       const detailQrText = l.qr1_raw || l.qr1 || '';
       return [
         new Date(l.timestamp).toLocaleString('ja-JP'),
+        l.workerName || l.operatorName || '',
+        l.resolverName || '',
         isDup ? 'DUP' : (l.result || ''),
         isDup ? (l.dupType || '重複') : '',
         l.partNumber ?? '',
