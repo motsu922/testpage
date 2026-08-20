@@ -2019,6 +2019,7 @@
   let value1 = '';
   let value2 = '';
   let isNGLocked = false;
+  const NG_LOCK_KEY = 'qrcheck_v2_ng_lock';
   let scanLog = [];
   let audioCtx = null;
   let audioReady = false;
@@ -2138,6 +2139,8 @@
     updateModeBadge();           // ★ モードバッジ初期化
     renderTerminalInputMode();
     ensureWorkerConfirmed(false);
+    // 未解除のエラーがあれば復元する。他の初期化で画面が上書きされないよう最後に実行する。
+    restoreNgLockFromStorage();
   });
 
   function applyScanOnlyModeUI(){
@@ -3385,8 +3388,76 @@
     updatePinDots();
   }
 
+  // ========= エラーロックの端末保存 =========
+  // ロック状態をメモリだけで持つと、タスクキル→再起動で未解除のまま作業に戻れてしまう。
+  // 端末(localStorage)に残し、起動時に復元して、正規の解除でだけ消す。
+  function getNgLockStorageKey() {
+    return NG_LOCK_KEY + '_' + (activeCompanyId || 'default');
+  }
+
+  function saveNgLockState(info) {
+    try {
+      localStorage.setItem(getNgLockStorageKey(),
+        JSON.stringify({ at: new Date().toISOString(), ...(info || {}) }));
+    } catch (e) { console.warn('ng lock save error:', e); }
+  }
+
+  function loadNgLockState() {
+    try { return JSON.parse(localStorage.getItem(getNgLockStorageKey()) || 'null'); }
+    catch (e) { return null; }
+  }
+
+  function clearNgLockState() {
+    try { localStorage.removeItem(getNgLockStorageKey()); }
+    catch (e) { console.warn('ng lock clear error:', e); }
+  }
+
+  // ロックの入切は必ずここを通す(メモリと端末保存がずれないようにするため)
+  function setNGLocked(locked, info) {
+    isNGLocked = !!locked;
+    if (locked) saveNgLockState(info);
+    else clearNgLockState();
+  }
+
+  function formatLockStamp(iso) {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getMonth() + 1}/${d.getDate()} ` +
+      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  // 起動時に未解除のロックがあれば画面を戻す
+  function restoreNgLockFromStorage() {
+    const saved = loadNgLockState();
+    if (!saved) return;
+    const overlay = document.getElementById('resultOverlay');
+    if (!overlay) return;
+    const isDup = saved.kind === 'dup';
+    isNGLocked = true;
+    overlay.className = `result-overlay show ${isDup ? 'dup' : 'ng'} ng-locked`;
+    document.getElementById('resultSymbol').textContent = isDup ? '⚠' : '×';
+    document.getElementById('resultText').textContent = saved.title || 'エラー状態';
+    document.getElementById('resultDetail').innerHTML = `
+      <p style="font-size:19px;font-weight:900;color:#ff8a80;">未解除のエラーが残っています</p>
+      ${saved.partNumber ? `<p style="margin-top:8px;font-size:22px;font-weight:900;">${escapeHtml(saved.partNumber)}</p>` : ''}
+      ${saved.note ? `<p class="label" style="margin-top:8px;">${escapeHtml(saved.note)}</p>` : ''}
+      <p class="label" style="margin-top:10px;">発生 ${escapeHtml(formatLockStamp(saved.at))}</p>
+      <p class="label" style="margin-top:10px;">解除するまで作業を再開できません</p>
+    `;
+    const adminArea = document.getElementById('adminArea');
+    if (adminArea) adminArea.style.display = 'block';
+    const msg = document.getElementById('adminAreaMsg');
+    if (msg) msg.textContent = '⚠️ 未解除のエラー　暗証番号で解除してください';
+    const dupBtn = document.getElementById('dupReleaseBtn');
+    if (dupBtn) dupBtn.style.display = isDup ? 'block' : 'none';
+    const hint = document.getElementById('ngReleaseHint');
+    if (hint) hint.style.display = isDup ? 'none' : 'block';
+    enterPinUnlockMode();
+    resetPinUI();
+  }
+
   function finishPinUnlock() {
-    isNGLocked = false;
+    setNGLocked(false);
     playSound('ok');
     vibrate([80, 40, 80]);
     pinBuffer = '';
@@ -5969,7 +6040,7 @@
     if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
     if (shortQrTimer) { clearTimeout(shortQrTimer); shortQrTimer = null; }
     isOKPending = false;
-    isNGLocked = false;
+    setNGLocked(false);
     orderDetailCompleteNoticeShowing = true;
     overlay.className = 'result-overlay show ok';
     symbol.textContent = 'OK';
@@ -6372,7 +6443,12 @@
       document.getElementById('adminAreaMsg').textContent = '⚠️ 重複検知　暗証番号またはタップで解除';
       document.getElementById('dupReleaseBtn').style.display = 'block';
       document.getElementById('ngReleaseHint').style.display = 'none';
-      isNGLocked = true;
+      setNGLocked(true, {
+        kind: 'dup',
+        title: text.textContent,
+        partNumber,
+        note: logEntry.orderDetailNote || ''
+      });
       enterPinUnlockMode();
       playSound('dup');
       resetPinUI();
@@ -6407,7 +6483,12 @@
       document.getElementById('adminAreaMsg').textContent = '⚠️ 暗証番号で解除してください';
       document.getElementById('dupReleaseBtn').style.display = 'none';
       document.getElementById('ngReleaseHint').style.display = 'block';
-      isNGLocked = true;
+      setNGLocked(true, {
+        kind: 'ng',
+        title: text.textContent,
+        partNumber,
+        note: logEntry.orderDetailNote || logEntry.extractNote || ''
+      });
       enterPinUnlockMode();
       playSound('ng');
       resetPinUI();
@@ -6449,7 +6530,7 @@
   // ★ 1対Nモード：QR1を変更（step1へ完全リセット）
   function resetToStep1() {
     clearScannerBuffer();
-    isNGLocked = false;
+    setNGLocked(false);
     exitPinUnlockMode();
     value1 = ''; value2 = '';
     nModeQR2Count = 0;
@@ -6508,7 +6589,7 @@
   function showNGOverlay() {
     const overlay = document.getElementById('resultOverlay');
     overlay.className = 'result-overlay show ng ng-locked';
-    isNGLocked = true;
+    setNGLocked(true, { kind: 'ng', title: 'エラー状態', note: '管理者QRで解除が必要' });
     document.getElementById('resultSymbol').textContent = '×';
     document.getElementById('resultText').textContent = 'エラー状態';
     document.getElementById('resultDetail').innerHTML = '<p>管理者QRで解除が必要</p>';
