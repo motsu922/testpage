@@ -802,7 +802,8 @@
         <select class="filter-select" id="filterResult" onchange="applyFilter()">
           <option value="all">すべて</option>
           <option value="OK">✅ OK</option>
-          <option value="NG">❌ NG</option>
+          <option value="NG">❌ NG（すべて）</option>
+          <option value="NG_MISMATCH">❌ NG（品番違いのみ）</option>
           <option value="DUP">⚠️ 重複</option>
         </select>
       </div>
@@ -1824,6 +1825,7 @@
         if (result === 'DUP' && !isDup) return false;
         if (result === 'OK' && (isDup || l.result !== 'OK')) return false;
         if (result === 'NG' && (isDup || l.result !== 'NG')) return false;
+        if (result === 'NG_MISMATCH' && (isDup || l.result !== 'NG' || !isPartMismatchLog(l))) return false;
       }
       if (dateFrom) {
         if (new Date(l.timestamp) < new Date(dateFrom + 'T00:00:00')) return false;
@@ -1895,6 +1897,26 @@
   }
 
   // ── テーブル描画 ──
+  // NGログの大半はかんばん種別エラーと明細QRの読み取りエラーで、品番違いとは別物。
+  // partNumber 欄に入る擬似品番と、読み取り段階のエラーnoteを除くと品番違いだけが残る。
+  const PSEUDO_PARTS = new Set([
+    'KANBAN_TYPE_ERROR', 'ORDER_DETAIL', 'ORDER_DETAIL_COMPLETE',
+    'ORDER_DETAIL_MANUAL_COMPLETE', 'ERROR_RELEASE'
+  ]);
+  const NON_MISMATCH_NOTES = new Set([
+    'order_detail_parse_error', 'order_detail_too_short', 'order_detail_read_ok'
+  ]);
+
+  function isPartMismatchLog(l) {
+    if (PSEUDO_PARTS.has(l.partNumber || '')) return false;
+    const note = String(l.extractNote || '');
+    if (note.startsWith('kanban_type_error')) return false;
+    if (NON_MISMATCH_NOTES.has(note.split(':')[0])) return false;
+    // 数量超過は品番が一致したうえで箱数が超えたもの。品番違いではないので外す。
+    if (/^(数量超過|注文明細外)/.test(String(l.orderDetailNote || ''))) return false;
+    return true;
+  }
+
   // 重複は「どちらのかんばんが重複したか」で対処が変わるので、タグで区別して出す
   const DUP_LABELS = { qr1: '客先かんばん重複', qr2: '社内かんばん重複', vs: '客先＝社内 一致' };
 
