@@ -6299,6 +6299,20 @@
     // QR1=QR2 は常にNG。同じ社内かんばんの重複は、同じ明細セッション内だけNG。
     const preDupType = isDuplicateToday(v1, v2); // null / 'vs'
     const orderCheck = (isQROK && !preDupType) ? await checkOrderDetailMatch(partNumber, v1, v2) : { active: false, ok: true, note: '' };
+
+    // 1回目QR・2回目QRの両方が登録済みのものと同一 = 同じ箱をもう一度読んだだけ。
+    // その箱は最初の読み取りで計上済みなので、エラーにもカウントにもせず、OK音だけ返して流す。
+    // (1回目QRが違う「組み合わせ違い」は現物確認が要るので、従来どおりエラーにする)
+    if (orderCheck.duplicate && orderCheck.dupSamePair === true) {
+      playSound('ok');
+      if (settings.scanMode === '1toN') { value2 = ''; currentStep = 2; }
+      else { value1 = ''; value2 = ''; currentStep = 1; }
+      updateScanUI();
+      dismissKeyboardThenRefocusScanInput();
+      matchInProgress = false;
+      return;
+    }
+
     const dupType = preDupType || (orderCheck.duplicate ? (orderCheck.dupType || 'qr2') : null);
     const isDup = dupType !== null;
 
