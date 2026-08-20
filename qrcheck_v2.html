@@ -6049,10 +6049,27 @@
   // 重複時に「どのかんばんが・いつ登録済みか」を出す。
   // 同じ明細に同一品番の箱が何十枚もあるため、品番だけでは作業者が判別できず、
   // 解除して同じカードを読み直す→また重複、というループになっていた。
-  function buildDuplicateNote(partNumber, qr2, existingScan) {
+  // 重複が「同じ箱をもう一度読んだ」のか「別の1回目QRに読み済みの社内かんばんを合わせた」のかを見分ける。
+  // 登録時に qrHash(1回目+2回目) を保存しているので、今回の組み合わせと突き合わせれば判別できる。
+  // 判定材料が無い(古い記録)場合は null を返す。
+  function isSameScanPair(qr1, qr2, existingScan) {
+    if (!existingScan || !existingScan.qrHash) return null;
+    return existingScan.qrHash === hashString(normalizeQR(qr1) + '|' + normalizeQR(qr2));
+  }
+
+  function dupCauseLabel(samePair) {
+    if (samePair === null || samePair === undefined) return '';
+    return samePair ? '1回目QRも同一（同じ箱の再読込）' : '1回目QRは別（違うかんばんとの組み合わせ）';
+  }
+
+  function buildDuplicateNote(partNumber, qr1, qr2, existingScan) {
     const serial = extractKanbanSerial(qr2);
     const at = formatScanClock(existingScan && existingScan.timestamp);
-    const parts = [serial ? `かんばん${serial}` : '', at ? `${at}に登録済み` : ''].filter(Boolean);
+    const parts = [
+      serial ? `かんばん${serial}` : '',
+      at ? `${at}に登録済み` : '',
+      dupCauseLabel(isSameScanPair(qr1, qr2, existingScan))
+    ].filter(Boolean);
     return `明細内重複: ${partNumber}${parts.length ? ` (${parts.join(' / ')})` : ''}`;
   }
 
@@ -6092,7 +6109,8 @@
       if (existingScan) {
         return {
           active: true, ok: false, duplicate: true, dupType: 'qr2',
-          note: buildDuplicateNote(partNumber, qr2, existingScan)
+          dupSamePair: isSameScanPair(qr1, qr2, existingScan),
+          note: buildDuplicateNote(partNumber, qr1, qr2, existingScan)
         };
       }
       if (line.scanned >= line.requiredBoxes) {
@@ -6247,7 +6265,9 @@
       orderDetailScannedBoxes: orderCheck.active ? orderScannedBoxes() : 0,
       result: isOK ? 'OK' : (isDup ? 'DUP' : 'NG'),
       isDuplicate: isDup,
-      dupType: dupType || ''
+      dupType: dupType || '',
+      // true=1回目QRも同一(同じ箱の再読込) / false=1回目QRは別 / null=判定材料なし
+      dupSamePair: orderCheck.duplicate ? (orderCheck.dupSamePair === undefined ? null : orderCheck.dupSamePair) : null
     };
     appendScanLog(logEntry);
     if (orderJustCompleted) {
@@ -6322,7 +6342,20 @@
         vs:   { title: '1回目＝2回目 一致', msg: '1回目と2回目に同じQRが読み取られました', val: logEntry.qr1 },
       };
       const dl = dupLabels[dupType] || dupLabels['vs'];
-      text.textContent = dl.title;
+      // 「同じ箱をもう一度読んだ」のか「2回目QRだけが読み済み」なのかで対処が変わるので、
+      // その場で見分けられるよう原因を大きく出す。
+      const same = logEntry.dupSamePair;
+      const known = dupType === 'qr2' && (same === true || same === false);
+      text.textContent = known ? (same ? '同じ箱を再読込' : '組み合わせ違い') : dl.title;
+      const causeHtml = !known ? '' : (same
+        ? `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#4a3300;border:2px solid #ffb74d;">
+             <div style="font-size:21px;font-weight:900;color:#ffd699;">1回目QR・2回目QR とも同一</div>
+             <div style="font-size:14px;color:#e0c9a0;margin-top:4px;">登録済みの箱をそのまま読み直しています</div>
+           </div>`
+        : `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#4a1414;border:2px solid #ff8a80;">
+             <div style="font-size:21px;font-weight:900;color:#ffc9c4;">1回目QRは別のものです</div>
+             <div style="font-size:14px;color:#e8b4b0;margin-top:4px;">2回目QR(社内かんばん)だけが登録済み。別のかんばんと組み合わせています</div>
+           </div>`);
       // 同一品番の箱が多数あるため、どのかんばんが既に登録済みかを大きく出す。
       // これが無いと読み取り失敗と誤解され、解除→同じカードを再読込のループになる。
       const dupSerial = extractKanbanSerial(dl.val);
@@ -6331,6 +6364,7 @@
         <p class="label">${escapeHtml(dl.msg)}</p>
         ${dupSerial ? `<p style="margin-top:10px; font-size:15px; color:#888;">かんばん番号</p>
         <p style="font-size:34px; font-weight:700; color:#ffb74d; line-height:1.2;">${escapeHtml(dupSerial)}</p>` : ''}
+        ${causeHtml}
         ${logEntry.orderDetailNote ? `<p class="label" style="margin-top:8px;">${escapeHtml(logEntry.orderDetailNote)}</p>` : ''}
         <p style="margin-top:10px; font-size:12px; word-break:break-all;">${escapeHtml(dl.val)}</p>
       `;
