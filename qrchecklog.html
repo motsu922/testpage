@@ -1914,7 +1914,20 @@
     if (NON_MISMATCH_NOTES.has(note.split(':')[0])) return false;
     // 数量超過は品番が一致したうえで箱数が超えたもの。品番違いではないので外す。
     if (/^(数量超過|注文明細外)/.test(String(l.orderDetailNote || ''))) return false;
+    // '+' のような1〜2文字のQR2はスキャナの誤入力。かんばんとして成立しない。
+    const qr2 = String(l.qr2 || '').trim();
+    if (qr2 && qr2.length <= 2) return false;
+    // 明細に一致した品番がQR1側に見当たらないものは、客先かんばん自体が明細と違うケース。
+    // 社内かんばんの品番違いとは別問題なので外す。
+    if (!qr1MatchesDetail(l)) return false;
     return true;
+  }
+
+  function qr1MatchesDetail(l) {
+    const hit = l.orderDetailSearchHit || l.partNumber || '';
+    if (!hit) return false;
+    const q1 = canonicalPart(l.qr1 || '');
+    return partVariants(hit).some(v => v && q1.includes(v));
   }
 
   // 重複は「どちらのかんばんが重複したか」で対処が変わるので、タグで区別して出す
