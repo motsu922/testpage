@@ -1895,6 +1895,18 @@
   }
 
   // ── テーブル描画 ──
+  // 重複は「どちらのかんばんが重複したか」で対処が変わるので、タグで区別して出す
+  const DUP_LABELS = { qr1: '客先かんばん重複', qr2: '社内かんばん重複', vs: '客先＝社内 一致' };
+
+  function dupLabelOf(l) {
+    return DUP_LABELS[l && l.dupType] || '重複';
+  }
+
+  function resultLabelOf(l) {
+    if (l.result === 'DUP' || l.isDuplicate) return '⚠ ' + dupLabelOf(l);
+    return l.result === 'OK' ? '✓ OK' : '✕ NG';
+  }
+
   // 一覧に出す担当者。解除ログには処置者が入るので、作業者と併記する。
   function personLabel(l) {
     const worker = l.workerName || l.operatorName || '';
@@ -1942,7 +1954,7 @@
     document.getElementById('logTableBody').innerHTML = slice.map((l, i) => {
       const isDup = l.result === 'DUP' || l.isDuplicate;
       const resClass = isDup ? 'dup' : (l.result === 'OK' ? 'ok' : 'ng');
-      const resLabel = isDup ? '⚠ DUP' : (l.result === 'OK' ? '✓ OK' : '✕ NG');
+      const resLabel = resultLabelOf(l);
       const t = new Date(l.timestamp).toLocaleString('ja-JP', {
         month:'2-digit', day:'2-digit',
         hour:'2-digit', minute:'2-digit', second:'2-digit'
@@ -2012,7 +2024,7 @@
     if (!l) return;
     const isDup = l.result === 'DUP' || l.isDuplicate;
     const resClass = isDup ? 'dup' : (l.result === 'OK' ? 'ok' : 'ng');
-    const resLabel = isDup ? '⚠ DUP' : (l.result === 'OK' ? '✓ OK' : '✕ NG');
+    const resLabel = resultLabelOf(l);
 
     document.getElementById('modalTitle').innerHTML =
       `照合詳細 <span class="result-badge ${resClass}">${resLabel}</span>`;
@@ -2049,7 +2061,7 @@
       ['受入',          receivingCode],
       ['明細進捗',      l.orderDetailRequiredBoxes ? `${l.orderDetailScannedBoxes ?? 0}/${l.orderDetailRequiredBoxes}` : '—'],
       ['明細完了',      l.orderDetailCompleted ? 'YES' : '—'],
-      ['重複タイプ',   l.dupType || '—'],
+      ['重複タイプ',   isDup ? `${dupLabelOf(l)}（${l.dupType || '—'}）` : '—'],
     ];
 
     document.getElementById('modalBody').innerHTML = rows.map(([k,v]) => `
@@ -2084,7 +2096,7 @@
         l.workerName || l.operatorName || '',
         l.resolverName || '',
         isDup ? 'DUP' : (l.result || ''),
-        isDup ? (l.dupType || '重複') : '',
+        isDup ? dupLabelOf(l) : '',
         l.partNumber ?? '',
         l.qr1_raw ?? '', l.qr2_raw ?? '',
         l.qr1 ?? '', l.qr2 ?? '',
