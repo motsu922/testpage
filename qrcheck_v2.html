@@ -6130,7 +6130,20 @@
 
   function dupCauseLabel(samePair) {
     if (samePair === null || samePair === undefined) return '';
-    return samePair ? '1回目QRも同一（同じ箱の再読込）' : '1回目QRは別（違うかんばんとの組み合わせ）';
+    return samePair ? '客先かんばんも同一（同じ箱の再読込）' : '客先かんばんは別（社内かんばんのみ重複）';
+  }
+
+  // 顧客かんばん(1回目QR)の使い回しを知らせる。
+  // 社内かんばんが新しいと重複判定を素通りするため、これが無いと
+  // 使用済みの顧客かんばんで別の箱を計上でき、1枚が未処理のまま残る。
+  function buildQr1DuplicateNote(partNumber, existing) {
+    const at = formatScanClock(existing && existing.timestamp);
+    const serial = existing && existing.kanbanSerial;
+    const parts = [
+      at ? `${at}に使用済み` : '別の箱で使用済み',
+      serial ? `かんばん${serial}と組み合わせ` : ''
+    ].filter(Boolean);
+    return `客先かんばん重複: ${partNumber} (${parts.join(' / ')})`;
   }
 
   function buildDuplicateNote(partNumber, qr1, qr2, existingScan) {
@@ -6141,7 +6154,7 @@
       at ? `${at}に登録済み` : '',
       dupCauseLabel(isSameScanPair(qr1, qr2, existingScan))
     ].filter(Boolean);
-    return `明細内重複: ${partNumber}${parts.length ? ` (${parts.join(' / ')})` : ''}`;
+    return `社内かんばん重複: ${partNumber}${parts.length ? ` (${parts.join(' / ')})` : ''}`;
   }
 
   async function checkOrderDetailMatch(partNumber, qr1, qr2) {
@@ -6184,6 +6197,21 @@
           note: buildDuplicateNote(partNumber, qr1, qr2, existingScan)
         };
       }
+      // 顧客かんばん(1回目QR)の使い回し。判定キーは品番+社内かんばんなので、
+      // 社内かんばんが新しいとここまで素通りしてしまう。使用済みの顧客かんばんで
+      // 別の箱を計上すると、箱数は合うのに顧客かんばんが1枚未処理で残る。
+      // 1対Nモードは1枚の顧客かんばんを複数の社内かんばんに使うのが正常なので対象外。
+      if (settings.scanMode !== '1toN') {
+        const qr1Hash = hashString(normalizeQR(qr1));
+        const reusedQr1 = Object.values(session.scannedIds || {})
+          .find(item => item && item.qr1Hash && item.qr1Hash === qr1Hash);
+        if (reusedQr1) {
+          return {
+            active: true, ok: false, duplicate: true, dupType: 'qr1',
+            note: buildQr1DuplicateNote(partNumber, reusedQr1)
+          };
+        }
+      }
       if (line.scanned >= line.requiredBoxes) {
         // 同一品番の全行が満杯のときだけ超過。件数は行単位ではなく品番合計で出す
         const active = candidates.filter(item => !item.excluded);
@@ -6197,7 +6225,9 @@
         attemptId,
         partNumber,
         qrHash: hashString(normalizeQR(qr1) + '|' + normalizeQR(qr2)),
+        qr1Hash: hashString(normalizeQR(qr1)),
         qr2Hash: hashString(normalizeQR(qr2)),
+        kanbanSerial: extractKanbanSerial(qr2),
         timestamp: new Date().toISOString(),
         terminalInputMode
       };
@@ -6422,25 +6452,33 @@
       overlay.className = 'result-overlay show dup ng-locked';
       symbol.textContent = '⚠';
       const dupLabels = {
-        qr1:  { title: '1回目QR 重複',      msg: 'この明細内ですでに使用された1回目QRです', val: logEntry.qr1 },
-        qr2:  { title: '2回目QR 重複',      msg: 'この明細内ですでに使用された社内かんばんQRです', val: logEntry.qr2 },
-        vs:   { title: '1回目＝2回目 一致', msg: '1回目と2回目に同じQRが読み取られました', val: logEntry.qr1 },
+        qr1:  { title: '客先かんばん重複', msg: 'この明細内ですでに使用された客先かんばんです', val: logEntry.qr1 },
+        qr2:  { title: '社内かんばん重複', msg: 'この明細内ですでに使用された社内かんばんです', val: logEntry.qr2 },
+        vs:   { title: '客先＝社内 一致',  msg: '1回目と2回目に同じQRが読み取られました', val: logEntry.qr1 },
       };
       const dl = dupLabels[dupType] || dupLabels['vs'];
       // 「同じ箱をもう一度読んだ」のか「2回目QRだけが読み済み」なのかで対処が変わるので、
       // その場で見分けられるよう原因を大きく出す。
       const same = logEntry.dupSamePair;
       const known = dupType === 'qr2' && (same === true || same === false);
-      text.textContent = known ? (same ? '同じ箱を再読込' : '組み合わせ違い') : dl.title;
-      const causeHtml = !known ? '' : (same
-        ? `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#4a3300;border:2px solid #ffb74d;">
-             <div style="font-size:21px;font-weight:900;color:#ffd699;">1回目QR・2回目QR とも同一</div>
-             <div style="font-size:14px;color:#e0c9a0;margin-top:4px;">登録済みの箱をそのまま読み直しています</div>
-           </div>`
-        : `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#4a1414;border:2px solid #ff8a80;">
-             <div style="font-size:21px;font-weight:900;color:#ffc9c4;">1回目QRは別のものです</div>
-             <div style="font-size:14px;color:#e8b4b0;margin-top:4px;">2回目QR(社内かんばん)だけが登録済み。別のかんばんと組み合わせています</div>
-           </div>`);
+      text.textContent = known && same ? '同じ箱を再読込' : dl.title;
+      const redBlock = (head, body) =>
+        `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#4a1414;border:2px solid #ff8a80;">
+           <div style="font-size:21px;font-weight:900;color:#ffc9c4;">${head}</div>
+           <div style="font-size:14px;color:#e8b4b0;margin-top:4px;">${body}</div>
+         </div>`;
+      const causeHtml =
+        dupType === 'qr1'
+          ? redBlock('客先かんばんが使用済みです',
+                     'この客先かんばんは別の箱で計上済みです。箱の取り違えがないか現物を確認してください')
+        : !known ? ''
+        : same
+          ? `<div style="margin-top:12px;padding:10px 12px;border-radius:10px;background:#4a3300;border:2px solid #ffb74d;">
+               <div style="font-size:21px;font-weight:900;color:#ffd699;">客先かんばんも同一</div>
+               <div style="font-size:14px;color:#e0c9a0;margin-top:4px;">登録済みの箱をそのまま読み直しています</div>
+             </div>`
+          : redBlock('社内かんばんが使用済みです',
+                     '客先かんばんは別のものです。すでに処理した社内かんばんと組み合わせています');
       // 同一品番の箱が多数あるため、どのかんばんが既に登録済みかを大きく出す。
       // これが無いと読み取り失敗と誤解され、解除→同じカードを再読込のループになる。
       const dupSerial = extractKanbanSerial(dl.val);
