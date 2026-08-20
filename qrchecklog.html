@@ -324,6 +324,9 @@
     .td-part { color: var(--text); font-weight: 600; font-size: 13px; }
     .td-qr   { color: var(--text3); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+    /* 納入先名は長いものがあるので、フィルターバーを押し広げないよう幅を抑える */
+    #filterCustomer { max-width: 240px; }
+
     .result-badge {
       display: inline-flex;
       align-items: center;
@@ -821,6 +824,25 @@
         <span class="filter-label">品番</span>
         <input type="text" class="filter-input" id="filterPart" placeholder="検索..." oninput="applyFilter()">
       </div>
+      <div class="filter-sep"></div>
+      <div class="filter-group">
+        <span class="filter-label">作業者</span>
+        <select class="filter-select" id="filterWorker" onchange="applyFilter()">
+          <option value="all">すべて</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">処置者</span>
+        <select class="filter-select" id="filterResolver" onchange="applyFilter()">
+          <option value="all">すべて</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">納入先</span>
+        <select class="filter-select" id="filterCustomer" onchange="applyFilter()">
+          <option value="all">すべて</option>
+        </select>
+      </div>
       <button class="filter-btn" onclick="resetFilter()">リセット</button>
       <div class="filter-sep"></div>
       <div class="filter-group">
@@ -1076,6 +1098,7 @@
         if (!data) {
           allLogs = [];
           renderOrderSessions();
+          rebuildChoiceFilters();
           applyFilter();
           return;
         }
@@ -1083,6 +1106,7 @@
           .map(([key, val]) => ({ ...val, _key: key }))
           .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
         renderOrderSessions();
+        rebuildChoiceFilters();
         applyFilter();
       }, err => {
         console.error(err);
@@ -1648,6 +1672,7 @@
     database.ref('qr_match_companies/customer_name_master/' + companyId).once('value', snap => {
       customerNameMaster = snap.val() || {};
       renderOrderSessions();
+      rebuildChoiceFilters();   // 納入先の表示名がここで確定する
     }, err => {
       console.error('顧客名マスタ読み込みエラー:', err);
     });
@@ -1812,14 +1837,56 @@
       });
   }
 
+  // ログ1件の納入先。QR1から取れるコードを顧客名マスタで名前に変える。
+  function logCustomerId(l) {
+    return extractCustomerIdFromOrderQr(l.qr1 || l.qr1_raw || '');
+  }
+
+  // 名前が登録されていればそれだけ出す。未登録のときはコードで判別する。
+  function customerLabel(cid) {
+    const name = customerNameMaster && customerNameMaster[cid];
+    return name ? String(name).replace(/\s+/g, ' ').trim() : cid;
+  }
+
+  // 選択肢は読み込んだログから作る。件数の多い順に並べ、選択中の値は残す。
+  function rebuildChoiceFilters() {
+    const fill = (id, values, labelOf) => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const keep = sel.value;
+      const sorted = [...values.entries()].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), 'ja'));
+      sel.innerHTML = '<option value="all">すべて</option>' +
+        sorted.map(([v, n]) => `<option value="${escHtml(v)}">${escHtml(labelOf(v))}（${n}）</option>`).join('');
+      sel.value = [...values.keys()].includes(keep) ? keep : 'all';
+    };
+    const tally = pick => {
+      const map = new Map();
+      allLogs.forEach(l => {
+        const v = pick(l);
+        if (!v) return;
+        map.set(v, (map.get(v) || 0) + 1);
+      });
+      return map;
+    };
+    fill('filterWorker', tally(l => l.workerName || l.operatorName), v => v);
+    fill('filterResolver', tally(l => l.resolverName), v => v);
+    fill('filterCustomer', tally(logCustomerId), customerLabel);
+  }
+
   function applyFilter() {
     const result   = document.getElementById('filterResult').value;
     const dateFrom = document.getElementById('filterDateFrom').value;
     const dateTo   = document.getElementById('filterDateTo').value;
     const part     = document.getElementById('filterPart').value.trim().toLowerCase();
+    const worker   = document.getElementById('filterWorker').value;
+    const resolver = document.getElementById('filterResolver').value;
+    const customer = document.getElementById('filterCustomer').value;
 
     filteredLogs = allLogs.filter(l => {
       if (activeOrderSessionId && l.orderDetailSessionId !== activeOrderSessionId) return false;
+      if (worker !== 'all' && (l.workerName || l.operatorName || '') !== worker) return false;
+      if (resolver !== 'all' && (l.resolverName || '') !== resolver) return false;
+      if (customer !== 'all' && logCustomerId(l) !== customer) return false;
       if (result !== 'all') {
         const isDup = l.result === 'DUP' || l.isDuplicate;
         if (result === 'DUP' && !isDup) return false;
@@ -1849,6 +1916,9 @@
   function resetFilter() {
     document.getElementById('filterResult').value   = 'all';
     document.getElementById('filterPart').value     = '';
+    document.getElementById('filterWorker').value   = 'all';
+    document.getElementById('filterResolver').value = 'all';
+    document.getElementById('filterCustomer').value = 'all';
     const today   = new Date().toISOString().slice(0,10);
     const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
     document.getElementById('filterDateFrom').value = weekAgo;
