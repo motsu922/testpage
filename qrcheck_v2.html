@@ -2260,7 +2260,7 @@
     if (terminalInputMode !== 'inputconnection') return false;
     if (currentTab !== 'scan') return false;
     if (isNGLocked) return false;
-    const blockedOverlayIds = ['companyAuthOverlay', 'companyModalOverlay', 'photoModalOverlay', 'workerModalOverlay', 'resolverModalOverlay'];
+    const blockedOverlayIds = ['companyAuthOverlay', 'companyModalOverlay', 'photoModalOverlay', 'workerModalOverlay', 'resolverModalOverlay', 'orderProgressModalOverlay'];
     return !blockedOverlayIds.some(id => document.getElementById(id)?.classList.contains('show'));
   }
 
@@ -2338,7 +2338,7 @@
     input.setAttribute('inputmode', terminalInputMode === 'inputconnection' ? 'text' : 'none');
   }
 
-  function enterPersonSelectMode() {
+  function pauseScanInputFocus() {
     suppressScanInputRefocusUntil = Date.now() + 600000;
     const input = document.getElementById('scanInput');
     if (!input) return;
@@ -2346,6 +2346,10 @@
     input.setAttribute('inputmode', 'none');
     input.blur();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  }
+
+  function enterPersonSelectMode() {
+    pauseScanInputFocus();
   }
 
   function normalizeQR(str){
@@ -6180,6 +6184,8 @@
 
   function openOrderDetailProgressModal() {
     if (!orderDetailSession || !orderDetailSession.lines || !orderDetailSession.lines.length) return;
+    // 明細の拡大確認中はQR入力の常時フォーカスを止め、ソフトキーボードを閉じる。
+    pauseScanInputFocus();
     const content = document.getElementById('orderProgressModalList');
     content.innerHTML = orderDetailSession.lines.map(line => {
       const state = line.excluded ? 'excluded' : (line.scanned >= line.requiredBoxes ? 'done' : '');
@@ -6197,6 +6203,7 @@
     const overlay = document.getElementById('orderProgressModalOverlay');
     if (event && event.target !== overlay && event.target.id !== 'orderProgressModalClose') return;
     overlay.classList.remove('show');
+    dismissKeyboardThenRefocusScanInput();
   }
 
   function renderOrderDetailPanel() {
