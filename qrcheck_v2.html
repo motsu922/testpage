@@ -585,17 +585,96 @@
       background: #07111b;
       color: #b9c7d4;
       font-size: 11px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .order-detail-line:active { background: #102c40; }
+    .order-detail-line > span {
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+    .order-detail-line strong {
+      align-self: center;
+      min-width: 54px;
+      padding: 5px 7px;
+      border: 1px solid #3487b5;
+      border-radius: 5px;
+      background: #0a3048;
+      color: #ffffff;
+      font-family: ui-monospace, monospace;
+      font-size: 19px;
+      font-weight: 900;
+      line-height: 1;
+      text-align: center;
+      white-space: nowrap;
     }
     .order-detail-line.done { color: #93efad; background: #0a2111; }
+    .order-detail-line.done strong { border-color: #318a4c; background: #124d24; color: #bff5cc; }
     .order-detail-line.excluded {
       color: #7d8790;
       background: #151515;
       opacity: .72;
     }
+    .order-detail-line.excluded strong { min-width: auto; border-color: #4d555c; background: #252a2e; color: #aeb6be; font-size: 12px; }
     .order-detail-line.excluded span {
       text-decoration: line-through;
       text-decoration-thickness: 2px;
     }
+    .order-progress-modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1800;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      background: rgba(0,0,0,.78);
+    }
+    .order-progress-modal-overlay.show { display: flex; }
+    .order-progress-modal {
+      width: min(700px, 100%);
+      max-height: calc(100vh - 28px);
+      overflow: auto;
+      padding: 16px;
+      border: 2px solid #2a6d96;
+      border-radius: 10px;
+      background: #0d1c29;
+    }
+    .order-progress-modal-head { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .order-progress-modal-head h2 { margin:0; color:#7ed5ff; font-size:22px; }
+    .order-progress-modal-close {
+      min-width: 92px;
+      min-height: 48px;
+      margin-left: auto;
+      border: 1px solid #537089;
+      border-radius: 6px;
+      background: #233848;
+      color: #ffffff;
+      font: inherit;
+      font-size: 16px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .order-progress-list { display:grid; gap:8px; }
+    .order-progress-item {
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto;
+      align-items:center;
+      gap:12px;
+      padding:12px 14px;
+      border:1px solid #2b5069;
+      border-radius:7px;
+      background:#07111b;
+    }
+    .order-progress-item.done { border-color:#2c7c45; background:#0a2111; }
+    .order-progress-item.excluded { opacity:.68; }
+    .order-progress-part { min-width:0; color:#e6f5ff; font-family:ui-monospace,monospace; font-size:24px; font-weight:900; line-height:1.15; word-break:break-all; }
+    .order-progress-part small { display:block; margin-top:5px; color:#a6bacb; font-family:inherit; font-size:15px; font-weight:800; }
+    .order-progress-count { min-width:104px; color:#ffffff; font-family:ui-monospace,monospace; font-size:36px; font-weight:900; line-height:1; text-align:right; white-space:nowrap; }
+    .order-progress-item.done .order-progress-count { color:#aaf0bd; }
+    .order-progress-item.excluded .order-progress-count { min-width:auto; color:#adb7c0; font-size:18px; }
     .order-detail-empty { display: none; }
     .settings-locked { text-align: center; padding: 40px 20px; }
     .lock-icon { font-size: 64px; margin-bottom: 16px; }
@@ -1329,6 +1408,20 @@
         border-radius: 5px;
         font-size: 10px;
       }
+      .order-detail-line > span { font-size: 13px; }
+      .order-detail-line strong {
+        min-width: 51px;
+        padding: 5px 6px;
+        font-size: 18px;
+      }
+      .order-progress-modal { padding:12px; }
+      .order-progress-modal-head h2 { font-size:19px; }
+      .order-progress-modal-close { min-width:80px; min-height:44px; font-size:14px; }
+      .order-progress-list { gap:6px; }
+      .order-progress-item { gap:8px; padding:10px; }
+      .order-progress-part { font-size:20px; }
+      .order-progress-part small { font-size:13px; }
+      .order-progress-count { min-width:86px; font-size:30px; }
       .order-detail-empty {
         font-size: 10px;
         line-height: 1.35;
@@ -6085,6 +6178,27 @@
     keepScanInputReadyNow();
   }
 
+  function openOrderDetailProgressModal() {
+    if (!orderDetailSession || !orderDetailSession.lines || !orderDetailSession.lines.length) return;
+    const content = document.getElementById('orderProgressModalList');
+    content.innerHTML = orderDetailSession.lines.map(line => {
+      const state = line.excluded ? 'excluded' : (line.scanned >= line.requiredBoxes ? 'done' : '');
+      const part = `${line.partNo || ''}${line.altPartNo ? `(${line.altPartNo})` : ''}`;
+      const detail = `背${line.backNo || '-'} / ${line.packQty || '-'}入`;
+      const progress = line.excluded ? '対象外' : `${line.scanned}/${line.requiredBoxes}`;
+      return `<div class="order-progress-item ${state}"><div class="order-progress-part">${escapeHtml(part)}<small>${escapeHtml(detail)}</small></div><div class="order-progress-count">${escapeHtml(progress)}</div></div>`;
+    }).join('');
+    const overlay = document.getElementById('orderProgressModalOverlay');
+    overlay.classList.add('show');
+    document.getElementById('orderProgressModalClose').focus();
+  }
+
+  function closeOrderDetailProgressModal(event) {
+    const overlay = document.getElementById('orderProgressModalOverlay');
+    if (event && event.target !== overlay && event.target.id !== 'orderProgressModalClose') return;
+    overlay.classList.remove('show');
+  }
+
   function renderOrderDetailPanel() {
     const target = document.getElementById('orderDetailContent');
     const appendBtn = document.getElementById('orderDetailAppendBtn');
@@ -6120,7 +6234,7 @@
       <div class="order-detail-sync">${escapeHtml(syncText)} / 明細${escapeHtml(detailCount)}枚 / ${escapeHtml(scanned)} / ${escapeHtml(required)}</div>
       <div class="order-detail-lines">
         ${orderDetailSession.lines.map(line => `
-          <div class="order-detail-line ${line.excluded ? 'excluded' : (line.scanned >= line.requiredBoxes ? 'done' : '')}">
+          <div class="order-detail-line ${line.excluded ? 'excluded' : (line.scanned >= line.requiredBoxes ? 'done' : '')}" role="button" tabindex="0" onclick="openOrderDetailProgressModal()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openOrderDetailProgressModal();}">
             <span>${escapeHtml(`${line.partNo || ''}${line.altPartNo ? `(${line.altPartNo})` : ''}`)} / 背${escapeHtml(line.backNo)} / ${line.packQty}入${line.excluded ? ' / 対象外' : ''}</span>
             <strong>${line.excluded ? '対象外' : `${line.scanned}/${line.requiredBoxes}`}</strong>
           </div>
@@ -6861,6 +6975,16 @@
         <button class="person-confirm-btn" onclick="confirmResolverSelection()">解除する</button>
       </div>
       <div class="person-modal-note">異常解除の処置者名をログに保存します。</div>
+    </div>
+  </div>
+
+  <div class="order-progress-modal-overlay" id="orderProgressModalOverlay" onclick="closeOrderDetailProgressModal(event)">
+    <div class="order-progress-modal" role="dialog" aria-modal="true" aria-labelledby="orderProgressModalTitle">
+      <div class="order-progress-modal-head">
+        <h2 id="orderProgressModalTitle">品番別 照合進捗</h2>
+        <button id="orderProgressModalClose" class="order-progress-modal-close" type="button" onclick="closeOrderDetailProgressModal()">閉じる</button>
+      </div>
+      <div id="orderProgressModalList" class="order-progress-list"></div>
     </div>
   </div>
 
