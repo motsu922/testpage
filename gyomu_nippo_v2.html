@@ -174,10 +174,13 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
   .team-card-head { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; background: #f7fbfa; border-bottom: 1px solid #e4ecee; }
   .team-card-head strong { font-size: 12px; }
   .team-card-head span { color: var(--muted); font-size: 10px; font-weight: 700; }
-  .team-report-list { display: grid; gap: 1px; padding: 7px 9px; }
-  .team-report-line { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 6px; padding: 4px 0; font-size: 11px; }
-  .team-report-line time { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .team-report-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  .team-breakdown { display: grid; gap: 7px; padding: 9px; }
+  .team-breakdown-row { display: grid; gap: 4px; }
+  .team-breakdown-head { display: flex; justify-content: space-between; gap: 7px; font-size: 11px; }
+  .team-breakdown-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .team-breakdown-head span { flex: 0 0 auto; color: var(--muted); font-weight: 700; }
+  .team-breakdown-bar { height: 6px; overflow: hidden; border-radius: 3px; background: #e8eef0; }
+  .team-breakdown-bar span { display: block; height: 100%; border-radius: inherit; background: var(--team-color); }
   .team-empty { margin: 0; padding: 12px 10px; color: var(--muted); font-size: 11px; }
   .team-todo-list { display: grid; gap: 1px; padding: 7px 9px; }
   .team-todo-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; padding: 4px 0; font-size: 11px; }
@@ -465,6 +468,8 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
     select.value = teams.some(team => String(team.id) === String(previous)) ? previous : (teams[0]?.id || '');
     const team = teams.find(item => String(item.id) === String(select.value));
     $('teamShareDate').textContent = `${dateString(new Date()).replace(/-/g, '/')} の共有情報`;
+    $('teamTodayBoard').closest('.team-share-section').querySelector('h3').textContent = '一日の工数内訳';
+    document.querySelector('.team-section > .team-share-head > span').textContent = '一日の工数内訳・未完了Todo';
     if (!team) {
       $('teamTodayBoard').innerHTML = '<p class="team-empty">タスク管理からチームを作成してください</p>';
       $('teamTodosBoard').innerHTML = '';
@@ -473,9 +478,11 @@ function move(n){const d=new Date(`${day()}T00:00:00`);d.setDate(d.getDate()+n);
     loadTeamTodos(team);
     const members = (team.members || []).filter(Boolean);
     $('teamTodayBoard').innerHTML = members.map(memberName => {
-      const entries = teamTodayRecords.filter(record => record.member === memberName).sort((a, b) => mins(a.startTime) - mins(b.startTime));
-      const total = entries.reduce((sum, record) => sum + hours(record), 0);
-      return `<article class="team-report-card"><header class="team-card-head"><strong>${esc(memberName)}</strong><span>${entries.length ? `${total.toFixed(1)}h` : '未登録'}</span></header>${entries.length ? `<div class="team-report-list">${entries.map(entry => `<div class="team-report-line"><time>${esc(entry.startTime)} - ${esc(entry.endTime)}</time><span>${esc(entry.task)}${entry.note ? ` / ${esc(entry.note)}` : ''}</span></div>`).join('')}</div>` : '<p class="team-empty">今日の実績はまだありません</p>'}</article>`;
+      const taskHours = new Map();
+      teamTodayRecords.filter(record => record.member === memberName).forEach(record => taskHours.set(record.task, (taskHours.get(record.task) || 0) + hours(record)));
+      const breakdown = [...taskHours.entries()].sort((a, b) => b[1] - a[1]);
+      const total = breakdown.reduce((sum, [, value]) => sum + value, 0);
+      return `<article class="team-report-card"><header class="team-card-head"><strong>${esc(memberName)}</strong><span>${breakdown.length ? `${total.toFixed(1)}h` : '未登録'}</span></header>${breakdown.length ? `<div class="team-breakdown">${breakdown.map(([taskName, value]) => `<div class="team-breakdown-row"><div class="team-breakdown-head"><strong>${esc(taskName)}</strong><span>${value.toFixed(1)}h</span></div><div class="team-breakdown-bar"><span style="--team-color:${color(taskName)};width:${Math.max(3, value / total * 100)}%"></span></div></div>`).join('')}</div>` : '<p class="team-empty">今日の実績はまだありません</p>'}</article>`;
     }).join('');
     const today = dateString(new Date());
     $('teamTodosBoard').innerHTML = members.map(memberName => {
