@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>本日のQRエラー監視</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <style>
+    :root { color-scheme: light; --bg:#eef2f5; --panel:#ffffff; --line:#cbd5dc; --text:#17212b; --muted:#617383; --red:#c62f35; --green:#18864b; --blue:#136fb1; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:320px; min-height:100vh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans","Noto Sans JP",sans-serif; font-variant-numeric:tabular-nums; }
+    header { min-height:82px; display:flex; align-items:center; gap:18px; padding:14px 24px; background:#ffffff; border-bottom:1px solid var(--line); }
+    h1 { margin:0; font-size:28px; letter-spacing:0; white-space:nowrap; }
+    .today { color:var(--muted); font-size:18px; font-weight:700; }
+    .header-right { margin-left:auto; display:flex; align-items:center; gap:16px; }
+    select, input[type="date"] { min-height:42px; max-width:260px; padding:0 12px; border:1px solid var(--line); border-radius:6px; color:var(--text); background:#ffffff; font:inherit; font-weight:700; }
+    .clock { font-size:30px; font-weight:900; white-space:nowrap; }
+    .connection { padding:7px 10px; border-radius:5px; font-size:13px; font-weight:800; white-space:nowrap; background:#fbe7e8; color:#b4232b; }
+    .connection.live { background:#dff4e7; color:#17663b; }
+    .visibility-toggle { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; font-weight:800; white-space:nowrap; }
+    .visibility-toggle input { width:17px; height:17px; accent-color:var(--blue); }
+    main { display:grid; grid-template-columns:minmax(280px, .78fr) minmax(480px, 1.22fr); gap:18px; padding:18px 24px 24px; }
+    .count-panel { min-height:calc(100vh - 124px); display:flex; flex-direction:column; align-items:center; justify-content:center; border:3px solid var(--green); border-radius:8px; background:#ecf8f0; text-align:center; }
+    .count-panel.alert { border-color:var(--red); background:#fff0f1; }
+    .count-label { color:#17663b; font-size:clamp(20px,2vw,31px); font-weight:900; }
+    .count-panel.alert .count-label { color:#b4232b; }
+    .count { margin:14px 0 8px; color:var(--green); font-size:clamp(150px,24vw,360px); font-weight:900; line-height:.86; letter-spacing:0; }
+    .count-panel.alert .count { color:#b4232b; }
+    .unit { font-size:clamp(24px,3vw,40px); font-weight:900; }
+    .status { max-width:88%; margin-top:22px; color:var(--muted); font-size:17px; font-weight:700; line-height:1.5; }
+    .content { display:grid; grid-template-rows:auto 1fr; gap:18px; min-width:0; }
+    .summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .summary-item { min-height:116px; padding:16px; background:var(--panel); border:1px solid var(--line); border-radius:7px; }
+    .summary-label { color:var(--muted); font-size:14px; font-weight:800; }
+    .summary-value { margin-top:11px; overflow:hidden; color:var(--text); font-size:clamp(19px,2.1vw,30px); font-weight:900; line-height:1.2; text-overflow:ellipsis; white-space:nowrap; }
+    .summary-sub { margin-top:5px; overflow:hidden; color:#536a7a; font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
+    .event-panel { min-height:0; padding:18px; background:var(--panel); border:1px solid var(--line); border-radius:7px; }
+    .panel-head { display:flex; align-items:baseline; gap:12px; margin-bottom:12px; }
+    .panel-head h2 { margin:0; color:#b4232b; font-size:21px; }
+    .panel-head span { color:var(--muted); font-size:14px; font-weight:700; }
+    .event-list { display:flex; flex-direction:column; gap:9px; max-height:calc(100vh - 305px); overflow:auto; padding-right:2px; }
+    .event { display:grid; grid-template-columns:110px minmax(145px,1fr) minmax(170px,1.25fr) minmax(110px,.75fr); align-items:center; gap:12px; min-height:71px; padding:10px 13px; border:0; border-left:5px solid var(--red); border-radius:5px; background:#fff4f4; color:inherit; cursor:pointer; font:inherit; text-align:left; }
+    .event:hover, .event:focus-visible { background:#ffe6e7; outline:2px solid #e46c71; outline-offset:2px; }
+    .event.hidden { border-left-color:#93a1ac; background:#f2f5f7; }
+    .event.hidden .event-part { color:#617383; }
+    .event-time { color:var(--text); font-size:20px; font-weight:900; }
+    .event-part { color:#a71d25; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:17px; font-weight:900; word-break:break-all; }
+    .event-type, .event-worker { min-width:0; }
+    .event-k { display:block; color:var(--muted); font-size:12px; font-weight:800; }
+    .event-v { display:block; overflow:hidden; margin-top:3px; color:var(--text); font-size:15px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+    .empty { display:flex; align-items:center; justify-content:center; min-height:260px; color:var(--green); font-size:28px; font-weight:900; text-align:center; }
+    .empty small { display:block; margin-top:10px; color:var(--muted); font-size:15px; }
+    .modal { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center; padding:18px; background:rgba(0,0,0,.7); }
+    .modal.show { display:flex; }
+    .modal-dialog { width:min(880px,100%); max-height:min(820px,calc(100vh - 36px)); overflow:auto; padding:22px; border:1px solid var(--line); border-radius:8px; background:#ffffff; box-shadow:0 24px 70px rgba(23,33,43,.25); }
+    .modal-head { display:flex; align-items:flex-start; gap:12px; border-bottom:1px solid var(--line); padding-bottom:14px; }
+    .modal-head h2 { margin:0; color:#b4232b; font-size:24px; }
+    .close { width:40px; height:40px; margin-left:auto; border:1px solid var(--line); border-radius:5px; color:var(--text); background:#eef2f5; cursor:pointer; font-size:26px; line-height:1; }
+    .close:hover, .close:focus-visible { background:#dbe5eb; outline:2px solid var(--blue); }
+    .detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:18px 0; }
+    .detail-item { padding:12px; border:1px solid var(--line); border-radius:5px; background:#f7fafc; }
+    .detail-item b { display:block; color:var(--muted); font-size:13px; }
+    .detail-item span { display:block; margin-top:5px; color:var(--text); font-size:17px; font-weight:800; word-break:break-word; }
+    .qr-block { margin-top:14px; }
+    .qr-block b { display:block; margin-bottom:6px; color:var(--muted); font-size:13px; }
+    .qr-block pre { max-height:160px; overflow:auto; margin:0; padding:12px; border:1px solid var(--line); border-radius:5px; background:#f4f7f9; color:#243746; font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; white-space:pre-wrap; word-break:break-all; }
+    .detail-actions { display:flex; justify-content:flex-end; margin-top:18px; }
+    .visibility-action { min-height:46px; padding:0 16px; border:1px solid #b4232b; border-radius:5px; background:#ffffff; color:#b4232b; cursor:pointer; font:inherit; font-weight:900; }
+    .visibility-action:hover, .visibility-action:focus-visible { background:#fff0f1; outline:2px solid #e46c71; outline-offset:2px; }
+    .visibility-action.restore { border-color:#17663b; color:#17663b; }
+    .visibility-action.restore:hover, .visibility-action.restore:focus-visible { background:#ecf8f0; outline-color:#48a56f; }
+    @media (max-width:900px) { header { min-height:auto; flex-wrap:wrap; padding:12px 14px; gap:8px 14px; } h1 { font-size:22px; } .today { font-size:15px; } .header-right { width:100%; margin-left:0; justify-content:space-between; } .clock { font-size:23px; } main { grid-template-columns:1fr; padding:12px; gap:12px; } .count-panel { min-height:255px; } .count { font-size:160px; } .content { display:block; } .summary { margin-bottom:12px; } .event-list { max-height:none; } .event { grid-template-columns:82px 1fr; gap:5px 10px; } .event-type, .event-worker { grid-column:2; } }
+    @media (max-width:560px) { .summary { grid-template-columns:1fr; gap:7px; } .summary-item { min-height:82px; padding:12px; } .connection { display:none; } .event-panel { padding:12px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>QRエラー監視</h1>
+    <div id="dateLabel" class="today"></div>
+    <div class="header-right">
+      <input id="dateFilter" type="date" aria-label="対象日を選択">
+      <select id="companyFilter" aria-label="会社を選択"></select>
+      <label class="visibility-toggle"><input id="showHidden" type="checkbox">非表示を含める</label>
+      <div id="connection" class="connection">接続中...</div>
+      <div id="clock" class="clock"></div>
+    </div>
+  </header>
+  <main>
+    <section id="countPanel" class="count-panel" aria-live="polite">
+      <div class="count-label">本日の品番違いQRエラー</div>
+      <div><span id="errorCount" class="count">0</span><span class="unit">件</span></div>
+      <div id="countStatus" class="status">本日は品番違いエラーがありません</div>
+    </section>
+    <section class="content">
+      <div class="summary">
+        <div class="summary-item"><div class="summary-label">直近の発生</div><div id="latestTime" class="summary-value">-</div><div id="latestPart" class="summary-sub">-</div></div>
+        <div class="summary-item"><div class="summary-label">エラー内容</div><div id="latestType" class="summary-value">-</div><div id="latestTypeDetail" class="summary-sub">-</div></div>
+        <div class="summary-item"><div class="summary-label">作業者</div><div id="latestWorker" class="summary-value">-</div><div id="latestResolver" class="summary-sub">-</div></div>
+      </div>
+      <div class="event-panel">
+        <div class="panel-head"><h2>品番違いの発生履歴</h2><span id="listCount"></span></div>
+        <div id="eventList" class="event-list"></div>
+      </div>
+    </section>
+  </main>
+  <div id="detailModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-head"><h2 id="detailTitle">照合エラー詳細</h2><button id="closeDetail" class="close" type="button" aria-label="詳細を閉じる" title="閉じる">×</button></div>
+      <div id="detailContent"></div>
+    </div>
+  </div>
+  <script>
+    const FIREBASE_CONFIG = {
+      apiKey: 'AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY',
+      authDomain: 'miyamaunitec-fb87a.firebaseapp.com',
+      databaseURL: 'https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app',
+      projectId: 'miyamaunitec-fb87a'
+    };
+    const PSEUDO_PARTS = new Set(['KANBAN_TYPE_ERROR', 'ORDER_DETAIL', 'ORDER_DETAIL_COMPLETE', 'ORDER_DETAIL_MANUAL_COMPLETE', 'ERROR_RELEASE']);
+    const NON_MISMATCH_NOTES = new Set(['order_detail_parse_error', 'order_detail_too_short', 'order_detail_read_ok']);
+    let database;
+    let companies = [];
+    let selectedCompanyId = 'all';
+    let selectedDateKey = localDayKey(new Date());
+    let currentDayKey = selectedDateKey;
+    let companyLogs = new Map();
+    let hiddenErrorIds = new Map();
+    let logRefs = [];
+    let displayedEvents = [];
+    let detailEventIndex = -1;
+    let showHidden = false;
+
+    const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[c]);
+    const canonicalPart = value => String(value || '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z]/g, '');
+    function partVariants(partNo) {
+      const raw = String(partNo || '').normalize('NFKC').toUpperCase();
+      const base = canonicalPart(raw);
+      const variants = new Set([base]);
+      if (/-00$/.test(raw)) variants.add(canonicalPart(raw.replace(/-00$/, '')));
+      const secondHyphenBase = raw.match(/^([0-9A-Z]+-[0-9A-Z]+)-[0-9A-Z]+$/);
+      if (secondHyphenBase) variants.add(canonicalPart(secondHyphenBase[1]));
+      if (base.length >= 12 && base.endsWith('00')) variants.add(base.slice(0, -2));
+      return [...variants].filter(Boolean);
+    }
+    function qr1MatchesDetail(log) {
+      const hit = log.orderDetailSearchHit || log.partNumber || '';
+      const qr1 = canonicalPart(log.qr1 || '');
+      return !!hit && partVariants(hit).some(part => part && qr1.includes(part));
+    }
+    function isPartMismatchLog(log) {
+      if (PSEUDO_PARTS.has(log.partNumber || '')) return false;
+      // 制御文字を含む固定位置の切り出し結果は品番ではない。
+      if (/[\x00-\x1F\x7F]/.test(String(log.partNumber || ''))) return false;
+      const note = String(log.extractNote || '');
+      if (note.startsWith('kanban_type_error') || NON_MISMATCH_NOTES.has(note.split(':')[0])) return false;
+      if (/^(数量超過|注文明細外)/.test(String(log.orderDetailNote || ''))) return false;
+      if (String(log.qr2 || '').trim().length <= 2) return false;
+      return log.result === 'NG' && !log.isDuplicate && qr1MatchesDetail(log);
+    }
+    function localDayKey(date) {
+      const d = new Date(date);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    function dayStartIso(dayKey) {
+      return new Date(`${dayKey}T00:00:00`).toISOString();
+    }
+    function isSelectedDate(log) { return log.timestamp && localDayKey(log.timestamp) === selectedDateKey; }
+    function selectedDateLabel() {
+      return new Date(`${selectedDateKey}T00:00:00`).toLocaleDateString('ja-JP', { month:'long', day:'numeric', weekday:'short' });
+    }
+    function errorTypeOf(log) {
+      if (log.orderDetailActive || log.orderDetailResult === 'NG' || log.orderDetailSessionId) return '明細 ≠ かんばん';
+      return '客先かんばん ≠ 社内かんばん';
+    }
+    function timeText(timestamp) { return timestamp ? new Date(timestamp).toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '-'; }
+    function nowText() { const d = new Date(); return d.toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit' }); }
+    function visibleEvents() {
+      const source = selectedCompanyId === 'all'
+        ? [...companyLogs.entries()]
+        : [[selectedCompanyId, companyLogs.get(selectedCompanyId) || []]];
+      return source.flatMap(([companyId, logs]) => logs.filter(log => isSelectedDate(log) && isPartMismatchLog(log)).map(log => {
+        const hidden = (hiddenErrorIds.get(companyId) || new Set()).has(log._dashboardLogId);
+        return { log, companyId, hidden };
+      }).filter(event => showHidden || !event.hidden))
+        .sort((a, b) => new Date(b.log.timestamp) - new Date(a.log.timestamp));
+    }
+    function setText(id, value) { document.getElementById(id).textContent = value === undefined || value === null || value === '' ? '-' : value; }
+    function openDetail(index) {
+      const event = displayedEvents[index];
+      if (!event) return;
+      detailEventIndex = index;
+      const log = event.log;
+      const company = companies.find(item => item.id === event.companyId);
+      const worker = log.workerName || log.operatorName || '作業者未選択';
+      const resolver = log.resolverName || '-';
+      const fields = [
+        ['日時', log.timestamp ? new Date(log.timestamp).toLocaleString('ja-JP') : '-'],
+        ['会社', company ? company.name : event.companyId],
+        ['エラー内容', errorTypeOf(log)],
+        ['品番', log.partNumber || '品番未取得'],
+        ['作業者', worker],
+        ['処置者', resolver],
+        ['判定メモ', log.orderDetailNote || log.extractNote || '-'],
+        ['明細セッション', log.orderDetailSessionId || '-']
+      ];
+      const actionLabel = event.hidden ? 'ダッシュボードに再表示' : '端末側のエラーとして非表示';
+      const actionClass = event.hidden ? 'visibility-action restore' : 'visibility-action';
+      document.getElementById('detailContent').innerHTML = `<div class="detail-grid">${fields.map(([label, value]) => `<div class="detail-item"><b>${esc(label)}</b><span>${esc(value)}</span></div>`).join('')}</div><div class="detail-actions"><button id="visibilityAction" class="${actionClass}" type="button">${actionLabel}</button></div><div class="qr-block"><b>1回目QR</b><pre>${esc(log.qr1_raw || log.qr1 || '-')}</pre></div><div class="qr-block"><b>2回目QR</b><pre>${esc(log.qr2_raw || log.qr2 || '-')}</pre></div>`;
+      const modal = document.getElementById('detailModal');
+      modal.classList.add('show');
+      modal.setAttribute('aria-hidden', 'false');
+      document.getElementById('closeDetail').focus();
+    }
+    function closeDetail() {
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      detailEventIndex = -1;
+    }
+    function setEventVisibility() {
+      const event = displayedEvents[detailEventIndex];
+      if (!event || !event.log._dashboardLogId) return;
+      const ref = database.ref(`qr_match_companies/dashboard_hidden_errors/${event.companyId}/${event.log._dashboardLogId}`);
+      if (event.hidden) {
+        ref.remove();
+        closeDetail();
+      } else if (window.confirm('この記録をダッシュボードから非表示にしますか？\n照合ログ自体は削除されません。')) {
+        ref.set({ hiddenAt: new Date().toISOString(), reason: 'device_error' });
+        closeDetail();
+      }
+    }
+    function render() {
+      const events = visibleEvents();
+      displayedEvents = events.slice(0, 100);
+      const count = events.length;
+      const latest = events[0];
+      const panel = document.getElementById('countPanel');
+      panel.classList.toggle('alert', count > 0);
+      document.querySelector('.count-label').textContent = `${selectedDateLabel()}の品番違いQRエラー`;
+      setText('errorCount', count);
+      setText('listCount', count ? `最新 ${Math.min(count, 100)}件を表示` : '');
+      if (!latest) {
+        setText('countStatus', '品番違いエラーはありません');
+        ['latestTime','latestPart','latestType','latestTypeDetail','latestWorker','latestResolver'].forEach(id => setText(id, '-'));
+        document.getElementById('eventList').innerHTML = '<div class="empty">品番違いはありません<small>リアルタイムで監視中です</small></div>';
+        return;
+      }
+      const errorType = errorTypeOf(latest.log);
+      setText('countStatus', `直近 ${timeText(latest.log.timestamp)} / ${errorType} / ${latest.log.workerName || latest.log.operatorName || '作業者未選択'}`);
+      setText('latestTime', timeText(latest.log.timestamp));
+      setText('latestPart', latest.log.partNumber || '品番未取得');
+      setText('latestType', errorType);
+      setText('latestTypeDetail', latest.log.orderDetailNote || latest.log.extractNote || '-');
+      setText('latestWorker', latest.log.workerName || latest.log.operatorName || '作業者未選択');
+      setText('latestResolver', latest.log.resolverName ? `処置者: ${latest.log.resolverName}` : '処置者: -');
+      document.getElementById('eventList').innerHTML = displayedEvents.map(({ log, hidden }, index) => {
+        const worker = log.workerName || log.operatorName || '作業者未選択';
+        return `<button class="event${hidden ? ' hidden' : ''}" type="button" data-event-index="${index}"><span class="event-time">${esc(timeText(log.timestamp))}</span><span class="event-part">${esc(log.partNumber || '品番未取得')}</span><span class="event-type"><span class="event-k">${hidden ? '非表示' : 'エラー内容'}</span><span class="event-v">${hidden ? '端末側のエラー' : esc(errorTypeOf(log))}</span></span><span class="event-worker"><span class="event-k">だれが</span><span class="event-v">${esc(worker)}${log.resolverName ? ` / 処置 ${esc(log.resolverName)}` : ''}</span></span></button>`;
+      }).join('');
+    }
+    function renderCompanyFilter() {
+      const select = document.getElementById('companyFilter');
+      select.innerHTML = `<option value="all">全社</option>${companies.map(company => `<option value="${esc(company.id)}">${esc(company.name)}</option>`).join('')}`;
+      select.value = selectedCompanyId;
+    }
+    function disconnectLogs() { logRefs.forEach(ref => ref.off()); logRefs = []; }
+    function subscribeLogs() {
+      disconnectLogs();
+      const targets = selectedCompanyId === 'all' ? companies : companies.filter(company => company.id === selectedCompanyId);
+      targets.forEach(company => {
+        const ref = database.ref(`qr_match_logs/${company.id}`).orderByChild('timestamp').startAt(dayStartIso(selectedDateKey));
+        ref.on('value', snapshot => { companyLogs.set(company.id, Object.entries(snapshot.val() || {}).map(([id, log]) => ({ ...log, _dashboardLogId: id }))); document.getElementById('connection').className = 'connection live'; document.getElementById('connection').textContent = 'リアルタイム接続中'; render(); }, error => { console.error(error); document.getElementById('connection').className = 'connection'; document.getElementById('connection').textContent = 'ログ接続エラー'; });
+        logRefs.push(ref);
+        const hiddenRef = database.ref(`qr_match_companies/dashboard_hidden_errors/${company.id}`);
+        hiddenRef.on('value', snapshot => { hiddenErrorIds.set(company.id, new Set(Object.keys(snapshot.val() || {}))); render(); }, error => console.error(error));
+        logRefs.push(hiddenRef);
+      });
+      render();
+    }
+    function updateClock() { document.getElementById('clock').textContent = nowText(); document.getElementById('dateLabel').textContent = selectedDateLabel(); }
+    function start() {
+      database = firebase.database(firebase.initializeApp(FIREBASE_CONFIG));
+      database.ref('qr_match_companies/profiles').once('value').then(snapshot => {
+        companies = Object.entries(snapshot.val() || {}).map(([id, data]) => ({ id, name: data.name || data.companyName || id })).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+        renderCompanyFilter();
+        subscribeLogs();
+      }).catch(error => { console.error(error); document.getElementById('connection').textContent = '初期化エラー'; });
+      const dateFilter = document.getElementById('dateFilter');
+      dateFilter.value = selectedDateKey;
+      dateFilter.max = currentDayKey;
+      document.getElementById('companyFilter').addEventListener('change', event => { selectedCompanyId = event.target.value; subscribeLogs(); });
+      document.getElementById('eventList').addEventListener('click', event => {
+        const target = event.target.closest('[data-event-index]');
+        if (target) openDetail(Number(target.dataset.eventIndex));
+      });
+      document.getElementById('closeDetail').addEventListener('click', closeDetail);
+      document.getElementById('detailContent').addEventListener('click', event => { if (event.target.id === 'visibilityAction') setEventVisibility(); });
+      document.getElementById('detailModal').addEventListener('click', event => { if (event.target.id === 'detailModal') closeDetail(); });
+      document.getElementById('showHidden').addEventListener('change', event => { showHidden = event.target.checked; render(); });
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDetail(); });
+      dateFilter.addEventListener('change', event => {
+        if (!event.target.value) return;
+        selectedDateKey = event.target.value;
+        updateClock();
+        subscribeLogs();
+      });
+      updateClock();
+      setInterval(updateClock, 1000);
+      setInterval(() => {
+        const nextDayKey = localDayKey(new Date());
+        if (nextDayKey !== currentDayKey) {
+          const wasViewingToday = selectedDateKey === currentDayKey;
+          currentDayKey = nextDayKey;
+          dateFilter.max = currentDayKey;
+          if (wasViewingToday) {
+            selectedDateKey = currentDayKey;
+            dateFilter.value = selectedDateKey;
+            updateClock();
+            subscribeLogs();
+            return;
+          }
+        }
+        render();
+      }, 30000);
+    }
+    start();
+  </script>
+</body>
+</html>
