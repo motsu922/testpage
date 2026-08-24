@@ -5141,9 +5141,24 @@
     ))];
   }
 
+  function qrContainsSafeTrailingZeroVariant(qrRaw, line) {
+    const tokens = partSearchTokens(qrRaw);
+    return orderLinePartValues(line).some(partNo => {
+      const full = canonicalPart(partNo);
+      if (full.length < 8 || !full.endsWith('0')) return false;
+      const shortened = full.slice(0, -1);
+      // 同じ明細に短い品番そのものがある場合は、どちらの行か区別できないため補正しない。
+      const hasExplicitShortPart = orderDetailSession.lines.some(other =>
+        other !== line && orderLinePartValues(other).some(value => canonicalPart(value) === shortened)
+      );
+      return !hasExplicitShortPart && tokens.includes(shortened);
+    });
+  }
+
   function qrContainsOrderLinePart(qrRaw, line) {
     const tokens = partSearchTokens(qrRaw);
-    return orderLinePartVariants(line).some(part => part && tokens.some(token => token.includes(part)));
+    return orderLinePartVariants(line).some(part => part && tokens.some(token => token.includes(part))) ||
+      qrContainsSafeTrailingZeroVariant(qrRaw, line);
   }
 
   function findOrderDetailPartInQR(qrRaw) {
