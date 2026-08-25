@@ -2195,6 +2195,7 @@
   const OPERATOR_CONFIRM_MS = 60 * 60 * 1000;
   let pendingResolverCallback = null;
   let pendingResolverAction = '';
+  let pendingResolverErrorLog = null;
 
   let settings = {
     adminPassword: 'admin',
@@ -2734,17 +2735,25 @@
     dismissKeyboardThenRefocusScanInput();
   }
 
-  function openResolverModal(action, callback) {
+  function openResolverModal(action, callback, errorLog = null) {
     enterPersonSelectMode();
     pendingResolverAction = action || 'ERROR_RELEASE';
     pendingResolverCallback = callback || null;
+    pendingResolverErrorLog = errorLog || null;
     fillPersonSelect('resolverSelect', settings.resolverMaster, getCurrentWorkerName());
+    const title = document.getElementById('resolverModalTitle');
+    const confirm = document.getElementById('resolverModalConfirmBtn');
+    const isDuplicateRelease = pendingResolverAction === 'DUP_RELEASE';
+    if (title) title.textContent = isDuplicateRelease ? '管理者を選択' : '処置者を選択';
+    if (confirm) confirm.textContent = isDuplicateRelease ? '確認して解除' : '解除する';
     const overlay = document.getElementById('resolverModalOverlay');
     if (overlay) overlay.classList.add('show');
   }
 
-  function linkResolverToLockedError(name, action, resolvedAt) {
-    const lock = loadNgLockState();
+  function linkResolverToLockedError(name, action, resolvedAt, errorLog = null) {
+    const lock = errorLog
+      ? { errorLogId: errorLog.logId || '', errorLogFirebaseKey: errorLog.firebaseKey || '' }
+      : loadNgLockState();
     if (!lock || !lock.errorLogId) return;
     const resolution = {
       resolverName: name,
@@ -2789,7 +2798,7 @@
     }
     touchOperatorActivity();
     const resolvedAt = new Date().toISOString();
-    linkResolverToLockedError(name, pendingResolverAction, resolvedAt);
+    linkResolverToLockedError(name, pendingResolverAction, resolvedAt, pendingResolverErrorLog);
     appendScanLog({
       timestamp: resolvedAt,
       qr1_raw: '', qr2_raw: '', qr1: '', qr2: '',
@@ -2809,6 +2818,7 @@
     const callback = pendingResolverCallback;
     pendingResolverCallback = null;
     pendingResolverAction = '';
+    pendingResolverErrorLog = null;
     if (callback) callback();
     else dismissKeyboardThenRefocusScanInput();
   }
@@ -5092,7 +5102,8 @@
       clearScannerBuffer();
       updateScanUI();
     }
-    dismissKeyboardThenRefocusScanInput();
+    const resolverOpen = document.getElementById('resolverModalOverlay')?.classList.contains('show');
+    if (!resolverOpen) dismissKeyboardThenRefocusScanInput();
   }
 
   // ========= 抽出ルール =========
@@ -6793,19 +6804,22 @@
         tone: 'dup',
         detailHtml: detail.innerHTML,
         onConfirm: () => {
-          if (settings.scanMode === '1toN' && currentStep === 2) {
-            value2 = '';
-            updateScanUI();
-          } else {
-            clearScannerBuffer();
-            value1 = '';
-            value2 = '';
-            nModeQR2Count = 0;
-            nModePartNumber = '';
-            nModeEx = null;
-            currentStep = 1;
-            updateScanUI();
-          }
+          openResolverModal('DUP_RELEASE', () => {
+            if (settings.scanMode === '1toN' && currentStep === 2) {
+              value2 = '';
+              updateScanUI();
+            } else {
+              clearScannerBuffer();
+              value1 = '';
+              value2 = '';
+              nModeQR2Count = 0;
+              nModePartNumber = '';
+              nModeEx = null;
+              currentStep = 1;
+              updateScanUI();
+            }
+            dismissKeyboardThenRefocusScanInput();
+          }, logEntry);
         }
       });
 
@@ -7132,10 +7146,10 @@
 
   <div class="person-modal-overlay" id="resolverModalOverlay">
     <div class="person-modal">
-      <div class="person-modal-title">処置者を選択</div>
+      <div class="person-modal-title" id="resolverModalTitle">処置者を選択</div>
       <select class="person-select" id="resolverSelect"></select>
       <div class="person-modal-actions">
-        <button class="person-confirm-btn" onclick="confirmResolverSelection()">解除する</button>
+        <button class="person-confirm-btn" id="resolverModalConfirmBtn" onclick="confirmResolverSelection()">解除する</button>
       </div>
       <div class="person-modal-note">異常解除の処置者名をログに保存します。</div>
     </div>
