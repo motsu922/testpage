@@ -2068,6 +2068,10 @@
     <div class="result-text" id="resultText">一致</div>
     <div class="result-detail" id="resultDetail"></div>
     <button style="display:none;" id="okBtn" onclick="closeAndContinue()">次の照合へ</button>
+    <button id="ackErrorBtn" onclick="acknowledgeTransientError()"
+      style="display:none;min-width:250px;min-height:58px;margin-top:20px;padding:12px 22px;background:#ffffff;color:#8b0000;border:0;border-radius:10px;font-size:19px;font-weight:900;cursor:pointer;touch-action:manipulation;">
+      内容を確認しました
+    </button>
     <div class="admin-area" id="adminArea" style="display:none;">
       <p id="adminAreaMsg">🔐 暗証番号を入力してください</p>
       <button id="dupReleaseBtn" onclick="releaseDupLock()"
@@ -2130,8 +2134,12 @@
   let okAutoTimer = null;
   let shortQrTimer = null;
   let ngVibrationTimer = null;
+  let ngAlertSoundTimer = null;
+  let acknowledgementVibrationTimer = null;
+  let acknowledgementAction = null;
   let ngVibrationMuted = false;
-  const NG_VIBRATION_INTERVAL_MS = 3000;
+  const NG_VIBRATION_RENEW_MS = 9000;
+  const NG_ALERT_SOUND_INTERVAL_MS = 500;
   let isOKPending = false;
   let orderDetailCompleteNoticeShowing = false;
   let firebaseApp = null;
@@ -3339,31 +3347,11 @@
   }
 
   function showWorkflowScanError(title, note) {
-    const overlay = document.getElementById('resultOverlay');
-    const symbol = document.getElementById('resultSymbol');
-    const text = document.getElementById('resultText');
-    const detail = document.getElementById('resultDetail');
-    const adminArea = document.getElementById('adminArea');
-    if (shortQrTimer) {
-      clearTimeout(shortQrTimer);
-      shortQrTimer = null;
-    }
-    isNGLocked = false;
-    overlay.className = 'result-overlay show ng';
-    symbol.textContent = '×';
-    text.textContent = title;
-    detail.innerHTML = `<p class="label">${escapeHtml(note)}</p>`;
-    if (adminArea) adminArea.style.display = 'none';
+    showAcknowledgementError({
+      title,
+      detailHtml: `<p class="label">${escapeHtml(note)}</p>`
+    });
     updateScanStateBanner('error', title, note);
-    playSound('ng');
-    vibrate([160, 60, 160]);
-    shortQrTimer = setTimeout(() => {
-      overlay.classList.remove('show');
-      shortQrTimer = null;
-      clearScannerBuffer();
-      updateScanUI();
-      restoreScanInputFocusNow();
-    }, 2600);
   }
 
   function handleScan(decoded) {
@@ -3571,9 +3559,10 @@
     if (locked) {
       ngVibrationMuted = false;
       saveNgLockState(info);
-      startNGLockVibration();
+      // NG音の初回再生後に、途切れないアラートへ切り替える。
+      setTimeout(() => { if (isNGLocked) startNGLockVibration(); }, 0);
     } else {
-      stopNGLockVibration();
+      stopNGLockAlert();
       ngVibrationMuted = false;
       clearNgLockState();
     }
@@ -4982,21 +4971,51 @@
     if (navigator.vibrate) navigator.vibrate(0);
   }
 
-  function startNGLockVibration(immediate = false) {
+  function playNGLockWarningSound() {
+    if (!settings.soundEnabled) return;
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const kind = (settings.soundConfig || {}).ng || 'buu';
+    if (kind !== 'off') _playSoundKind(kind, audioCtx.currentTime);
+  }
+
+  function stopNGLockAlert() {
     stopNGLockVibration();
-    if (!isNGLocked || ngVibrationMuted || !settings.vibrationEnabled || !navigator.vibrate) {
+    if (ngAlertSoundTimer) {
+      clearInterval(ngAlertSoundTimer);
+      ngAlertSoundTimer = null;
+    }
+  }
+
+  function startNGLockVibration(immediate = false) {
+    stopNGLockAlert();
+    if (!isNGLocked) {
       updateNGLockVibrationButton();
       return;
     }
-    if (immediate) navigator.vibrate([260, 100, 260]);
-    ngVibrationTimer = setInterval(() => {
-      if (!isNGLocked || ngVibrationMuted || !settings.vibrationEnabled) {
-        stopNGLockVibration();
-        updateNGLockVibrationButton();
-        return;
-      }
-      navigator.vibrate([260, 100, 260]);
-    }, NG_VIBRATION_INTERVAL_MS);
+    if (!ngVibrationMuted && settings.vibrationEnabled && navigator.vibrate) {
+      // ブラウザの単発振動上限より少し早く更新し、振動を途切れさせない。
+      navigator.vibrate(10000);
+      ngVibrationTimer = setInterval(() => {
+        if (!isNGLocked || ngVibrationMuted || !settings.vibrationEnabled) {
+          stopNGLockVibration();
+          updateNGLockVibrationButton();
+          return;
+        }
+        navigator.vibrate(10000);
+      }, NG_VIBRATION_RENEW_MS);
+    }
+    if (settings.soundEnabled) {
+      if (immediate) playNGLockWarningSound();
+      ngAlertSoundTimer = setInterval(() => {
+        if (!isNGLocked || !settings.soundEnabled) {
+          if (ngAlertSoundTimer) clearInterval(ngAlertSoundTimer);
+          ngAlertSoundTimer = null;
+          return;
+        }
+        playNGLockWarningSound();
+      }, NG_ALERT_SOUND_INTERVAL_MS);
+    }
     updateNGLockVibrationButton();
   }
 
@@ -5005,6 +5024,57 @@
     ngVibrationMuted = true;
     stopNGLockVibration();
     updateNGLockVibrationButton();
+  }
+
+  function startAcknowledgementVibration() {
+    if (acknowledgementVibrationTimer) clearInterval(acknowledgementVibrationTimer);
+    const startedAt = Date.now();
+    const pulse = () => {
+      if (Date.now() - startedAt >= 5000) {
+        clearInterval(acknowledgementVibrationTimer);
+        acknowledgementVibrationTimer = null;
+        return;
+      }
+      vibrate([90, 70, 90]);
+    };
+    pulse();
+    acknowledgementVibrationTimer = setInterval(pulse, 520);
+  }
+
+  function showAcknowledgementError({ title, detailHtml, tone = 'ng', onConfirm }) {
+    if (shortQrTimer) { clearTimeout(shortQrTimer); shortQrTimer = null; }
+    setNGLocked(false);
+    const overlay = document.getElementById('resultOverlay');
+    overlay.className = `result-overlay show ${tone}`;
+    document.getElementById('resultSymbol').textContent = tone === 'dup' ? '⚠' : '×';
+    document.getElementById('resultText').textContent = title;
+    document.getElementById('resultDetail').innerHTML = detailHtml;
+    document.getElementById('adminArea').style.display = 'none';
+    document.getElementById('dupReleaseBtn').style.display = 'none';
+    document.getElementById('ngReleaseHint').style.display = 'none';
+    updateNGLockVibrationButton();
+    acknowledgementAction = onConfirm || null;
+    document.getElementById('ackErrorBtn').style.display = 'block';
+    playSound(tone === 'dup' ? 'dup' : 'ng');
+    startAcknowledgementVibration();
+  }
+
+  function acknowledgeTransientError() {
+    if (acknowledgementVibrationTimer) {
+      clearInterval(acknowledgementVibrationTimer);
+      acknowledgementVibrationTimer = null;
+    }
+    if (navigator.vibrate) navigator.vibrate(0);
+    document.getElementById('ackErrorBtn').style.display = 'none';
+    document.getElementById('resultOverlay').classList.remove('show');
+    const action = acknowledgementAction;
+    acknowledgementAction = null;
+    if (action) action();
+    else {
+      clearScannerBuffer();
+      updateScanUI();
+      restoreScanInputFocusNow();
+    }
   }
 
   // ========= 抽出ルール =========
@@ -5108,110 +5178,48 @@
   }
 
   function showKanbanTypeError(info) {
-    const overlay = document.getElementById('resultOverlay');
-    const symbol = document.getElementById('resultSymbol');
-    const text = document.getElementById('resultText');
-    const detail = document.getElementById('resultDetail');
-    const adminArea = document.getElementById('adminArea');
-
-    if (shortQrTimer) {
-      clearTimeout(shortQrTimer);
-      shortQrTimer = null;
-    }
     saveKanbanTypeErrorLog(info);
-    isNGLocked = false;
-    overlay.className = 'result-overlay show ng';
-    symbol.textContent = '×';
-    text.textContent = 'かんばん種類違い';
-    detail.innerHTML = `
+    showAcknowledgementError({
+      title: 'かんばん種類違い',
+      detailHtml: `
       <p class="label">${escapeHtml(info.stepNo)}回目QRの文字数が設定範囲外です</p>
       <p class="label" style="margin-top:10px;">読み取り文字数: ${escapeHtml(info.actualLen)} / 設定範囲: ${escapeHtml(info.minLen)}〜${escapeHtml(info.maxLen)}</p>
       <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(info.qr || '(空)')}</p>
       <p class="label" style="margin-top:12px;">QRの種類、読み取り順、または設定範囲を確認してください。</p>
-    `;
-    if (adminArea) adminArea.style.display = 'none';
-    playSound('ng');
-    vibrate([180, 70, 180]);
-
-    shortQrTimer = setTimeout(() => {
-      overlay.classList.remove('show');
-      shortQrTimer = null;
-      if (info.stepNo === 2) value2 = '';
-      clearScannerBuffer();
-      updateScanUI();
-      restoreScanInputFocusNow();
-    }, 3200);
+      `,
+      onConfirm: () => {
+        if (info.stepNo === 2) value2 = '';
+        clearScannerBuffer();
+        updateScanUI();
+        restoreScanInputFocusNow();
+      }
+    });
   }
 
   function showShortQRError(info) {
-    const overlay = document.getElementById('resultOverlay');
-    const symbol = document.getElementById('resultSymbol');
-    const text = document.getElementById('resultText');
-    const detail = document.getElementById('resultDetail');
-    const adminArea = document.getElementById('adminArea');
-
-    if (shortQrTimer) {
-      clearTimeout(shortQrTimer);
-      shortQrTimer = null;
-    }
-    isNGLocked = false;
-    overlay.className = 'result-overlay show ng';
-    symbol.textContent = '×';
-    text.textContent = 'QRが途中で切れています';
-    detail.innerHTML = `
+    showAcknowledgementError({
+      title: 'QRが途中で切れています',
+      detailHtml: `
       <p class="label">読み取りが短すぎるため、照合前に停止しました。</p>
       <p class="label" style="margin-top:10px;">読み取り文字数: ${escapeHtml(info.actualLen)} / 必要目安: ${escapeHtml(info.minLen)}以上</p>
       <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(info.qr || '(空)')}</p>
       <p class="label" style="margin-top:12px;">同じQRをもう一度、最後まで読み取ってください。</p>
-    `;
-    if (adminArea) adminArea.style.display = 'none';
-    playSound('ng');
-    vibrate([160, 60, 160]);
-
-    shortQrTimer = setTimeout(() => {
-      overlay.classList.remove('show');
-      shortQrTimer = null;
-      clearScannerBuffer();
-      updateScanUI();
-      restoreScanInputFocusNow();
-    }, 2600);
+      `
+    });
   }
 
   function showOrderDetailParseError(qr) {
     const normalized = normalizeQR(qr);
-    const compact = normalizeOrderDetailQR(qr);
-    const overlay = document.getElementById('resultOverlay');
-    const symbol = document.getElementById('resultSymbol');
-    const text = document.getElementById('resultText');
-    const detail = document.getElementById('resultDetail');
-    const adminArea = document.getElementById('adminArea');
-
-    if (shortQrTimer) {
-      clearTimeout(shortQrTimer);
-      shortQrTimer = null;
-    }
-    isNGLocked = false;
-    overlay.className = 'result-overlay show ng';
-    symbol.textContent = '×';
-    text.textContent = '明細QR形式エラー';
-    detail.innerHTML = `
+    showAcknowledgementError({
+      title: '明細QR形式エラー',
+      detailHtml: `
       <p class="label">QRは読み取れていますが、明細行を解析できませんでした。</p>
       <p class="label" style="margin-top:10px;">読み取り文字数: ${escapeHtml(normalized.length)}</p>
       <p class="label">明細候補: ${(normalized.match(/P\d{4}P/g) || []).length}件 / 数量候補: ${(normalized.match(/Q\d+/g) || []).length}件</p>
       <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(normalized || '(空)')}</p>
       <p class="label" style="margin-top:12px;">明細QRではないQR、または端末側の文字変換が原因の可能性があります。</p>
-    `;
-    if (adminArea) adminArea.style.display = 'none';
-    playSound('ng');
-    vibrate([160, 60, 160]);
-
-    shortQrTimer = setTimeout(() => {
-      overlay.classList.remove('show');
-      shortQrTimer = null;
-      clearScannerBuffer();
-      updateScanUI();
-      restoreScanInputFocusNow();
-    }, 4200);
+      `
+    });
   }
 
   function decodeOrderQty(raw) {
@@ -6684,6 +6692,7 @@
     const adminArea = document.getElementById('adminArea');
 
     overlay.classList.add('show');
+    document.getElementById('ackErrorBtn').style.display = 'none';
 
     const ruleText = logEntry.matchedRule
       ? `rule: [${logEntry.matchedRule.minLen}-${logEntry.matchedRule.maxLen}] start=${logEntry.matchedRule.startPos} count=${logEntry.matchedRule.charCount} prefix="${logEntry.matchedRule.prefix}"`
@@ -6762,21 +6771,20 @@
         ${logEntry.orderDetailNote ? `<p class="label" style="margin-top:8px;">${escapeHtml(logEntry.orderDetailNote)}</p>` : ''}
         <p style="margin-top:10px; font-size:12px; word-break:break-all;">${escapeHtml(dl.val)}</p>
       `;
-      adminArea.style.display = 'block';
-      document.getElementById('adminAreaMsg').textContent = '⚠️ 重複検知　暗証番号またはタップで解除';
-      document.getElementById('dupReleaseBtn').style.display = 'block';
-      document.getElementById('ngReleaseHint').style.display = 'none';
-      setNGLocked(true, {
-        kind: 'dup',
+      showAcknowledgementError({
         title: text.textContent,
-        partNumber,
-        note: logEntry.orderDetailNote || '',
-        errorLogId: logEntry.logId || '',
-        errorLogFirebaseKey: logEntry.firebaseKey || ''
+        tone: 'dup',
+        detailHtml: detail.innerHTML,
+        onConfirm: () => {
+          if (settings.scanMode === '1toN' && currentStep === 2) {
+            value2 = '';
+            updateScanUI();
+          } else {
+            startScanning(true);
+          }
+          dismissKeyboardThenRefocusScanInput();
+        }
       });
-      enterPinUnlockMode();
-      playSound('dup');
-      resetPinUI();
 
     } else {
       isOKPending=false;if(toast)toast.classList.remove('show');
