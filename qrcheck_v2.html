@@ -2137,9 +2137,11 @@
   let ngAlertSoundTimer = null;
   let acknowledgementVibrationTimer = null;
   let acknowledgementAction = null;
+  let acknowledgementOpen = false;
   let ngVibrationMuted = false;
   const NG_VIBRATION_RENEW_MS = 9000;
-  const NG_ALERT_SOUND_INTERVAL_MS = 500;
+  // 誤品の重大NGは、聞き逃しにくい長いブザーを短い間隔で繰り返す。
+  const NG_ALERT_SOUND_INTERVAL_MS = 1400;
   let isOKPending = false;
   let orderDetailCompleteNoticeShowing = false;
   let firebaseApp = null;
@@ -2275,6 +2277,7 @@
     if (terminalInputMode !== 'inputconnection') return false;
     if (currentTab !== 'scan') return false;
     if (isNGLocked) return false;
+    if (acknowledgementOpen) return false;
     const blockedOverlayIds = ['companyAuthOverlay', 'companyModalOverlay', 'photoModalOverlay', 'workerModalOverlay', 'resolverModalOverlay', 'orderProgressModalOverlay'];
     return !blockedOverlayIds.some(id => document.getElementById(id)?.classList.contains('show'));
   }
@@ -4930,6 +4933,19 @@
         osc.start(t); osc.stop(t + 0.21);
       });
 
+    } else if (kind === 'long_buzzer') {
+      // 誤品の重大NG用：長めの低音ブザー
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain); gain.connect(getSoundOutput());
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(145, now);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(soundLevel(0.34), now + 0.02);
+      gain.gain.setValueAtTime(soundLevel(0.34), now + 1.12);
+      gain.gain.linearRampToValueAtTime(0.001, now + 1.20);
+      osc.start(now); osc.stop(now + 1.21);
+
     } else if (kind === 'chime') {
       // チャイム：サイン波2音（やわらか通知）
       [[880, 0], [1100, 0.15]].forEach(([freq, offset]) => {
@@ -4975,8 +4991,7 @@
     if (!settings.soundEnabled) return;
     initAudio();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    const kind = (settings.soundConfig || {}).ng || 'buu';
-    if (kind !== 'off') _playSoundKind(kind, audioCtx.currentTime);
+    _playSoundKind('long_buzzer', audioCtx.currentTime);
   }
 
   function stopNGLockAlert() {
@@ -5044,6 +5059,8 @@
   function showAcknowledgementError({ title, detailHtml, tone = 'ng', onConfirm }) {
     if (shortQrTimer) { clearTimeout(shortQrTimer); shortQrTimer = null; }
     setNGLocked(false);
+    acknowledgementOpen = true;
+    pauseScanInputFocus();
     const overlay = document.getElementById('resultOverlay');
     overlay.className = `result-overlay show ${tone}`;
     document.getElementById('resultSymbol').textContent = tone === 'dup' ? '⚠' : '×';
@@ -5069,12 +5086,13 @@
     document.getElementById('resultOverlay').classList.remove('show');
     const action = acknowledgementAction;
     acknowledgementAction = null;
+    acknowledgementOpen = false;
     if (action) action();
     else {
       clearScannerBuffer();
       updateScanUI();
-      restoreScanInputFocusNow();
     }
+    dismissKeyboardThenRefocusScanInput();
   }
 
   // ========= 抽出ルール =========
@@ -5191,7 +5209,6 @@
         if (info.stepNo === 2) value2 = '';
         clearScannerBuffer();
         updateScanUI();
-        restoreScanInputFocusNow();
       }
     });
   }
@@ -6780,9 +6797,15 @@
             value2 = '';
             updateScanUI();
           } else {
-            startScanning(true);
+            clearScannerBuffer();
+            value1 = '';
+            value2 = '';
+            nModeQR2Count = 0;
+            nModePartNumber = '';
+            nModeEx = null;
+            currentStep = 1;
+            updateScanUI();
           }
-          dismissKeyboardThenRefocusScanInput();
         }
       });
 
@@ -6825,7 +6848,7 @@
         errorLogFirebaseKey: logEntry.firebaseKey || ''
       });
       enterPinUnlockMode();
-      playSound('ng');
+      playNGLockWarningSound();
       resetPinUI();
     }
   }
