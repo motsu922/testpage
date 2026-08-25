@@ -2077,6 +2077,10 @@
       <div id="ngReleaseHint" style="display:none;font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:8px;">
         4桁の暗証番号を入力して解除してください
       </div>
+      <button id="ngVibrationBtn" onclick="stopNGLockVibrationByUser()"
+        style="display:none;margin:0 auto 10px;padding:10px 20px;background:rgba(255,255,255,0.12);color:#fff;border:1px solid rgba(255,255,255,0.45);border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;touch-action:manipulation;">
+        バイブ停止
+      </button>
       <div class="pin-dots">
         <div class="pin-dot" id="pinDot0"></div>
         <div class="pin-dot" id="pinDot1"></div>
@@ -2125,6 +2129,9 @@
   let currentTab = 'scan';
   let okAutoTimer = null;
   let shortQrTimer = null;
+  let ngVibrationTimer = null;
+  let ngVibrationMuted = false;
+  const NG_VIBRATION_INTERVAL_MS = 3000;
   let isOKPending = false;
   let orderDetailCompleteNoticeShowing = false;
   let firebaseApp = null;
@@ -2576,6 +2583,10 @@
           if (op.type === 'push') await ref.push(op.value);
           else if (op.type === 'set') await ref.set(op.value);
           else if (op.type === 'update') await ref.update(op.value);
+          else if (op.type === 'resolutionByLogId') {
+            const matched = await ref.orderByChild('logId').equalTo(op.logId).once('value');
+            await Promise.all(Object.keys(matched.val() || {}).map(key => ref.child(key).update(op.value)));
+          }
           else if (op.type === 'remove') await ref.remove();
           else if (op.type === 'orderSessionMerge') await ref.transaction(current => mergeQueuedOrderDetailSession(current, op.value));
         } catch (err) {
@@ -2721,6 +2732,43 @@
     if (overlay) overlay.classList.add('show');
   }
 
+  function linkResolverToLockedError(name, action, resolvedAt) {
+    const lock = loadNgLockState();
+    if (!lock || !lock.errorLogId) return;
+    const resolution = {
+      resolverName: name,
+      resolvedAt,
+      resolutionAction: action || 'ERROR_RELEASE'
+    };
+    const local = scanLog.find(log => log.logId === lock.errorLogId || log.firebaseKey === lock.errorLogFirebaseKey);
+    if (local) {
+      Object.assign(local, resolution);
+      saveLog();
+      renderLog();
+    }
+    const logRoot = database && database.ref('qr_match_logs/' + (activeCompanyId || 'default'));
+    if (!logRoot) {
+      queueErrorResolution(activeCompanyId, lock.errorLogId, resolution);
+      return;
+    }
+    if (lock.errorLogFirebaseKey) {
+      logRoot.child(lock.errorLogFirebaseKey).update(resolution).catch(error => {
+        console.error('異常解除の紐付け保存エラー:', error);
+        queueErrorResolution(activeCompanyId, lock.errorLogId, resolution);
+      });
+      return;
+    }
+    logRoot.orderByChild('logId').equalTo(lock.errorLogId).once('value').then(snapshot => {
+      const matched = snapshot.val() || {};
+      const writes = Object.keys(matched).map(key => logRoot.child(key).update(resolution));
+      if (!writes.length) queueErrorResolution(activeCompanyId, lock.errorLogId, resolution);
+      return Promise.all(writes);
+    }).catch(error => {
+      console.error('異常解除の紐付け検索エラー:', error);
+      queueErrorResolution(activeCompanyId, lock.errorLogId, resolution);
+    });
+  }
+
   function confirmResolverSelection() {
     const select = document.getElementById('resolverSelect');
     const name = select ? select.value.trim() : '';
@@ -2729,8 +2777,10 @@
       return;
     }
     touchOperatorActivity();
+    const resolvedAt = new Date().toISOString();
+    linkResolverToLockedError(name, pendingResolverAction, resolvedAt);
     appendScanLog({
-      timestamp: new Date().toISOString(),
+      timestamp: resolvedAt,
       qr1_raw: '', qr2_raw: '', qr1: '', qr2: '',
       partNumber: 'ERROR_RELEASE',
       qr1Length: 0, qr2Length: 0,
@@ -2759,6 +2809,7 @@
     if (!logEntry.operatorTouchedAt) logEntry.operatorTouchedAt = localStorage.getItem(getWorkerTouchedKey()) || '';
     if (!logEntry.companyId) logEntry.companyId = activeCompanyId || 'default';
     if (!logEntry.companyName) logEntry.companyName = getActiveCompanyName();
+    if (!logEntry.logId) logEntry.logId = 'log_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     return logEntry;
   }
 
@@ -2778,7 +2829,9 @@
       queueLogWrite(companyId, logEntry);
       return;
     }
-    logsRef.push(logEntry).catch(err => {
+    const entryRef = logsRef.push();
+    logEntry.firebaseKey = entryRef.key;
+    entryRef.set(logEntry).catch(err => {
       console.error('Firebase保存エラー:', err);
       queueLogWrite(companyId, logEntry);
     });
@@ -3515,8 +3568,16 @@
   // ロックの入切は必ずここを通す(メモリと端末保存がずれないようにするため)
   function setNGLocked(locked, info) {
     isNGLocked = !!locked;
-    if (locked) saveNgLockState(info);
-    else clearNgLockState();
+    if (locked) {
+      ngVibrationMuted = false;
+      saveNgLockState(info);
+      startNGLockVibration();
+    } else {
+      stopNGLockVibration();
+      ngVibrationMuted = false;
+      clearNgLockState();
+    }
+    updateNGLockVibrationButton();
   }
 
   function formatLockStamp(iso) {
@@ -3554,6 +3615,7 @@
     if (hint) hint.style.display = isDup ? 'none' : 'block';
     enterPinUnlockMode();
     resetPinUI();
+    startNGLockVibration(true);
   }
 
   function finishPinUnlock() {
@@ -4653,6 +4715,11 @@
   function toggleVibration() {
     settings.vibrationEnabled = !settings.vibrationEnabled;
     document.getElementById('vibrationToggle').className = settings.vibrationEnabled ? 'toggle-switch on' : 'toggle-switch';
+    if (isNGLocked) {
+      if (settings.vibrationEnabled && !ngVibrationMuted) startNGLockVibration(true);
+      else stopNGLockVibration();
+      updateNGLockVibrationButton();
+    }
   }
 
   function onSoundTypeChange(key, value) {
@@ -4896,6 +4963,50 @@
     if (navigator.vibrate) navigator.vibrate(pattern);
   }
 
+  function updateNGLockVibrationButton() {
+    const button = document.getElementById('ngVibrationBtn');
+    if (!button) return;
+    button.style.display = isNGLocked ? 'block' : 'none';
+    button.disabled = !settings.vibrationEnabled;
+    button.textContent = !settings.vibrationEnabled
+      ? 'バイブ設定OFF'
+      : (ngVibrationMuted ? 'バイブ停止済み' : 'バイブ停止');
+    if (ngVibrationMuted) button.disabled = true;
+  }
+
+  function stopNGLockVibration() {
+    if (ngVibrationTimer) {
+      clearInterval(ngVibrationTimer);
+      ngVibrationTimer = null;
+    }
+    if (navigator.vibrate) navigator.vibrate(0);
+  }
+
+  function startNGLockVibration(immediate = false) {
+    stopNGLockVibration();
+    if (!isNGLocked || ngVibrationMuted || !settings.vibrationEnabled || !navigator.vibrate) {
+      updateNGLockVibrationButton();
+      return;
+    }
+    if (immediate) navigator.vibrate([260, 100, 260]);
+    ngVibrationTimer = setInterval(() => {
+      if (!isNGLocked || ngVibrationMuted || !settings.vibrationEnabled) {
+        stopNGLockVibration();
+        updateNGLockVibrationButton();
+        return;
+      }
+      navigator.vibrate([260, 100, 260]);
+    }, NG_VIBRATION_INTERVAL_MS);
+    updateNGLockVibrationButton();
+  }
+
+  function stopNGLockVibrationByUser() {
+    if (!isNGLocked || !settings.vibrationEnabled) return;
+    ngVibrationMuted = true;
+    stopNGLockVibration();
+    updateNGLockVibrationButton();
+  }
+
   // ========= 抽出ルール =========
   function pickRule(qrNorm) {
     const totalLen = qrNorm.length;
@@ -5114,6 +5225,16 @@
 
   function normalizeOrderDetailPartNo(value) {
     return normalizeQR(value).toUpperCase().replace(/-00$/, '');
+  }
+
+  function queueErrorResolution(companyId, logId, value) {
+    if (!logId) return;
+    enqueueFirebaseWrite({
+      type: 'resolutionByLogId',
+      path: 'qr_match_logs/' + (companyId || activeCompanyId || 'default'),
+      logId,
+      value
+    });
   }
 
   function trimPartAfterSecondHyphen(value) {
@@ -6649,7 +6770,9 @@
         kind: 'dup',
         title: text.textContent,
         partNumber,
-        note: logEntry.orderDetailNote || ''
+        note: logEntry.orderDetailNote || '',
+        errorLogId: logEntry.logId || '',
+        errorLogFirebaseKey: logEntry.firebaseKey || ''
       });
       enterPinUnlockMode();
       playSound('dup');
@@ -6689,7 +6812,9 @@
         kind: 'ng',
         title: text.textContent,
         partNumber,
-        note: logEntry.orderDetailNote || logEntry.extractNote || ''
+        note: logEntry.orderDetailNote || logEntry.extractNote || '',
+        errorLogId: logEntry.logId || '',
+        errorLogFirebaseKey: logEntry.firebaseKey || ''
       });
       enterPinUnlockMode();
       playSound('ng');
