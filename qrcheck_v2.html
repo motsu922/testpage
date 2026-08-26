@@ -538,6 +538,15 @@
       border-radius: 8px;
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
     }
+    .order-detail-skip {
+      width: 100%;
+      min-height: 38px;
+      margin-bottom: 6px;
+      border-color: #59636f;
+      background: #252b31;
+      color: #d5dbe3;
+      font-size: 13px;
+    }
     .order-detail-btn.danger {
       flex: 0 0 auto;
       min-height: 32px;
@@ -1650,6 +1659,7 @@
             </div>
           </div>
           <button class="order-detail-btn order-detail-primary" onclick="startOrderDetailScan()">明細QR読込</button>
+          <button class="order-detail-btn order-detail-skip" onclick="skipOrderDetailAndStartKanban()">明細なしでかんばん照合</button>
           <button class="order-detail-btn order-detail-secondary" id="orderDetailAppendBtn" onclick="startOrderDetailScan(true)" style="display:none;">明細QR追加</button>
           <div id="orderDetailContent" class="order-detail-empty"></div>
         </div>
@@ -2178,6 +2188,7 @@
   let passThroughPartMaster = {};
   let orderDetailAwaiting = false;
   let orderDetailAppendMode = false;
+  let orderDetailBypassed = false;
   let orderDetailSession = {
     sessionId: '',
     orderQr: '',
@@ -2220,7 +2231,6 @@
     scanMode: '1to1',               // ★ '1to1' | '1toN'
     matchDirection: 'qr2_to_qr1',  // ★ 'qr2_to_qr1' | 'qr1_to_qr2'
     photoMap: [],                   // ★ [{ id, partNumber, url }]
-    aliasMap: [],                   // ★ [{ id, partNumber, aliases }]
     aliasMap: [],                   // ★ [{ id, partNumber, aliases }]
     workerMaster: [],
     resolverMaster: [],
@@ -3431,7 +3441,7 @@
       showOrderDetailCompleteOverlay();
       return;
     }
-    if (!orderDetailSession.lines.length) {
+    if (!orderDetailSession.lines.length && !orderDetailBypassed) {
       if (qrKind === 'orderDetail') {
         orderDetailAwaiting = true;
         orderDetailAppendMode = false;
@@ -5947,8 +5957,68 @@
     return { meta: { ...parseSpacedFixedHeader(text), detailType: 'spaced_fixed_detail' }, lines };
   }
 
+  // 明細発行PCアプリが生成する MQR1 形式。
+  // MQR1<base64url JSON> に [品番, 入数, 注文数, 背番号] を格納する。
+  // 一部端末で「:」が「+」として入力されるため、旧形式の区切りも許容する。
+  function parseMiyamaGeneratedOrderDetailQR(qrRaw) {
+    const text = normalizeOrderDetailQR(qrRaw);
+    const prefix = text.match(/^MQR1(?::|\+)?/);
+    if (!prefix) return { meta: {}, lines: [] };
+    try {
+      const payload = text.slice(prefix[0].length).replace(/-/g, '+').replace(/_/g, '/');
+      const padded = payload + '='.repeat((4 - payload.length % 4) % 4);
+      // 発行QRのJSONは英数字・記号だけで構成する。専用端末の旧WebViewでも動く
+      // atob直結を使い、TextDecoder / Uint8Array.from への依存をなくす。
+      const data = JSON.parse(atob(padded));
+      if (!data || data.v !== 1 || !Array.isArray(data.l)) return { meta: {}, lines: [] };
+      const lines = data.l.map((row, index) => {
+        const partNo = normalizeOrderDetailPartNo(row && row[0]);
+        const packQty = Number(row && row[1]) || 0;
+        const totalQty = Number(row && row[2]) || 0;
+        const backNo = String(row && row[3] || '').trim();
+        if (!partNo || !packQty || !totalQty) return null;
+        return {
+          no: index + 1,
+          backNo,
+          partNo,
+          altPartNo: '',
+          packQty,
+          totalQty,
+          requiredBoxes: Math.ceil(totalQty / packQty),
+          scanned: 0,
+          detailType: 'miyama_generated_detail'
+        };
+      }).filter(Boolean);
+      if (!lines.length) return { meta: {}, lines: [] };
+      return {
+        meta: {
+          customerId: String(data.c || ''),
+          orderNo: String(data.o || ''),
+          deliveryDate: String(data.d || ''),
+          deliveryBin: String(data.b || ''),
+          destinationCode: String(data.x || ''),
+          receivingCode: String(data.r || ''),
+          detailType: 'miyama_generated_detail'
+        },
+        lines
+      };
+    } catch (error) {
+      console.warn('MQR1 parse error:', error);
+      return { meta: {}, lines: [] };
+    }
+  }
+
   function parseOrderDetailQR(qrRaw) {
     const qr = normalizeOrderDetailQR(qrRaw);
+    const generatedDetail = parseMiyamaGeneratedOrderDetailQR(qrRaw);
+    if (generatedDetail.lines.length) {
+      const parsed = { orderQr: qr, meta: generatedDetail.meta, lines: generatedDetail.lines };
+      parsed.lines = parsed.lines.map(line => {
+        const excluded = isPassThroughOrderLine(parsed, line);
+        return excluded ? { ...line, excluded: true, excludeReason: '仕入先パススルー' } : line;
+      });
+      return parsed;
+    }
     const fields = normalizeQR(qrRaw).split(/[\x1d\x1e\x04]+/).map(v => v.trim()).filter(Boolean);
     const lines = [];
 
@@ -6059,6 +6129,7 @@
   function startOrderDetailScan(append = false) {
     if (isNGLocked) { showNGOverlay(); return; }
     if (!append && orderDetailSession.lines.length && !confirm('現在の明細セットを破棄して、新しい明細QRを読み込みますか？')) return;
+    orderDetailBypassed = false;
     orderDetailAppendMode = !!append;
     orderDetailAwaiting = true;
     clearScannerBuffer();
@@ -6070,6 +6141,29 @@
     if (step) step.textContent = '明細QR';
     if (message) message.textContent = append ? '追加する明細QRを読み取ってください' : '明細QRを読み取ってください';
     updateScanStateBanner('detail', append ? '明細QR追加待ち' : '明細QR待ち', append ? '追加する明細QRだけを読み取ってください' : '注文の明細QRを読み取ってください');
+    restoreScanInputFocusNow();
+  }
+
+  function skipOrderDetailAndStartKanban() {
+    if (isNGLocked) { showNGOverlay(); return; }
+    const hasDetail = orderDetailSession.lines.length > 0;
+    const message = hasDetail
+      ? '現在の明細セットをこの端末では使用せず、従来のかんばん照合へ切り替えますか？\n他の端末の明細進捗は変更しません。'
+      : '明細照合を行わず、従来のかんばん同士の照合を開始しますか？';
+    if (!confirm(message)) return;
+
+    orderDetailBypassed = true;
+    saveOrderDetailActionLog('SKIP', hasDetail ? 'detail_skipped_existing_session' : 'detail_skipped_no_qr');
+    leaveOrderDetailSession();
+    orderDetailAwaiting = false;
+    clearScannerBuffer();
+    value1 = '';
+    value2 = '';
+    nModeQR2Count = 0;
+    nModePartNumber = '';
+    nModeEx = null;
+    currentStep = 1;
+    updateScanUI();
     restoreScanInputFocusNow();
   }
 
@@ -6375,7 +6469,9 @@
     if (!target) return;
     if (!orderDetailSession.lines.length) {
       target.className = 'order-detail-empty';
-      target.innerHTML = '';
+      target.innerHTML = orderDetailBypassed
+        ? '<div style="padding:7px 2px;color:#b8c4d1;font-size:12px;font-weight:800;">明細なし: かんばん同士の照合モード</div>'
+        : '';
       return;
     }
     target.className = '';
@@ -6980,16 +7076,21 @@
     const input   = document.getElementById('scanInput');
     const panel   = document.getElementById('qr1InfoPanel');
     const changePnBtn = document.getElementById('changePnBtn');
-    if (orderDetailAwaiting || !orderDetailSession.lines.length) {
+    const detailRequired = !orderDetailSession.lines.length && !orderDetailBypassed;
+    if (orderDetailAwaiting || detailRequired) {
       updateScanStateBanner('detail', '明細QR待ち', '最初に注文の明細QRを読み取ってください');
     } else if (isOrderDetailComplete()) {
       updateScanStateBanner('complete', '明細照合完了', '次の注文の明細QRを読み取ってください');
     } else if (currentStep === 2) {
       updateScanStateBanner('kanban2', isNMode ? '社内かんばん待ち' : '2回目かんばん待ち', '現在の明細に対して照合します');
     } else {
-      updateScanStateBanner('kanban1', isNMode ? '顧客かんばん待ち' : '1回目かんばん待ち', '明細QRは追加ボタンを押してから読み取ってください');
+      updateScanStateBanner(
+        'kanban1',
+        orderDetailBypassed ? '明細なし・かんばん照合' : (isNMode ? '顧客かんばん待ち' : '1回目かんばん待ち'),
+        orderDetailBypassed ? '従来のかんばん同士の照合を行います' : '明細QRは追加ボタンを押してから読み取ってください'
+      );
     }
-    if (orderDetailAwaiting || !orderDetailSession.lines.length) {
+    if (orderDetailAwaiting || detailRequired) {
       step.textContent = orderDetailAwaiting ? '明細QR読込中' : '明細QR';
       message.textContent = orderDetailAwaiting ? '明細QRを読み取ってください' : '最初に明細QRを読み取ってください';
       message.className = 'scan-message';
@@ -7015,7 +7116,9 @@
     }
     if (currentStep === 1) {
       step.textContent    = isNMode ? '1対Nモード｜STEP 1' : 'STEP 1 / 2';
-      message.textContent = isNMode ? 'マスターQRを読み取ってください' : '1回目を読み取ってください';
+      message.textContent = orderDetailBypassed
+        ? (isNMode ? '明細なし｜マスターQRを読み取ってください' : '明細なし｜1回目を読み取ってください')
+        : (isNMode ? 'マスターQRを読み取ってください' : '1回目を読み取ってください');
       message.className   = 'scan-message';
       input.className     = 'scan-input';
       input.placeholder   = 'QRリーダーで読み取り';

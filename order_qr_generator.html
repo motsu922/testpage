@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>明細QR発行</title>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    :root { --ink:#18212c; --muted:#64748b; --line:#d6dee8; --panel:#fff; --base:#eef3f8; --blue:#0876c9; --green:#167a46; --red:#bd3333; --amber:#a45a05; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--base); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif; }
+    header { color:#fff; background:#12314c; border-bottom:4px solid #1590d3; }
+    .head-inner { width:min(1420px,calc(100% - 40px)); margin:auto; min-height:74px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    h1 { margin:0; font-size:24px; letter-spacing:0; } .subtitle { margin-top:4px; font-size:13px; color:#b9d5e8; }
+    .sync { border:1px solid #5b7890; border-radius:5px; padding:7px 10px; font-size:12px; white-space:nowrap; } .sync.ok { color:#bdedcf; border-color:#45956a; } .sync.off { color:#ffd397; border-color:#a77c45; }
+    main { width:min(1420px,calc(100% - 40px)); margin:20px auto 46px; display:grid; grid-template-columns:minmax(0,1.65fr) minmax(340px,.9fr); gap:20px; align-items:start; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 2px rgba(15,23,42,.08); padding:18px; }
+    .card h2 { margin:0 0 14px; font-size:17px; } .card h3 { margin:18px 0 9px; font-size:14px; }
+    .field-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:11px; } .field { display:flex; flex-direction:column; gap:5px; } .field.wide { grid-column:span 2; }
+    label { font-size:12px; font-weight:700; color:#40536a; } input { width:100%; min-height:38px; padding:8px 9px; color:var(--ink); background:#fff; border:1px solid #b9c7d6; border-radius:5px; font-size:14px; } input:focus { outline:2px solid #93c5fd; border-color:#3184c7; }
+    button { min-height:38px; padding:8px 13px; border:1px solid #aab9c8; background:#f8fafc; color:#213248; border-radius:5px; cursor:pointer; font-weight:750; font-size:13px; } button:hover { filter:brightness(.97); } button.primary { color:#fff; background:var(--blue); border-color:#0868ae; } button.success { color:#fff; background:var(--green); border-color:#105f35; } button.danger { color:#b42323; border-color:#ecb7b7; background:#fff5f5; } button.icon { min-height:31px; padding:4px 8px; }
+    .toolbar { display:flex; align-items:end; justify-content:space-between; gap:12px; margin-bottom:12px; } .toolbar-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .hint { margin:8px 0 0; color:var(--muted); font-size:12px; line-height:1.55; } .notice { display:none; margin:10px 0; padding:10px 12px; border-radius:5px; font-size:13px; line-height:1.5; } .notice.show{display:block}.notice.warn{background:#fff8e8;border:1px solid #e7bd71;color:#81510d}.notice.ok{background:#effcf4;border:1px solid #8bcca6;color:#17653b}.notice.error{background:#fff1f1;border:1px solid #e4a2a2;color:#972d2d}
+    .table-wrap { overflow:auto; border:1px solid var(--line); border-radius:6px; } table { width:100%; border-collapse:collapse; min-width:710px; } th { padding:9px; color:#40536a; background:#f4f7fa; border-bottom:1px solid var(--line); text-align:left; font-size:12px; } td { padding:7px; border-bottom:1px solid #e6ebf0; } tr:last-child td { border-bottom:0; } td input { min-height:33px; padding:6px; font-size:13px; } td .calc { font-weight:800; text-align:center; white-space:nowrap; } tr.issue { background:#fff8ed; }
+    .qr-result { display:none; } .qr-result.show { display:block; } #qrCanvas { display:block; width:min(100%,420px); margin:12px auto; padding:12px; background:#fff; border:1px solid var(--line); } #qrCanvas canvas, #qrCanvas img { display:block; width:100%!important; height:auto!important; }
+    .qr-meta { padding:11px; border:1px solid #c8d8e5; border-radius:5px; background:#f5faff; font-size:13px; line-height:1.65; } .code { max-height:128px; overflow:auto; padding:9px; border-radius:5px; background:#172432; color:#d8ecfc; font:11px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; word-break:break-all; }
+    .master-row { display:grid; grid-template-columns:minmax(0,1fr) 94px 36px; gap:7px; align-items:center; padding:7px 0; border-bottom:1px solid #e8edf2; } .master-row:last-child{border-bottom:0}.master-part{font:13px ui-monospace,SFMono-Regular,Consolas,monospace;font-weight:700}.master-qty{text-align:right;font-size:13px;font-weight:800}.master-empty{padding:12px 0;text-align:center;color:#94a3b8;font-size:13px}
+    .file-row { display:flex; align-items:end; gap:9px; margin-top:13px; } .file-row input{min-width:0}.file-row button{white-space:nowrap}
+    .simple-issue { width:min(720px,calc(100% - 40px)); margin:70px auto; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 2px 7px rgba(15,23,42,.09); padding:32px; text-align:center; }
+    .simple-issue h2 { margin:0; font-size:24px; } .simple-issue p { margin:10px 0 26px; color:var(--muted); font-size:14px; }
+    .simple-file { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; padding:12px; border:1px solid #b9c7d6; border-radius:6px; text-align:left; }
+    .simple-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#526274; font-size:14px; } .simple-file-name.ready { color:#18212c; font-weight:700; }
+    .simple-issue .issue-button { width:100%; min-height:56px; margin-top:16px; font-size:17px; } .simple-issue .issue-button:disabled { cursor:not-allowed; opacity:.5; }
+    .simple-issue .notice { text-align:left; }
+    main { display:none!important; }
+    @media (max-width:960px){.head-inner{width:calc(100% - 24px)}.simple-issue{width:calc(100% - 24px);margin:28px auto;padding:22px}.simple-file{grid-template-columns:1fr}.simple-file button{width:100%}}
+    #printSheet { display:none; }
+    @media print { @page { size:A4 portrait; margin:12mm; } @page originalOrder { size:A4 landscape; margin:10mm; } body{background:#fff;color:#111}.no-print,header,main,.simple-issue{display:none!important}#printSheet{display:block;width:100%;font-family:"Noto Sans JP",sans-serif}.print-title{display:flex;justify-content:space-between;align-items:end;border-bottom:2px solid #111;padding-bottom:7px}.print-title h1{font-size:25px;color:#111}.print-title .print-issued{font-size:11px}.print-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px;margin:13px 0;border:1px solid #111;padding:9px 11px}.print-meta div{font-size:12px}.print-meta b{display:block;font-size:10px;color:#444;margin-bottom:2px}.print-body{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:15px;align-items:start}.print-table{width:100%;min-width:0;border-collapse:collapse}.print-table th,.print-table td{border:1px solid #111;padding:5px 6px;font-size:10px}.print-table th{background:#eee;text-align:center}.print-table td.num{text-align:right}.print-qr{border:1px solid #111;padding:8px;text-align:center}.print-qr img{display:block;width:118px;height:118px;margin:0 auto 6px}.print-qr b{font-size:11px}.print-foot{margin-top:12px;border-top:1px solid #111;padding-top:6px;font-size:9px;color:#444}.print-original-page{position:relative;page:originalOrder;break-before:auto;page-break-before:auto}.print-original-page + .print-original-page{break-before:page;page-break-before:always}.print-original-page h2{display:none}.print-original-page .print-original-source{display:block;width:100%;max-height:188mm;object-fit:contain;object-position:top center}.print-original-qr{position:absolute;top:8mm;right:8mm;width:106px;padding:5px;background:#fff;border:1px solid #111;text-align:center}.print-original-qr img{display:block;width:94px;height:94px;margin:0 auto}.print-original-qr b{display:block;font-size:9px;margin-top:3px} }
+  </style>
+</head>
+<body>
+  <header><div class="head-inner"><div><h1>明細QR発行</h1><div class="subtitle">注文書PDFから明細QRを発行して、そのまま印刷</div></div><div style="display:flex;align-items:center;gap:9px"><a href="order_qr_admin.html" style="color:#fff;border:1px solid #5b7890;border-radius:5px;padding:7px 10px;font-size:12px;text-decoration:none">管理画面</a><div class="sync off" id="syncStatus">Firebase接続中...</div></div></div></header>
+  <section class="simple-issue no-print">
+    <h2>注文書PDFを選択</h2><p>入数マスターに基づき明細QRを発行し、原本の同じページにQRを載せて印刷します。</p>
+    <div class="simple-file"><div id="selectedPdfName" class="simple-file-name">PDFファイルを選択してください</div><button type="button" class="primary" onclick="document.getElementById('pdfFile').click()">ファイルを選択</button></div>
+    <button id="issuePdfButton" type="button" class="success issue-button" onclick="importPdf()" disabled>明細QRを発行して印刷</button>
+    <div class="notice" id="simpleImportNotice"></div>
+  </section>
+  <main>
+    <section class="editor">
+      <div class="card">
+        <div class="toolbar"><h2>注文情報</h2><div class="toolbar-actions no-print"><button onclick="resetOrderForm()">初期化</button><button class="success" onclick="generateQr()">明細QRを発行</button></div></div>
+        <div class="field-grid">
+          <div class="field"><label>マスター対象会社</label><input id="companyKey" value="miyama" autocomplete="off" onchange="changeCompany()"></div>
+          <div class="field"><label>顧客コード</label><input id="customerId" placeholder="例: 40905"></div>
+          <div class="field"><label>注文No.</label><input id="orderNo" placeholder="例: R004355444"></div>
+          <div class="field"><label>納入日</label><input id="deliveryDate" type="date"></div>
+          <div class="field"><label>便</label><input id="deliveryBin" placeholder="例: 1"></div>
+          <div class="field"><label>納入先コード</label><input id="destinationCode" placeholder="任意"></div>
+          <div class="field"><label>受入</label><input id="receivingCode" placeholder="任意"></div>
+        </div>
+        <div class="file-row no-print"><div class="field" style="flex:1"><label>注文書PDFから明細候補を取り込む</label><input id="pdfFile" type="file" accept="application/pdf" onchange="handlePdfSelection()"></div><button class="primary" onclick="importPdf()">PDF取込</button></div>
+        <div class="notice" id="importNotice"></div>
+      </div>
+      <div class="card" style="margin-top:20px">
+        <div class="toolbar"><div><h2>明細</h2><p class="hint">注文数量と入数から必要箱数を計算します。品番・数量・入数を必ず確認してください。</p></div><div class="toolbar-actions no-print"><button onclick="addLine()">行を追加</button><button class="danger" onclick="clearLines()">全行削除</button></div></div>
+        <div class="notice" id="lineNotice"></div>
+        <div class="table-wrap"><table><thead><tr><th style="width:45%">品番</th><th>背番号</th><th>注文数</th><th>入数</th><th>必要箱数</th><th class="no-print"></th></tr></thead><tbody id="lineBody"></tbody></table></div>
+      </div>
+    </section>
+    <aside>
+      <div class="card master-card">
+        <h2>品番別 入数マスター</h2><p class="hint">このPCで管理し、Firebaseへ同期します。同じ品番を登録すると入数を更新します。</p>
+        <div class="file-row"><div class="field" style="flex:1"><label>品番</label><input id="masterPart" placeholder="例: 10101-02301"></div><div class="field" style="width:106px"><label>入数</label><input id="masterQty" type="number" min="1" step="1"></div><button class="success" onclick="saveMasterEntry()">登録</button></div>
+        <div id="masterList" style="margin-top:14px"></div>
+      </div>
+      <div class="card qr-result" id="qrResult" style="margin-top:20px">
+        <h2>発行する明細QR</h2><div class="qr-meta" id="qrSummary"></div><div id="qrCanvas"></div><div class="code" id="qrText"></div><div class="toolbar-actions no-print" style="justify-content:center;margin-top:12px"><button onclick="printOrderSheet()">再印刷</button><button onclick="copyQrText()">文字列をコピー</button></div>
+      </div>
+    </aside>
+  </main>
+  <section id="printSheet"></section>
+<script>
+  const FIREBASE_CONFIG = { apiKey:'AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY', authDomain:'miyamaunitec-fb87a.firebaseapp.com', databaseURL:'https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app', projectId:'miyamaunitec-fb87a' };
+  const state = { master: [], lines: [], originalPages: [] };
+  let database = null;
+
+  function esc(value) { return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+  function partKey(value) { return String(value ?? '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z]/g, ''); }
+  function cleanPart(value) { return String(value ?? '').normalize('NFKC').toUpperCase().replace(/\s+/g, ''); }
+  function companyKey() { return String(document.getElementById('companyKey').value || 'miyama').trim().replace(/[.#$\[\]/]/g, '_') || 'miyama'; }
+  function storageKey() { return 'order_qr_generator_pack_master_' + companyKey(); }
+  function masterPath() { return 'qr_match_companies/order_qr_generator/pack_masters/' + companyKey(); }
+  function setStatus(kind, text) { const e=document.getElementById('syncStatus'); e.textContent=text; e.className='sync '+kind; }
+  function showNotice(id, kind, text) { const e=document.getElementById(id); e.className='notice show '+kind; e.textContent=text; if(id==='importNotice'){const simple=document.getElementById('simpleImportNotice');simple.className='notice show '+kind;simple.textContent=text;} }
+  function clearNotice(id) { document.getElementById(id).className='notice'; if(id==='importNotice')document.getElementById('simpleImportNotice').className='notice'; }
+  function handlePdfSelection() { const file=document.getElementById('pdfFile').files[0];const name=document.getElementById('selectedPdfName');const issue=document.getElementById('issuePdfButton');name.textContent=file ? file.name : 'PDFファイルを選択してください';name.className='simple-file-name'+(file?' ready':'');issue.disabled=!file;clearNotice('importNotice'); }
+
+  function normalizeMaster(raw) {
+    const values = Array.isArray(raw) ? raw : Object.values(raw || {}); const map=new Map();
+    values.forEach(item => { const partNumber=cleanPart(item && item.partNumber); const packQty=Math.floor(Number(item && item.packQty)); if(partNumber && packQty>0) map.set(partKey(partNumber),{partNumber,packQty}); });
+    return [...map.values()].sort((a,b)=>a.partNumber.localeCompare(b.partNumber));
+  }
+  function saveMasterLocal() { localStorage.setItem(storageKey(), JSON.stringify(state.master)); }
+  function getPackQty(part) { const entry=state.master.find(item=>partKey(item.partNumber)===partKey(part)); return entry ? entry.packQty : 0; }
+  function renderMaster() { const list=document.getElementById('masterList'); if(!state.master.length){list.innerHTML='<div class="master-empty">登録なし</div>';return;} list.innerHTML=state.master.map(item=>`<div class="master-row"><div class="master-part">${esc(item.partNumber)}</div><div class="master-qty">${item.packQty} 入/箱</div><button class="icon danger" onclick="removeMasterEntry('${esc(partKey(item.partNumber))}')">削除</button></div>`).join(''); renderLines(); }
+  function persistMaster() { state.master=normalizeMaster(state.master); saveMasterLocal(); renderMaster(); if(database) database.ref(masterPath()).set(state.master).then(()=>setStatus('ok','Firebase同期済み')).catch(()=>setStatus('off','ローカル保存')); }
+  function saveMasterEntry() { const part=cleanPart(document.getElementById('masterPart').value); const qty=Math.floor(Number(document.getElementById('masterQty').value)); if(!part||!qty||qty<1){alert('品番と1以上の入数を入力してください');return;} const key=partKey(part); const found=state.master.find(item=>partKey(item.partNumber)===key); if(found){found.partNumber=part;found.packQty=qty;}else state.master.push({partNumber:part,packQty:qty}); document.getElementById('masterPart').value='';document.getElementById('masterQty').value='';persistMaster(); }
+  function removeMasterEntry(key) { const item=state.master.find(v=>partKey(v.partNumber)===key); if(!item||!confirm(`「${item.partNumber}」を削除しますか？`))return; state.master=state.master.filter(v=>partKey(v.partNumber)!==key);persistMaster(); }
+  function changeCompany() { state.master=normalizeMaster(JSON.parse(localStorage.getItem(storageKey())||'[]')); renderMaster(); if(database) loadMasterFromFirebase(); }
+  function loadMasterFromFirebase() { database.ref(masterPath()).once('value').then(snap=>{if(snap.exists()){state.master=normalizeMaster(snap.val());saveMasterLocal();renderMaster();setStatus('ok','Firebase同期済み');}else{persistMaster();}}).catch(()=>setStatus('off','ローカル保存')); }
+
+  function addLine(line={}) { state.lines.push({ partNumber:cleanPart(line.partNumber), backNo:String(line.backNo||''), totalQty:Number(line.totalQty)||'', packQty:Number(line.packQty)||getPackQty(line.partNumber)||'' }); renderLines(); }
+  function clearLines() { if(state.lines.length && !confirm('明細をすべて削除しますか？'))return; state.lines=[];renderLines();clearNotice('lineNotice'); }
+  function updateLine(index, field, value) { const line=state.lines[index]; line[field]=field==='partNumber'?cleanPart(value):(field==='backNo'?value:(Number(value)||'')); if(field==='partNumber' && !line.packQty) line.packQty=getPackQty(line.partNumber)||''; renderLines(); }
+  function removeLine(index) { state.lines.splice(index,1);renderLines(); }
+  function renderLines() { const body=document.getElementById('lineBody'); if(!state.lines.length){body.innerHTML='<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px">明細を追加するか、注文書PDFを取り込んでください。</td></tr>';return;} body.innerHTML=state.lines.map((line,index)=>{const total=Math.floor(Number(line.totalQty)||0);const pack=Math.floor(Number(line.packQty)||0);const boxes=total&&pack?Math.ceil(total/pack):0;const issue=!line.partNumber||!total||!pack||total%pack!==0;return `<tr class="${issue?'issue':''}"><td><input value="${esc(line.partNumber)}" onchange="updateLine(${index},'partNumber',this.value)"></td><td><input value="${esc(line.backNo)}" onchange="updateLine(${index},'backNo',this.value)"></td><td><input type="number" min="1" value="${esc(line.totalQty)}" onchange="updateLine(${index},'totalQty',this.value)"></td><td><input type="number" min="1" value="${esc(line.packQty)}" onchange="updateLine(${index},'packQty',this.value)"></td><td class="calc">${boxes||'-'}</td><td class="no-print"><button class="icon danger" onclick="removeLine(${index})">削除</button></td></tr>`;}).join(''); }
+
+  function getFormMeta() { return { c:String(document.getElementById('customerId').value||'').trim(), o:String(document.getElementById('orderNo').value||'').trim(), d:String(document.getElementById('deliveryDate').value||'').replaceAll('-',''), b:String(document.getElementById('deliveryBin').value||'').trim(), x:String(document.getElementById('destinationCode').value||'').trim(), r:String(document.getElementById('receivingCode').value||'').trim() }; }
+  function encodePayload(data) { const bytes=new TextEncoder().encode(JSON.stringify(data)); let binary='';bytes.forEach(byte=>binary+=String.fromCharCode(byte));return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+  function updatePrintSheet(meta, valid, boxes) {
+    const rendered = document.querySelector('#qrCanvas canvas, #qrCanvas img');
+    const qrSource = rendered && rendered.tagName === 'CANVAS' ? rendered.toDataURL('image/png') : (rendered ? rendered.src : '');
+    if (!qrSource) return false;
+    const rows = valid.map((row, index) => `<tr><td>${index + 1}</td><td>${esc(row[0])}</td><td>${esc(row[3] || '-')}</td><td class="num">${Number(row[2]).toLocaleString()}</td><td class="num">${Number(row[1]).toLocaleString()}</td><td class="num">${Math.ceil(row[2] / row[1])}</td></tr>`).join('');
+    const originalPages = state.originalPages.map((src, index) => `<div class="print-original-page"><h2>注文書原本 ${index + 1} / ${state.originalPages.length}</h2><img class="print-original-source" src="${src}" alt="注文書原本 ${index + 1}"><div class="print-original-qr"><img src="${qrSource}" alt="明細QR"><b>明細QR</b></div></div>`).join('');
+    const fallbackSheet = `
+      <div class="print-title"><div><h1>注文書</h1><div style="font-size:11px;margin-top:3px;">明細QR付き</div></div><div class="print-issued">発行日 ${new Date().toLocaleDateString('ja-JP')}</div></div>
+      <div class="print-meta">
+        <div><b>発行元</b>${esc(companyKey())}</div><div><b>顧客コード</b>${esc(meta.c || '-')}</div><div><b>注文No.</b>${esc(meta.o || '-')}</div>
+        <div><b>納入日</b>${esc(meta.d || '-')}</div><div><b>便</b>${esc(meta.b || '-')}</div><div><b>納入先 / 受入</b>${esc(meta.x || '-')} / ${esc(meta.r || '-')}</div>
+      </div>
+      <div class="print-body"><table class="print-table"><thead><tr><th>No.</th><th>品番</th><th>背番号</th><th>注文数</th><th>入数</th><th>必要箱数</th></tr></thead><tbody>${rows}</tbody></table><div class="print-qr"><img src="${qrSource}" alt="明細QR"><b>明細QR</b><div style="font-size:10px;margin-top:3px;">${valid.length}品番 / ${boxes}箱</div></div></div>
+      <div class="print-foot">このQRはミヤマ工業 明細照合アプリ用です。照合開始時に明細QRとして読み取ってください。</div>`;
+    document.getElementById('printSheet').innerHTML = originalPages || fallbackSheet;
+    return true;
+  }
+
+  async function printOrderSheet() {
+    if(!document.getElementById('qrResult').classList.contains('show')){alert('先に明細QRを発行してください');return;}
+    const images = [...document.querySelectorAll('#printSheet img')];
+    await Promise.all(images.map(image => {
+      if (image.complete && image.naturalWidth) return image.decode ? image.decode().catch(() => {}) : Promise.resolve();
+      return new Promise(resolve => { image.onload = image.onerror = resolve; });
+    }));
+    window.print();
+  }
+
+  function generateQr() { clearNotice('lineNotice'); const valid=[];const issues=[]; state.lines.forEach((line,index)=>{const part=cleanPart(line.partNumber);const pack=Math.floor(Number(line.packQty));const total=Math.floor(Number(line.totalQty));if(!part||!pack||!total){issues.push(`${index+1}行目: 品番・注文数・入数を入力してください`);return;}if(total%pack!==0)issues.push(`${index+1}行目 ${part}: 注文数 ${total} が入数 ${pack} で割り切れません`);valid.push([part,pack,total,String(line.backNo||'').trim()]);});if(!valid.length||issues.length){showNotice('lineNotice','warn',issues.join(' / ') || '明細を1行以上登録してください');return;} if(!window.QRCode){showNotice('lineNotice','error','QR描画ライブラリを読み込めませんでした。ネットワークを確認して再読み込みしてください。');return;} const meta=getFormMeta();const code='MQR1'+encodePayload({v:1,...meta,l:valid});if(code.length>2200){showNotice('lineNotice','warn','QRデータが大きすぎます。明細を分けて発行してください。');return;} const canvas=document.getElementById('qrCanvas');canvas.innerHTML='';new QRCode(canvas,{text:code,width:620,height:620,correctLevel:QRCode.CorrectLevel.M});const boxes=valid.reduce((sum,row)=>sum+Math.ceil(row[2]/row[1]),0);document.getElementById('qrSummary').innerHTML=`<b>明細 ${valid.length}品番 / ${boxes}箱</b><br>顧客: ${esc(meta.c||'-')}　注文No.: ${esc(meta.d||'-')}　便: ${esc(meta.b||'-')}`;document.getElementById('qrText').textContent=code;document.getElementById('qrResult').classList.add('show');setTimeout(()=>{if(!updatePrintSheet(meta,valid,boxes)){showNotice('lineNotice','error','QR画像を作成できませんでした。再読み込みしてもう一度試してください。');return;}showNotice('lineNotice','ok','明細QRを発行しました。印刷画面を開きます。');printOrderSheet();},180); }
+  function copyQrText() { const text=document.getElementById('qrText').textContent;if(!text)return;navigator.clipboard.writeText(text).then(()=>alert('明細QR文字列をコピーしました')); }
+  function resetOrderForm() { if(!confirm('注文情報と明細を初期化しますか？'))return;['customerId','orderNo','deliveryDate','deliveryBin','destinationCode','receivingCode','pdfFile'].forEach(id=>document.getElementById(id).value='');state.lines=[];state.originalPages=[];renderLines();document.getElementById('qrResult').classList.remove('show');clearNotice('lineNotice');clearNotice('importNotice'); }
+
+  function fillFirstRowMeta(words, firstPart) {
+    if (!firstPart) return;
+    const setIfBlank = (id, value) => { const input = document.getElementById(id); if (input && !input.value && value) input.value = value; };
+    const customerLabel = words.find(word => word.text.includes('取引先コード'));
+    if (customerLabel) {
+      const customer = words.filter(word => /^\d{5}$/.test(word.text) && Math.abs(word.y - customerLabel.y) < 35)
+        .sort((a, b) => Math.abs(a.y - customerLabel.y) - Math.abs(b.y - customerLabel.y))[0];
+      if (customer) setIfBlank('customerId', customer.text);
+    }
+    const rowWords = words.filter(word => Math.abs(word.y - firstPart.y) < 12).sort((a, b) => a.x - b.x);
+    const date = rowWords.find(word => /^20\d{6}$/.test(word.text));
+    if (date) setIfBlank('deliveryDate', `${date.text.slice(0, 4)}-${date.text.slice(4, 6)}-${date.text.slice(6, 8)}`);
+    const orderText = rowWords.filter(word => word.x > 520 && word.x < 630).map(word => word.text).join('');
+    const order = orderText.match(/[A-Z]\d{8,}/);
+    if (order) setIfBlank('orderNo', order[0]);
+    const destination = words.filter(word => word.x > 450 && word.x < 570 && word.y > firstPart.y + 15 && word.y < firstPart.y + 40)
+      .map(word => word.text).join(' ').match(/(\d{8})\s+(\d{3})/);
+    if (destination) {
+      setIfBlank('destinationCode', destination[1]);
+      setIfBlank('receivingCode', destination[2]);
+    }
+  }
+
+  async function importPdf() { const file=document.getElementById('pdfFile').files[0];if(!file){showNotice('importNotice','warn','注文書PDFを選択してください。');return;}if(!window.pdfjsLib){showNotice('importNotice','error','PDF読込ライブラリを読み込めませんでした。ネットワークを確認してください。');return;} try { const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const words=[];state.originalPages=[];for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const content=await page.getTextContent();content.items.forEach(item=>{const text=String(item.str||'').trim();if(!text)return;const rotated=Math.abs(Number(item.transform[0])||0)<Math.abs(Number(item.transform[1])||0);const x=Number(item.transform[rotated?5:4])||0;const y=Number(item.transform[rotated?4:5])||0;words.push({text,x,y});});const viewport=page.getViewport({scale:1.55});const originalCanvas=document.createElement('canvas');originalCanvas.width=Math.ceil(viewport.width);originalCanvas.height=Math.ceil(viewport.height);const originalContext=originalCanvas.getContext('2d');originalContext.fillStyle='#ffffff';originalContext.fillRect(0,0,originalCanvas.width,originalCanvas.height);await page.render({canvasContext:originalContext,viewport,background:'#ffffff'}).promise;state.originalPages.push(originalCanvas.toDataURL('image/png'));}
+    const nearby=(base,pattern,side='any')=>words.filter(word=>Math.abs(word.y-base.y)<22&&(side==='any'||(side==='right'&&word.x>base.x)||(side==='left'&&word.x<base.x))&&pattern.test(word.text));
+    const found=[];const seen=new Set();
+    words.filter(word=>/^\d{5}-\d{5}$/.test(word.text)).forEach(part=>{const eas=nearby(part,/^EA$/i,'right').sort((a,b)=>Math.abs(a.y-part.y)-Math.abs(b.y-part.y)||a.x-b.x);const ea=eas[0];if(!ea)return;const quantities=words.filter(word=>Math.abs(word.y-ea.y)<8&&word.x<ea.x&&/^\d{1,3}(?:,\d{3})*$|^\d+$/.test(word.text)).sort((a,b)=>b.x-a.x);const quantity=quantities[0];if(!quantity)return;const key=part.text+'|'+quantity.text;if(seen.has(key))return;seen.add(key);found.push({partNumber:part.text,totalQty:Number(quantity.text.replace(/,/g,'')),backNo:'',anchor:part});});
+    if(!found.length){showNotice('importNotice','warn','明細候補を自動取得できませんでした。注文書を見ながら手入力してください。');return;}fillFirstRowMeta(words,found[0].anchor);state.lines=found.map(line=>({partNumber:line.partNumber,totalQty:line.totalQty,backNo:line.backNo,packQty:getPackQty(line.partNumber)||''}));renderLines();const missing=state.lines.filter(line=>!line.packQty).length;if(missing){showNotice('importNotice','warn',`${found.length}品番を取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}showNotice('importNotice','ok',`${found.length}品番を取り込みました。明細QRを発行して印刷画面を開きます。`);generateQr();}catch(error){console.error(error);showNotice('importNotice','error','PDFの読み込みに失敗しました。');} }
+
+  function initFirebase() { try { if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);database=firebase.database();loadMasterFromFirebase(); }catch(error){console.warn(error);setStatus('off','ローカル保存');} }
+  document.addEventListener('DOMContentLoaded',()=>{state.master=normalizeMaster(JSON.parse(localStorage.getItem(storageKey())||'[]'));renderMaster();renderLines();initFirebase();});
+</script>
+</body>
+</html>
