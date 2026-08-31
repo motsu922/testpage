@@ -547,6 +547,25 @@
       color: #d5dbe3;
       font-size: 13px;
     }
+    .order-detail-scan-actions {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .order-detail-scan-actions .order-detail-primary {
+      width: auto;
+      flex: 2 1 0;
+      margin-bottom: 0;
+    }
+    .order-detail-scan-actions .order-detail-skip {
+      width: auto;
+      flex: 1 1 0;
+      min-height: 54px;
+      margin-bottom: 0;
+      padding: 7px 6px;
+      font-size: 15px;
+      line-height: 1.25;
+    }
     .order-detail-btn.danger {
       flex: 0 0 auto;
       min-height: 32px;
@@ -1658,8 +1677,10 @@
               <button class="order-detail-btn danger" id="orderDetailResetBtn" onclick="resetOrderDetailResults()" style="display:none;">初期化</button>
             </div>
           </div>
-          <button class="order-detail-btn order-detail-primary" onclick="startOrderDetailScan()">明細QR読込</button>
-          <button class="order-detail-btn order-detail-skip" onclick="skipOrderDetailAndStartKanban()">明細なしでかんばん照合</button>
+          <div class="order-detail-scan-actions">
+            <button class="order-detail-btn order-detail-primary" onclick="startOrderDetailScan()">明細QR読込</button>
+            <button class="order-detail-btn order-detail-skip" onclick="skipOrderDetailAndStartKanban()">明細無し</button>
+          </div>
           <button class="order-detail-btn order-detail-secondary" id="orderDetailAppendBtn" onclick="startOrderDetailScan(true)" style="display:none;">明細QR追加</button>
           <div id="orderDetailContent" class="order-detail-empty"></div>
         </div>
@@ -2157,6 +2178,8 @@
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
+  let autoOrderRulesRef = null;
+  let autoOrderRules = {};
   let orderDetailRef = null;
   let orderDetailRefPath = '';
   let orderDetailSyncReady = false;
@@ -2166,7 +2189,8 @@
   const SCANNER_IDLE_MS = 900;
   const KANBAN_STEP1_IDLE_MS = 10;
   const KANBAN_STEP1_INCOMPLETE_IDLE_MS = 180;
-  const KANBAN_STEP2_IDLE_MS = 220;
+  // キーエンス端末の高速入力向け。終端キーがない場合も短時間で2回目を確定する。
+  const KANBAN_STEP2_IDLE_MS = 40;
   const ORDER_DETAIL_SCANNER_IDLE_MS = 1200;
   const TERMINAL_INPUT_MODE_KEY = 'qrcheck_v2_terminal_input_mode';
   const FIREBASE_QUEUE_KEY = 'qrcheck_v2_firebase_write_queue';
@@ -2349,6 +2373,21 @@
     setTimeout(() => input.focus({ preventScroll: true }), 20);
   }
 
+  function forceScanInputFocusAfterAction() {
+    const input = document.getElementById('scanInput');
+    if (!input) return;
+    suppressScanInputRefocusUntil = 0;
+    if (terminalInputMode === 'inputconnection') {
+      keepScanInputReadyNow();
+      setTimeout(keepScanInputReadyNow, 100);
+      return;
+    }
+    // HIDではソフトキーボードを出さず、ボタン操作後に入力欄へ戻す。
+    input.setAttribute('inputmode', 'none');
+    input.focus({ preventScroll: true });
+    setTimeout(() => input.focus({ preventScroll: true }), 100);
+  }
+
   function enterPinUnlockMode() {
     if (terminalInputMode !== 'inputconnection') return;
     const input = document.getElementById('scanInput');
@@ -2478,6 +2517,31 @@
     logsRef = database.ref('qr_match_logs/' + (activeCompanyId || 'default'));
     setupRealtimeSync();
     setupOrderDetailRealtimeSync();
+    setupAutoOrderRulesSync();
+  }
+
+  function setupAutoOrderRulesSync() {
+    if (!database) return;
+    if (autoOrderRulesRef) autoOrderRulesRef.off('value');
+    autoOrderRulesRef = database.ref('kanban_qr_auto_orders/rules');
+    autoOrderRulesRef.on('value', snapshot => { autoOrderRules = snapshot.val() || {}; });
+  }
+
+  function isAutoOrderTargetPart(partNumber) {
+    const key = canonicalPart(partNumber || '');
+    return !!(key && autoOrderRules && autoOrderRules[key] && autoOrderRules[key].enabled !== false);
+  }
+
+  function queueAutoOrderInstruction(logEntry) {
+    if (!database || !logEntry || logEntry.result !== 'OK' || !isAutoOrderTargetPart(logEntry.partNumber)) return;
+    const partNumber = canonicalPart(logEntry.partNumber);
+    const instructionId = 'ao_' + hashString([logEntry.companyId || activeCompanyId || 'default', partNumber, logEntry.qr1 || '', logEntry.qr2 || ''].join('|'));
+    const instruction = { instructionId, status: 'pending', companyId: logEntry.companyId || activeCompanyId || 'default', companyName: logEntry.companyName || getActiveCompanyName(), partNumber, qr1Raw: logEntry.qr1_raw || '', qr2Raw: logEntry.qr2_raw || '', workerName: logEntry.workerName || '', sourceLogId: logEntry.logId || '', scannedAt: logEntry.timestamp || new Date().toISOString(), createdAt: new Date().toISOString() };
+    const ref = database.ref('kanban_qr_auto_orders/instructions/' + instructionId);
+    ref.transaction(current => current || instruction).catch(err => {
+      console.error('自動発注指示の保存エラー:', err);
+      enqueueFirebaseWrite({ type: 'autoOrderCreate', path: 'kanban_qr_auto_orders/instructions/' + instructionId, value: instruction });
+    });
   }
 
   function setupRealtimeSync() {
@@ -2550,6 +2614,7 @@
       orderQr: remote.orderQr || local.orderQr,
       meta: Object.keys(remote.meta || {}).length ? remote.meta : local.meta,
       sourceHashes: { ...(remote.sourceHashes || {}), ...(local.sourceHashes || {}) },
+      detailHashes: { ...(remote.detailHashes || {}), ...(local.detailHashes || {}) },
       scannedIds: { ...(remote.scannedIds || {}), ...(local.scannedIds || {}) },
       completedAt: remote.completedAt || local.completedAt || '',
       completeLoggedAt: remote.completeLoggedAt || local.completeLoggedAt || '',
@@ -2557,7 +2622,7 @@
     };
     const detailMap = new Map();
     [...(remote.details || []), ...(local.details || [])].forEach(detail => {
-      const key = detail && (detail.qrHash || JSON.stringify(detail));
+      const key = detail && (detail.contentHash || detail.qrHash || JSON.stringify(detail));
       if (key) detailMap.set(key, detail);
     });
     merged.details = [...detailMap.values()];
@@ -2611,6 +2676,7 @@
           }
           else if (op.type === 'remove') await ref.remove();
           else if (op.type === 'orderSessionMerge') await ref.transaction(current => mergeQueuedOrderDetailSession(current, op.value));
+          else if (op.type === 'autoOrderCreate') await ref.transaction(current => current || op.value);
         } catch (err) {
           remaining.push(op);
         }
@@ -2851,6 +2917,7 @@
     saveLog();
     renderLog();
     saveLogToFirebase(logEntry);
+    queueAutoOrderInstruction(logEntry);
   }
 
   function saveLogToFirebase(logEntry) {
@@ -2926,13 +2993,28 @@
   function buildOrderDetailSessionId(parsed) {
     const qr = parsed && parsed.orderQr ? parsed.orderQr : '';
     const meta = parsed && parsed.meta ? parsed.meta : {};
-    const base = [
-      meta.orderNo || '',
-      meta.deliveryDate || '',
-      meta.shipDate || '',
-      hashString(qr)
-    ].join('|');
+    // 同じ注文書を再発行しても同じセッションに集約する。
+    // 注文No.が取れない旧式明細だけは、従来どおりQR文字列で区別する。
+    const hasOrderIdentity = !!String(meta.orderNo || '').trim();
+    const base = hasOrderIdentity
+      ? ['order', meta.customerId || '', meta.orderNo || '', meta.deliveryDate || '', meta.deliveryBin || '', meta.destinationCode || '', meta.receivingCode || ''].join('|')
+      : ['raw', meta.deliveryDate || '', meta.shipDate || '', hashString(qr)].join('|');
     return 'od_' + hashString(base);
+  }
+
+  function buildOrderDetailContentHash(parsed) {
+    const meta = parsed && parsed.meta ? parsed.meta : {};
+    const lines = (parsed && parsed.lines ? parsed.lines : []).map(line => [
+      canonicalPart(line.partNo || ''),
+      Number(line.packQty) || 0,
+      Number(line.totalQty) || 0,
+      String(line.backNo || '').trim()
+    ].join('~')).sort();
+    return hashString([
+      meta.customerId || '', meta.orderNo || '', meta.deliveryDate || '',
+      meta.deliveryBin || '', meta.destinationCode || '', meta.receivingCode || '',
+      lines.join('|')
+    ].join('||'));
   }
 
   function getOrderDetailStorageKey() {
@@ -2956,6 +3038,7 @@
       meta: baseSession.meta,
       details: baseSession.details,
       sourceHashes: source.sourceHashes || {},
+      detailHashes: source.detailHashes || {},
       lines: lines.map((line, index) => {
         // 明細QRの読取時に確定済みの除外フラグは消さない。
         // セッション単位で再判定すると、まとめ読みで顧客コードが混在したとき除外が外れてしまう。
@@ -3001,11 +3084,13 @@
   function mergeParsedOrderDetail(session, parsed) {
     const target = normalizeOrderDetailSessionData(session, session && session.sessionId);
     const qrHash = hashString(parsed.orderQr || '');
+    const detailHash = buildOrderDetailContentHash(parsed);
     target.sourceHashes = target.sourceHashes || {};
+    target.detailHashes = target.detailHashes || {};
     target.details = Array.isArray(target.details) ? target.details : [];
-    if (target.sourceHashes[qrHash]) {
+    if (target.sourceHashes[qrHash] || target.detailHashes[detailHash]) {
       const sourceCount = Object.keys(target.sourceHashes || {}).length;
-      if (sourceCount <= 1) {
+      if (target.sourceHashes[qrHash] && sourceCount <= 1) {
         // 同じ明細QRの読み直し。行定義は作り直すが、読取済み数は品番ごとの合計を引き継ぐ。
         // 行ごとにコピーすると、同一品番が複数行あるときに読取数が行数ぶん水増しされる。
         const scannedByPart = new Map();
@@ -3029,8 +3114,10 @@
 
     const now = new Date().toISOString();
     target.sourceHashes[qrHash] = true;
+    target.detailHashes[detailHash] = true;
     target.details.push({
       qrHash,
+      contentHash: detailHash,
       meta: parsed.meta || {},
       lineCount: parsed.lines.length,
       readAt: now
@@ -3100,6 +3187,7 @@
           meta: current.meta || session.meta || {},
           details: merged.details || current.details || session.details || [],
           sourceHashes: merged.sourceHashes || current.sourceHashes || session.sourceHashes || {},
+          detailHashes: merged.detailHashes || current.detailHashes || session.detailHashes || {},
           lines: merged.lines || current.lines || session.lines || [],
           scannedIds: merged.scannedIds || current.scannedIds || {},
           completedAt: merged.completedAt || '',
@@ -6060,6 +6148,14 @@
         addOrderLine(match[1], match[2], match[3], match[4]);
       }
     }
+    // KeyEvent 出力では GS/RS などの区切り文字が空白へ置換されることがある。
+    // その場合も同じ ANSI MH10 明細を読めるよう、空白を除いた表現で再試行する。
+    if (!lines.length && /\s/.test(qr)) {
+      const compactQr = qr.replace(/\s+/g, '');
+      for (const match of compactQr.matchAll(ORDER_LINE_RE)) {
+        addOrderLine(match[1], match[2], match[3], match[4]);
+      }
+    }
     // 2つの正規表現が同じ行を二重に拾わないよう、前段で取れた場合は動かさない
     if (!lines.length) {
       for (const match of qr.matchAll(ORDER_LINE_ALT_RE)) {
@@ -6147,11 +6243,6 @@
   function skipOrderDetailAndStartKanban() {
     if (isNGLocked) { showNGOverlay(); return; }
     const hasDetail = orderDetailSession.lines.length > 0;
-    const message = hasDetail
-      ? '現在の明細セットをこの端末では使用せず、従来のかんばん照合へ切り替えますか？\n他の端末の明細進捗は変更しません。'
-      : '明細照合を行わず、従来のかんばん同士の照合を開始しますか？';
-    if (!confirm(message)) return;
-
     orderDetailBypassed = true;
     saveOrderDetailActionLog('SKIP', hasDetail ? 'detail_skipped_existing_session' : 'detail_skipped_no_qr');
     leaveOrderDetailSession();
@@ -6164,7 +6255,7 @@
     nModeEx = null;
     currentStep = 1;
     updateScanUI();
-    restoreScanInputFocusNow();
+    forceScanInputFocusAfterAction();
   }
 
   async function handleOrderDetailScan(decoded) {
@@ -6188,10 +6279,14 @@
       }
       return;
     }
-    saveOrderDetailReadLog('OK', normalized, parsed, 'order_detail_read_ok');
     const append = orderDetailAppendMode && orderDetailSession.lines.length > 0;
     const sessionId = append ? orderDetailSession.sessionId : buildOrderDetailSessionId(parsed);
-    if (!append) {
+    // 同じ明細を続けて読み直した場合は、ローカルの明細セットを捨てない。
+    // Firebase反映前でも重複ハッシュが残るため、二重加算を確実に防げる。
+    const reuseCurrentSession = !append
+      && orderDetailSession.sessionId === sessionId
+      && orderDetailSession.lines.length > 0;
+    if (!append && !reuseCurrentSession) {
       if (orderDetailRef) {
         orderDetailRef.off('value');
         orderDetailRef = null;
@@ -6213,6 +6308,7 @@
     orderDetailSession.sessionId = sessionId;
     const mergeResult = mergeParsedOrderDetail(orderDetailSession, parsed);
     orderDetailSession = mergeResult.session;
+    saveOrderDetailReadLog('OK', normalized, parsed, mergeResult.duplicate ? 'order_detail_duplicate_ignored' : 'order_detail_read_ok');
     saveOrderDetailSession();
     renderOrderDetailPanel();
     await upsertOrderDetailSessionToFirebase(orderDetailSession, parsed);
