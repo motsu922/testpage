@@ -2178,8 +2178,6 @@
   let firebaseApp = null;
   let database = null;
   let logsRef = null;
-  let autoOrderRulesRef = null;
-  let autoOrderRules = {};
   let orderDetailRef = null;
   let orderDetailRefPath = '';
   let orderDetailSyncReady = false;
@@ -2519,31 +2517,6 @@
     logsRef = database.ref('qr_match_logs/' + (activeCompanyId || 'default'));
     setupRealtimeSync();
     setupOrderDetailRealtimeSync();
-    setupAutoOrderRulesSync();
-  }
-
-  function setupAutoOrderRulesSync() {
-    if (!database) return;
-    if (autoOrderRulesRef) autoOrderRulesRef.off('value');
-    autoOrderRulesRef = database.ref('kanban_qr_auto_orders/rules');
-    autoOrderRulesRef.on('value', snapshot => { autoOrderRules = snapshot.val() || {}; });
-  }
-
-  function isAutoOrderTargetPart(partNumber) {
-    const key = canonicalPart(partNumber || '');
-    return !!(key && autoOrderRules && autoOrderRules[key] && autoOrderRules[key].enabled !== false);
-  }
-
-  function queueAutoOrderInstruction(logEntry) {
-    if (!database || !logEntry || logEntry.result !== 'OK' || !isAutoOrderTargetPart(logEntry.partNumber)) return;
-    const partNumber = canonicalPart(logEntry.partNumber);
-    const instructionId = 'ao_' + hashString([logEntry.companyId || activeCompanyId || 'default', partNumber, logEntry.qr1 || '', logEntry.qr2 || ''].join('|'));
-    const instruction = { instructionId, status: 'pending', companyId: logEntry.companyId || activeCompanyId || 'default', companyName: logEntry.companyName || getActiveCompanyName(), partNumber, qr1Raw: logEntry.qr1_raw || '', qr2Raw: logEntry.qr2_raw || '', workerName: logEntry.workerName || '', sourceLogId: logEntry.logId || '', scannedAt: logEntry.timestamp || new Date().toISOString(), createdAt: new Date().toISOString() };
-    const ref = database.ref('kanban_qr_auto_orders/instructions/' + instructionId);
-    ref.transaction(current => current || instruction).catch(err => {
-      console.error('自動発注指示の保存エラー:', err);
-      enqueueFirebaseWrite({ type: 'autoOrderCreate', path: 'kanban_qr_auto_orders/instructions/' + instructionId, value: instruction });
-    });
   }
 
   function setupRealtimeSync() {
@@ -2678,7 +2651,6 @@
           }
           else if (op.type === 'remove') await ref.remove();
           else if (op.type === 'orderSessionMerge') await ref.transaction(current => mergeQueuedOrderDetailSession(current, op.value));
-          else if (op.type === 'autoOrderCreate') await ref.transaction(current => current || op.value);
         } catch (err) {
           remaining.push(op);
         }
@@ -2919,7 +2891,6 @@
     saveLog();
     renderLog();
     saveLogToFirebase(logEntry);
-    queueAutoOrderInstruction(logEntry);
   }
 
   function saveLogToFirebase(logEntry) {
