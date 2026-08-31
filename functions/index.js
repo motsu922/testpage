@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const { onValueCreated } = require('firebase-functions/v2/database');
+const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -8,6 +10,7 @@ initializeApp();
 
 const firestore = getFirestore();
 const DATABASE_INSTANCE = 'miyamaunitec-fb87a-default-rtdb';
+const AUTO_ORDER_ADMIN_PASSWORD = defineSecret('AUTO_ORDER_ADMIN_PASSWORD');
 
 function canonicalPart(value) {
   return String(value || '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z]/g, '');
@@ -17,6 +20,76 @@ function instructionId(log, partKey) {
   const source = [log.companyId || '', partKey, log.qr1 || '', log.qr2 || ''].join('|');
   return `ao_${crypto.createHash('sha256').update(source).digest('hex').slice(0, 28)}`;
 }
+
+function isValidAdminPassword(request) {
+  const supplied = String(request.get('x-auto-order-admin-password') || '');
+  const expected = String(AUTO_ORDER_ADMIN_PASSWORD.value() || '').trim();
+  if (!supplied || !expected || supplied.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+}
+
+function applyCors(request, response) {
+  const origin = request.get('origin') || '';
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
+    response.set('Access-Control-Allow-Origin', origin);
+    response.set('Vary', 'Origin');
+  }
+  response.set('Access-Control-Allow-Headers', 'Content-Type, X-Auto-Order-Admin-Password');
+  response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+}
+
+async function readAutoOrderRules() {
+  const snapshot = await firestore.collection('auto_order_rules').get();
+  return Object.fromEntries(snapshot.docs.map((item) => [item.id, item.data()]));
+}
+
+// Management and polling are authenticated at the Function boundary, not by browser database permissions.
+exports.manageAutoOrder = onRequest({
+  region: 'asia-southeast1',
+  secrets: [AUTO_ORDER_ADMIN_PASSWORD]
+}, async (request, response) => {
+  applyCors(request, response);
+  if (request.method === 'OPTIONS') return response.status(204).send('');
+  if (!isValidAdminPassword(request)) return response.status(401).json({ error: '管理者認証に失敗しました' });
+
+  const action = String(request.query.action || request.body?.action || '');
+  if (request.method === 'GET' && action === 'rules') {
+    return response.json({ rules: await readAutoOrderRules() });
+  }
+  if (request.method === 'POST' && action === 'rules') {
+    const parts = Array.isArray(request.body?.parts) ? request.body.parts : [];
+    const next = {};
+    parts.slice(0, 200).forEach((partNumber) => {
+      const partKey = canonicalPart(partNumber);
+      if (partKey) next[partKey] = { partNumber: String(partNumber).toUpperCase(), enabled: true, updatedAt: FieldValue.serverTimestamp() };
+    });
+    const batch = firestore.batch();
+    const existing = await firestore.collection('auto_order_rules').get();
+    existing.docs.forEach((item) => { if (!next[item.id]) batch.delete(item.ref); });
+    Object.entries(next).forEach(([partKey, rule]) => batch.set(firestore.doc(`auto_order_rules/${partKey}`), rule));
+    await batch.commit();
+    return response.json({ rules: await readAutoOrderRules() });
+  }
+  if (request.method === 'GET' && action === 'instructions') {
+    const snapshot = await firestore.collection('auto_order_instructions').where('status', '==', 'pending').limit(100).get();
+    return response.json({ instructions: snapshot.docs.map((item) => ({ instructionId: item.id, ...item.data() })) });
+  }
+  if (request.method === 'POST' && action === 'status') {
+    const instructionId = String(request.body?.instructionId || '');
+    const status = String(request.body?.status || '');
+    if (!instructionId || !['imported', 'duplicate', 'needs_review', 'error'].includes(status)) {
+      return response.status(400).json({ error: '更新内容が不正です' });
+    }
+    await firestore.doc(`auto_order_instructions/${instructionId}`).update({
+      status,
+      error: String(request.body?.error || ''),
+      importedPartNumber: String(request.body?.importedPartNumber || ''),
+      importedAt: FieldValue.serverTimestamp()
+    });
+    return response.json({ ok: true });
+  }
+  return response.status(404).json({ error: '操作が不正です' });
+});
 
 // Browsers can append QR logs, but only this function may create purchase instructions.
 exports.createAutoOrderInstruction = onValueCreated({
