@@ -1272,6 +1272,7 @@
         }
 
         .terminal-entry-card {
+            display: none;
             margin-bottom: 14px;
             padding: 14px;
             border: 1px solid #b9c9ff;
@@ -1279,6 +1280,7 @@
             border-radius: 6px;
             background: #f3f6ff;
         }
+        body.terminal-mode .terminal-entry-card { display:block; }
         .terminal-entry-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
         .terminal-entry-title { font-size:14px; font-weight:800; color:var(--text); }
         .terminal-equipment-status { font-size:12px; color:var(--text2); line-height:1.6; }
@@ -1288,16 +1290,6 @@
             min-height:40px; flex:1; border:1px solid var(--border); border-radius:6px;
             background:#fff; color:var(--text); font-size:13px; font-weight:700; cursor:pointer;
         }
-        .terminal-action-btn.primary { border-color:var(--accent); background:var(--accent); color:#fff; }
-        .qr-scanner-modal {
-            display:none; position:fixed; inset:0; z-index:2000; padding:16px;
-            align-items:center; justify-content:center; background:rgba(13,19,45,.78);
-        }
-        .qr-scanner-modal.open { display:flex; }
-        .qr-scanner-panel { width:min(480px,100%); padding:16px; border-radius:8px; background:#fff; box-shadow:0 18px 60px rgba(0,0,0,.35); }
-        .qr-scanner-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-weight:800; }
-        .qr-scanner-close { width:38px; height:38px; border:1px solid var(--border); border-radius:6px; background:#fff; cursor:pointer; font-size:20px; }
-        #qr-reader { width:100%; min-height:260px; overflow:hidden; border-radius:6px; background:#101425; }
 
         .qr-master-layout { display:grid; grid-template-columns:320px minmax(0,1fr); gap:18px; width:100%; }
         .qr-control-pane { display:flex; flex-direction:column; gap:12px; }
@@ -1390,13 +1382,12 @@
                 <div class="panel-body">
                     <div class="terminal-entry-card">
                         <div class="terminal-entry-head">
-                            <span class="terminal-entry-title">設備QRから入力</span>
-                            <span style="font-size:11px;color:var(--text3);">端末入力</span>
+                            <span class="terminal-entry-title">端末入力</span>
+                            <span style="font-size:11px;color:var(--text3);">設備QRから起動</span>
                         </div>
-                        <div id="terminal-equipment-status" class="terminal-equipment-status">QRを読み取るか、下の設備ボタンを選択してください。</div>
+                        <div id="terminal-equipment-status" class="terminal-equipment-status">設備を確認しています。</div>
                         <div class="terminal-actions">
-                            <button class="terminal-action-btn primary" onclick="openQrScanner()">カメラでQR読取</button>
-                            <button class="terminal-action-btn" onclick="exitTerminalMode()">通常画面</button>
+                            <button class="terminal-action-btn" onclick="exitTerminalMode()">通常画面へ戻る</button>
                         </div>
                     </div>
                     <span class="form-label">処置者</span>
@@ -1811,24 +1802,13 @@
                                     <div id="qr-preview-name" class="qr-preview-name">設備を選択</div>
                                     <div id="qr-preview-id" class="qr-preview-id">設備ID</div>
                                     <div id="qr-preview-code" class="qr-canvas"></div>
-                                    <div style="margin-top:14px;font-size:12px;font-weight:700;color:var(--text2);">チョコ停入力</div>
+                                    <div style="margin-top:14px;font-size:12px;font-weight:700;color:var(--text2);">スマホカメラで読み取り</div>
                                 </div>
                             </div>
                         </div>
                         <div id="qr-print-area"></div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <div id="qr-scanner-modal" class="qr-scanner-modal" role="dialog" aria-modal="true" aria-label="設備QR読取">
-            <div class="qr-scanner-panel">
-                <div class="qr-scanner-header">
-                    <span>設備QRを読み取る</span>
-                    <button class="qr-scanner-close" onclick="closeQrScanner()" aria-label="閉じる">×</button>
-                </div>
-                <div id="qr-reader"></div>
-                <p id="qr-reader-message" style="margin-top:10px;font-size:12px;color:var(--text2);">カメラをQRへ向けてください。</p>
             </div>
         </div>
 
@@ -1863,7 +1843,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
     <script src="https://unpkg.com/chart.js@3.9.1/dist/chart.min.js"></script>
     <script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
     <script>
         // ===== Firebase =====
@@ -1886,7 +1865,6 @@
         let selectedAnomaly = null;
         let selectedOrganizationNo = null;
         let pendingEquipmentId = new URLSearchParams(window.location.search).get('equipment');
-        let qrScanner = null;
         let qrEquipmentCache = {};
         let currentViewEquipment = null;
         let currentPeriod = 'day';
@@ -3187,64 +3165,6 @@
                 return;
             }
             status.textContent = message || 'QRを読み取るか、下の設備ボタンを選択してください。';
-        }
-
-        function parseEquipmentQrValue(value) {
-            const text = String(value || '').trim();
-            if (!text) return '';
-            try {
-                const url = new URL(text, window.location.href);
-                return url.searchParams.get('equipment') || url.searchParams.get('equipmentId') || text;
-            } catch (_) {
-                return text;
-            }
-        }
-
-        function applyScannedEquipment(value) {
-            const equipmentId = parseEquipmentQrValue(value);
-            database.ref(`masters/equipments/${equipmentId}`).once('value').then(snap => {
-                const equipment = snap.val();
-                const button = [...document.querySelectorAll('#equipment-buttons .sel-btn')].find(item => item.dataset.equipmentId === equipmentId);
-                if (!equipment || !button) {
-                    document.getElementById('qr-reader-message').textContent = 'この設備はマスターに登録されていません。';
-                    return;
-                }
-                selectEquipment(equipment.name, equipmentId, button);
-                closeQrScanner();
-                showToast(`✓ ${equipment.name} を選択しました`);
-            });
-        }
-
-        function openQrScanner() {
-            const modal = document.getElementById('qr-scanner-modal');
-            if (qrScanner) closeQrScanner();
-            modal.classList.add('open');
-            document.getElementById('qr-reader-message').textContent = 'カメラをQRへ向けてください。';
-            if (typeof Html5Qrcode === 'undefined') {
-                document.getElementById('qr-reader-message').textContent = 'QR読取機能を読み込めませんでした。スマホの標準カメラからQRを開いてください。';
-                return;
-            }
-            qrScanner = new Html5Qrcode('qr-reader');
-            qrScanner.start(
-                { facingMode: 'environment' },
-                { fps: 10, qrbox: { width: 230, height: 230 } },
-                decodedText => applyScannedEquipment(decodedText),
-                () => {}
-            ).catch(error => {
-                document.getElementById('qr-reader-message').textContent = 'カメラを開始できません。カメラの使用を許可してください。';
-                console.error(error);
-            });
-        }
-
-        function closeQrScanner() {
-            const modal = document.getElementById('qr-scanner-modal');
-            modal.classList.remove('open');
-            if (!qrScanner) return;
-            const scanner = qrScanner;
-            qrScanner = null;
-            scanner.stop().catch(() => {}).finally(() => {
-                try { scanner.clear(); } catch (_) {}
-            });
         }
 
         function exitTerminalMode() {
