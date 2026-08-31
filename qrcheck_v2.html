@@ -2206,6 +2206,9 @@
   const ORDER_DETAIL_KEY = 'qrcheck_v2_order_detail_session';
   const ORDER_LINE_RE = /P(\d{4})P([^Q]+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
   const ORDER_LINE_ALT_RE = /K(\d{4})\d+P(.+?)P([1-9][0-9A-Z]{4,}-.+?)Q(\d+?)(?:4Q|Q)(\d+?)(?=2P|06K|$)/g;
+  // KeyEvent が制御文字を空白へ変換した場合の明細ブロック。
+  // K=行番号、20P=背番号、次のP=品番、Q=入数、4Q=納入数。
+  const COMPACT_ORDER_LINE_RE = /(?:^|06)K([0-9A-Z]+?)20P([0-9A-Z]+?)P([0-9A-Z-]+?)Q(\d+?)4Q(\d+?)(?=2P|06K|$)/g;
   const DEFAULT_PASS_THROUGH_PART_MASTER = {
     '400079164-1': ['72612-X1C24-00', '72611-X1C36-00', '72611-X1C37-00', '72612-X1C25-00']
   };
@@ -6153,6 +6156,11 @@
       const compactQr = qr.replace(/\s+/g, '');
       for (const match of compactQr.matchAll(ORDER_LINE_RE)) {
         addOrderLine(match[1], match[2], match[3], match[4]);
+      }
+      if (!lines.length) {
+        for (const match of compactQr.matchAll(COMPACT_ORDER_LINE_RE)) {
+          addOrderLine(match[2] || match[1], match[3], match[4], match[5]);
+        }
       }
     }
     // 2つの正規表現が同じ行を二重に拾わないよう、前段で取れた場合は動かさない
