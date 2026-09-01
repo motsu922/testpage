@@ -77,7 +77,7 @@ exports.manageAutoOrder = onRequest({
   if (request.method === 'POST' && action === 'status') {
     const instructionId = String(request.body?.instructionId || '');
     const status = String(request.body?.status || '');
-    if (!instructionId || !['pending', 'imported', 'duplicate', 'needs_review', 'error'].includes(status)) {
+    if (!instructionId || !['pending', 'imported', 'test_imported', 'duplicate', 'needs_review', 'error'].includes(status)) {
       return response.status(400).json({ error: '更新内容が不正です' });
     }
     await firestore.doc(`auto_order_instructions/${instructionId}`).update({
