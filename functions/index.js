@@ -70,13 +70,14 @@ exports.manageAutoOrder = onRequest({
     return response.json({ rules: await readAutoOrderRules() });
   }
   if (request.method === 'GET' && action === 'instructions') {
-    const snapshot = await firestore.collection('auto_order_instructions').where('status', '==', 'pending').limit(100).get();
+    const status = request.query.status === 'needs_review' ? 'needs_review' : 'pending';
+    const snapshot = await firestore.collection('auto_order_instructions').where('status', '==', status).limit(100).get();
     return response.json({ instructions: snapshot.docs.map((item) => ({ instructionId: item.id, ...item.data() })) });
   }
   if (request.method === 'POST' && action === 'status') {
     const instructionId = String(request.body?.instructionId || '');
     const status = String(request.body?.status || '');
-    if (!instructionId || !['imported', 'duplicate', 'needs_review', 'error'].includes(status)) {
+    if (!instructionId || !['pending', 'imported', 'duplicate', 'needs_review', 'error'].includes(status)) {
       return response.status(400).json({ error: '更新内容が不正です' });
     }
     await firestore.doc(`auto_order_instructions/${instructionId}`).update({
