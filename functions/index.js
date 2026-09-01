@@ -29,11 +29,10 @@ function isValidAdminPassword(request) {
 }
 
 function applyCors(request, response) {
-  const origin = request.get('origin') || '';
-  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) {
-    response.set('Access-Control-Allow-Origin', origin);
-    response.set('Vary', 'Origin');
-  }
+  // This endpoint uses an explicit admin-password header and no browser cookies.
+  // Allowing any origin prevents local PC/browser origin differences from blocking
+  // the CORS preflight before the authenticated request reaches this function.
+  response.set('Access-Control-Allow-Origin', '*');
   response.set('Access-Control-Allow-Headers', 'Content-Type, X-Auto-Order-Admin-Password');
   response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
 }
