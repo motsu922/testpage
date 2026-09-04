@@ -3532,6 +3532,12 @@
       const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'extract' : 'search';
       const shortInfo = getShortQRInfo(decoded, scanRole);
       if (shortInfo) { showShortQRError(shortInfo); return; }
+      // 明細照合中は、1枚目の顧客かんばんに明細の品番がなければ
+      // 2枚目を待たずに止める。異品を組み合わせてしまう前に気付けるようにする。
+      if (orderDetailSession.lines.length && !orderDetailBypassed && !findOrderDetailPartInQR(decoded)) {
+        showOrderDetailOutsidePartError(decoded);
+        return;
+      }
       value1 = decoded;
       playSound('step1');  // ★ 1枚目読み込み完了：軽い通知音
       // ★ 1対Nモード：QR1スキャン時点で品番を切り出して固定
@@ -5304,6 +5310,57 @@
       <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(info.qr || '(空)')}</p>
       <p class="label" style="margin-top:12px;">同じQRをもう一度、最後まで読み取ってください。</p>
       `
+    });
+  }
+
+  function showOrderDetailOutsidePartError(qrRaw) {
+    const normalized = normalizeQR(qrRaw);
+    const extracted = extractPartNumberFrom(qrRaw);
+    const partNumber = extracted.part || 'UNKNOWN';
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      qr1_raw: qrRaw,
+      qr2_raw: '',
+      qr1: normalized,
+      qr2: '',
+      partNumber,
+      qr1Length: normalized.length,
+      qr2Length: 0,
+      scanMode: settings.scanMode || '1to1',
+      matchedRule: extracted.rule ? {
+        minLen: extracted.rule.minLen,
+        maxLen: extracted.rule.maxLen,
+        startPos: extracted.rule.startPos,
+        charCount: extracted.rule.charCount,
+        prefix: extracted.rule.prefix || ''
+      } : null,
+      extractStart0: extracted.start0,
+      extractNote: 'order_detail_part_not_found_step1',
+      orderDetailActive: true,
+      orderDetailSessionId: orderDetailSession.sessionId || '',
+      orderDetailResult: 'NG',
+      orderDetailNote: `注文明細外: ${partNumber}`,
+      orderDetailRequiredBoxes: orderRequiredBoxes(),
+      orderDetailScannedBoxes: orderScannedBoxes(),
+      result: 'NG',
+      isDuplicate: false,
+      dupType: ''
+    };
+    appendScanLog(logEntry);
+    showAcknowledgementError({
+      title: '明細に無い品番が読み込まれました',
+      detailHtml: `
+        <p class="label">1枚目のかんばんに、現在の明細の品番が見つかりません。</p>
+        <p style="margin-top:10px;font-size:23px;font-weight:800;word-break:break-all;">${escapeHtml(partNumber)}</p>
+        <p class="label" style="margin-top:10px;">かんばんと明細を確認して、正しい1枚目QRを読み取ってください。</p>
+      `,
+      onConfirm: () => {
+        clearScannerBuffer();
+        value1 = '';
+        value2 = '';
+        currentStep = 1;
+        updateScanUI();
+      }
     });
   }
 
