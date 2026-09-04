@@ -824,6 +824,10 @@
         <span class="filter-label">品番</span>
         <input type="text" class="filter-input" id="filterPart" placeholder="検索..." oninput="applyFilter()">
       </div>
+      <div class="filter-group">
+        <span class="filter-label">枝番</span>
+        <input type="text" class="filter-input" id="filterBranch" inputmode="numeric" maxlength="12" placeholder="例: 0278" oninput="applyFilter()">
+      </div>
       <div class="filter-sep"></div>
       <div class="filter-group">
         <span class="filter-label">作業者</span>
@@ -1879,6 +1883,7 @@
     const dateFrom = document.getElementById('filterDateFrom').value;
     const dateTo   = document.getElementById('filterDateTo').value;
     const part     = document.getElementById('filterPart').value.trim().toLowerCase();
+    const branch   = document.getElementById('filterBranch').value.trim();
     const worker   = document.getElementById('filterWorker').value;
     const resolver = document.getElementById('filterResolver').value;
     const customer = document.getElementById('filterCustomer').value;
@@ -1906,6 +1911,7 @@
         const q1 = (l.qr1 || '').toLowerCase();
         if (!pn.includes(part) && !q1.includes(part)) return false;
       }
+      if (branch && !matchesKanbanBranch(l, branch)) return false;
       return true;
     });
 
@@ -1917,6 +1923,7 @@
   function resetFilter() {
     document.getElementById('filterResult').value   = 'all';
     document.getElementById('filterPart').value     = '';
+    document.getElementById('filterBranch').value   = '';
     document.getElementById('filterWorker').value   = 'all';
     document.getElementById('filterResolver').value = 'all';
     document.getElementById('filterCustomer').value = 'all';
@@ -1925,6 +1932,26 @@
     document.getElementById('filterDateFrom').value = weekAgo;
     document.getElementById('filterDateTo').value   = today;
     applyFilter();
+  }
+
+  // 枝番は社内かんばん（2回目QR）の独立した項目として照合する。
+  // 文字列部分一致にすると、品番や数量に含まれる同じ数字を拾うため区切り位置も確認する。
+  function matchesKanbanBranch(log, branch) {
+    const value = String(branch || '').trim();
+    if (!value) return true;
+    const qr2 = String(log.qr2_raw || log.qr2 || '');
+    const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^0-9A-Z])${escaped}(?=$|[^0-9A-Z])`, 'i').test(qr2);
+  }
+
+  function logContextRows(log, count = 2) {
+    if (!log.orderDetailSessionId) return [];
+    const sessionLogs = allLogs
+      .filter(item => item.orderDetailSessionId === log.orderDetailSessionId && item.timestamp)
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const index = sessionLogs.findIndex(item => item.firebaseKey === log.firebaseKey || item.logId === log.logId);
+    if (index < 0) return [];
+    return sessionLogs.slice(Math.max(0, index - count), index + count + 1);
   }
 
   function changePerPage() {
@@ -2170,12 +2197,26 @@
       ['重複タイプ',   isDup ? `${dupLabelOf(l)}（${l.dupType || '—'}）` : '—'],
     ];
 
+    const contextLogs = logContextRows(l);
+    const contextHtml = contextLogs.length ? `
+      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;">同一明細の前後ログ</div>
+        ${contextLogs.map(item => {
+          const active = item.firebaseKey === l.firebaseKey || item.logId === l.logId;
+          const time = new Date(item.timestamp).toLocaleString('ja-JP');
+          const branch = String(item.qr2_raw || item.qr2 || '').match(/(?:^|\s)(\d{3,6})(?=\s|$)/)?.[1] || '—';
+          return `<div style="padding:8px 10px;margin-top:4px;border-radius:6px;background:${active ? '#e8f3ff' : '#f6f8fa'};font-family:var(--mono);font-size:12px;">
+            ${escHtml(time)} / ${escHtml(item.partNumber || '—')} / 枝番 ${escHtml(branch)} / ${escHtml(resultLabelOf(item))}
+          </div>`;
+        }).join('')}
+      </div>` : '';
+
     document.getElementById('modalBody').innerHTML = rows.map(([k,v]) => `
       <div class="modal-row">
         <div class="modal-key">${escHtml(k)}</div>
         <div class="modal-val">${escHtml(String(v))}</div>
       </div>
-    `).join('');
+    `).join('') + contextHtml;
 
     document.getElementById('modalOverlay').classList.add('show');
   }
