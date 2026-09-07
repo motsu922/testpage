@@ -203,9 +203,64 @@
     return found;
   }
 
-  async function extractOcrWords(renderedPages) {
+  function ocrPartKey(value) {
+    return normalizeImportToken(value).replace(/[^0-9A-Z]/g, '')
+      .replace(/O/g, '0').replace(/[IL]/g, '1').replace(/Z/g, '2')
+      .replace(/S/g, '5').replace(/G/g, '6').replace(/B/g, '8')
+      .replace(/T/g, '1').replace(/R/g, '0');
+  }
+
+  function editDistance(left, right) {
+    const row=Array.from({length:right.length+1},(_,index)=>index);
+    for(let i=1;i<=left.length;i++){
+      let previous=row[0];row[0]=i;
+      for(let j=1;j<=right.length;j++){
+        const current=row[j];row[j]=Math.min(row[j]+1,row[j-1]+1,previous+(left[i-1]===right[j-1]?0:1));previous=current;
+      }
+    }
+    return row[right.length];
+  }
+
+  function resolveOcrPart(token) {
+    const normalized=normalizeImportToken(token);
+    if(/^[0-9A-Z]{5}-[0-9A-Z]{5}$/.test(normalized)) return normalized;
+    const source=ocrPartKey(normalized);
+    const candidates=(state.master||[]).map(item=>cleanPart(item.partNumber)).filter(Boolean);
+    let best='';let distance=Infinity;
+    candidates.forEach(part=>{
+      const key=ocrPartKey(part);const current=editDistance(source,key);
+      if(current<distance){best=part;distance=current;}
+    });
+    return best && distance<=3 && Math.abs(source.length-ocrPartKey(best).length)<=2 ? best : '';
+  }
+
+  function ocrQuantityFromLine(line, partIndex) {
+    const tail=line.slice(Math.max(0,partIndex));
+    const priceEnd=[...tail.matchAll(/\d+\.\d+/g)].pop();
+    const afterPrice=priceEnd ? tail.slice(priceEnd.index+priceEnd[0].length) : tail;
+    const compact=afterPrice.replace(/[^0-9,]/g, '').replace(/,+/g, ',').replace(/^,|,$/g, '');
+    const digits=compact.replace(/,/g, '');
+    if(!digits || !/^\d+$/.test(digits)) return 0;
+    return Number(digits);
+  }
+
+  function findOrderLinesFromOcrText(text) {
+    const found=[];const seen=new Set();
+    String(text||'').split(/\r?\n/).forEach(line=>{
+      const tokenMatch=line.match(/[0-9A-Z]{5,7}-[0-9A-Z]{4,6}/i);
+      if(!tokenMatch)return;
+      const partNumber=resolveOcrPart(tokenMatch[0]);
+      const totalQty=ocrQuantityFromLine(line,tokenMatch.index||0);
+      const key=`${partNumber}|${totalQty}`;
+      if(!partNumber||!totalQty||seen.has(key))return;
+      seen.add(key);found.push({partNumber,totalQty,backNo:'',anchor:null});
+    });
+    return found;
+  }
+
+  async function extractOcrData(renderedPages) {
     if (!window.Tesseract) throw new Error('OCRライブラリを読み込めませんでした');
-    const words=[];
+    const words=[];const text=[];
     for (let index=0;index<renderedPages.length;index++) {
       showNotice('importNotice','warn',`スキャンPDFを解析中… ${index+1}/${renderedPages.length}ページ`);
       const result=await Tesseract.recognize(renderedPages[index].canvas,'eng',{
@@ -215,13 +270,14 @@
           }
         }
       });
+      text.push(result.data.text||'');
       const scale=renderedPages[index].scale;
       (result.data.words||[]).forEach(word=>{
         const text=normalizeImportToken(word.text);
         if(text) words.push({text,x:(word.bbox.x0||0)/scale,y:(word.bbox.y0||0)/scale,ocr:true});
       });
     }
-    return words;
+    return {words,text:text.join('\n')};
   }
 
   function fillOcrMeta(words, firstPart) {
@@ -233,6 +289,13 @@
     if(order)setIfBlank('orderNo',order.text);
     const date=words.find(word=>/^20\d{6}$/.test(word.text));
     if(date)setIfBlank('deliveryDate',`${date.text.slice(0,4)}-${date.text.slice(4,6)}-${date.text.slice(6,8)}`);
+  }
+
+  function fillOcrMetaFromText(text) {
+    const setIfBlank=(id,value)=>{const input=document.getElementById(id);if(input&&!input.value&&value)input.value=value;};
+    const customer=String(text||'').match(/\b\d{5}\b/);if(customer)setIfBlank('customerId',customer[0]);
+    const order=String(text||'').match(/\b[RN]\d{8,}\b/i);if(order)setIfBlank('orderNo',order[0]);
+    const date=String(text||'').match(/\b20\d{6}\b/);if(date)setIfBlank('deliveryDate',`${date[0].slice(0,4)}-${date[0].slice(4,6)}-${date[0].slice(6,8)}`);
   }
 
   async function importPdf() {
@@ -250,9 +313,10 @@
         renderedPages.push({canvas:originalCanvas,scale});state.originalPages.push(originalCanvas.toDataURL('image/png'));
       }
       let found=findOrderLines(words);let usedOcr=false;
-      if(!found.length){const ocrWords=await extractOcrWords(renderedPages);words.push(...ocrWords);found=findOrderLines(ocrWords);usedOcr=true;}
+      let ocrText='';
+      if(!found.length){const ocr=await extractOcrData(renderedPages);const ocrWords=ocr.words;ocrText=ocr.text;words.push(...ocrWords);found=findOrderLines(ocrWords);if(!found.length)found=findOrderLinesFromOcrText(ocrText);usedOcr=true;}
       if(!found.length){showNotice('importNotice','warn','品番と注文数を自動取得できませんでした。注文書を見ながら手入力してください。');return;}
-      fillFirstRowMeta(words,found[0].anchor);if(usedOcr)fillOcrMeta(words,found[0].anchor);
+      if(found[0].anchor)fillFirstRowMeta(words,found[0].anchor);if(usedOcr){fillOcrMeta(words,found[0].anchor);fillOcrMetaFromText(ocrText);}
       state.lines=found.map(line=>({partNumber:line.partNumber,totalQty:line.totalQty,backNo:line.backNo,packQty:getPackQty(line.partNumber)||''}));renderLines();
       const missing=state.lines.filter(line=>!line.packQty).length;
       if(missing){showNotice('importNotice','warn',`${found.length}品番を${usedOcr?'OCRで':''}取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}
