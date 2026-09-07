@@ -203,6 +203,31 @@
     return found;
   }
 
+  function findKybOrderLines(words) {
+    const found=[];const seen=new Set();
+    words.forEach(part=>{
+      const match=normalizeImportToken(part.text).match(/[0-9A-Z]{5}-[0-9A-Z]{5}/);
+      if(!match)return;
+      const row=words.filter(word=>Math.abs(word.y-part.y)<8).sort((a,b)=>a.x-b.x);
+      // KYB "取入日程明細書" places the order quantity in the column to the
+      // right of the kanban-count column (x approximately 450 in PDF points).
+      const quantity=row.filter(word=>word.x>=430&&word.x<500&&/^\d+(?:,\d{3})*$/.test(normalizeImportToken(word.text)))
+        .sort((a,b)=>b.x-a.x)[0];
+      if(!quantity)return;
+      const partNumber=match[0];const totalQty=Number(normalizeImportToken(quantity.text).replace(/,/g,''));
+      const key=`${partNumber}|${totalQty}`;
+      if(!totalQty||seen.has(key))return;
+      seen.add(key);found.push({partNumber,totalQty,backNo:'',anchor:part});
+    });
+    return found;
+  }
+
+  function fillKybMeta(words) {
+    const setIfBlank=(id,value)=>{const input=document.getElementById(id);if(input&&!input.value&&value)input.value=value;};
+    const customer=words.map(word=>normalizeImportToken(word.text)).find(text=>/^\d{4}-\d$/.test(text));
+    if(customer)setIfBlank('customerId',customer.replace('-',''));
+  }
+
   function ocrPartKey(value) {
     return normalizeImportToken(value).replace(/[^0-9A-Z]/g, '')
       .replace(/O/g, '0').replace(/[IL]/g, '1').replace(/Z/g, '2')
@@ -312,15 +337,17 @@
         const originalContext=originalCanvas.getContext('2d');originalContext.fillStyle='#ffffff';originalContext.fillRect(0,0,originalCanvas.width,originalCanvas.height);await page.render({canvasContext:originalContext,viewport,background:'#ffffff'}).promise;
         renderedPages.push({canvas:originalCanvas,scale});state.originalPages.push(originalCanvas.toDataURL('image/png'));
       }
-      let found=findOrderLines(words);let usedOcr=false;
+      let found=findOrderLines(words);let usedOcr=false;let usedKyb=false;
+      if(!found.length){found=findKybOrderLines(words);usedKyb=found.length>0;}
       let ocrText='';
       if(!found.length){const ocr=await extractOcrData(renderedPages);const ocrWords=ocr.words;ocrText=ocr.text;words.push(...ocrWords);found=findOrderLines(ocrWords);if(!found.length)found=findOrderLinesFromOcrText(ocrText);usedOcr=true;}
       if(!found.length){showNotice('importNotice','warn','品番と注文数を自動取得できませんでした。注文書を見ながら手入力してください。');return;}
-      if(found[0].anchor)fillFirstRowMeta(words,found[0].anchor);if(usedOcr){fillOcrMeta(words,found[0].anchor);fillOcrMetaFromText(ocrText);}
+      if(found[0].anchor)fillFirstRowMeta(words,found[0].anchor);if(usedKyb)fillKybMeta(words);if(usedOcr){fillOcrMeta(words,found[0].anchor);fillOcrMetaFromText(ocrText);}
       state.lines=found.map(line=>({partNumber:line.partNumber,totalQty:line.totalQty,backNo:line.backNo,packQty:getPackQty(line.partNumber)||''}));renderLines();
       const missing=state.lines.filter(line=>!line.packQty).length;
-      if(missing){showNotice('importNotice','warn',`${found.length}品番を${usedOcr?'OCRで':''}取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}
-      showNotice('importNotice','ok',`${found.length}品番を${usedOcr?'OCRで':''}取り込みました。明細QRを発行して印刷画面を開きます。`);generateQr();
+      const importType=usedOcr?'OCRで':usedKyb?'KYB明細として':'';
+      if(missing){showNotice('importNotice','warn',`${found.length}品番を${importType}取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}
+      showNotice('importNotice','ok',`${found.length}品番を${importType}取り込みました。明細QRを発行して印刷画面を開きます。`);generateQr();
     }catch(error){console.error(error);showNotice('importNotice','error',`PDFの読み込みに失敗しました。${error.message||''}`);}
   }
 
