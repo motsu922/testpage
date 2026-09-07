@@ -8,6 +8,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     :root { --ink:#18212c; --muted:#64748b; --line:#d6dee8; --panel:#fff; --base:#eef3f8; --blue:#0876c9; --green:#167a46; --red:#bd3333; --amber:#a45a05; }
     * { box-sizing:border-box; }
@@ -36,13 +37,17 @@
     .simple-issue .issue-button { width:100%; min-height:56px; margin-top:16px; font-size:17px; } .simple-issue .issue-button:disabled { cursor:not-allowed; opacity:.5; }
     .simple-issue .notice { text-align:left; }
     main { display:none!important; }
+    body.admin-mode .simple-issue { display:none; }
+    body.admin-mode main { display:block!important; width:min(960px,calc(100% - 40px)); margin:24px auto 46px; }
+    body.admin-mode main .editor, body.admin-mode main .qr-result { display:none!important; }
+    body.admin-mode main aside { display:block; width:100%; }
     @media (max-width:960px){.head-inner{width:calc(100% - 24px)}.simple-issue{width:calc(100% - 24px);margin:28px auto;padding:22px}.simple-file{grid-template-columns:1fr}.simple-file button{width:100%}}
     #printSheet { display:none; }
     @media print { @page { size:A4 portrait; margin:12mm; } @page originalOrder { size:A4 landscape; margin:10mm; } body{background:#fff;color:#111}.no-print,header,main,.simple-issue{display:none!important}#printSheet{display:block;width:100%;font-family:"Noto Sans JP",sans-serif}.print-title{display:flex;justify-content:space-between;align-items:end;border-bottom:2px solid #111;padding-bottom:7px}.print-title h1{font-size:25px;color:#111}.print-title .print-issued{font-size:11px}.print-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px;margin:13px 0;border:1px solid #111;padding:9px 11px}.print-meta div{font-size:12px}.print-meta b{display:block;font-size:10px;color:#444;margin-bottom:2px}.print-body{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:15px;align-items:start}.print-table{width:100%;min-width:0;border-collapse:collapse}.print-table th,.print-table td{border:1px solid #111;padding:5px 6px;font-size:10px}.print-table th{background:#eee;text-align:center}.print-table td.num{text-align:right}.print-qr{border:1px solid #111;padding:8px;text-align:center}.print-qr img{display:block;width:118px;height:118px;margin:0 auto 6px}.print-qr b{font-size:11px}.print-foot{margin-top:12px;border-top:1px solid #111;padding-top:6px;font-size:9px;color:#444}.print-original-page{position:relative;page:originalOrder;break-before:auto;page-break-before:auto}.print-original-page + .print-original-page{break-before:page;page-break-before:always}.print-original-page h2{display:none}.print-original-page .print-original-source{display:block;width:100%;max-height:188mm;object-fit:contain;object-position:top center}.print-original-qr{position:absolute;top:8mm;right:8mm;width:106px;padding:5px;background:#fff;border:1px solid #111;text-align:center}.print-original-qr img{display:block;width:94px;height:94px;margin:0 auto}.print-original-qr b{display:block;font-size:9px;margin-top:3px} }
   </style>
 </head>
 <body>
-  <header><div class="head-inner"><div><h1>明細QR発行</h1><div class="subtitle">注文書PDFから明細QRを発行して、そのまま印刷</div></div><div style="display:flex;align-items:center;gap:9px"><a href="order_qr_admin.html" style="color:#fff;border:1px solid #5b7890;border-radius:5px;padding:7px 10px;font-size:12px;text-decoration:none">管理画面</a><div class="sync off" id="syncStatus">Firebase接続中...</div></div></div></header>
+  <header><div class="head-inner"><div><h1 id="pageTitle">明細QR発行</h1><div class="subtitle" id="pageSubtitle">注文書PDFから明細QRを発行して、そのまま印刷</div></div><div style="display:flex;align-items:center;gap:9px"><a id="viewSwitch" href="?view=admin" style="color:#fff;border:1px solid #5b7890;border-radius:5px;padding:7px 10px;font-size:12px;text-decoration:none">管理画面</a><div class="sync off" id="syncStatus">Firebase接続中...</div></div></div></header>
   <section class="simple-issue no-print">
     <h2>注文書PDFを選択</h2><p>入数マスターに基づき明細QRを発行し、原本の同じページにQRを載せて印刷します。</p>
     <div class="simple-file"><div id="selectedPdfName" class="simple-file-name">PDFファイルを選択してください</div><button type="button" class="primary" onclick="document.getElementById('pdfFile').click()">ファイルを選択</button></div>
@@ -176,14 +181,87 @@
     }
   }
 
-  async function importPdf() { const file=document.getElementById('pdfFile').files[0];if(!file){showNotice('importNotice','warn','注文書PDFを選択してください。');return;}if(!window.pdfjsLib){showNotice('importNotice','error','PDF読込ライブラリを読み込めませんでした。ネットワークを確認してください。');return;} try { const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const words=[];state.originalPages=[];for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const content=await page.getTextContent();content.items.forEach(item=>{const text=String(item.str||'').trim();if(!text)return;const rotated=Math.abs(Number(item.transform[0])||0)<Math.abs(Number(item.transform[1])||0);const x=Number(item.transform[rotated?5:4])||0;const y=Number(item.transform[rotated?4:5])||0;words.push({text,x,y});});const viewport=page.getViewport({scale:1.55});const originalCanvas=document.createElement('canvas');originalCanvas.width=Math.ceil(viewport.width);originalCanvas.height=Math.ceil(viewport.height);const originalContext=originalCanvas.getContext('2d');originalContext.fillStyle='#ffffff';originalContext.fillRect(0,0,originalCanvas.width,originalCanvas.height);await page.render({canvasContext:originalContext,viewport,background:'#ffffff'}).promise;state.originalPages.push(originalCanvas.toDataURL('image/png'));}
-    const nearby=(base,pattern,side='any')=>words.filter(word=>Math.abs(word.y-base.y)<22&&(side==='any'||(side==='right'&&word.x>base.x)||(side==='left'&&word.x<base.x))&&pattern.test(word.text));
+  function normalizeImportToken(value) {
+    return String(value || '').normalize('NFKC').toUpperCase()
+      .replace(/[‐‑‒–—―−]/g, '-')
+      .replace(/[^0-9A-Z,.-]/g, '');
+  }
+
+  function findOrderLines(words) {
+    const token=word=>normalizeImportToken(word.text);
+    const nearby=(base,pattern,side='any')=>words.filter(word=>Math.abs(word.y-base.y)<22&&(side==='any'||(side==='right'&&word.x>base.x)||(side==='left'&&word.x<base.x))&&pattern.test(token(word)));
     const found=[];const seen=new Set();
-    words.filter(word=>/^\d{5}-\d{5}$/.test(word.text)).forEach(part=>{const eas=nearby(part,/^EA$/i,'right').sort((a,b)=>Math.abs(a.y-part.y)-Math.abs(b.y-part.y)||a.x-b.x);const ea=eas[0];if(!ea)return;const quantities=words.filter(word=>Math.abs(word.y-ea.y)<8&&word.x<ea.x&&/^\d{1,3}(?:,\d{3})*$|^\d+$/.test(word.text)).sort((a,b)=>b.x-a.x);const quantity=quantities[0];if(!quantity)return;const key=part.text+'|'+quantity.text;if(seen.has(key))return;seen.add(key);found.push({partNumber:part.text,totalQty:Number(quantity.text.replace(/,/g,'')),backNo:'',anchor:part});});
-    if(!found.length){showNotice('importNotice','warn','明細候補を自動取得できませんでした。注文書を見ながら手入力してください。');return;}fillFirstRowMeta(words,found[0].anchor);state.lines=found.map(line=>({partNumber:line.partNumber,totalQty:line.totalQty,backNo:line.backNo,packQty:getPackQty(line.partNumber)||''}));renderLines();const missing=state.lines.filter(line=>!line.packQty).length;if(missing){showNotice('importNotice','warn',`${found.length}品番を取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}showNotice('importNotice','ok',`${found.length}品番を取り込みました。明細QRを発行して印刷画面を開きます。`);generateQr();}catch(error){console.error(error);showNotice('importNotice','error','PDFの読み込みに失敗しました。');} }
+    words.filter(word=>/^[0-9A-Z]{5}-[0-9A-Z]{5}$/.test(token(word))).forEach(part=>{
+      const eas=nearby(part,/^EA$/i,'right').sort((a,b)=>Math.abs(a.y-part.y)-Math.abs(b.y-part.y)||a.x-b.x);
+      const ea=eas[0];if(!ea)return;
+      const quantities=words.filter(word=>Math.abs(word.y-ea.y)<14&&word.x<ea.x&&/^(?:\d{1,3}(?:,\d{3})*|\d+)$/.test(token(word))).sort((a,b)=>b.x-a.x);
+      const quantity=quantities[0];if(!quantity)return;
+      const partNumber=token(part), quantityText=token(quantity);
+      const key=partNumber+'|'+quantityText;if(seen.has(key))return;seen.add(key);
+      found.push({partNumber,totalQty:Number(quantityText.replace(/,/g,'')),backNo:'',anchor:part});
+    });
+    return found;
+  }
+
+  async function extractOcrWords(renderedPages) {
+    if (!window.Tesseract) throw new Error('OCRライブラリを読み込めませんでした');
+    const words=[];
+    for (let index=0;index<renderedPages.length;index++) {
+      showNotice('importNotice','warn',`スキャンPDFを解析中… ${index+1}/${renderedPages.length}ページ`);
+      const result=await Tesseract.recognize(renderedPages[index].canvas,'eng',{
+        logger: message => {
+          if (message.status==='recognizing text' && Number.isFinite(message.progress)) {
+            showNotice('importNotice','warn',`スキャンPDFを文字認識中… ${Math.round(message.progress*100)}%`);
+          }
+        }
+      });
+      const scale=renderedPages[index].scale;
+      (result.data.words||[]).forEach(word=>{
+        const text=normalizeImportToken(word.text);
+        if(text) words.push({text,x:(word.bbox.x0||0)/scale,y:(word.bbox.y0||0)/scale,ocr:true});
+      });
+    }
+    return words;
+  }
+
+  function fillOcrMeta(words, firstPart) {
+    const setIfBlank=(id,value)=>{const input=document.getElementById(id);if(input&&!input.value&&value)input.value=value;};
+    const headerWords=words.filter(word=>word.y<(firstPart?.y||Infinity));
+    const customer=headerWords.filter(word=>/^\d{5}$/.test(word.text)&&word.x<220).sort((a,b)=>a.y-b.y)[0];
+    if(customer)setIfBlank('customerId',customer.text);
+    const order=words.find(word=>/^R\d{8,}$/i.test(word.text));
+    if(order)setIfBlank('orderNo',order.text);
+    const date=words.find(word=>/^20\d{6}$/.test(word.text));
+    if(date)setIfBlank('deliveryDate',`${date.text.slice(0,4)}-${date.text.slice(4,6)}-${date.text.slice(6,8)}`);
+  }
+
+  async function importPdf() {
+    const file=document.getElementById('pdfFile').files[0];
+    if(!file){showNotice('importNotice','warn','注文書PDFを選択してください。');return;}
+    if(!window.pdfjsLib){showNotice('importNotice','error','PDF読込ライブラリを読み込めませんでした。ネットワークを確認してください。');return;}
+    try {
+      const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+      const words=[];const renderedPages=[];state.originalPages=[];
+      for(let p=1;p<=pdf.numPages;p++){
+        const page=await pdf.getPage(p);const content=await page.getTextContent();
+        content.items.forEach(item=>{const text=String(item.str||'').trim();if(!text)return;const rotated=Math.abs(Number(item.transform[0])||0)<Math.abs(Number(item.transform[1])||0);const x=Number(item.transform[rotated?5:4])||0;const y=Number(item.transform[rotated?4:5])||0;words.push({text,x,y});});
+        const scale=1.8;const viewport=page.getViewport({scale});const originalCanvas=document.createElement('canvas');originalCanvas.width=Math.ceil(viewport.width);originalCanvas.height=Math.ceil(viewport.height);
+        const originalContext=originalCanvas.getContext('2d');originalContext.fillStyle='#ffffff';originalContext.fillRect(0,0,originalCanvas.width,originalCanvas.height);await page.render({canvasContext:originalContext,viewport,background:'#ffffff'}).promise;
+        renderedPages.push({canvas:originalCanvas,scale});state.originalPages.push(originalCanvas.toDataURL('image/png'));
+      }
+      let found=findOrderLines(words);let usedOcr=false;
+      if(!found.length){const ocrWords=await extractOcrWords(renderedPages);words.push(...ocrWords);found=findOrderLines(ocrWords);usedOcr=true;}
+      if(!found.length){showNotice('importNotice','warn','品番と注文数を自動取得できませんでした。注文書を見ながら手入力してください。');return;}
+      fillFirstRowMeta(words,found[0].anchor);if(usedOcr)fillOcrMeta(words,found[0].anchor);
+      state.lines=found.map(line=>({partNumber:line.partNumber,totalQty:line.totalQty,backNo:line.backNo,packQty:getPackQty(line.partNumber)||''}));renderLines();
+      const missing=state.lines.filter(line=>!line.packQty).length;
+      if(missing){showNotice('importNotice','warn',`${found.length}品番を${usedOcr?'OCRで':''}取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}
+      showNotice('importNotice','ok',`${found.length}品番を${usedOcr?'OCRで':''}取り込みました。明細QRを発行して印刷画面を開きます。`);generateQr();
+    }catch(error){console.error(error);showNotice('importNotice','error',`PDFの読み込みに失敗しました。${error.message||''}`);}
+  }
 
   function initFirebase() { try { if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);database=firebase.database();loadMasterFromFirebase(); }catch(error){console.warn(error);setStatus('off','ローカル保存');} }
-  document.addEventListener('DOMContentLoaded',()=>{state.master=normalizeMaster(JSON.parse(localStorage.getItem(storageKey())||'[]'));renderMaster();renderLines();initFirebase();});
+  document.addEventListener('DOMContentLoaded',()=>{const adminMode=new URLSearchParams(location.search).get('view')==='admin';if(adminMode){document.body.classList.add('admin-mode');document.getElementById('pageTitle').textContent='入数マスター管理';document.getElementById('pageSubtitle').textContent='明細QR発行に使用する品番ごとの入数を管理';document.getElementById('viewSwitch').href='order_qr_generator.html';document.getElementById('viewSwitch').textContent='発行画面へ';}state.master=normalizeMaster(JSON.parse(localStorage.getItem(storageKey())||'[]'));renderMaster();renderLines();initFirebase();});
 </script>
 </body>
 </html>
