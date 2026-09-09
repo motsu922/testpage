@@ -45,6 +45,36 @@
       background: rgba(79,195,247,0.1);
       border-bottom-color: #4fc3f7;
     }
+    .operation-lock-btn {
+      flex: 0 0 auto;
+      min-width: 88px;
+      padding: 10px 12px;
+      border: 0;
+      border-left: 1px solid #333;
+      background: #1a2730;
+      color: #bfe9ff;
+      font-size: 14px;
+      font-weight: 900;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .operation-lock-btn.locked { background: #8b1d1d; color: #fff; }
+    .operation-lock-btn.holding { background: #c77500; }
+    .operation-lock-banner {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 8px 12px;
+      background: #7f1717;
+      border-bottom: 2px solid #ff6b6b;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 900;
+      text-align: center;
+    }
+    body.operation-locked .operation-lock-banner { display: flex; }
+    body.operation-locked #tab-scan { pointer-events: none; filter: grayscale(0.75) brightness(0.7); }
     .tab-content { display: none; background: #0a0a0a; }
     .tab-content.active { display: block; background: #0a0a0a; }
     .container { padding: 12px; max-width: 520px; margin: 0 auto; background: #0a0a0a; }
@@ -1628,6 +1658,7 @@
     }
 
     @media (max-height: 610px) {
+      .operation-lock-btn { min-width: 72px; padding: 8px 7px; font-size: 12px; }
       .order-detail-lines { max-height: 24vh; }
       .log-card { display: none; }
       .input-mode-desc { display: none; }
@@ -1647,9 +1678,17 @@
   <div class="tab-nav" id="tabNav">
     <button class="tab-btn active" id="tabBtnScan" onclick="switchTab('scan')">📷 照合</button>
     <button class="tab-btn" id="tabBtnSettings" onclick="switchTab('settings')">⚙️ 設定</button>
+    <button class="operation-lock-btn" id="operationLockBtn"
+      onclick="toggleOperationLock()"
+      onpointerdown="startOperationUnlockHold(event)"
+      onpointerup="cancelOperationUnlockHold()"
+      onpointercancel="cancelOperationUnlockHold()"
+      onpointerleave="cancelOperationUnlockHold()"
+      aria-pressed="false">🔒 ロック</button>
   </div>
 
   <div class="firebase-status disconnected" id="firebaseStatus">🔌 Firebase未接続</div>
+  <div class="operation-lock-banner" id="operationLockBanner" aria-live="assertive">🔒 操作ロック中　解除するには右上の鍵を1秒長押し</div>
 
   <div class="tab-content active" id="tab-scan">
     <div class="scan-screen" id="scanScreen">
@@ -2162,6 +2201,9 @@
   const SOUND_VOLUME_MIN = 1;
   const SOUND_VOLUME_MAX = 8;
   let currentTab = 'scan';
+  let operationLocked = false;
+  let operationUnlockHoldTimer = null;
+  let operationUnlockPerformed = false;
   let okAutoTimer = null;
   let shortQrTimer = null;
   let ngVibrationTimer = null;
@@ -2272,6 +2314,7 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     applyScanOnlyModeUI();
+    renderOperationLock();
     loadCompanyProfiles();
     loadSettings();
     loadPassThroughPartMasterLocal();
@@ -2298,6 +2341,57 @@
     document.getElementById('tab-settings').classList.add('scanonly-hide');
   }
 
+  function renderOperationLock() {
+    const button = document.getElementById('operationLockBtn');
+    document.body.classList.toggle('operation-locked', operationLocked);
+    if (!button) return;
+    button.classList.toggle('locked', operationLocked);
+    button.classList.remove('holding');
+    button.textContent = operationLocked ? '🔒 ロック中' : '🔒 ロック';
+    button.setAttribute('aria-pressed', String(operationLocked));
+  }
+
+  function setOperationLock(locked) {
+    operationLocked = Boolean(locked);
+    clearScannerBuffer();
+    const input = document.getElementById('scanInput');
+    if (operationLocked && input) {
+      input.readOnly = true;
+      input.blur();
+    } else {
+      renderTerminalInputMode();
+      forceScanInputFocusAfterAction();
+    }
+    renderOperationLock();
+  }
+
+  function toggleOperationLock() {
+    if (operationUnlockPerformed) {
+      operationUnlockPerformed = false;
+      return;
+    }
+    if (!operationLocked) setOperationLock(true);
+  }
+
+  function startOperationUnlockHold(event) {
+    if (!operationLocked || event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    operationUnlockPerformed = false;
+    const button = document.getElementById('operationLockBtn');
+    button?.classList.add('holding');
+    operationUnlockHoldTimer = setTimeout(() => {
+      operationUnlockHoldTimer = null;
+      operationUnlockPerformed = true;
+      setOperationLock(false);
+    }, 1000);
+  }
+
+  function cancelOperationUnlockHold() {
+    if (operationUnlockHoldTimer) clearTimeout(operationUnlockHoldTimer);
+    operationUnlockHoldTimer = null;
+    document.getElementById('operationLockBtn')?.classList.remove('holding');
+  }
+
   // ========= QR入力はdocumentのkeydownで直接受ける =========
   function setupFocusKeeper(){
     // 旧方式のフォーカス維持は使わない。
@@ -2309,6 +2403,7 @@
   }
 
   function shouldLockScanInputFocus() {
+    if (operationLocked) return false;
     if (Date.now() < suppressScanInputRefocusUntil) return false;
     if (currentTab !== 'scan') return false;
     if (isNGLocked) return false;
@@ -3220,6 +3315,11 @@
   }
 
   function handleGlobalScannerKey(e) {
+    if (operationLocked) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (terminalInputMode === 'inputconnection') return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
 
@@ -3239,6 +3339,7 @@
   }
 
   function handleInputConnectionKey(e) {
+    if (operationLocked) { e.preventDefault(); return; }
     if (terminalInputMode !== 'inputconnection') return;
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
@@ -3252,6 +3353,7 @@
   }
 
   function handleInputConnectionInput() {
+    if (operationLocked) { clearScannerBuffer(); return; }
     if (terminalInputMode !== 'inputconnection' || inputConnectionComposing) return;
     scheduleInputConnectionSubmit();
   }
@@ -3286,6 +3388,7 @@
   }
 
   function submitInputConnectionValue() {
+    if (operationLocked) { clearScannerBuffer(); return; }
     if (terminalInputMode !== 'inputconnection') return;
     clearTimeout(inputConnectionTimer);
     inputConnectionTimer = null;
@@ -3360,6 +3463,7 @@
   }
 
   function submitScannerBuffer() {
+    if (operationLocked) { clearScannerBuffer(); return; }
     clearTimeout(scannerIdleTimer);
     scannerIdleTimer = null;
     const value = normalizeQR(scannerBuffer);
@@ -3406,6 +3510,7 @@
   }
 
   function submitScannedValue(value) {
+    if (operationLocked) { clearScannerBuffer(); return; }
     const scans = splitCombinedScannerValue(value);
     scans.forEach((scan, index) => {
       if (!scan) return;
@@ -3439,6 +3544,7 @@
   }
 
   function handleScan(decoded) {
+    if (operationLocked) return;
     if (document.getElementById('resultOverlay').classList.contains('show')) {
       if (orderDetailCompleteNoticeShowing) {
         const qrKind = classifyScannedQR(decoded);
