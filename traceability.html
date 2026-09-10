@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>かんばんトレーサビリティ</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#f4f6f8;color:#202a32}header{background:#fff;border-bottom:3px solid #147953;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:22px;margin:0}a{color:#12649b}main{max-width:1400px;margin:auto;padding:20px}form{display:flex;gap:12px;flex-wrap:wrap;align-items:end}label{display:grid;gap:5px;font-size:13px}input,select,button{font:inherit;border:1px solid #b8c4ce;border-radius:5px;padding:10px;background:#fff;min-height:44px}button{cursor:pointer}button.primary{background:#147953;color:white;border:0}button:disabled{opacity:.5;cursor:wait}.search{flex:1;min-width:230px}.status{padding:14px 0;color:#536371;white-space:pre-wrap}.error{color:#b42318}.table-wrap{overflow:auto;background:white}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:14px}th,td{text-align:left;padding:13px;border-bottom:1px solid #e1e6eb}th{background:#eaf0f3}tr:hover td{background:#f1f7f4}.pager{display:flex;align-items:center;justify-content:end;gap:15px;padding:16px 0}dialog{width:min(940px,95vw);max-height:90vh;border:1px solid #aab8c2;border-radius:8px;padding:22px}dialog::backdrop{background:#182a3b80}dialog header{padding:0 0 12px;border:0}h2{font-size:19px;margin:0}h3{font-size:16px;margin:24px 0 10px}.summary{padding:14px;border-left:4px solid #147953;background:#eef7f1;white-space:pre-wrap}.facts{display:grid;grid-template-columns:130px 1fr;gap:9px;font-size:14px}.facts div{overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;background:#f0f3f6;padding:12px}.badge{color:#137146;font-weight:700}.warn{color:#985900}#history{overflow:auto}small{color:#62717c}@media(max-width:600px){header{padding:12px;align-items:start}h1{font-size:18px}main{padding:12px}form label{flex:1}dialog{padding:14px}.facts{grid-template-columns:95px 1fr}}
+</style>
+<header><h1>かんばんトレーサビリティ</h1><a href="qrchecklog.html">照合ログ</a></header>
+<main>
+<form id="filters">
+<label>照合会社<select id="company" required></select></label>
+<label>照合日 開始<input id="from" type="date" required></label>
+<label>終了<input id="to" type="date" required></label>
+<label class="search">品番・枝番・かんばんQR<input id="query" placeholder="品番 / 枝番 / QR全文"></label>
+<label>判定<select id="result"><option value="">すべて</option><option>OK</option><option>NG</option><option>DUP</option></select></label>
+<button class="primary" id="search">検索・更新</button>
+</form>
+<div id="status" class="status" role="status">接続中…</div>
+<div class="table-wrap"><table><thead><tr><th>照合日時</th><th>品番</th><th>枝番（社内）</th><th>結果</th><th>作業者</th><th>明細セッション</th><th>生産履歴</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="pager"><button id="prev">前へ</button><span id="page"></span><button id="next">次へ</button></div>
+</main>
+<dialog id="detail"><header><h2>生産・照合履歴</h2><button id="close" aria-label="閉じる">×</button></header><div id="detailBody"></div></dialog>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const config={apiKey:'AIzaSyAOMRoojKv9Hnh3OjVGwYV_k1LBTGOKepY',authDomain:'miyamaunitec-fb87a.firebaseapp.com',databaseURL:'https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app',projectId:'miyamaunitec-fb87a'};
+firebase.initializeApp(config);
+const db=firebase.database(),production=firebase.firestore();
+let logs=[],filtered=[],page=0,request=0,detailRequest=0,loadedCompany='';
+const PAGE_SIZE=50,MAX_LOGS=10000,MAX_PRODUCTION=500;
+const raw2=l=>String(l.qr2_raw||l.qr2||'');
+const branch=l=>(raw2(l).match(/\s(\d{4})\s+\d{5}(?=\s|$)/)||[])[1]||'';
+const fmt=v=>Number.isFinite(Number(v))?new Date(Number(v)).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}):'不明';
+function productionTime(p){return Number(p.tsMs)||p.readAt?.toMillis?.()||Date.parse(p.ts||p.readAtText)||NaN;}
+function chooseProduction(records,cutoff){return records.filter(p=>String(p.judge||p.result)==='OK'&&productionTime(p)<=cutoff).sort((a,b)=>productionTime(b)-productionTime(a));}
+function status(message,error=false){$('status').textContent=message;$('status').classList.toggle('error',error);}
+function render(){const q=$('query').value.trim().toUpperCase(),r=$('result').value;filtered=logs.filter(l=>(!r||l.result===r)&&(!q||[l.partNumber,l.qr1_raw,l.qr1,l.qr2_raw,l.qr2,branch(l)].some(v=>String(v||'').toUpperCase().includes(q))));page=Math.min(page,Math.max(0,Math.ceil(filtered.length/PAGE_SIZE)-1));$('rows').innerHTML=filtered.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE).map((l,i)=>`<tr><td>${esc(fmt(Date.parse(l.timestamp)))}</td><td>${esc(l.partNumber||'—')}</td><td>${esc(branch(l)||'—')}</td><td>${esc(l.result)}</td><td>${esc(l.workerName||l.operatorName||'—')}</td><td>${esc(l.orderDetailSessionId||'—')}</td><td><button data-index="${page*PAGE_SIZE+i}">履歴を見る</button></td></tr>`).join('')||'<tr><td colspan="7">該当する照合ログはありません</td></tr>';$('page').textContent=`${page+1} / ${Math.max(1,Math.ceil(filtered.length/PAGE_SIZE))} ページ・${filtered.length}件`;$('prev').disabled=page===0;$('next').disabled=(page+1)*PAGE_SIZE>=filtered.length;}
+async function search(){const token=++request;detailRequest++;$('detail').close();const start=Date.parse($('from').value+'T00:00:00+09:00'),end=Date.parse($('to').value+'T23:59:59.999+09:00');if(!Number.isFinite(start)||start>end){status('日付範囲を確認してください',true);return;}logs=[];page=0;render();$('search').disabled=true;status('照合ログを取得中…');try{const company=$('company').value;const snapshot=await db.ref('qr_match_logs/'+company).orderByChild('timestamp').startAt(new Date(start).toISOString()).endAt(new Date(end).toISOString()).limitToLast(MAX_LOGS+1).once('value');if(token!==request)return;const rows=Object.entries(snapshot.val()||{}).map(([id,l])=>({...l,id}));if(rows.length>MAX_LOGS)throw Error('照合ログが10,000件を超えます。日付範囲を狭めてください。');loadedCompany=company;logs=rows.filter(l=>raw2(l)).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp));render();status(`取得済み ${logs.length}件（2回目QRあり）・更新 ${new Date().toLocaleTimeString('ja-JP')}　生産履歴は各行から照会できます。`);}catch(e){if(token===request)status('取得できませんでした：'+e.message,true);}finally{if(token===request)$('search').disabled=false;}}
+async function openDetail(l){const token=++detailRequest,company=loadedCompany;const cutoff=Date.parse(l.timestamp);$('detailBody').innerHTML='<p>生産履歴を照会中…</p>';$('detail').showModal();try{
+const raw=raw2(l);const snapshots=await Promise.all(['raw','qrData'].map(field=>production.collection('qrLogs').where(field,'==',raw).limit(MAX_PRODUCTION+1).get()));
+if(token!==detailRequest)return;
+if(snapshots.some(s=>s.size>MAX_PRODUCTION))throw Error('同一QRの生産履歴が多いため、候補を確定できません。検索用インデックスの追加が必要です。');
+const unique=new Map();snapshots.forEach(s=>s.forEach(d=>unique.set(d.id,{...d.data(),id:d.id})));const history=[...unique.values()].sort((a,b)=>productionTime(b)-productionTime(a));const candidates=chooseProduction(history,cutoff),candidate=candidates[0];
+let summary=candidate?`推定生産履歴：${fmt(productionTime(candidate))}\nライン：${candidate.line||'不明'}　部署：${candidate.busho||'不明'}\n照合前の直近の生産OK・社内QR全文一致`:'照合前の生産OK記録が見つかりません。QRの表記差や記録漏れの可能性もあります。';
+if(candidate&&candidates.filter(p=>productionTime(p)===productionTime(candidate)).length>1)summary='同時刻に複数の生産OKがあります。候補履歴を確認してください。';
+let session=null,sessionError='';if(l.orderDetailSessionId){try{session=(await db.ref('qr_match_companies/order_detail_sessions/'+company+'/'+l.orderDetailSessionId).once('value')).val();}catch(e){sessionError=e.message;}}if(token!==detailRequest)return;
+$('detailBody').innerHTML=`<h3>生産 → 社内かんばん → 客先かんばん照合</h3><div class="summary">${esc(summary)}</div><p><small>生産日時はQR読取時刻です。再利用・再読込・記録漏れを考慮した推定で、紐づけは保存せず照会時点の記録から計算します。</small></p><div class="facts"><div>照合日時</div><div>${esc(fmt(cutoff))}</div><div>品番 / 枝番</div><div>${esc(l.partNumber)} / ${esc(branch(l))}</div><div>判定 / 作業者</div><div>${esc(l.result)} / ${esc(l.workerName||l.operatorName||'—')}</div><div>照合記録ID</div><div>${esc(l.id)}</div><div>明細セッション</div><div>${esc(l.orderDetailSessionId||'なし')}</div></div><h3>客先かんばん（1回目QR）</h3><pre>${esc(l.qr1_raw||l.qr1||'')}</pre><h3>社内かんばん（2回目QR）</h3><pre>${esc(raw)}</pre><h3>同じQRの生産履歴・${history.length}件</h3><div id="history"><table><thead><tr><th>読取日時</th><th>ライン</th><th>判定</th><th>位置付け</th><th>記録ID</th></tr></thead><tbody>${history.map(p=>`<tr><td>${esc(fmt(productionTime(p)))}</td><td>${esc(p.line||'—')}</td><td>${esc(p.judge||p.result)}</td><td>${p.id===candidate?.id?'推定候補':productionTime(p)>cutoff?'照合後（対象外）':'以前の記録'}</td><td>${esc(p.id)}</td></tr>`).join('')||'<tr><td colspan="5">QR全文が一致する記録なし</td></tr>'}</tbody></table></div><details><summary>明細情報</summary><pre>${esc(sessionError?'明細取得エラー：'+sessionError:session?JSON.stringify(session,null,2):'明細なし／保存記録なし')}</pre></details>`;
+}catch(e){if(token===detailRequest)$('detailBody').innerHTML=`<p class="error">生産履歴を取得できませんでした：${esc(e.message)}</p><p>取得エラーのため、生産記録の有無は判定していません。</p>`;}}
+$('filters').onsubmit=e=>{e.preventDefault();search();};$('query').oninput=()=>{page=0;render();};$('result').onchange=()=>{page=0;render();};$('prev').onclick=()=>{page--;render();};$('next').onclick=()=>{page++;render();};$('rows').onclick=e=>{const b=e.target.closest('[data-index]');if(b)openDetail(filtered[Number(b.dataset.index)]);};$('close').onclick=()=>{$('detail').close();detailRequest++;};$('detail').oncancel=()=>{detailRequest++;};$('company').onchange=()=>{logs=[];render();status('会社を変更しました。「検索・更新」を押してください。');};
+const jst=d=>new Date(d+9*3600000).toISOString().slice(0,10);$('to').value=jst(Date.now());$('from').value=jst(Date.now());
+(async()=>{try{await firebase.auth().signInAnonymously();const snap=await db.ref('qr_match_companies/profiles').once('value');const companies=Object.entries(snap.val()||{}).map(([id,c])=>({...c,id:c.id||id})).sort((a,b)=>(b.name==='ミヤマ')-(a.name==='ミヤマ')||String(a.name).localeCompare(b.name,'ja'));$('company').innerHTML=companies.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');if(!companies.length)throw Error('会社が登録されていません');await search();}catch(e){status('接続エラー：'+e.message,true);}})();
+</script>
+</html>
