@@ -34,6 +34,18 @@ const db=firebase.database(),production=firebase.firestore();
 let logs=[],filtered=[],page=0,request=0,detailRequest=0,loadedCompany='';
 const PAGE_SIZE=50,MAX_LOGS=10000,MAX_PRODUCTION=500;
 const raw2=l=>String(l.qr2_raw||l.qr2||'');
+const qrWhitespaceKey=value=>String(value||'').trim().replace(/\s+/g,' ');
+function productionQrVariants(raw){
+  const compact=qrWhitespaceKey(raw),variants=new Set([raw,compact]);
+  // Production scanners retain the 16-character header padding; v2 collapses spaces.
+  const part=compact.match(/[0-9A-Z]+-[0-9A-Z-]+\s+\d{4}\s+\d{5}\s/);
+  if(part){const prefix=compact.slice(0,part.index).trim(),tail=compact.slice(part.index);
+    for(const header of [prefix,prefix.replace(/^'\s*/,"'  ")]){
+      if(header.length<16)variants.add(header.padEnd(16,' ')+tail);
+    }
+  }
+  return [...variants];
+}
 const branch=l=>(raw2(l).match(/\s(\d{4})\s+\d{5}(?=\s|$)/)||[])[1]||'';
 const fmt=v=>Number.isFinite(Number(v))?new Date(Number(v)).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}):'不明';
 function productionTime(p){return Number(p.tsMs)||p.readAt?.toMillis?.()||Date.parse(p.ts||p.readAtText)||NaN;}
@@ -42,11 +54,11 @@ function status(message,error=false){$('status').textContent=message;$('status')
 function render(){const q=$('query').value.trim().toUpperCase(),r=$('result').value;filtered=logs.filter(l=>(!r||l.result===r)&&(!q||[l.partNumber,l.qr1_raw,l.qr1,l.qr2_raw,l.qr2,branch(l)].some(v=>String(v||'').toUpperCase().includes(q))));page=Math.min(page,Math.max(0,Math.ceil(filtered.length/PAGE_SIZE)-1));$('rows').innerHTML=filtered.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE).map((l,i)=>`<tr><td>${esc(fmt(Date.parse(l.timestamp)))}</td><td>${esc(l.partNumber||'—')}</td><td>${esc(branch(l)||'—')}</td><td>${esc(l.result)}</td><td>${esc(l.workerName||l.operatorName||'—')}</td><td>${esc(l.orderDetailSessionId||'—')}</td><td><button data-index="${page*PAGE_SIZE+i}">履歴を見る</button></td></tr>`).join('')||'<tr><td colspan="7">該当する照合ログはありません</td></tr>';$('page').textContent=`${page+1} / ${Math.max(1,Math.ceil(filtered.length/PAGE_SIZE))} ページ・${filtered.length}件`;$('prev').disabled=page===0;$('next').disabled=(page+1)*PAGE_SIZE>=filtered.length;}
 async function search(){const token=++request;detailRequest++;$('detail').close();const start=Date.parse($('from').value+'T00:00:00+09:00'),end=Date.parse($('to').value+'T23:59:59.999+09:00');if(!Number.isFinite(start)||start>end){status('日付範囲を確認してください',true);return;}logs=[];page=0;render();$('search').disabled=true;status('照合ログを取得中…');try{const company=$('company').value;const snapshot=await db.ref('qr_match_logs/'+company).orderByChild('timestamp').startAt(new Date(start).toISOString()).endAt(new Date(end).toISOString()).limitToLast(MAX_LOGS+1).once('value');if(token!==request)return;const rows=Object.entries(snapshot.val()||{}).map(([id,l])=>({...l,id}));if(rows.length>MAX_LOGS)throw Error('照合ログが10,000件を超えます。日付範囲を狭めてください。');loadedCompany=company;logs=rows.filter(l=>raw2(l)).sort((a,b)=>Date.parse(b.timestamp)-Date.parse(a.timestamp));render();status(`取得済み ${logs.length}件（2回目QRあり）・更新 ${new Date().toLocaleTimeString('ja-JP')}　生産履歴は各行から照会できます。`);}catch(e){if(token===request)status('取得できませんでした：'+e.message,true);}finally{if(token===request)$('search').disabled=false;}}
 async function openDetail(l){const token=++detailRequest,company=loadedCompany;const cutoff=Date.parse(l.timestamp);$('detailBody').innerHTML='<p>生産履歴を照会中…</p>';$('detail').showModal();try{
-const raw=raw2(l);const snapshots=await Promise.all(['raw','qrData'].map(field=>production.collection('qrLogs').where(field,'==',raw).limit(MAX_PRODUCTION+1).get()));
+const raw=raw2(l),variants=productionQrVariants(raw);const snapshots=await Promise.all(['raw','qrData'].map(field=>production.collection('qrLogs').where(field,'in',variants).limit(MAX_PRODUCTION+1).get()));
 if(token!==detailRequest)return;
 if(snapshots.some(s=>s.size>MAX_PRODUCTION))throw Error('同一QRの生産履歴が多いため、候補を確定できません。検索用インデックスの追加が必要です。');
-const unique=new Map();snapshots.forEach(s=>s.forEach(d=>unique.set(d.id,{...d.data(),id:d.id})));const history=[...unique.values()].sort((a,b)=>productionTime(b)-productionTime(a));const candidates=chooseProduction(history,cutoff),candidate=candidates[0];
-let summary=candidate?`推定生産履歴：${fmt(productionTime(candidate))}\nライン：${candidate.line||'不明'}　部署：${candidate.busho||'不明'}\n照合前の直近の生産OK・社内QR全文一致`:'照合前の生産OK記録が見つかりません。QRの表記差や記録漏れの可能性もあります。';
+const unique=new Map();snapshots.forEach(s=>s.forEach(d=>{const p=d.data();if([p.raw,p.qrData].some(v=>qrWhitespaceKey(v)===qrWhitespaceKey(raw)))unique.set(d.id,{...p,id:d.id});}));const history=[...unique.values()].sort((a,b)=>productionTime(b)-productionTime(a));const candidates=chooseProduction(history,cutoff),candidate=candidates[0];
+let summary=candidate?`推定生産履歴：${fmt(productionTime(candidate))}\nライン：${candidate.line||'不明'}　部署：${candidate.busho||'不明'}\n照合前の直近の生産OK・社内QR一致（空白差を吸収）`:'照合前の生産OK記録が見つかりません。原文と標準固定幅形式を検索しました。空白以外の表記差や記録漏れの可能性もあります。';
 if(candidate&&candidates.filter(p=>productionTime(p)===productionTime(candidate)).length>1)summary='同時刻に複数の生産OKがあります。候補履歴を確認してください。';
 let session=null,sessionError='';if(l.orderDetailSessionId){try{session=(await db.ref('qr_match_companies/order_detail_sessions/'+company+'/'+l.orderDetailSessionId).once('value')).val();}catch(e){sessionError=e.message;}}if(token!==detailRequest)return;
 $('detailBody').innerHTML=`<h3>生産 → 社内かんばん → 客先かんばん照合</h3><div class="summary">${esc(summary)}</div><p><small>生産日時はQR読取時刻です。再利用・再読込・記録漏れを考慮した推定で、紐づけは保存せず照会時点の記録から計算します。</small></p><div class="facts"><div>照合日時</div><div>${esc(fmt(cutoff))}</div><div>品番 / 枝番</div><div>${esc(l.partNumber)} / ${esc(branch(l))}</div><div>判定 / 作業者</div><div>${esc(l.result)} / ${esc(l.workerName||l.operatorName||'—')}</div><div>照合記録ID</div><div>${esc(l.id)}</div><div>明細セッション</div><div>${esc(l.orderDetailSessionId||'なし')}</div></div><h3>客先かんばん（1回目QR）</h3><pre>${esc(l.qr1_raw||l.qr1||'')}</pre><h3>社内かんばん（2回目QR）</h3><pre>${esc(raw)}</pre><h3>同じQRの生産履歴・${history.length}件</h3><div id="history"><table><thead><tr><th>読取日時</th><th>ライン</th><th>判定</th><th>位置付け</th><th>記録ID</th></tr></thead><tbody>${history.map(p=>`<tr><td>${esc(fmt(productionTime(p)))}</td><td>${esc(p.line||'—')}</td><td>${esc(p.judge||p.result)}</td><td>${p.id===candidate?.id?'推定候補':productionTime(p)>cutoff?'照合後（対象外）':'以前の記録'}</td><td>${esc(p.id)}</td></tr>`).join('')||'<tr><td colspan="5">QR全文が一致する記録なし</td></tr>'}</tbody></table></div><details><summary>明細情報</summary><pre>${esc(sessionError?'明細取得エラー：'+sessionError:session?JSON.stringify(session,null,2):'明細なし／保存記録なし')}</pre></details>`;
