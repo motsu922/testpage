@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<title>長坂コーテング アウトライン工程</title>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-app.js"></script>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-auth.js"></script>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-firestore.js"></script>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-storage.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;background:#F5F6F8;color:#1A1A1A}
+button{touch-action:manipulation;font-family:inherit;cursor:pointer;-webkit-appearance:none;border:none;background:none}
+input,textarea,select{font-family:inherit;font-size:15px;border:1px solid #C7CDD6;border-radius:8px;padding:10px 12px;background:#fff;color:#111;outline:none;width:100%}
+input:focus,textarea:focus{border-color:#12306B;box-shadow:0 0 0 3px rgba(18,48,107,.12)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:#C7CDD6;border-radius:3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.panel{background:#fff;border:1px solid #E3E7ED;border-radius:10px;overflow:hidden}
+.panel-h{background:#EEF4FC;padding:10px 16px;font-size:15px;font-weight:700;color:#1B4A9C;border-bottom:1px solid #E3E7ED}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+/* ══════════ Firebase（生産計画アプリと同一プロジェクト・認証を共有） ══════════ */
+var firebaseConfig={apiKey:"AIzaSyDxl5a__1aGS-19zn4cQNn6FutP7-q_mag",authDomain:"personal-60023.firebaseapp.com",projectId:"personal-60023",storageBucket:"personal-60023.firebasestorage.app",messagingSenderId:"920380998275",appId:"1:920380998275:web:1ac685f50fe5f14de191b6"};
+firebase.initializeApp(firebaseConfig);
+var db=firebase.firestore();
+var stor=firebase.storage();
+var auth=firebase.auth();
+const {useState,useEffect,useRef,useContext,createContext}=React;
+
+/* ══════════ 配色（モック準拠） ══════════ */
+const NAVY='#12306B', NAVY_D='#0D2450', BLUE='#1B4A9C', LBLUE='#EEF4FC', LINE='#E3E7ED';
+const WARN_BG='#FEF8EC', WARN_LN='#F3E2BC', WARN_TX='#8A6A00';
+
+/* ══════════ 工程一覧（モック名称・10工程） ══════════ */
+const PROCESSES=[
+  {id:'p1', no:1,  ja:'製品揃え',            id_:'Penyiapan Produk',        icon:'📋'},
+  {id:'p2', no:2,  ja:'小物掛け',            id_:'Penggantungan Part Kecil',icon:'🪝'},
+  {id:'p3', no:3,  ja:'小物検査',            id_:'Inspeksi Part Kecil',     icon:'🔍'},
+  {id:'p4', no:4,  ja:'手吹き',              id_:'Semprot Manual',          icon:'🎨'},
+  {id:'p5', no:5,  ja:'ハガシ',              id_:'Pengelupasan',            icon:'✂️'},
+  {id:'p6', no:6,  ja:'Vミゾ修正',           id_:'Perbaikan Alur V',        icon:'⚙️'},
+  {id:'p7', no:7,  ja:'JTEKT・MAZDA・GCT 検査', id_:'Inspeksi JTEKT/MAZDA/GCT', icon:'📑'},
+  {id:'p8', no:8,  ja:'日野・三菱ふそう・デンソー・三菱・川重・日立 検査', id_:'Inspeksi Hino/Fuso/Denso dll', icon:'📑'},
+  {id:'p9', no:9,  ja:'津田・刈谷紙器・村谷・製品箱詰め', id_:'Pengepakan Produk', icon:'📦'},
+  {id:'p10',no:10, ja:'その他付帯作業',      id_:'Pekerjaan Pendukung',     icon:'🔧'},
+];
+
+/* ══════════ 情報ページ一覧 ══════════ */
+const INFO_PAGES=[
+  {key:'product', no:1,  ja:'製品写真',           id_:'Foto Produk',              icon:'📷'},
+  {key:'shape',   no:2,  ja:'形状確認ポイント',   id_:'Poin Pemeriksaan Bentuk',  icon:'📐'},
+  {key:'teekin',  no:3,  ja:'テーキン',           id_:'Teekin',                   icon:'🪝'},
+  {key:'hanger',  no:4,  ja:'ハンガー写真',       id_:'Foto Hanger',              icon:'🧲'},
+  {key:'steps',   no:5,  ja:'作業の流れ',         id_:'Alur Kerja',               icon:'📝'},
+  {key:'caution', no:6,  ja:'注意ポイント',       id_:'Poin Perhatian',           icon:'⚠️'},
+  {key:'tools',   no:7,  ja:'必要道具類',         id_:'Alat yang Diperlukan',     icon:'🛠'},
+  {key:'packing', no:8,  ja:'収容数・梱包荷姿',   id_:'Jumlah Isi & Kemasan',     icon:'📦'},
+  {key:'boxes',   no:9,  ja:'納入箱',             id_:'Kotak Pengiriman',         icon:'🗃'},
+  {key:'idmark',  no:10, ja:'識別マーク',         id_:'Tanda Identifikasi',       icon:'🏷'},
+  {key:'kanban',  no:11, ja:'かんばん情報',       id_:'Informasi Kanban',         icon:'📑'},
+  {key:'loc',     no:12, ja:'端数品置き場所',     id_:'Lokasi Barang Sisa',       icon:'📍'},
+  {key:'qr',      no:13, ja:'QR照合',             id_:'Pengecekan QR',            icon:'▦'},
+];
+
+/* ══════════ UI辞書（JP / ID） ══════════ */
+const DICT={
+  '戻る':'Kembali','ホーム':'Beranda','クリア':'Hapus','更新':'Perbarui','ログアウト':'Keluar',
+  'QR照合':'Pengecekan QR','品番検索':'Pencarian Nomor Produk','作業指示':'Instruksi Pekerjaan','マスター管理':'Manajemen Master',
+  '言語':'Bahasa','スタート画面':'Layar Mulai','工程を選択してください':'Silakan pilih proses',
+  'キーワード':'Kata kunci','品番を入力してください':'Masukkan nomor produk','絞り込み':'Filter',
+  '検索結果':'Hasil pencarian','件':'item','品番':'Nomor Produk','品名':'Nama Produk','更新日':'Tanggal Update','選択':'Pilih',
+  '前へ':'Sebelumnya','次へ':'Selanjutnya','前の項目へ':'Item Sebelumnya','次の項目へ':'Item Selanjutnya',
+  '一覧に戻る':'Kembali ke Daftar','作業動画を再生':'Putar Video Kerja','PDFで表示':'Tampilkan PDF','印刷する':'Cetak',
+  '注意事項':'Perhatian','未登録':'Belum terdaftar','工程一覧':'Daftar Proses','情報項目':'Item Informasi',
+  '全体写真':'Foto Keseluruhan','拡大写真':'Foto Perbesaran','主な特徴':'Ciri Utama','仕様':'Spesifikasi',
+  '使用時の注意':'Perhatian Penggunaan','類似品との違い':'Perbedaan dengan Produk Serupa','本品の特徴':'Ciri Produk Ini',
+  '収容数':'Jumlah Isi','1箱あたりの収容数':'Jumlah per kotak','製品イメージ':'Gambar Produk','梱包荷姿':'Bentuk Kemasan',
+  '仕切り':'Sekat','向き':'Arah','使用中':'Digunakan','未使用':'Tidak digunakan','外寸':'Ukuran Luar','仕切数':'Jumlah Sekat','材質':'Material',
+  '用途':'Kegunaan','使用工程':'Proses','発行先':'Penerbit','色':'Warna','サイズ':'Ukuran','備考':'Catatan','種類':'Jenis',
+  '保存する':'Simpan','保存中...':'Menyimpan...','保存しました':'Tersimpan','削除':'Hapus','追加':'Tambah',
+  '照合成功':'Cocok','不一致':'Tidak cocok','スキャン待機中...':'Menunggu pemindaian...',
+  'ハンディスキャナーでスキャンしてください':'Silakan pindai dengan scanner',
+  '該当する品番が見つかりません':'Nomor produk tidak ditemukan','品番が未登録です':'Nomor produk belum terdaftar',
+  '接続に失敗しました':'Koneksi gagal','再試行':'Coba lagi','閉じる':'Tutup','動画が未登録です':'Video belum terdaftar',
+};
+const LangCtx=createContext({lang:'ja'});
+function useLang(){return useContext(LangCtx);}
+/* t: UIラベル翻訳 / b: 併記（日本語 / Indonesian） */
+function makeT(lang){
+  const t=s=>lang==='id'?(DICT[s]||s):s;
+  const b=s=>{const i=DICT[s];return (lang==='id'&&i)?i:(i?s+' / '+i:s);};
+  return{t,b};
+}
+/* データ側の言語出し分け（_id フィールドがあれば優先） */
+function dv(obj,key,lang){
+  if(!obj)return '';
+  if(lang==='id'&&obj[key+'_id'])return obj[key+'_id'];
+  return obj[key]||'';
+}
+
+/* ══════════ 汎用コンポーネント ══════════ */
+function Spinner(){return <div style={{width:36,height:36,border:'3px solid '+LINE,borderTopColor:NAVY,borderRadius:'50%',animation:'spin 1s linear infinite'}}/>;}
+function LoadingScreen(){return <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:16}}><Spinner/><div style={{fontSize:14,color:'#888'}}>接続中...</div></div>;}
+function ErrorScreen({error,onRetry}){
+  return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:16,padding:24}}>
+      <div style={{fontSize:16,color:'#C0392B',fontWeight:700}}>接続に失敗しました</div>
+      <div style={{fontSize:13,color:'#888',textAlign:'center',lineHeight:1.7,maxWidth:340}}>{error}</div>
+      <button onClick={onRetry} style={{minHeight:48,padding:'0 32px',borderRadius:10,background:NAVY,color:'#fff',fontSize:15,fontWeight:700}}>再試行</button>
+    </div>
+  );
+}
+function QRDisplay({value,size=120}){
+  const ref=useRef(null);
+  useEffect(()=>{
+    if(!ref.current||!value)return;
+    const gen=()=>{if(!window.QRious){setTimeout(gen,300);return;}
+      try{new window.QRious({element:ref.current,value,size,padding:4,level:'M'});}catch(e){}};
+    gen();
+  },[value,size]);
+  return <canvas ref={ref} style={{display:'block',borderRadius:4,width:size+'px',height:size+'px'}}/>;
+}
+function ImageModal({src,onClose}){
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:500}}>
+      <img src={src} style={{maxWidth:'95vw',maxHeight:'92vh',borderRadius:10,objectFit:'contain'}} onClick={e=>e.stopPropagation()}/>
+      <button onClick={onClose} style={{position:'fixed',top:16,right:16,width:44,height:44,borderRadius:'50%',background:'rgba(255,255,255,.2)',color:'#fff',fontSize:24}}>×</button>
+    </div>
+  );
+}
+function TapPhoto({src,style,ratio,empty}){
+  const[open,setOpen]=useState(false);
+  if(!src)return <div style={{...(style||{}),background:'#F0F2F5',border:'1px dashed #C7CDD6',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',color:'#B0B7C0',fontSize:12,minHeight:ratio||120}}>{empty||'写真なし'}</div>;
+  return(<>
+    <img src={src} style={{...style,cursor:'zoom-in'}} onClick={()=>setOpen(true)}/>
+    {open&&<ImageModal src={src} onClose={()=>setOpen(false)}/>}
+  </>);
+}
+/* 丸番号バッジ */
+function NumBadge({n,size=26,bg}){
+  return <span style={{width:size,height:size,minWidth:size,borderRadius:'50%',background:bg||NAVY,color:'#fff',fontSize:size*0.5,fontWeight:700,display:'inline-flex',alignItems:'center',justifyContent:'center'}}>{n}</span>;
+}
+/* 注意事項ボックス */
+function WarnBox({items}){
+  const{b}=useLang();
+  if(!items||!items.length)return null;
+  return(
+    <div style={{background:WARN_BG,border:'1px solid '+WARN_LN,borderRadius:10,padding:'12px 16px',display:'flex',gap:10,marginTop:14}}>
+      <span style={{fontSize:18,lineHeight:1.2}}>⚠️</span>
+      <div>
+        <div style={{fontSize:13,fontWeight:700,color:WARN_TX,marginBottom:4}}>{b('注意事項')}</div>
+        {items.map((x,i)=><div key={i} style={{fontSize:13,color:'#5C4A14',lineHeight:1.75}}>・{x}</div>)}
+      </div>
+    </div>
+  );
+}
+/* 言語トグル＋ユーザー */
+function LangUser({user}){
+  const{lang,setLang}=useLang();
+  const seg=(v,label)=>(
+    <button key={v} onClick={()=>setLang(v)}
+      style={{padding:'6px 16px',borderRadius:6,fontSize:14,fontWeight:700,background:lang===v?NAVY:'transparent',color:lang===v?'#fff':NAVY}}>{label}</button>
+  );
+  return(
+    <div style={{display:'flex',alignItems:'center',gap:14,flexShrink:0}}>
+      <div style={{display:'flex',alignItems:'center',gap:2,background:'#fff',borderRadius:8,padding:3}}>
+        {seg('ja','JP')}<span style={{color:'#8A93A0',fontSize:13}}>⇄</span>{seg('id','ID')}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:6,color:'#fff',fontSize:14,fontWeight:600,whiteSpace:'nowrap'}}>
+        <span style={{fontSize:16}}>👤</span>{user?.displayName||user?.email?.split('@')[0]||'ユーザー'}
+      </div>
+    </div>
+  );
+}
+/* 濃紺ヘッダー */
+function TopBar({title,left,onBack,user}){
+  const{t}=useLang();
+  return(
+    <div style={{background:NAVY,padding:'0 20px',height:66,display:'flex',alignItems:'center',gap:16,flexShrink:0}}>
+      <div style={{width:260,display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+        {onBack&&<button onClick={onBack} style={{color:'#fff',fontSize:17,fontWeight:600,display:'flex',alignItems:'center',gap:8,padding:'8px 4px'}}>‹ {t('戻る')}</button>}
+        {left}
+      </div>
+      <div style={{flex:1,textAlign:'center',color:'#fff',fontSize:21,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{title}</div>
+      <div style={{width:260,display:'flex',justifyContent:'flex-end',flexShrink:0}}><LangUser user={user}/></div>
+    </div>
+  );
+}
+/* フッターバー */
+function FooterBar({left,right}){
+  return(
+    <div style={{background:'#EDEFF3',borderTop:'1px solid '+LINE,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,flexShrink:0}}>
+      <div style={{display:'flex',gap:12,flex:1}}>{left}</div>
+      <div style={{display:'flex',gap:12}}>{right}</div>
+    </div>
+  );
+}
+function FBtn({onClick,children,primary,disabled}){
+  return(
+    <button onClick={onClick} disabled={disabled}
+      style={{minHeight:46,padding:'0 22px',borderRadius:8,fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8,
+        background:primary?NAVY:'#fff',color:primary?'#fff':(disabled?'#B0B7C0':NAVY),border:primary?'none':'1px solid '+LINE,opacity:disabled?.6:1}}>
+      {children}
+    </button>
+  );
+}
+/* QR照合モーダル（ハンディスキャナー方式） */
+function QRScannerModal({expectedValue,label,onSuccess,onClose}){
+  const{t,b}=useLang();
+  const inputRef=useRef(null);
+  const[scanned,setScanned]=useState('');
+  const[fb,setFb]=useState(null);
+  const[done,setDone]=useState(false);
+  useEffect(()=>{setTimeout(()=>inputRef.current?.focus(),150);},[]);
+  function check(text){
+    const v=(text||'').trim();
+    if(!v)return;
+    const ok=expectedValue?(v.includes(expectedValue)||expectedValue.includes(v)):true;
+    if(ok){setFb({ok:true,text:t('照合成功')+' ✓'});setDone(true);setTimeout(()=>onSuccess(v),600);}
+    else{setFb({ok:false,text:t('不一致')+': "'+v.slice(0,24)+'"'});setTimeout(()=>{setFb(null);setScanned('');inputRef.current?.focus();},2000);}
+  }
+  return(
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.75)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:440,overflow:'hidden'}}>
+        <div style={{background:NAVY,padding:'16px 20px'}}>
+          <div style={{fontSize:17,fontWeight:700,color:'#fff'}}>{b('QR照合')}</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,.75)',marginTop:2}}>{label}</div>
+        </div>
+        <div style={{padding:'26px 24px 18px',textAlign:'center'}}>
+          <div style={{fontSize:52,lineHeight:1,marginBottom:14,color:NAVY}}>▦</div>
+          <div style={{fontSize:15,fontWeight:600,marginBottom:16}}>{t('ハンディスキャナーでスキャンしてください')}</div>
+          <input ref={inputRef} value={scanned} onChange={e=>setScanned(e.target.value)}
+            onKeyDown={e=>e.key==='Enter'&&check(scanned)} inputMode="none" autoFocus
+            style={{position:'fixed',top:-9999,left:-9999,opacity:0,width:1,height:1}}/>
+          <div style={{padding:'14px 16px',borderRadius:10,border:'2px solid '+(fb?(fb.ok?'#2E7D32':'#C62828'):'#CBD3DC'),background:scanned?'#F2F7FF':'#F7F8FA',display:'flex',alignItems:'center',gap:10,minHeight:52}}>
+            <span style={{fontSize:20}}>{done?'✅':scanned?'⌛':'📷'}</span>
+            <span style={{flex:1,fontFamily:'monospace',fontSize:15,color:scanned?'#111':'#AAB',letterSpacing:1,wordBreak:'break-all',textAlign:'left'}}>{scanned||t('スキャン待機中...')}</span>
+          </div>
+          {scanned&&!done&&<button onClick={()=>check(scanned)} style={{width:'100%',minHeight:46,borderRadius:10,background:NAVY,color:'#fff',fontSize:15,fontWeight:700,marginTop:10}}>{b('QR照合')}</button>}
+          {fb&&<div style={{marginTop:12,padding:12,borderRadius:10,background:fb.ok?'#E8F5E9':'#FDECEA',color:fb.ok?'#1B5E20':'#B71C1C',fontSize:16,fontWeight:700}}>{fb.text}</div>}
+        </div>
+        <div style={{padding:'0 24px 22px'}}>
+          <button onClick={onClose} style={{width:'100%',minHeight:46,borderRadius:10,border:'1px solid '+LINE,background:'#fff',fontSize:14,color:'#555'}}>{t('閉じる')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function VideoModal({url,onClose}){
+  return(
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.85)',zIndex:450,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{width:'100%',maxWidth:900}}>
+        <video src={url} controls autoPlay style={{width:'100%',borderRadius:10,background:'#000'}}/>
+        <button onClick={onClose} style={{marginTop:12,width:'100%',minHeight:46,borderRadius:10,background:'#fff',fontSize:15,fontWeight:700}}>閉じる</button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════ ログイン ══════════ */
+function LoginScreen(){
+  const[email,setEmail]=useState('');
+  const[password,setPassword]=useState('');
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState('');
+  async function submit(e){
+    e.preventDefault();
+    if(!email||!password)return;
+    setLoading(true);setError('');
+    try{await auth.signInWithEmailAndPassword(email.trim(),password);}
+    catch(err){
+      const m={'auth/user-not-found':'メールアドレスが登録されていません','auth/wrong-password':'パスワードが間違っています',
+        'auth/invalid-email':'メールアドレスの形式が正しくありません','auth/invalid-credential':'メールアドレスまたはパスワードが間違っています',
+        'auth/too-many-requests':'試行回数が多すぎます。しばらく待ってから再試行してください'};
+      setError(m[err.code]||'ログインに失敗しました');
+    }finally{setLoading(false);}
+  }
+  return(
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,'+NAVY_D+' 0%,'+NAVY+' 100%)',padding:24}}>
+      <div style={{background:'#fff',borderRadius:16,padding:'40px 34px',width:'100%',maxWidth:410,boxShadow:'0 20px 60px rgba(0,0,0,.35)'}}>
+        <div style={{textAlign:'center',marginBottom:30}}>
+          <div style={{fontSize:38,marginBottom:8}}>🏭</div>
+          <div style={{fontSize:22,fontWeight:700,color:NAVY,letterSpacing:1}}>長坂コーティング</div>
+          <div style={{fontSize:13,color:'#8A93A0',marginTop:6}}>アウトライン工程システム</div>
+        </div>
+        <form onSubmit={submit}>
+          <div style={{marginBottom:16}}>
+            <label style={{display:'block',fontSize:13,fontWeight:600,color:'#444',marginBottom:6}}>メールアドレス</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="example@email.com" autoComplete="email"/>
+          </div>
+          <div style={{marginBottom:22}}>
+            <label style={{display:'block',fontSize:13,fontWeight:600,color:'#444',marginBottom:6}}>パスワード</label>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="パスワードを入力" autoComplete="current-password"/>
+          </div>
+          {error&&<div style={{padding:'10px 14px',borderRadius:8,background:'#FDECEA',color:'#B71C1C',fontSize:13,marginBottom:16,fontWeight:600}}>{error}</div>}
+          <button type="submit" disabled={loading||!email||!password}
+            style={{width:'100%',minHeight:50,borderRadius:10,background:(loading||!email||!password)?'#AEB6C2':NAVY,color:'#fff',fontSize:16,fontWeight:700}}>
+            {loading?'ログイン中...':'ログイン'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════ 工程選択 ══════════ */
+function ProcessSelect({user,onPick,onLogout}){
+  const{lang,t,b}=useLang();
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
+      <TopBar title="アウトライン工程 / Proses Outline" user={user}/>
+      <div style={{flex:1,overflowY:'auto',padding:'28px 32px'}}>
+        <div style={{fontSize:16,fontWeight:700,color:'#5A6472',marginBottom:18}}>{b('工程を選択してください')}</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:14,maxWidth:1400}}>
+          {PROCESSES.map(p=>(
+            <button key={p.id} onClick={()=>onPick(p)}
+              style={{display:'flex',alignItems:'center',gap:14,padding:'18px 18px',background:'#fff',border:'1px solid '+LINE,borderRadius:12,textAlign:'left',minHeight:92}}>
+              <NumBadge n={p.no} size={34}/>
+              <span style={{fontSize:26}}>{p.icon}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:16,fontWeight:700,color:'#111',lineHeight:1.4}}>{p.ja}</div>
+                <div style={{fontSize:12,color:'#8A93A0',marginTop:2}}>{p.id_}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <FooterBar right={<FBtn onClick={onLogout}>⇥ {t('ログアウト')}</FBtn>}/>
+    </div>
+  );
+}
+
+/* ══════════ 各工程スタート画面 ══════════ */
+function StartScreen({proc,user,onQR,onSearch,onWork,onMaster,onBack,onLogout}){
+  const{lang,t,b}=useLang();
+  const[now,setNow]=useState(new Date());
+  useEffect(()=>{const id=setInterval(()=>setNow(new Date()),30000);return ()=>clearInterval(id);},[]);
+  const wd=['日','月','火','水','木','金','土'][now.getDay()];
+  const stamp=`${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} (${wd}) ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  const tiles=[
+    {k:'qr',    ja:'QR照合',      id_:'Pengecekan QR',        icon:'▦', col:'#1B4A9C', bg:'#F2F6FD', on:onQR},
+    {k:'search',ja:'品番検索',    id_:'Pencarian Nomor Produk',icon:'🔍',col:'#2E7D4F', bg:'#F1F9F4', on:onSearch},
+    {k:'work',  ja:'作業指示',    id_:'Instruksi Pekerjaan',  icon:'📋',col:'#D97706', bg:'#FEF7ED', on:onWork},
+    {k:'master',ja:'マスター管理',id_:'Manajemen Master',     icon:'⚙️',col:'#6D3FBF', bg:'#F6F2FD', on:onMaster},
+  ];
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
+      <TopBar user={user} onBack={onBack}
+        left={<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏭 {lang==='id'?proc.id_:proc.ja}</div>}
+        title={`【${lang==='id'?proc.id_:proc.ja}】`+t('スタート画面')}/>
+      <div style={{flex:1,overflowY:'auto',padding:'22px 32px'}}>
+        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}>
+          <div>
+            <div style={{fontSize:13,color:'#5A6472',fontWeight:600,marginBottom:6,textAlign:'right'}}>{b('言語')}</div>
+            <LangPick/>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,maxWidth:1300,margin:'0 auto'}}>
+          {tiles.map(x=>(
+            <button key={x.k} onClick={x.on}
+              style={{display:'flex',alignItems:'center',gap:26,padding:'34px 30px',background:x.bg,border:'1px solid '+LINE,borderRadius:14,minHeight:180}}>
+              <span style={{fontSize:64,color:x.col,lineHeight:1}}>{x.icon}</span>
+              <div style={{textAlign:'left'}}>
+                <div style={{fontSize:30,fontWeight:700,color:x.col,lineHeight:1.25}}>{x.ja}</div>
+                <div style={{fontSize:15,color:x.col,opacity:.75,marginTop:4}}>{x.id_}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <FooterBar
+        left={<div style={{display:'flex',alignItems:'center',gap:8,fontSize:14,color:'#5A6472',fontWeight:600}}>🕐 {stamp}</div>}
+        right={<><FBtn onClick={()=>window.location.reload()}>⟳ {t('更新')}</FBtn><FBtn onClick={onLogout}>⇥ {t('ログアウト')}</FBtn></>}/>
+    </div>
+  );
+}
+function LangPick(){
+  const{lang,setLang}=useLang();
+  const b=(v,label,active)=>(
+    <button key={v} onClick={()=>setLang(v)}
+      style={{padding:'10px 20px',borderRadius:8,fontSize:15,fontWeight:700,border:'1px solid '+(active?NAVY:LINE),background:active?NAVY:'#fff',color:active?'#fff':NAVY}}>{label}</button>
+  );
+  return <div style={{display:'flex',gap:10}}>{b('ja','JP：日本語',lang==='ja')}{b('id','ID：インドネシア語',lang==='id')}</div>;
+}
+
+/* ══════════ 品番検索 ══════════ */
+function SearchScreen({master,user,onPick,onBack,onHome}){
+  const{lang,t,b}=useLang();
+  const[q,setQ]=useState('');
+  const[page,setPage]=useState(1);
+  const PER=10;
+  const all=Object.keys(master).sort();
+  const kw=q.trim().toLowerCase();
+  const hits=kw?all.filter(h=>h.toLowerCase().includes(kw)||(master[h]?.name||'').toLowerCase().includes(kw)):all;
+  const pages=Math.max(1,Math.ceil(hits.length/PER));
+  const cur=Math.min(page,pages);
+  const rows=hits.slice((cur-1)*PER,cur*PER);
+  const th={padding:'12px 14px',fontSize:14,fontWeight:700,color:'#fff',textAlign:'left',whiteSpace:'nowrap'};
+  const td={padding:'12px 14px',fontSize:15,color:'#1A1A1A',borderBottom:'1px solid '+LINE};
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
+      <TopBar title={b('品番検索')} onBack={onBack} user={user}/>
+      <div style={{flex:1,overflowY:'auto',padding:'20px 28px'}}>
+        <div style={{fontSize:13,fontWeight:600,color:'#5A6472',marginBottom:8}}>{b('キーワード')}</div>
+        <div style={{display:'flex',gap:14,marginBottom:18,maxWidth:1100}}>
+          <div style={{flex:1,display:'flex'}}>
+            <input value={q} onChange={e=>{setQ(e.target.value);setPage(1);}} placeholder={b('品番を入力してください')}
+              style={{borderRadius:'8px 0 0 8px',borderRight:'none'}}/>
+            <div style={{background:NAVY,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',width:58,borderRadius:'0 8px 8px 0',fontSize:20}}>🔍</div>
+          </div>
+        </div>
+        <div style={{fontSize:15,fontWeight:600,color:'#3A4552',marginBottom:10}}>
+          {lang==='id'?`Hasil pencarian: ${hits.length} item`:`検索結果：${hits.length}件 / Hasil pencarian: ${hits.length} item`}
+        </div>
+        <div style={{border:'1px solid '+LINE,borderRadius:10,overflow:'hidden',background:'#fff'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr style={{background:NAVY}}>
+              <th style={{...th,width:70}}>No.</th>
+              <th style={th}>{b('品番')}</th>
+              <th style={th}>{b('品名')}</th>
+              <th style={{...th,width:190}}>{b('更新日')}</th>
+              <th style={{...th,width:150,textAlign:'center'}}>{b('選択')}</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((h,i)=>{
+                const m=master[h]||{};
+                return(
+                  <tr key={h} style={{background:i%2?'#F7F9FC':'#fff'}}>
+                    <td style={td}>{(cur-1)*PER+i+1}</td>
+                    <td style={{...td,fontWeight:700}}>{h}</td>
+                    <td style={td}>{dv(m,'name',lang)||'—'}</td>
+                    <td style={td}>{m.updatedAt||'—'}</td>
+                    <td style={{...td,textAlign:'center'}}>
+                      <button onClick={()=>onPick(h)} style={{minHeight:40,padding:'0 22px',borderRadius:6,background:NAVY,color:'#fff',fontSize:14,fontWeight:700}}>{b('選択')}</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {rows.length===0&&<tr><td colSpan={5} style={{...td,textAlign:'center',color:'#9AA3AF',padding:'40px'}}>{t('品番が未登録です')}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        {pages>1&&(
+          <div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:10,marginTop:18}}>
+            <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={cur===1}
+              style={{minHeight:42,padding:'0 18px',borderRadius:8,border:'1px solid '+LINE,background:'#fff',color:cur===1?'#B0B7C0':NAVY,fontSize:14,fontWeight:600}}>‹ {b('前へ')}</button>
+            {Array.from({length:pages},(_,i)=>i+1).map(n=>(
+              <button key={n} onClick={()=>setPage(n)}
+                style={{minWidth:44,minHeight:42,borderRadius:8,border:'1px solid '+(n===cur?NAVY:LINE),background:n===cur?NAVY:'#fff',color:n===cur?'#fff':NAVY,fontSize:15,fontWeight:700}}>{n}</button>
+            ))}
+            <button onClick={()=>setPage(p=>Math.min(pages,p+1))} disabled={cur===pages}
+              style={{minHeight:42,padding:'0 18px',borderRadius:8,border:'1px solid '+LINE,background:'#fff',color:cur===pages?'#B0B7C0':NAVY,fontSize:14,fontWeight:600}}>{b('次へ')} ›</button>
+          </div>
+        )}
+      </div>
+      <FooterBar left={<FBtn onClick={onHome}>🏠 {b('ホーム')}</FBtn>} right={<FBtn onClick={()=>{setQ('');setPage(1);}}>🗑 {b('クリア')}</FBtn>}/>
+    </div>
+  );
+}
+
+/* ══════════ 情報ビューア ══════════ */
+function InfoViewer({proc,hinban,master,user,onBack,onChangeProc}){
+  const{lang,t,b}=useLang();
+  const m=master[hinban]||{};
+  const[pageKey,setPageKey]=useState('product');
+  const[scan,setScan]=useState(null);
+  const[video,setVideo]=useState(false);
+  const idx=INFO_PAGES.findIndex(p=>p.key===pageKey);
+  const page=INFO_PAGES[idx]||INFO_PAGES[0];
+  const go=d=>{const n=idx+d;if(n>=0&&n<INFO_PAGES.length)setPageKey(INFO_PAGES[n].key);};
+
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
+      <TopBar title={lang==='id'?page.id_:page.ja} onBack={onBack} user={user}/>
+      <div style={{flex:1,display:'flex',minHeight:0}}>
+        {/* 左サイドバー：工程一覧 */}
+        <div style={{width:250,background:'#fff',borderRight:'1px solid '+LINE,overflowY:'auto',flexShrink:0,padding:'14px 12px'}}>
+          <div style={{fontSize:14,fontWeight:700,color:BLUE,padding:'2px 6px 10px'}}>{b('工程一覧')}</div>
+          {PROCESSES.map(p=>{
+            const on=p.id===proc.id;
+            return(
+              <button key={p.id} onClick={()=>onChangeProc(p)}
+                style={{width:'100%',display:'flex',alignItems:'center',gap:10,padding:'11px 10px',marginBottom:5,borderRadius:8,textAlign:'left',
+                  background:on?'#E8F0FB':'#fff',border:'1px solid '+(on?'#C3D6F0':LINE)}}>
+                <NumBadge n={p.no} size={24} bg={on?NAVY:'#5A6472'}/>
+                <span style={{fontSize:12}}>{p.icon}</span>
+                <span style={{fontSize:12.5,fontWeight:on?700:600,color:on?NAVY:'#3A4552',lineHeight:1.4,flex:1}}>{lang==='id'?p.id_:p.ja}</span>
+              </button>
+            );
+          })}
+        </div>
+        {/* 右：情報ページ */}
+        <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0}}>
+          {/* 情報項目タブ */}
+          <div style={{display:'flex',gap:6,padding:'10px 20px',background:'#fff',borderBottom:'1px solid '+LINE,overflowX:'auto',flexShrink:0}}>
+            {INFO_PAGES.map(p=>{
+              const on=p.key===pageKey;
+              return(
+                <button key={p.key} onClick={()=>setPageKey(p.key)}
+                  style={{display:'flex',alignItems:'center',gap:6,padding:'8px 13px',borderRadius:20,whiteSpace:'nowrap',flexShrink:0,
+                    background:on?NAVY:'#F2F4F7',color:on?'#fff':'#4A5460',fontSize:13,fontWeight:on?700:600}}>
+                  <span style={{fontSize:12}}>{p.icon}</span>{lang==='id'?p.id_:p.ja}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{flex:1,overflowY:'auto',padding:'18px 24px'}}>
+            {/* ページ見出し */}
+            <div style={{display:'flex',alignItems:'flex-start',gap:16,marginBottom:14,flexWrap:'wrap'}}>
+              <div style={{flex:1,minWidth:280}}>
+                <div style={{display:'flex',alignItems:'center',gap:12}}>
+                  <NumBadge n={page.no} size={32}/>
+                  <div style={{fontSize:24,fontWeight:700,color:BLUE}}>{lang==='id'?page.id_:page.ja}</div>
+                </div>
+              </div>
+              <div style={{background:'#fff',border:'1px solid '+LINE,borderRadius:10,padding:'12px 18px',minWidth:270}}>
+                {[[b('品番'),hinban],[b('品名'),dv(m,'name',lang)||'—'],[b('更新日'),m.updatedAt||'—']].map(([k,v])=>(
+                  <div key={k} style={{display:'flex',gap:12,fontSize:14,lineHeight:1.9}}>
+                    <span style={{color:'#6B7480',minWidth:88}}>{k}</span><span style={{fontWeight:600}}>：{v}</span>
+                  </div>
+                ))}
+              </div>
+              <button onClick={()=>m.videoUrl?setVideo(true):alert(t('動画が未登録です'))}
+                style={{minHeight:46,padding:'0 20px',borderRadius:8,background:m.videoUrl?'#E8F0FB':'#F2F4F7',color:m.videoUrl?NAVY:'#9AA3AF',fontSize:15,fontWeight:700,display:'flex',alignItems:'center',gap:8}}>
+                ▶ {t('作業動画を再生')}
+              </button>
+            </div>
+            <PageBody pageKey={pageKey} m={m} hinban={hinban} onScan={setScan}/>
+          </div>
+          <FooterBar
+            left={<><FBtn onClick={()=>go(-1)} disabled={idx===0}>◀ {t('前の項目へ')}</FBtn><FBtn onClick={()=>go(1)} disabled={idx===INFO_PAGES.length-1}>{t('次の項目へ')} ▶</FBtn><FBtn onClick={onBack}>☰ {t('一覧に戻る')}</FBtn></>}
+            right={<><FBtn primary onClick={()=>window.print()}>📄 {t('PDFで表示')}</FBtn><FBtn onClick={()=>window.print()}>🖨 {t('印刷する')}</FBtn></>}/>
+        </div>
+      </div>
+      {scan&&<QRScannerModal expectedValue={scan.expected} label={scan.label} onSuccess={()=>setScan(null)} onClose={()=>setScan(null)}/>}
+      {video&&m.videoUrl&&<VideoModal url={m.videoUrl} onClose={()=>setVideo(false)}/>}
+    </div>
+  );
+}
+
+/* ── 各情報ページの中身 ── */
+function PageBody({pageKey,m,hinban,onScan}){
+  const{lang,t,b}=useLang();
+  const P=({children})=><div className="panel" style={{marginBottom:14}}>{children}</div>;
+  const H=({children})=><div className="panel-h">{children}</div>;
+  const Body=({children,pad})=><div style={{padding:pad===false?0:16}}>{children}</div>;
+  const none=<div style={{color:'#9AA3AF',fontSize:14,padding:'8px 0'}}>{t('未登録')}</div>;
+  const txt=s=>s?<div style={{fontSize:14.5,lineHeight:1.85,whiteSpace:'pre-wrap',color:'#2A3340'}}>{s}</div>:none;
+  const L=(o,k)=>dv(o,k,lang);
+
+  if(pageKey==='product'){
+    return(<>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:14}}>
+        <P><H>{b('全体写真')}</H><Body><TapPhoto src={m.productImg} style={{width:'100%',maxHeight:420,objectFit:'contain',borderRadius:8,display:'block',margin:'0 auto'}} ratio={280}/></Body></P>
+        <P><H>{b('品番')} / {b('品名')}</H><Body>
+          <div style={{fontSize:34,fontWeight:800,color:NAVY,marginBottom:6}}>{hinban}</div>
+          <div style={{fontSize:18,color:'#3A4552',marginBottom:14}}>{L(m,'name')||'—'}</div>
+          {m.qrText&&<div style={{display:'flex',alignItems:'center',gap:16}}><QRDisplay value={m.qrText} size={120}/><div style={{fontSize:12,color:'#6B7480',wordBreak:'break-all'}}>{m.qrText}</div></div>}
+        </Body></P>
+      </div>
+      <WarnBox items={(m.productNotes||[])}/>
+    </>);
+  }
+
+  if(pageKey==='shape'){
+    const pts=m.shape?.points||[], sims=m.shape?.similars||[];
+    return(<>
+      <div style={{fontSize:14,color:'#5A6472',marginBottom:12}}>この品番を、類似品と見分けるための形状の特徴です。作業前に必ず確認してください。</div>
+      <div style={{display:'grid',gridTemplateColumns:'minmax(320px,1fr) minmax(340px,1.3fr)',gap:14,alignItems:'start'}}>
+        <P><H>{hinban}（{b('本品の特徴')}）</H><Body>
+          <div style={{display:'flex',gap:14,flexWrap:'wrap'}}>
+            <TapPhoto src={m.shape?.img} style={{width:'100%',maxWidth:300,maxHeight:260,objectFit:'contain',borderRadius:8}} ratio={220}/>
+            <div style={{flex:1,minWidth:180,display:'flex',flexDirection:'column',gap:12}}>
+              {pts.length?pts.map((p,i)=>(
+                <div key={i} style={{display:'flex',gap:10}}>
+                  <NumBadge n={i+1} size={22} bg="#C0392B"/>
+                  <span style={{fontSize:14,lineHeight:1.7,color:'#2A3340'}}>{L(p,'text')}</span>
+                </div>
+              )):none}
+            </div>
+          </div>
+        </Body></P>
+        <P><H>{b('類似品との違い')}</H><Body>
+          <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,sims.length||1))},1fr)`,gap:12}}>
+            {sims.length?sims.map((s,i)=>(
+              <div key={i} style={{border:'1px solid '+LINE,borderRadius:8,overflow:'hidden'}}>
+                <div style={{background:'#6B7480',color:'#fff',padding:'7px 10px',fontSize:13,fontWeight:700,textAlign:'center'}}>類似品：{s.name||'—'}</div>
+                <TapPhoto src={s.img} style={{width:'100%',height:150,objectFit:'contain',background:'#F0F2F5',display:'block'}} ratio={150}/>
+                <div style={{padding:'10px'}}>
+                  {(s.diffs||[]).map((d,j)=><div key={j} style={{fontSize:12.5,lineHeight:1.7,color:'#2A3340'}}>・{d}</div>)}
+                </div>
+              </div>
+            )):none}
+          </div>
+        </Body></P>
+      </div>
+      <WarnBox items={m.shape?.notes||['上記のポイントを確認し、類似品と間違えないようにしてください。','不明な場合は、必ず管理者に確認してください。']}/>
+    </>);
+  }
+
+  if(pageKey==='teekin'){
+    return(<>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:14}}>
+        <P><H>{b('全体写真')}</H><Body><TapPhoto src={m.teekin?.img} style={{width:'100%',maxHeight:380,objectFit:'contain',borderRadius:8,display:'block',margin:'0 auto'}} ratio={260}/></Body></P>
+        <P><H>{b('注意事項')}</H><Body>{txt(L(m.teekin||{},'note'))}</Body></P>
+      </div>
+    </>);
+  }
+
+  if(pageKey==='hanger'){
+    const f=m.hanger?.features||[], sp=m.hanger?.spec||[];
+    return(<>
+      <div style={{fontSize:14,color:'#5A6472',marginBottom:12}}>この品番で使用するハンガーの写真と仕様です。</div>
+      <div style={{display:'grid',gridTemplateColumns:'minmax(260px,1fr) minmax(300px,1.1fr) minmax(280px,1fr)',gap:14,alignItems:'start'}}>
+        <P><H>{b('全体写真')}</H><Body><TapPhoto src={m.hanger?.img} style={{width:'100%',maxHeight:400,objectFit:'contain',borderRadius:8,display:'block'}} ratio={300}/></Body></P>
+        <P><H>{b('主な特徴')}</H><Body>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            {f.length?f.map((x,i)=>(
+              <div key={i} style={{border:'1px solid '+LINE,borderRadius:8,overflow:'hidden'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',background:LBLUE}}>
+                  <NumBadge n={i+1} size={20}/><span style={{fontSize:12.5,fontWeight:700,color:BLUE}}>{L(x,'title')}</span>
+                </div>
+                <TapPhoto src={x.img} style={{width:'100%',height:120,objectFit:'contain',background:'#F0F2F5',display:'block'}} ratio={120}/>
+                <div style={{padding:'8px 10px',fontSize:12.5,lineHeight:1.6,color:'#2A3340',whiteSpace:'pre-wrap'}}>{L(x,'note')}</div>
+              </div>
+            )):none}
+          </div>
+        </Body></P>
+        <div>
+          <P><H>{b('仕様')}</H><Body pad={false}>
+            {sp.length?sp.map((r,i)=>(
+              <div key={i} style={{display:'flex',borderBottom:i<sp.length-1?'1px solid '+LINE:'none'}}>
+                <div style={{width:130,padding:'10px 12px',fontSize:13,color:'#5A6472',background:'#F7F9FC',flexShrink:0}}>{r.k}</div>
+                <div style={{padding:'10px 12px',fontSize:13.5,fontWeight:600,color:'#2A3340'}}>{r.v}</div>
+              </div>
+            )):<div style={{padding:16}}>{none}</div>}
+          </Body></P>
+          {(m.hanger?.cautions||[]).length>0&&(
+            <div style={{background:LBLUE,border:'1px solid #D5E3F5',borderRadius:10,padding:'12px 16px'}}>
+              <div style={{fontSize:13,fontWeight:700,color:BLUE,marginBottom:6}}>{b('使用時の注意')}</div>
+              {m.hanger.cautions.map((c,i)=><div key={i} style={{fontSize:13,lineHeight:1.75,color:'#2A3340'}}>・{c}</div>)}
+            </div>
+          )}
+        </div>
+      </div>
+    </>);
+  }
+
+  if(pageKey==='steps'){
+    const st=m.steps||[];
+    return(<>
+      <P><H>{b('作業の流れ')}</H><Body>
+        {st.length?(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            {st.map((s,i)=>(
+              <div key={i} style={{display:'flex',gap:14,alignItems:'flex-start',padding:'12px 14px',background:i%2?'#F7F9FC':'#fff',border:'1px solid '+LINE,borderRadius:8}}>
+                <NumBadge n={i+1} size={28}/>
+                {s.img&&<TapPhoto src={s.img} style={{width:130,height:100,objectFit:'contain',borderRadius:6,background:'#F0F2F5',flexShrink:0}} ratio={100}/>}
+                <div style={{flex:1,fontSize:15,lineHeight:1.8,color:'#2A3340',whiteSpace:'pre-wrap'}}>{L(s,'text')}</div>
+              </div>
+            ))}
+          </div>
+        ):none}
+      </Body></P>
+    </>);
+  }
+
+  if(pageKey==='caution'){
+    const cs=m.cautions||[];
+    return(<>
+      <P><H>{b('注意ポイント')}</H><Body>
+        {cs.length?(
+          <div style={{display:'flex',flexDirection:'column',gap:10}}>
+            {cs.map((c,i)=>(
+              <div key={i} style={{display:'flex',gap:12,padding:'14px 16px',background:'#FEF3E7',border:'1px solid #F5D9BC',borderRadius:8}}>
+                <span style={{color:'#C2410C',fontWeight:800,fontSize:17,flexShrink:0}}>!</span>
+                <span style={{fontSize:15,lineHeight:1.75,color:'#7A3A08',whiteSpace:'pre-wrap'}}>{typeof c==='string'?c:L(c,'text')}</span>
+              </div>
+            ))}
+          </div>
+        ):none}
+      </Body></P>
+    </>);
+  }
+
+  if(pageKey==='tools'){
+    const ts=m.tools||[];
+    return(<>
+      <div style={{fontSize:14,color:'#5A6472',marginBottom:12}}>この品番の作業で使用する道具・備品です。作業前に準備してください。</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:12}}>
+        {ts.length?ts.map((x,i)=>(
+          <div key={i} className="panel">
+            <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:LBLUE}}>
+              <NumBadge n={i+1} size={21}/><span style={{fontSize:13,fontWeight:700,color:BLUE}}>{L(x,'name')}</span>
+            </div>
+            <TapPhoto src={x.img} style={{width:'100%',height:135,objectFit:'contain',background:'#F0F2F5',display:'block'}} ratio={135}/>
+            <div style={{padding:'9px 11px',fontSize:12.5,lineHeight:1.65,color:'#2A3340',whiteSpace:'pre-wrap'}}>{L(x,'note')}</div>
+          </div>
+        )):none}
+      </div>
+      <WarnBox items={m.toolNotes||[]}/>
+    </>);
+  }
+
+  if(pageKey==='packing'){
+    const pk=m.packing||{}, pats=pk.patterns||[];
+    return(<>
+      <div style={{fontSize:14,color:'#5A6472',marginBottom:12}}>この品番の収容数と梱包荷姿は以下の通りです。作業時に確認してください。</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+        <P><H>{b('収容数')}</H><Body>
+          <div style={{background:'#F2F6FD',borderRadius:10,padding:'26px',textAlign:'center'}}>
+            <div style={{fontSize:14,color:'#5A6472',marginBottom:8}}>{b('1箱あたりの収容数')}</div>
+            <div style={{fontSize:44,fontWeight:800,color:NAVY}}>{pk.capacity||'—'}<span style={{fontSize:20,marginLeft:4}}>個</span></div>
+          </div>
+        </Body></P>
+        <P><H>{b('製品イメージ')}</H><Body><TapPhoto src={pk.productImg||m.productImg} style={{width:'100%',maxHeight:190,objectFit:'contain',borderRadius:8,display:'block'}} ratio={170}/></Body></P>
+      </div>
+      <P><H>{b('梱包荷姿')}（最大4種類）</H><Body>
+        <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.max(1,Math.min(4,pats.length||1))},1fr)`,gap:12}}>
+          {pats.length?pats.map((p,i)=>(
+            <div key={i} style={{border:'1px solid '+LINE,borderRadius:8,overflow:'hidden'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'8px',background:LBLUE}}>
+                <span style={{fontSize:13,fontWeight:700,color:BLUE}}>{b('梱包荷姿')}</span><NumBadge n={i+1} size={20}/>
+              </div>
+              <TapPhoto src={p.img} style={{width:'100%',height:140,objectFit:'cover',background:'#F0F2F5',display:'block'}} ratio={140}/>
+              <div style={{padding:'10px'}}>
+                <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('仕切り')}：{p.divider||'—'}</div>
+                <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('向き')}：{p.direction||'—'}</div>
+                <div style={{fontSize:13,fontWeight:700,color:NAVY,marginTop:6,textAlign:'center'}}>{b('収容数')}：{p.capacity||pk.capacity||'—'}個</div>
+              </div>
+            </div>
+          )):none}
+        </div>
+      </Body></P>
+      <WarnBox items={pk.notes||[]}/>
+    </>);
+  }
+
+  if(pageKey==='boxes'){
+    const bx=m.boxes||[];
+    return(<>
+      <div style={{background:LBLUE,border:'1px solid #D5E3F5',borderRadius:10,padding:'12px 18px',display:'flex',gap:10,alignItems:'center',marginBottom:14}}>
+        <span style={{fontSize:20}}>🗃</span>
+        <span style={{fontSize:14,fontWeight:700,color:BLUE}}>納入箱の確認を行います。製品の入った箱を確認し、指定の場所に納めてください。</span>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        {bx.length?bx.map((x,i)=>(
+          <div key={i} className="panel">
+            <div style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderBottom:'1px solid '+LINE}}>
+              <NumBadge n={i+1} size={26}/>
+              <span style={{fontSize:16,fontWeight:700,color:BLUE,flex:1}}>{L(x,'name')}</span>
+              <span style={{fontSize:11.5,fontWeight:700,padding:'4px 10px',borderRadius:5,background:x.inUse?'#FDE68A':'#E8EAEE',color:x.inUse?'#7A5A00':'#6B7480'}}>{x.inUse?b('使用中'):b('未使用')}</span>
+            </div>
+            <div style={{padding:14,display:'flex',gap:14}}>
+              <TapPhoto src={x.img} style={{width:190,height:170,objectFit:'contain',borderRadius:8,background:'#F0F2F5',flexShrink:0}} ratio={170}/>
+              <div style={{flex:1,display:'flex',flexDirection:'column',gap:9}}>
+                {(x.steps||[]).map((s,j)=>(
+                  <div key={j} style={{display:'flex',gap:9}}>
+                    <NumBadge n={j+1} size={19}/>
+                    <div><div style={{fontSize:13,fontWeight:700,color:BLUE}}>{s.title}</div><div style={{fontSize:12,color:'#5A6472',lineHeight:1.55}}>{s.desc}</div></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{padding:'10px 14px',borderTop:'1px solid '+LINE,display:'flex',gap:16,flexWrap:'wrap',fontSize:12.5,color:'#5A6472'}}>
+              <span>{b('外寸')}：{x.size||'—'}</span><span>|</span>
+              <span>{b('仕切数')}：{x.dividers||'—'}</span><span>|</span>
+              <span>{b('材質')}：{x.material||'—'}</span>
+            </div>
+          </div>
+        )):none}
+      </div>
+    </>);
+  }
+
+  if(pageKey==='idmark'){
+    const im=m.idMark||{};
+    return(<>
+      <div style={{fontSize:14,color:'#5A6472',marginBottom:12}}>この品番の識別マークは以下の通りです。製品の識別・工程管理に使用します。</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        <P><H>{b('全体写真')}</H><Body>
+          <TapPhoto src={im.fullImg} style={{width:'100%',maxHeight:330,objectFit:'contain',borderRadius:8,display:'block'}} ratio={260}/>
+          <div style={{fontSize:13.5,color:'#2A3340',marginTop:10}}>{L(im,'fullNote')||'製品に付いている識別マークの位置（全体）'}</div>
+        </Body></P>
+        <P><H>{b('拡大写真')}</H><Body>
+          <TapPhoto src={im.zoomImg} style={{width:'100%',maxHeight:330,objectFit:'contain',borderRadius:8,display:'block'}} ratio={260}/>
+          <div style={{fontSize:13.5,color:'#2A3340',marginTop:10}}>{L(im,'zoomNote')||'識別マークの拡大写真'}</div>
+          {im.markType&&<div style={{fontSize:14,fontWeight:700,color:'#C0392B',marginTop:6}}>※ {im.markType}</div>}
+        </Body></P>
+      </div>
+    </>);
+  }
+
+  if(pageKey==='kanban'){
+    const kb=m.kanbans||[];
+    const COL={'緑':'#2E7D32','黄':'#F1C40F','青':'#1B4A9C','ピンク':'#E48AA5','赤':'#C0392B','白':'#FFFFFF'};
+    return(<>
+      <div style={{fontSize:14,color:'#5A6472',marginBottom:12}}>この品番で使用するかんばんの種類と内容です。</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+        {kb.length?kb.map((k,i)=>(
+          <div key={i} className="panel">
+            <div style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px'}}>
+              <NumBadge n={i+1} size={24}/><span style={{fontSize:15,fontWeight:700,color:BLUE}}>{L(k,'type')}</span>
+            </div>
+            <div style={{padding:'0 14px 14px',display:'flex',gap:14}}>
+              {/* かんばん見本 */}
+              <div style={{width:215,flexShrink:0,border:'1px solid #333',borderRadius:4,overflow:'hidden',background:'#fff'}}>
+                <div style={{display:'flex'}}>
+                  <div style={{flex:1,background:COL[k.color]||'#DDD',color:(k.color==='黄'||k.color==='白')?'#333':'#fff',fontSize:12,fontWeight:700,padding:'5px 8px'}}>{L(k,'type')}</div>
+                  <div style={{width:64,fontSize:11,fontWeight:700,padding:'5px 6px',textAlign:'center',borderLeft:'1px solid #333'}}>{hinban}</div>
+                </div>
+                <div style={{padding:'12px 8px 8px',textAlign:'center'}}>
+                  <div style={{fontSize:26,fontWeight:800,letterSpacing:1}}>{hinban}</div>
+                  <div style={{fontSize:12,color:'#333',marginTop:2}}>{dv(m,'name',lang)}</div>
+                  <div style={{marginTop:8,height:34,background:'repeating-linear-gradient(90deg,#111 0 2px,#fff 2px 4px)'}}/>
+                  <div style={{fontSize:11,marginTop:3,fontFamily:'monospace'}}>{k.code||''}</div>
+                </div>
+              </div>
+              <div style={{flex:1}}>
+                {[[b('用途'),L(k,'use')],[b('使用工程'),L(k,'process')],[b('発行先'),L(k,'issuer')],[b('色'),k.color],[b('サイズ'),k.size],[b('備考'),L(k,'note')]].map(([kk,vv],j)=>(
+                  <div key={j} style={{display:'flex',borderBottom:'1px solid '+LINE}}>
+                    <div style={{width:96,padding:'7px 9px',fontSize:12,color:'#5A6472',background:'#F7F9FC',flexShrink:0}}>{kk}</div>
+                    <div style={{padding:'7px 9px',fontSize:12.5,color:'#2A3340',display:'flex',alignItems:'center',gap:6}}>
+                      {kk===b('色')&&vv&&<span style={{width:13,height:13,borderRadius:3,background:COL[vv]||'#DDD',border:'1px solid #B0B7C0',display:'inline-block'}}/>}
+                      {vv||'—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )):none}
+      </div>
+      <WarnBox items={m.kanbanNotes||[]}/>
+      {m.kanbanQr&&(
+        <div style={{marginTop:14,display:'flex',justifyContent:'center'}}>
+          <button onClick={()=>onScan({expected:m.kanbanQr,label:hinban+'：かんばんQR照合'})}
+            style={{minHeight:52,padding:'0 34px',borderRadius:10,background:'#D97706',color:'#fff',fontSize:16,fontWeight:700}}>▦ かんばんQR照合</button>
+        </div>
+      )}
+    </>);
+  }
+
+  if(pageKey==='loc'){
+    return(
+      <P><H>{b('端数品置き場所')}</H><Body>
+        <div style={{background:'#F2F6FD',borderRadius:10,padding:'34px',textAlign:'center'}}>
+          <div style={{fontSize:14,color:'#5A6472',marginBottom:10}}>ロケ番号 / Nomor Lokasi</div>
+          <div style={{fontSize:46,fontWeight:800,color:NAVY,letterSpacing:2}}>{m.locNo||'—'}</div>
+        </div>
+        {m.locNote&&<div style={{marginTop:12}}>{txt(L(m,'locNote'))}</div>}
+      </Body></P>
+    );
+  }
+
+  if(pageKey==='qr'){
+    return(
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:14}}>
+        <P><H>製品QR / QR Produk</H><Body>
+          <div style={{textAlign:'center'}}>
+            {m.qrText?<><QRDisplay value={m.qrText} size={180}/><div style={{fontSize:12,color:'#6B7480',marginTop:10,wordBreak:'break-all'}}>{m.qrText}</div></>:none}
+            <button onClick={()=>onScan({expected:m.qrText||hinban,label:hinban+'：製品QR照合'})}
+              style={{marginTop:14,minHeight:50,padding:'0 30px',borderRadius:10,background:NAVY,color:'#fff',fontSize:16,fontWeight:700}}>▦ {b('QR照合')}</button>
+          </div>
+        </Body></P>
+        <P><H>かんばんQR / QR Kanban</H><Body>
+          <div style={{textAlign:'center'}}>
+            {m.kanbanQr?<><QRDisplay value={m.kanbanQr} size={180}/><div style={{fontSize:12,color:'#6B7480',marginTop:10,wordBreak:'break-all'}}>{m.kanbanQr}</div></>:none}
+            <button onClick={()=>onScan({expected:m.kanbanQr,label:hinban+'：かんばんQR照合'})} disabled={!m.kanbanQr}
+              style={{marginTop:14,minHeight:50,padding:'0 30px',borderRadius:10,background:m.kanbanQr?'#D97706':'#C7CDD6',color:'#fff',fontSize:16,fontWeight:700}}>▦ かんばん照合</button>
+          </div>
+        </Body></P>
+      </div>
+    );
+  }
+  return null;
+}
+
+/* ══════════ マスター管理 ══════════ */
+function MasterAdmin({master,user,onBack}){
+  const{t,b}=useLang();
+  const[sel,setSel]=useState(null);
+  const[newH,setNewH]=useState('');
+  const[q,setQ]=useState('');
+  const list=Object.keys(master).sort().filter(h=>!q.trim()||h.toLowerCase().includes(q.trim().toLowerCase()));
+
+  async function add(){
+    const h=newH.trim();if(!h)return;
+    if(master[h]){alert('すでに登録されています');return;}
+    try{await db.collection('outlineMaster').doc(h).set({createdAt:new Date().toISOString().slice(0,10)},{merge:true});setNewH('');setSel(h);}
+    catch(e){alert('追加に失敗: '+e.message);}
+  }
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
+      <TopBar title={b('マスター管理')} onBack={onBack} user={user}/>
+      <div style={{flex:1,overflowY:'auto',padding:'20px 28px'}}>
+        <div style={{display:'flex',gap:12,marginBottom:16,maxWidth:900}}>
+          <input value={newH} onChange={e=>setNewH(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="新しい品番を追加..."/>
+          <button onClick={add} disabled={!newH.trim()} style={{minHeight:46,padding:'0 24px',borderRadius:8,background:newH.trim()?NAVY:'#C7CDD6',color:'#fff',fontSize:15,fontWeight:700,whiteSpace:'nowrap'}}>{t('追加')}</button>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="品番で絞り込み..." style={{maxWidth:260}}/>
+        </div>
+        {list.length===0&&<div style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>品番が登録されていません。</div>}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10}}>
+          {list.map(h=>{
+            const d=master[h]||{};
+            const filled=['productImg','shape','teekin','hanger','steps','cautions','tools','packing','boxes','idMark','kanbans','locNo','qrText']
+              .filter(k=>{const v=d[k];return Array.isArray(v)?v.length:(v&&typeof v==='object'?Object.keys(v).length:!!v);}).length;
+            return(
+              <button key={h} onClick={()=>setSel(h)} style={{padding:'12px 14px',textAlign:'left',background:'#fff',border:'1px solid '+LINE,borderRadius:10}}>
+                <div style={{fontSize:15,fontWeight:700,color:'#111',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h}</div>
+                <div style={{fontSize:12,color:'#6B7480',marginTop:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name||'（品名未設定）'}</div>
+                <div style={{fontSize:11,fontWeight:700,color:filled?'#2E7D4F':'#C7CDD6',marginTop:5}}>{filled?`${filled}/13 項目`:'未登録'}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {sel&&<MasterEditor hinban={sel} data={master[sel]||{}} onClose={()=>setSel(null)}/>}
+    </div>
+  );
+}
+
+/* ── マスター編集（ポップアップ） ── */
+function MasterEditor({hinban,data,onClose}){
+  const[d,setD]=useState(data);
+  const[tab,setTab]=useState('basic');
+  const[saving,setSaving]=useState(false);
+  const[saved,setSaved]=useState(false);
+  const[busy,setBusy]=useState(null);
+  useEffect(()=>{setD(data);},[hinban]);
+
+  const ref=db.collection('outlineMaster').doc(hinban);
+  function upd(patch){setD(p=>({...p,...patch}));}
+  async function save(){
+    setSaving(true);
+    try{
+      await ref.set({...d,updatedAt:new Date().toISOString().slice(0,10)},{merge:true});
+      setSaved(true);setTimeout(()=>setSaved(false),2500);
+    }catch(e){alert('保存に失敗: '+e.message);}
+    finally{setSaving(false);}
+  }
+  async function del(){
+    if(!window.confirm(`品番「${hinban}」を削除しますか？`))return;
+    try{await ref.delete();onClose();}catch(e){alert('削除に失敗: '+e.message);}
+  }
+  /* 画像アップロード：path は任意の識別子 */
+  async function upImg(path,file,apply){
+    if(!file)return;
+    if(file.size>4*1024*1024){alert('4MB以下の画像を選択してください');return;}
+    setBusy(path);
+    try{
+      const r=stor.ref(`outline-images/${hinban}/${path}`);
+      await r.put(file);
+      const url=await r.getDownloadURL();
+      apply(url);
+    }catch(e){alert('アップロード失敗: '+e.message);}
+    finally{setBusy(null);}
+  }
+
+  const TABS=[
+    ['basic','基本情報'],['shape','形状確認'],['teekin','テーキン'],['hanger','ハンガー'],
+    ['steps','作業の流れ'],['caution','注意ポイント'],['tools','必要道具'],['packing','収容数・荷姿'],
+    ['boxes','納入箱'],['idmark','識別マーク'],['kanban','かんばん'],
+  ];
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:1000,height:'calc(100vh - 40px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{background:NAVY,padding:'14px 20px',display:'flex',alignItems:'center',gap:14}}>
+          <div style={{fontSize:20,fontWeight:700,color:'#fff',flex:1}}>{hinban}</div>
+          <button onClick={del} style={{padding:'7px 16px',borderRadius:7,background:'rgba(255,255,255,.15)',color:'#FFD9D9',fontSize:13,fontWeight:700}}>削除</button>
+          <button onClick={onClose} style={{width:36,height:36,borderRadius:'50%',background:'rgba(255,255,255,.18)',color:'#fff',fontSize:20}}>×</button>
+        </div>
+        <div style={{display:'flex',gap:5,padding:'10px 16px',borderBottom:'1px solid '+LINE,overflowX:'auto',flexShrink:0}}>
+          {TABS.map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)}
+              style={{padding:'7px 13px',borderRadius:18,whiteSpace:'nowrap',fontSize:13,fontWeight:tab===k?700:600,background:tab===k?NAVY:'#F2F4F7',color:tab===k?'#fff':'#4A5460'}}>{l}</button>
+          ))}
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'18px 20px'}}>
+          <EditorBody tab={tab} d={d} upd={upd} upImg={upImg} busy={busy} hinban={hinban}/>
+        </div>
+        <div style={{padding:'12px 20px',borderTop:'1px solid '+LINE,display:'flex',gap:12,alignItems:'center',background:'#F7F8FA'}}>
+          <button onClick={save} disabled={saving} style={{flex:1,minHeight:48,borderRadius:10,background:saving?'#AEB6C2':NAVY,color:'#fff',fontSize:16,fontWeight:700}}>{saving?'保存中...':'保存する'}</button>
+          {saved&&<span style={{color:'#2E7D4F',fontWeight:700,fontSize:14,whiteSpace:'nowrap'}}>✓ 保存しました</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 編集フォーム部品 ── */
+const FLbl=({children})=><div style={{fontSize:12.5,fontWeight:700,color:'#4A5460',marginBottom:6,marginTop:14}}>{children}</div>;
+function Row({children,cols}){return <div style={{display:'grid',gridTemplateColumns:cols||'1fr 1fr',gap:12}}>{children}</div>;}
+function ImgSlot({url,label,busy,onPick,onClear,h}){
+  const r=useRef(null);
+  return(
+    <div>
+      {label&&<div style={{fontSize:11.5,fontWeight:600,color:'#6B7480',marginBottom:5}}>{label}</div>}
+      {url?(
+        <div style={{position:'relative',display:'inline-block'}}>
+          <img src={url} style={{width:'100%',maxWidth:150,height:h||110,objectFit:'contain',borderRadius:8,border:'1px solid '+LINE,background:'#fff',display:'block'}}/>
+          <button onClick={onClear} style={{position:'absolute',top:-7,right:-7,width:24,height:24,borderRadius:'50%',background:'#C0392B',color:'#fff',fontSize:13,fontWeight:700}}>×</button>
+        </div>
+      ):(
+        <div onClick={()=>!busy&&r.current?.click()} style={{width:150,height:h||110,border:'2px dashed #C7CDD6',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',background:'#FAFBFC',cursor:'pointer',fontSize:12,color:'#9AA3AF'}}>
+          {busy?'アップ中…':'＋ 画像'}
+        </div>
+      )}
+      <input type="file" accept="image/*" ref={r} style={{display:'none'}} onChange={e=>{onPick(e.target.files[0]);e.target.value='';}}/>
+    </div>
+  );
+}
+/* 可変リスト編集 */
+function RepList({items,onChange,render,addLabel,blank,max}){
+  const arr=items||[];
+  const set=(i,v)=>{const n=[...arr];n[i]=v;onChange(n);};
+  const rm=i=>onChange(arr.filter((_,j)=>j!==i));
+  return(
+    <div>
+      {arr.map((it,i)=>(
+        <div key={i} style={{border:'1px solid '+LINE,borderRadius:10,padding:12,marginBottom:10,background:'#FAFBFC'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+            <NumBadge n={i+1} size={22}/>
+            <div style={{flex:1}}/>
+            <button onClick={()=>rm(i)} style={{padding:'4px 12px',borderRadius:6,background:'#FDECEA',color:'#B71C1C',fontSize:12,fontWeight:700}}>削除</button>
+          </div>
+          {render(it,v=>set(i,v),i)}
+        </div>
+      ))}
+      {(!max||arr.length<max)&&(
+        <button onClick={()=>onChange([...arr,blank?JSON.parse(JSON.stringify(blank)):{}])}
+          style={{width:'100%',minHeight:44,borderRadius:8,border:'2px dashed #C7CDD6',background:'#fff',color:NAVY,fontSize:14,fontWeight:700}}>＋ {addLabel||'追加'}</button>
+      )}
+    </div>
+  );
+}
+/* 1行1項目のテキストエリア ⇄ 配列 */
+function LinesArea({value,onChange,height,ph}){
+  return <textarea value={(value||[]).join('\n')} onChange={e=>onChange(e.target.value.split('\n').map(s=>s.trim()).filter(Boolean))}
+    style={{width:'100%',height:height||80,resize:'vertical'}} placeholder={ph||'1行に1項目'}/>;
+}
+
+function EditorBody({tab,d,upd,upImg,busy,hinban}){
+  const S=(k,v)=>upd({[k]:v});
+  const sub=(k,patch)=>upd({[k]:{...(d[k]||{}),...patch}});
+
+  if(tab==='basic')return(<>
+    <Row>
+      <div><FLbl>品名（日本語）</FLbl><input value={d.name||''} onChange={e=>S('name',e.target.value)} placeholder="例: ブラケット ASSY"/></div>
+      <div><FLbl>品名（インドネシア語）</FLbl><input value={d.name_id||''} onChange={e=>S('name_id',e.target.value)} placeholder="Nama produk"/></div>
+    </Row>
+    <FLbl>製品写真</FLbl>
+    <ImgSlot url={d.productImg} busy={busy==='productImg'} h={150}
+      onPick={f=>upImg('productImg',f,u=>S('productImg',u))} onClear={()=>S('productImg','')}/>
+    <Row>
+      <div><FLbl>QR照合文字列（製品）</FLbl><input value={d.qrText||''} onChange={e=>S('qrText',e.target.value)} placeholder="未設定なら品番で照合"/></div>
+      <div><FLbl>かんばんQR照合文字列</FLbl><input value={d.kanbanQr||''} onChange={e=>S('kanbanQr',e.target.value)}/></div>
+    </Row>
+    <Row>
+      <div><FLbl>端数品置き場所（ロケ番号）</FLbl><input value={d.locNo||''} onChange={e=>S('locNo',e.target.value)} placeholder="例: A-12"/></div>
+      <div><FLbl>作業動画URL</FLbl><input value={d.videoUrl||''} onChange={e=>S('videoUrl',e.target.value)} placeholder="https://..."/></div>
+    </Row>
+    <FLbl>製品写真ページの注意事項（1行1項目）</FLbl>
+    <LinesArea value={d.productNotes} onChange={v=>S('productNotes',v)}/>
+  </>);
+
+  if(tab==='shape'){
+    const sh=d.shape||{};
+    return(<>
+      <FLbl>本品の写真</FLbl>
+      <ImgSlot url={sh.img} busy={busy==='shape/img'} h={150} onPick={f=>upImg('shape/img',f,u=>sub('shape',{img:u}))} onClear={()=>sub('shape',{img:''})}/>
+      <FLbl>本品の特徴（番号順）</FLbl>
+      <RepList items={sh.points} onChange={v=>sub('shape',{points:v})} addLabel="特徴を追加" blank={{text:'',text_id:''}}
+        render={(it,set)=>(<Row>
+          <div><input value={it.text||''} onChange={e=>set({...it,text:e.target.value})} placeholder="例: 丸穴あり（穴径：φ10±0.1）"/></div>
+          <div><input value={it.text_id||''} onChange={e=>set({...it,text_id:e.target.value})} placeholder="Indonesian（任意）"/></div>
+        </Row>)}/>
+      <FLbl>類似品との違い（最大3件）</FLbl>
+      <RepList items={sh.similars} onChange={v=>sub('shape',{similars:v})} max={3} addLabel="類似品を追加" blank={{name:'',img:'',diffs:[]}}
+        render={(it,set,i)=>(<>
+          <Row cols="1fr 170px">
+            <div><input value={it.name||''} onChange={e=>set({...it,name:e.target.value})} placeholder="類似品の品番 例: B-123"/></div>
+            <ImgSlot url={it.img} busy={busy==='shape/sim'+i} h={90} onPick={f=>upImg('shape/sim'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
+          </Row>
+          <FLbl>違い（1行1項目）</FLbl>
+          <LinesArea value={it.diffs} onChange={v=>set({...it,diffs:v})} height={70}/>
+        </>)}/>
+      <FLbl>注意事項（1行1項目）</FLbl>
+      <LinesArea value={sh.notes} onChange={v=>sub('shape',{notes:v})}/>
+    </>);
+  }
+
+  if(tab==='teekin'){
+    const tk=d.teekin||{};
+    return(<>
+      <FLbl>テーキン写真</FLbl>
+      <ImgSlot url={tk.img} busy={busy==='teekin/img'} h={150} onPick={f=>upImg('teekin/img',f,u=>sub('teekin',{img:u}))} onClear={()=>sub('teekin',{img:''})}/>
+      <FLbl>説明・注意事項（日本語）</FLbl>
+      <textarea value={tk.note||''} onChange={e=>sub('teekin',{note:e.target.value})} style={{width:'100%',height:90,resize:'vertical'}}/>
+      <FLbl>説明・注意事項（インドネシア語）</FLbl>
+      <textarea value={tk.note_id||''} onChange={e=>sub('teekin',{note_id:e.target.value})} style={{width:'100%',height:90,resize:'vertical'}}/>
+    </>);
+  }
+
+  if(tab==='hanger'){
+    const hg=d.hanger||{};
+    return(<>
+      <FLbl>ハンガー全体写真</FLbl>
+      <ImgSlot url={hg.img} busy={busy==='hanger/img'} h={150} onPick={f=>upImg('hanger/img',f,u=>sub('hanger',{img:u}))} onClear={()=>sub('hanger',{img:''})}/>
+      <FLbl>主な特徴（確認ポイント・最大4件）</FLbl>
+      <RepList items={hg.features} onChange={v=>sub('hanger',{features:v})} max={4} addLabel="特徴を追加" blank={{title:'',img:'',note:''}}
+        render={(it,set,i)=>(<>
+          <Row cols="1fr 170px">
+            <div><input value={it.title||''} onChange={e=>set({...it,title:e.target.value})} placeholder="例: フック形状（上部）"/></div>
+            <ImgSlot url={it.img} busy={busy==='hanger/f'+i} h={90} onPick={f=>upImg('hanger/f'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
+          </Row>
+          <FLbl>補足</FLbl>
+          <textarea value={it.note||''} onChange={e=>set({...it,note:e.target.value})} style={{width:'100%',height:60,resize:'vertical'}}/>
+        </>)}/>
+      <FLbl>ハンガー仕様（「項目：値」を1行ずつ）</FLbl>
+      <textarea value={(hg.spec||[]).map(r=>`${r.k}：${r.v}`).join('\n')}
+        onChange={e=>sub('hanger',{spec:e.target.value.split('\n').map(l=>{const i=l.indexOf('：')>=0?l.indexOf('：'):l.indexOf(':');return i<0?null:{k:l.slice(0,i).trim(),v:l.slice(i+1).trim()};}).filter(Boolean)})}
+        style={{width:'100%',height:150,resize:'vertical'}} placeholder={'ハンガー名：標準ハンガーA\nサイズ：W500 × H800 mm\n材質：SS400'}/>
+      <FLbl>使用時の注意（1行1項目）</FLbl>
+      <LinesArea value={hg.cautions} onChange={v=>sub('hanger',{cautions:v})}/>
+    </>);
+  }
+
+  if(tab==='steps')return(<>
+    <FLbl>作業の流れ（手順ごとにカード）</FLbl>
+    <RepList items={d.steps} onChange={v=>S('steps',v)} addLabel="手順を追加" blank={{text:'',text_id:'',img:''}}
+      render={(it,set,i)=>(<>
+        <Row cols="1fr 170px">
+          <div>
+            <textarea value={it.text||''} onChange={e=>set({...it,text:e.target.value})} style={{width:'100%',height:60,resize:'vertical'}} placeholder="手順の内容（日本語）"/>
+            <textarea value={it.text_id||''} onChange={e=>set({...it,text_id:e.target.value})} style={{width:'100%',height:50,resize:'vertical',marginTop:6}} placeholder="Indonesian（任意）"/>
+          </div>
+          <ImgSlot url={it.img} busy={busy==='step'+i} h={100} onPick={f=>upImg('step'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
+        </Row>
+      </>)}/>
+  </>);
+
+  if(tab==='caution')return(<>
+    <FLbl>注意ポイント（1行1項目）</FLbl>
+    <LinesArea value={d.cautions} onChange={v=>S('cautions',v)} height={200} ph={'例: 製品同士がぶつからないように置いてください'}/>
+  </>);
+
+  if(tab==='tools')return(<>
+    <FLbl>必要道具類</FLbl>
+    <RepList items={d.tools} onChange={v=>S('tools',v)} addLabel="道具を追加" blank={{name:'',img:'',note:''}}
+      render={(it,set,i)=>(<>
+        <Row cols="1fr 170px">
+          <div>
+            <input value={it.name||''} onChange={e=>set({...it,name:e.target.value})} placeholder="道具名 例: 軍手"/>
+            <textarea value={it.note||''} onChange={e=>set({...it,note:e.target.value})} style={{width:'100%',height:56,resize:'vertical',marginTop:6}} placeholder="用途 例: 製品の取扱い時に使用します。"/>
+          </div>
+          <ImgSlot url={it.img} busy={busy==='tool'+i} h={100} onPick={f=>upImg('tool'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
+        </Row>
+      </>)}/>
+    <FLbl>注意事項（1行1項目）</FLbl>
+    <LinesArea value={d.toolNotes} onChange={v=>S('toolNotes',v)}/>
+  </>);
+
+  if(tab==='packing'){
+    const pk=d.packing||{};
+    return(<>
+      <Row>
+        <div><FLbl>1箱あたりの収容数</FLbl><input value={pk.capacity||''} onChange={e=>sub('packing',{capacity:e.target.value})} placeholder="例: 42"/></div>
+        <div><FLbl>製品イメージ（未設定なら製品写真を使用）</FLbl>
+          <ImgSlot url={pk.productImg} busy={busy==='packing/img'} h={90} onPick={f=>upImg('packing/img',f,u=>sub('packing',{productImg:u}))} onClear={()=>sub('packing',{productImg:''})}/>
+        </div>
+      </Row>
+      <FLbl>梱包荷姿（最大4種類）</FLbl>
+      <RepList items={pk.patterns} onChange={v=>sub('packing',{patterns:v})} max={4} addLabel="荷姿を追加" blank={{img:'',divider:'',direction:'',capacity:''}}
+        render={(it,set,i)=>(<Row cols="170px 1fr">
+          <ImgSlot url={it.img} busy={busy==='packing/p'+i} h={100} onPick={f=>upImg('packing/p'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
+          <div>
+            <input value={it.divider||''} onChange={e=>set({...it,divider:e.target.value})} placeholder="仕切り 例: 縦 × 横"/>
+            <input value={it.direction||''} onChange={e=>set({...it,direction:e.target.value})} placeholder="向き 例: 縦向き" style={{marginTop:6}}/>
+            <input value={it.capacity||''} onChange={e=>set({...it,capacity:e.target.value})} placeholder="収容数 例: 42" style={{marginTop:6}}/>
+          </div>
+        </Row>)}/>
+      <FLbl>注意事項（1行1項目）</FLbl>
+      <LinesArea value={pk.notes} onChange={v=>sub('packing',{notes:v})}/>
+    </>);
+  }
+
+  if(tab==='boxes')return(<>
+    <FLbl>納入箱（最大4種類）</FLbl>
+    <RepList items={d.boxes} onChange={v=>S('boxes',v)} max={4} addLabel="納入箱を追加"
+      blank={{name:'',img:'',inUse:false,size:'',dividers:'',material:'',steps:[{title:'箱の外観を確認',desc:'納入箱の品番、ラベルを確認します。'},{title:'箱を開ける',desc:'箱のフタを開け、製品の入れ方を確認します。'},{title:'製品を確認',desc:'製品の識別マークを確認します。'},{title:'所定の場所に納める',desc:'確認後、指定の場所に納めます。'}]}}
+      render={(it,set,i)=>(<>
+        <Row cols="170px 1fr">
+          <ImgSlot url={it.img} busy={busy==='box'+i} h={110} onPick={f=>upImg('box'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
+          <div>
+            <input value={it.name||''} onChange={e=>set({...it,name:e.target.value})} placeholder="箱名 例: 納入箱 A（標準箱）"/>
+            <label style={{display:'flex',alignItems:'center',gap:8,marginTop:8,fontSize:13,fontWeight:600,color:'#4A5460'}}>
+              <input type="checkbox" checked={!!it.inUse} onChange={e=>set({...it,inUse:e.target.checked})} style={{width:18,height:18}}/> この品番で使用中
+            </label>
+            <Row cols="1fr 1fr 1fr">
+              <input value={it.size||''} onChange={e=>set({...it,size:e.target.value})} placeholder="外寸" style={{marginTop:8}}/>
+              <input value={it.dividers||''} onChange={e=>set({...it,dividers:e.target.value})} placeholder="仕切数" style={{marginTop:8}}/>
+              <input value={it.material||''} onChange={e=>set({...it,material:e.target.value})} placeholder="材質" style={{marginTop:8}}/>
+            </Row>
+          </div>
+        </Row>
+        <FLbl>確認手順（「見出し：説明」を1行ずつ）</FLbl>
+        <textarea value={(it.steps||[]).map(s=>`${s.title}：${s.desc}`).join('\n')}
+          onChange={e=>set({...it,steps:e.target.value.split('\n').map(l=>{const p=l.indexOf('：')>=0?l.indexOf('：'):l.indexOf(':');return p<0?null:{title:l.slice(0,p).trim(),desc:l.slice(p+1).trim()};}).filter(Boolean)})}
+          style={{width:'100%',height:90,resize:'vertical'}}/>
+      </>)}/>
+  </>);
+
+  if(tab==='idmark'){
+    const im=d.idMark||{};
+    return(<>
+      <Row>
+        <div><FLbl>全体写真</FLbl><ImgSlot url={im.fullImg} busy={busy==='idmark/full'} h={130} onPick={f=>upImg('idmark/full',f,u=>sub('idMark',{fullImg:u}))} onClear={()=>sub('idMark',{fullImg:''})}/></div>
+        <div><FLbl>拡大写真</FLbl><ImgSlot url={im.zoomImg} busy={busy==='idmark/zoom'} h={130} onPick={f=>upImg('idmark/zoom',f,u=>sub('idMark',{zoomImg:u}))} onClear={()=>sub('idMark',{zoomImg:''})}/></div>
+      </Row>
+      <FLbl>全体写真の説明</FLbl>
+      <input value={im.fullNote||''} onChange={e=>sub('idMark',{fullNote:e.target.value})} placeholder="製品に付いている識別マークの位置（全体）"/>
+      <FLbl>拡大写真の説明</FLbl>
+      <input value={im.zoomNote||''} onChange={e=>sub('idMark',{zoomNote:e.target.value})} placeholder="識別マークの拡大写真"/>
+      <FLbl>マークの種類（赤字で表示）</FLbl>
+      <input value={im.markType||''} onChange={e=>sub('idMark',{markType:e.target.value})} placeholder="例: 丸マーク（●）"/>
+    </>);
+  }
+
+  if(tab==='kanban')return(<>
+    <FLbl>かんばん情報（最大4種類）</FLbl>
+    <RepList items={d.kanbans} onChange={v=>S('kanbans',v)} max={4} addLabel="かんばんを追加"
+      blank={{type:'',color:'',code:'',use:'',process:'',issuer:'',size:'W100 × H70 mm',note:''}}
+      render={(it,set)=>(<>
+        <Row>
+          <div><input value={it.type||''} onChange={e=>set({...it,type:e.target.value})} placeholder="種類 例: 生産かんばん"/></div>
+          <div>
+            <select value={it.color||''} onChange={e=>set({...it,color:e.target.value})}>
+              <option value="">色を選択</option>
+              {['緑','黄','青','ピンク','赤','白'].map(c=><option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </Row>
+        <Row>
+          <div><input value={it.code||''} onChange={e=>set({...it,code:e.target.value})} placeholder="コード 例: KBN0001" style={{marginTop:8}}/></div>
+          <div><input value={it.size||''} onChange={e=>set({...it,size:e.target.value})} placeholder="サイズ 例: W100 × H70 mm" style={{marginTop:8}}/></div>
+        </Row>
+        <Row>
+          <div><input value={it.use||''} onChange={e=>set({...it,use:e.target.value})} placeholder="用途 例: 生産指示用" style={{marginTop:8}}/></div>
+          <div><input value={it.process||''} onChange={e=>set({...it,process:e.target.value})} placeholder="使用工程 例: 掛け工程" style={{marginTop:8}}/></div>
+        </Row>
+        <Row>
+          <div><input value={it.issuer||''} onChange={e=>set({...it,issuer:e.target.value})} placeholder="発行先 例: Aライン" style={{marginTop:8}}/></div>
+          <div><input value={it.note||''} onChange={e=>set({...it,note:e.target.value})} placeholder="備考 例: 製造数の管理に使用" style={{marginTop:8}}/></div>
+        </Row>
+      </>)}/>
+    <FLbl>注意事項（1行1項目）</FLbl>
+    <LinesArea value={d.kanbanNotes} onChange={v=>S('kanbanNotes',v)}/>
+  </>);
+
+  return null;
+}
+
+/* ══════════ アプリ本体 ══════════ */
+function App(){
+  const[lang,setLang]=useState('ja');
+  const[user,setUser]=useState(undefined);
+  const[ready,setReady]=useState(false);
+  const[err,setErr]=useState(null);
+  const[master,setMaster]=useState({});
+  const[view,setView]=useState({name:'proc'});
+  const[scanHome,setScanHome]=useState(false);
+
+  useEffect(()=>auth.onAuthStateChanged(u=>{setUser(u);setReady(true);}),[]);
+  useEffect(()=>{
+    if(!user)return;
+    return db.collection('outlineMaster').onSnapshot(
+      s=>{const o={};s.forEach(x=>o[x.id]=x.data());setMaster(o);setErr(null);},
+      e=>setErr(e.message));
+  },[user]);
+
+  const ctx={lang,setLang,...makeT(lang)};
+  if(!ready)return <LoadingScreen/>;
+  if(!user)return <LangCtx.Provider value={ctx}><LoginScreen/></LangCtx.Provider>;
+
+  /* QRガイド読取 → 品番解決 */
+  function resolveScan(text){
+    const v=(text||'').trim();
+    const keys=Object.keys(master);
+    let hit=keys.find(h=>h===v)
+      ||keys.find(h=>{const q=master[h]?.qrText;return q&&(q===v||q.includes(v)||v.includes(q));})
+      ||keys.find(h=>v.includes(h));
+    setScanHome(false);
+    if(hit)setView(x=>({name:'info',proc:x.proc,hinban:hit}));
+    else alert('該当する品番が見つかりません: '+v.slice(0,30));
+  }
+
+  let screen;
+  if(err)screen=<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
+  else if(view.name==='proc')screen=<ProcessSelect user={user} onPick={p=>setView({name:'start',proc:p})} onLogout={()=>auth.signOut()}/>;
+  else if(view.name==='start')screen=<StartScreen proc={view.proc} user={user}
+    onQR={()=>setScanHome(true)}
+    onSearch={()=>setView({name:'search',proc:view.proc})}
+    onWork={()=>alert('作業指示は Phase 2 で実装予定です。')}
+    onMaster={()=>setView({name:'master',proc:view.proc})}
+    onBack={()=>setView({name:'proc'})} onLogout={()=>auth.signOut()}/>;
+  else if(view.name==='search')screen=<SearchScreen master={master} user={user}
+    onPick={h=>setView({name:'info',proc:view.proc,hinban:h})}
+    onBack={()=>setView({name:'start',proc:view.proc})} onHome={()=>setView({name:'start',proc:view.proc})}/>;
+  else if(view.name==='info')screen=<InfoViewer proc={view.proc} hinban={view.hinban} master={master} user={user}
+    onBack={()=>setView({name:'search',proc:view.proc})}
+    onChangeProc={p=>setView({name:'info',proc:p,hinban:view.hinban})}/>;
+  else if(view.name==='master')screen=<MasterAdmin master={master} user={user} onBack={()=>setView({name:'start',proc:view.proc})}/>;
+
+  return(
+    <LangCtx.Provider value={ctx}>
+      {screen}
+      {scanHome&&<QRScannerModal expectedValue="" label="ガイドQRを読み取ってください" onSuccess={resolveScan} onClose={()=>setScanHome(false)}/>}
+    </LangCtx.Provider>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
