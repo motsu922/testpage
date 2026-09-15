@@ -2287,7 +2287,23 @@
   function buildCsvOrderIdentity(logs, sessions) {
     const normalize = value => String(value || '').trim().replace(/\s+/g, ' ');
     const qrSessions = new Map();
+    const hashSessions = new Map();
+    const hashQr = value => {
+      const text = String(value || '').normalize('NFKC')
+        .replace(/[\u200B\u200C\u200D\uFEFF\u00AD]/g, '')
+        .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE58\uFE63]/g, '-')
+        .replace(/\u00A0/g, ' ').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+        .replace(/[\x00-\x1F\x7F]/g, '');
+      let hash = 2166136261;
+      for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+      return (hash >>> 0).toString(36);
+    };
     sessions.forEach(session => {
+      (session.details || []).forEach(detail => {
+        if (!detail.qrHash || !session.sessionId) return;
+        if (!hashSessions.has(detail.qrHash)) hashSessions.set(detail.qrHash, new Set());
+        hashSessions.get(detail.qrHash).add(session.sessionId);
+      });
       [session.orderQr, ...(session.details || []).map(d => d.orderQr)].forEach(qr => {
         const key = normalize(qr);
         if (!key || !session.sessionId) return;
@@ -2297,9 +2313,10 @@
     });
     return new Map(logs.map(log => {
       const qr = normalize(log.qr1_raw || log.qr1);
-      const matches = qrSessions.get(qr);
+      const hash = log.orderDetailQrHash || (qr ? hashQr(log.qr1_raw || log.qr1) : '');
+      const matches = qrSessions.get(qr) || hashSessions.get(hash);
       const sessionId = log.orderDetailSessionId || (matches?.size === 1 ? [...matches][0] : '');
-      return [log, { sessionId, key: sessionId ? 'session:' + sessionId : qr ? 'qr:' + qr : '', fallback: !sessionId }];
+      return [log, { sessionId, qrHash: hash, key: sessionId ? 'session:' + sessionId : qr ? 'qr:' + qr : '', fallback: !sessionId }];
     }));
   }
 
@@ -2327,8 +2344,10 @@
         }
         if (previous) {
           const seconds = (Date.parse(log.timestamp) - Date.parse(previous.timestamp)) / 1000;
-          result.set(previous, seconds > 0
-            ? { seconds, next: log.timestamp, status: identities.get(previous).fallback || identities.get(log).fallback ? '算出済（QR基準・旧ログIDなし）' : '算出済' }
+          result.set(previous, identities.get(previous).fallback || identities.get(log).fallback
+            ? { status: '明細セッション不明・まとめ読み判定不可' }
+            : seconds > 0
+            ? { seconds, next: log.timestamp, status: '算出済' }
             : { status: '同時刻の別明細・要確認' });
         }
         result.set(log, { status: '取得範囲内に次の別明細なし' });
@@ -2352,9 +2371,13 @@
     for (const log of logs) {
       if (log.partNumber !== 'ORDER_DETAIL' || (log.orderDetailReadResult || log.result) !== 'OK') continue;
       const session = sessionMap.get(identities.get(log)?.sessionId);
-      if (!session || (session.details || []).length <= 1) continue;
+      if (!session || !(session.details || []).length) {
+        leadTimes.set(log, { status: '明細情報不足・まとめ読み判定不可' });
+        continue;
+      }
+      if (session.details.length <= 1) continue;
       const candidates = session.details.filter(d =>
-        (log.orderDetailQrHash && log.orderDetailQrHash === d.qrHash) ||
+        (identities.get(log)?.qrHash && identities.get(log).qrHash === d.qrHash) ||
         (d.orderQr && qrKey(d.orderQr) === qrKey(log.qr1_raw || log.qr1)));
       const unavailable = status => leadTimes.set(log, { status, basis: '明細完了まで' });
       if (candidates.length !== 1) { unavailable('旧記録の明細内訳なし・算出不可'); continue; }
