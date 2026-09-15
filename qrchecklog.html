@@ -2284,7 +2284,26 @@
     return [iso.slice(0, 10), iso.slice(11, 19)];
   }
 
-  function buildOrderLeadTimes(logs) {
+  function buildCsvOrderIdentity(logs, sessions) {
+    const normalize = value => String(value || '').trim().replace(/\s+/g, ' ');
+    const qrSessions = new Map();
+    sessions.forEach(session => {
+      [session.orderQr, ...(session.details || []).map(d => d.orderQr)].forEach(qr => {
+        const key = normalize(qr);
+        if (!key || !session.sessionId) return;
+        if (!qrSessions.has(key)) qrSessions.set(key, new Set());
+        qrSessions.get(key).add(session.sessionId);
+      });
+    });
+    return new Map(logs.map(log => {
+      const qr = normalize(log.qr1_raw || log.qr1);
+      const matches = qrSessions.get(qr);
+      const sessionId = log.orderDetailSessionId || (matches?.size === 1 ? [...matches][0] : '');
+      return [log, { sessionId, key: sessionId ? 'session:' + sessionId : qr ? 'qr:' + qr : '', fallback: !sessionId }];
+    }));
+  }
+
+  function buildOrderLeadTimes(logs, identities = buildCsvOrderIdentity(logs, [])) {
     const result = new Map();
     const workers = new Map();
     for (const log of logs) {
@@ -2292,7 +2311,7 @@
       const worker = String(log.workerName || log.operatorName || '').trim();
       const time = Date.parse(log.timestamp);
       const status = (log.orderDetailReadResult || log.result) !== 'OK' ? '読込成功以外'
-        : !worker ? '作業者なし' : !log.orderDetailSessionId ? '明細セッションなし'
+        : !worker ? '作業者なし' : !identities.get(log)?.key ? '明細セッション・QRなし'
         : !Number.isFinite(time) ? '日時不正' : '';
       if (status) { result.set(log, { status }); continue; }
       if (!workers.has(worker)) workers.set(worker, []);
@@ -2302,14 +2321,14 @@
       entries.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
       let previous = null;
       for (const log of entries) {
-        if (previous && previous.orderDetailSessionId === log.orderDetailSessionId) {
+        if (previous && (identities.get(previous).key === identities.get(log).key || log.extractNote === 'order_detail_duplicate_ignored')) {
           result.set(log, { status: '同一明細の再読込' });
           continue;
         }
         if (previous) {
           const seconds = (Date.parse(log.timestamp) - Date.parse(previous.timestamp)) / 1000;
           result.set(previous, seconds > 0
-            ? { seconds, next: log.timestamp, status: '算出済' }
+            ? { seconds, next: log.timestamp, status: identities.get(previous).fallback || identities.get(log).fallback ? '算出済（QR基準・旧ログIDなし）' : '算出済' }
             : { status: '同時刻の別明細・要確認' });
         }
         result.set(log, { status: '取得範囲内に次の別明細なし' });
@@ -2348,8 +2367,9 @@
     const company = { ...activeCompany };
     const exportLogs = [...filteredLogs];
     const sourceLogs = [...allLogs];
+    const identities = buildCsvOrderIdentity(sourceLogs, orderSessions);
     const sessionCustomers = buildCsvSessionCustomers(sourceLogs, orderSessions);
-    const leadTimes = buildOrderLeadTimes(sourceLogs);
+    const leadTimes = buildOrderLeadTimes(sourceLogs, identities);
     let master;
     try {
       master = (await database.ref('qr_match_companies/customer_name_master/' + company.id).once('value')).val() || {};
@@ -2380,7 +2400,7 @@
         l.qr1 ?? '', l.qr2 ?? '',
         l.qr1Length ?? '', l.qr2Length ?? '',
         rule, l.extractNote ?? '',
-        l.orderDetailSessionId ?? '',
+        identities.get(l)?.sessionId || '',
         csvLeadDuration(lead.seconds), lead.seconds ?? '',
         ...csvDateTime(lead.next), lead.status || '',
         l.orderDetailResult ?? l.orderDetailReadResult ?? '',
