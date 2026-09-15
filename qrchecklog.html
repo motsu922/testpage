@@ -2366,8 +2366,7 @@
 
   function applyCombinedDetailLeadTimes(logs, sessions, identities, leadTimes) {
     const sessionMap = new Map(sessions.map(s => [s.sessionId, s]));
-    const qrKey = value => String(value || '').trim().replace(/\s+/g, ' ');
-    const partKey = value => String(value || '').trim().toUpperCase();
+    const groupResults = new Map();
     for (const log of logs) {
       if (log.partNumber !== 'ORDER_DETAIL' || (log.orderDetailReadResult || log.result) !== 'OK') continue;
       const session = sessionMap.get(identities.get(log)?.sessionId);
@@ -2376,45 +2375,54 @@
         continue;
       }
       if (session.details.length <= 1) continue;
-      const candidates = session.details.filter(d =>
-        (identities.get(log)?.qrHash && identities.get(log).qrHash === d.qrHash) ||
-        (d.orderQr && qrKey(d.orderQr) === qrKey(log.qr1_raw || log.qr1)));
-      const unavailable = status => leadTimes.set(log, { status, basis: '明細完了まで' });
-      if (candidates.length !== 1) { unavailable('旧記録の明細内訳なし・算出不可'); continue; }
-      const detail = candidates[0];
-      if (!Array.isArray(detail.lines) || session.details.some(d => !Array.isArray(d.lines))) {
-        unavailable('旧記録の明細内訳なし・算出不可'); continue;
+      if (!groupResults.has(session.sessionId)) {
+        const basis = 'まとめ読込から次明細開始まで';
+        const times = session.details.map(d => Date.parse(d.readAt));
+        const lines = (Array.isArray(session.lines) ? session.lines : Object.values(session.lines || {}))
+          .filter(line => !line.excluded);
+        const end = Date.parse(session.completedAt);
+        const completed = Number.isFinite(end) && lines.length > 0 && lines.every(line =>
+          Number.isFinite(Number(line.requiredBoxes)) && Number(line.requiredBoxes) > 0 &&
+          Number.isFinite(Number(line.scanned)) && Number(line.scanned) >= Number(line.requiredBoxes));
+        let result;
+        if (times.some(time => !Number.isFinite(time))) {
+          result = { basis, status: '明細読込日時不足・算出不可' };
+        } else if (completed && end < Math.max(...times)) {
+          result = { basis, status: '読込・完了日時の不整合' };
+        } else {
+          const start = Math.min(...times);
+          const nextAfter = completed ? end : Math.max(...times);
+          const workerOf = item => String(item.workerName || item.operatorName || '').trim();
+          const participants = new Set(logs.filter(item =>
+            identities.get(item)?.sessionId === session.sessionId && item.result === 'OK' &&
+            (item.partNumber === 'ORDER_DETAIL' || item.qr2_raw || item.qr2) &&
+            Date.parse(item.timestamp) >= start && (!completed || Date.parse(item.timestamp) <= end)
+          ).map(workerOf).filter(Boolean));
+          const next = logs.filter(item =>
+            item.partNumber === 'ORDER_DETAIL' && (item.orderDetailReadResult || item.result) === 'OK' &&
+            item.extractNote !== 'order_detail_duplicate_ignored' &&
+            participants.has(workerOf(item)) && Date.parse(item.timestamp) >= nextAfter &&
+            identities.get(item)?.sessionId !== session.sessionId
+          ).sort((a,b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))[0];
+          if (!participants.size) {
+            result = { basis, status: '取得範囲内で担当作業者を特定不可' };
+          } else if (!next) {
+            result = { basis, status: (completed ? '全体完了' : '未完了または完了記録なし') + '・取得範囲内に次の別明細なし' };
+          } else if (!identities.get(next)?.sessionId) {
+            result = { basis, status: '次明細のセッション不明・算出不可' };
+          } else {
+            const nextTime = Date.parse(next.timestamp);
+            result = {
+              seconds: (nextTime - start) / 1000,
+              start: new Date(start).toISOString(), end: new Date(nextTime).toISOString(),
+              next: next.timestamp,
+              basis, status: completed ? '算出済（担当作業者の最初の次明細読込）' : '算出済（未完了または完了記録なし・次明細開始まで）'
+            };
+          }
+        }
+        groupResults.set(session.sessionId, result);
       }
-      if (log.extractNote === 'order_detail_duplicate_ignored') { unavailable('同一明細の再読込'); continue; }
-      const needs = new Map();
-      detail.lines.filter(l => !l.excluded).forEach(l => {
-        const part = partKey(l.partNo);
-        needs.set(part, (needs.get(part) || 0) + Number(l.requiredBoxes));
-      });
-      if (!needs.size) { unavailable('照合対象なし'); continue; }
-      if ([...needs].some(([part, n]) => !part || !Number.isInteger(n) || n <= 0)) {
-        unavailable('明細必要数不正'); continue;
-      }
-      const shared = session.details.some(d => d !== detail && d.lines.some(l => !l.excluded && needs.has(partKey(l.partNo))));
-      if (shared) { unavailable('同品番を含む複数明細・個別完了時刻を特定不可'); continue; }
-      const start = Date.parse(detail.readAt);
-      if (!Number.isFinite(start)) { unavailable('明細読込日時なし'); continue; }
-      const scans = Object.values(session.scannedIds || {}).sort((a,b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
-      let completion = null;
-      for (const scan of scans) {
-        const part = partKey(scan.linePartNumber || scan.partNumber);
-        const time = Date.parse(scan.timestamp);
-        if (!Number.isFinite(time) || time < start || !needs.has(part) || needs.get(part) <= 0) continue;
-        needs.set(part, needs.get(part) - 1);
-        if ([...needs.values()].every(n => n === 0)) { completion = time; break; }
-      }
-      if (completion === null) { unavailable('未完了または照合実績不足'); continue; }
-      leadTimes.set(log, {
-        seconds: (completion - start) / 1000,
-        start: new Date(start).toISOString(),
-        end: new Date(completion).toISOString(),
-        basis: '明細完了まで', status: '算出済（全作業者・全端末合算）'
-      });
+      leadTimes.set(log, groupResults.get(session.sessionId));
     }
     return leadTimes;
   }
@@ -2459,9 +2467,10 @@
       return;
     }
     const identities = buildCsvOrderIdentity(sourceLogs, sessions);
+    const combinedSessionIds = new Set(sessions.filter(s => (s.details || []).length > 1).map(s => s.sessionId));
     const sessionCustomers = buildCsvSessionCustomers(sourceLogs, sessions);
     const leadTimes = applyCombinedDetailLeadTimes(sourceLogs, sessions, identities, buildOrderLeadTimes(sourceLogs, identities));
-    const headers = ['日にち','時間','作業者','処置者','顧客ID','顧客名','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','所要時間','所要時間(秒)','次明細読込日','次明細読込時間','所要時間算出状況','所要時間基準','計算開始日','計算開始時間','計算終了日','計算終了時間','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
+    const headers = ['日にち','時間','作業者','処置者','顧客ID','顧客名','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細区分','明細セッション','所要時間','所要時間(秒)','次明細読込日','次明細読込時間','所要時間算出状況','所要時間基準','計算開始日','計算開始時間','計算終了日','計算終了時間','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
     const rows = exportLogs.map(l => {
       const isDup = l.result === 'DUP' || l.isDuplicate;
       const rule = l.matchedRule ? JSON.stringify(l.matchedRule) : '';
@@ -2484,6 +2493,7 @@
         l.qr1 ?? '', l.qr2 ?? '',
         l.qr1Length ?? '', l.qr2Length ?? '',
         rule, l.extractNote ?? '',
+        combinedSessionIds.has(identities.get(l)?.sessionId) ? '明細まとめ' : identities.get(l)?.sessionId ? '単独明細' : '判定不可',
         identities.get(l)?.sessionId || '',
         csvLeadDuration(lead.seconds), lead.seconds ?? '',
         ...csvDateTime(lead.next), lead.status || '',
