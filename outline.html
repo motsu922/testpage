@@ -117,6 +117,71 @@ function dv(obj,key,lang){
   if(lang==='id'&&obj[key+'_id'])return obj[key+'_id'];
   return obj[key]||'';
 }
+/* 文字列配列の言語出し分け（要素ごとに _id を参照、無ければ日本語） */
+function dva(obj,key,lang){
+  const a=(obj&&Array.isArray(obj[key]))?obj[key]:[];
+  if(lang!=='id')return a;
+  const ids=obj[key+'_id'];
+  if(!Array.isArray(ids))return a;
+  return a.map((jp,i)=>ids[i]||jp);
+}
+
+/* ══════════ 自動翻訳（JP→ID）：生産計画アプリと同じプロキシ ══════════ */
+const TRANSLATE_URL='https://dawn-wave-20e6.motsu922.workers.dev';
+async function translateText(text){
+  const r=await fetch(TRANSLATE_URL+'?text='+encodeURIComponent(text));
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();
+  if(j.error)throw new Error(j.error);
+  return j.translated||'';
+}
+/* 翻訳が必要な箇所を収集（_src＝翻訳元の日本語。日本語が変わった項目だけ再翻訳。手入力の _id は尊重） */
+function trStr(obj,key,jobs,force){
+  if(!obj)return;
+  const jp=(obj[key]||'').trim();
+  if(!jp){delete obj[key+'_id'];delete obj[key+'_src'];return;}
+  if(!force&&obj[key+'_id']&&(obj[key+'_src']===undefined||obj[key+'_src']===jp)){obj[key+'_src']=jp;return;}
+  jobs.push({jp,apply:id=>{obj[key+'_id']=id;obj[key+'_src']=jp;}});
+}
+function trArr(obj,key,jobs,force){
+  if(!obj)return;
+  const a=Array.isArray(obj[key])?obj[key]:[];
+  if(!a.length){delete obj[key+'_id'];delete obj[key+'_src'];return;}
+  const ids=Array.isArray(obj[key+'_id'])?obj[key+'_id']:[];
+  const srcs=Array.isArray(obj[key+'_src'])?obj[key+'_src']:[];
+  const nid=a.map((jp,i)=>(!force&&ids[i]&&srcs[i]===jp)?ids[i]:null);
+  obj[key+'_id']=nid;obj[key+'_src']=a.slice();
+  a.forEach((jp,i)=>{if(nid[i]==null&&jp.trim())jobs.push({jp,apply:id=>{nid[i]=id;}});});
+}
+function collectTranslateJobs(d,force){
+  const jobs=[];
+  const S=(o,k)=>trStr(o,k,jobs,force), A=(o,k)=>trArr(o,k,jobs,force);
+  S(d,'name');S(d,'locNote');
+  A(d,'productNotes');A(d,'cautions');A(d,'toolNotes');A(d,'kanbanNotes');
+  if(d.shape){(d.shape.points||[]).forEach(p=>S(p,'text'));(d.shape.similars||[]).forEach(x=>{S(x,'name');A(x,'diffs');});A(d.shape,'notes');}
+  if(d.teekin)S(d.teekin,'note');
+  if(d.hanger){(d.hanger.features||[]).forEach(f=>{S(f,'title');S(f,'note');});A(d.hanger,'cautions');}
+  (d.steps||[]).forEach(x=>S(x,'text'));
+  (d.tools||[]).forEach(x=>{S(x,'name');S(x,'note');});
+  if(d.packing){(d.packing.patterns||[]).forEach(x=>{S(x,'divider');S(x,'direction');});A(d.packing,'notes');}
+  (d.boxes||[]).forEach(bx=>{S(bx,'name');(bx.steps||[]).forEach(x=>{S(x,'title');S(x,'desc');});});
+  if(d.idMark){S(d.idMark,'fullNote');S(d.idMark,'zoomNote');S(d.idMark,'markType');}
+  (d.kanbans||[]).forEach(k=>['type','use','process','issuer','note'].forEach(f=>S(k,f)));
+  Object.values(d.sheets||{}).forEach(sh=>{(sh.steps||[]).forEach(x=>S(x,'text'));A(sh,'notes');});
+  return jobs;
+}
+async function runTranslate(jobs,onProgress){
+  let done=0,fail=0;const queue=jobs.slice();
+  async function worker(){
+    while(queue.length){
+      const j=queue.shift();
+      try{const id=await translateText(j.jp);if(id)j.apply(id);else fail++;}catch(e){fail++;}
+      done++;onProgress&&onProgress(done,jobs.length);
+    }
+  }
+  await Promise.all([0,1,2,3].map(worker));
+  return{done,fail};
+}
 
 /* ══════════ 汎用コンポーネント ══════════ */
 function Spinner(){return <div style={{width:36,height:36,border:'3px solid '+LINE,borderTopColor:NAVY,borderRadius:'50%',animation:'spin 1s linear infinite'}}/>;}
@@ -578,7 +643,7 @@ function PageBody({pageKey,m,hinban,onScan}){
           {m.qrText&&<div style={{display:'flex',alignItems:'center',gap:16}}><QRDisplay value={m.qrText} size={120}/><div style={{fontSize:12,color:'#6B7480',wordBreak:'break-all'}}>{m.qrText}</div></div>}
         </Body></P>
       </div>
-      <WarnBox items={(m.productNotes||[])}/>
+      <WarnBox items={dva(m,'productNotes',lang)}/>
     </>);
   }
 
@@ -604,17 +669,17 @@ function PageBody({pageKey,m,hinban,onScan}){
           <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,sims.length||1))},1fr)`,gap:12}}>
             {sims.length?sims.map((s,i)=>(
               <div key={i} style={{border:'1px solid '+LINE,borderRadius:8,overflow:'hidden'}}>
-                <div style={{background:'#6B7480',color:'#fff',padding:'7px 10px',fontSize:13,fontWeight:700,textAlign:'center'}}>類似品：{s.name||'—'}</div>
+                <div style={{background:'#6B7480',color:'#fff',padding:'7px 10px',fontSize:13,fontWeight:700,textAlign:'center'}}>{lang==='id'?'Produk serupa':'類似品'}：{L(s,'name')||'—'}</div>
                 <TapPhoto src={s.img} style={{width:'100%',height:150,objectFit:'contain',background:'#F0F2F5',display:'block'}} ratio={150}/>
                 <div style={{padding:'10px'}}>
-                  {(s.diffs||[]).map((d,j)=><div key={j} style={{fontSize:12.5,lineHeight:1.7,color:'#2A3340'}}>・{d}</div>)}
+                  {dva(s,'diffs',lang).map((d,j)=><div key={j} style={{fontSize:12.5,lineHeight:1.7,color:'#2A3340'}}>・{d}</div>)}
                 </div>
               </div>
             )):none}
           </div>
         </Body></P>
       </div>
-      <WarnBox items={m.shape?.notes||['上記のポイントを確認し、類似品と間違えないようにしてください。','不明な場合は、必ず管理者に確認してください。']}/>
+      <WarnBox items={(m.shape?.notes||[]).length?dva(m.shape,'notes',lang):(lang==='id'?['Periksa poin di atas agar tidak tertukar dengan produk serupa.','Jika ragu, pastikan bertanya kepada pengelola.']:['上記のポイントを確認し、類似品と間違えないようにしてください。','不明な場合は、必ず管理者に確認してください。'])}/>
     </>);
   }
 
@@ -658,7 +723,7 @@ function PageBody({pageKey,m,hinban,onScan}){
           {(m.hanger?.cautions||[]).length>0&&(
             <div style={{background:LBLUE,border:'1px solid #D5E3F5',borderRadius:10,padding:'12px 16px'}}>
               <div style={{fontSize:13,fontWeight:700,color:BLUE,marginBottom:6}}>{b('使用時の注意')}</div>
-              {m.hanger.cautions.map((c,i)=><div key={i} style={{fontSize:13,lineHeight:1.75,color:'#2A3340'}}>・{c}</div>)}
+              {dva(m.hanger,'cautions',lang).map((c,i)=><div key={i} style={{fontSize:13,lineHeight:1.75,color:'#2A3340'}}>・{c}</div>)}
             </div>
           )}
         </div>
@@ -686,7 +751,7 @@ function PageBody({pageKey,m,hinban,onScan}){
   }
 
   if(pageKey==='caution'){
-    const cs=m.cautions||[];
+    const cs=dva(m,'cautions',lang);
     return(<>
       <P><H>{b('注意ポイント')}</H><Body>
         {cs.length?(
@@ -694,7 +759,7 @@ function PageBody({pageKey,m,hinban,onScan}){
             {cs.map((c,i)=>(
               <div key={i} style={{display:'flex',gap:12,padding:'14px 16px',background:'#FEF3E7',border:'1px solid #F5D9BC',borderRadius:8}}>
                 <span style={{color:'#C2410C',fontWeight:800,fontSize:17,flexShrink:0}}>!</span>
-                <span style={{fontSize:15,lineHeight:1.75,color:'#7A3A08',whiteSpace:'pre-wrap'}}>{typeof c==='string'?c:L(c,'text')}</span>
+                <span style={{fontSize:15,lineHeight:1.75,color:'#7A3A08',whiteSpace:'pre-wrap'}}>{c}</span>
               </div>
             ))}
           </div>
@@ -718,7 +783,7 @@ function PageBody({pageKey,m,hinban,onScan}){
           </div>
         )):none}
       </div>
-      <WarnBox items={m.toolNotes||[]}/>
+      <WarnBox items={dva(m,'toolNotes',lang)}/>
     </>);
   }
 
@@ -744,15 +809,15 @@ function PageBody({pageKey,m,hinban,onScan}){
               </div>
               <TapPhoto src={p.img} style={{width:'100%',height:140,objectFit:'cover',background:'#F0F2F5',display:'block'}} ratio={140}/>
               <div style={{padding:'10px'}}>
-                <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('仕切り')}：{p.divider||'—'}</div>
-                <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('向き')}：{p.direction||'—'}</div>
+                <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('仕切り')}：{L(p,'divider')||'—'}</div>
+                <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('向き')}：{L(p,'direction')||'—'}</div>
                 <div style={{fontSize:13,fontWeight:700,color:NAVY,marginTop:6,textAlign:'center'}}>{b('収容数')}：{p.capacity||pk.capacity||'—'}個</div>
               </div>
             </div>
           )):none}
         </div>
       </Body></P>
-      <WarnBox items={pk.notes||[]}/>
+      <WarnBox items={dva(pk,'notes',lang)}/>
     </>);
   }
 
@@ -777,7 +842,7 @@ function PageBody({pageKey,m,hinban,onScan}){
                 {(x.steps||[]).map((s,j)=>(
                   <div key={j} style={{display:'flex',gap:9}}>
                     <NumBadge n={j+1} size={19}/>
-                    <div><div style={{fontSize:13,fontWeight:700,color:BLUE}}>{s.title}</div><div style={{fontSize:12,color:'#5A6472',lineHeight:1.55}}>{s.desc}</div></div>
+                    <div><div style={{fontSize:13,fontWeight:700,color:BLUE}}>{L(s,'title')}</div><div style={{fontSize:12,color:'#5A6472',lineHeight:1.55}}>{L(s,'desc')}</div></div>
                   </div>
                 ))}
               </div>
@@ -851,7 +916,7 @@ function PageBody({pageKey,m,hinban,onScan}){
           </div>
         )):none}
       </div>
-      <WarnBox items={m.kanbanNotes||[]}/>
+      <WarnBox items={dva(m,'kanbanNotes',lang)}/>
       {m.kanbanQr&&(
         <div style={{marginTop:14,display:'flex',justifyContent:'center'}}>
           <button onClick={()=>onScan({expected:m.kanbanQr,label:hinban+'：かんばんQR照合'})}
@@ -1000,14 +1065,27 @@ function MasterEditor({hinban,data,onClose}){
   useEffect(()=>{setD(data);},[hinban]);
 
   const ref=db.collection('outlineMaster').doc(hinban);
+  const[trProg,setTrProg]=useState(null);
   function upd(patch){setD(p=>({...p,...patch}));}
-  async function save(){
+  /* 保存：日本語を先に保存 → 未翻訳/変更分を自動翻訳 → _id を保存 */
+  async function save(force){
     setSaving(true);
     try{
-      await ref.set({...d,updatedAt:new Date().toISOString().slice(0,10)},{merge:true});
+      const stamp=new Date().toISOString().slice(0,10);
+      await ref.set({...d,updatedAt:stamp},{merge:true});
+      const nd=JSON.parse(JSON.stringify(d));
+      const jobs=collectTranslateJobs(nd,force===true);
+      if(jobs.length){
+        setTrProg({done:0,total:jobs.length});
+        const r=await runTranslate(jobs,(a,b)=>setTrProg({done:a,total:b}));
+        setTrProg(null);
+        await ref.set({...nd,updatedAt:stamp},{merge:true});
+        setD(nd);
+        if(r.fail)alert(`${r.fail}件の翻訳に失敗しました（該当箇所は日本語のまま表示されます）`);
+      }
       setSaved(true);setTimeout(()=>setSaved(false),2500);
     }catch(e){alert('保存に失敗: '+e.message);}
-    finally{setSaving(false);}
+    finally{setSaving(false);setTrProg(null);}
   }
   async function del(){
     if(!window.confirm(`品番「${hinban}」を削除しますか？`))return;
@@ -1050,7 +1128,11 @@ function MasterEditor({hinban,data,onClose}){
           <EditorBody tab={tab} d={d} upd={upd} upImg={upImg} busy={busy} hinban={hinban}/>
         </div>
         <div style={{padding:'12px 20px',borderTop:'1px solid '+LINE,display:'flex',gap:12,alignItems:'center',background:'#F7F8FA'}}>
-          <button onClick={save} disabled={saving} style={{flex:1,minHeight:48,borderRadius:10,background:saving?'#AEB6C2':NAVY,color:'#fff',fontSize:16,fontWeight:700}}>{saving?'保存中...':'保存する'}</button>
+          <button onClick={()=>save(false)} disabled={saving} style={{flex:1,minHeight:48,borderRadius:10,background:saving?'#AEB6C2':NAVY,color:'#fff',fontSize:16,fontWeight:700}}>
+            {trProg?`🌐 翻訳中 ${trProg.done}/${trProg.total}`:(saving?'保存中...':'保存する（未翻訳分を自動でID翻訳）')}
+          </button>
+          <button onClick={()=>window.confirm('登録内容の全ての日本語を翻訳し直します。手入力した翻訳も上書きされます。よろしいですか？')&&save(true)} disabled={saving}
+            style={{minHeight:48,padding:'0 16px',borderRadius:10,border:'1px solid '+LINE,background:'#fff',color:saving?'#9AA3AF':'#1A7FA8',fontSize:13,fontWeight:700,whiteSpace:'nowrap'}}>🌐 全て再翻訳</button>
           {saved&&<span style={{color:'#2E7D4F',fontWeight:700,fontSize:14,whiteSpace:'nowrap'}}>✓ 保存しました</span>}
         </div>
       </div>
@@ -1542,7 +1624,7 @@ function WorkSheetScreen({proc,hinban,worker,master,user,onBack,onStart,onInfo})
             {m.productImg&&<TapPhoto src={m.productImg} style={{width:70,height:56,objectFit:'contain',borderRadius:6,border:'1px solid '+LINE,marginLeft:'auto'}}/>}
           </div>
           <SheetSteps sheet={sheet} lang={lang}/>
-          <WarnBox items={sheet.notes||[]}/>
+          <WarnBox items={dva(sheet,'notes',lang)}/>
         </div>
         <div style={{flex:'0 0 360px',borderLeft:'1px solid '+LINE,background:'#fff',padding:'20px',display:'flex',flexDirection:'column',gap:14,overflowY:'auto'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:'#F2F6FD',borderRadius:10}}>
@@ -1631,7 +1713,7 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
         <div style={{flex:'1 1 45%',overflowY:'auto',padding:'14px 18px',background:'#F5F6F8'}}>
           <div style={{fontSize:13,fontWeight:700,color:BLUE,marginBottom:8}}>📋 {b('要領書')}</div>
           <SheetSteps sheet={sheet} lang={lang} compact/>
-          <WarnBox items={sheet.notes||[]}/>
+          <WarnBox items={dva(sheet,'notes',lang)}/>
         </div>
         {/* 右：操作パネル */}
         <div style={{flex:'0 0 520px',borderLeft:'1px solid '+LINE,background:'#fff',padding:'14px 18px',display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
