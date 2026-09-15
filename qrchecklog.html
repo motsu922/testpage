@@ -2277,19 +2277,102 @@
   }
 
   // ── CSV出力 ──
-  function exportCSV() {
+  function csvDateTime(timestamp) {
+    const date = new Date(timestamp);
+    if (!Number.isFinite(date.getTime())) return ['', ''];
+    const iso = new Date(date.getTime() + 9 * 3600000).toISOString();
+    return [iso.slice(0, 10), iso.slice(11, 19)];
+  }
+
+  function buildOrderLeadTimes(logs) {
+    const result = new Map();
+    const workers = new Map();
+    for (const log of logs) {
+      if (log.partNumber !== 'ORDER_DETAIL') continue;
+      const worker = String(log.workerName || log.operatorName || '').trim();
+      const time = Date.parse(log.timestamp);
+      const status = (log.orderDetailReadResult || log.result) !== 'OK' ? '読込成功以外'
+        : !worker ? '作業者なし' : !log.orderDetailSessionId ? '明細セッションなし'
+        : !Number.isFinite(time) ? '日時不正' : '';
+      if (status) { result.set(log, { status }); continue; }
+      if (!workers.has(worker)) workers.set(worker, []);
+      workers.get(worker).push(log);
+    }
+    for (const entries of workers.values()) {
+      entries.sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+      let previous = null;
+      for (const log of entries) {
+        if (previous && previous.orderDetailSessionId === log.orderDetailSessionId) {
+          result.set(log, { status: '同一明細の再読込' });
+          continue;
+        }
+        if (previous) {
+          const seconds = (Date.parse(log.timestamp) - Date.parse(previous.timestamp)) / 1000;
+          result.set(previous, seconds > 0
+            ? { seconds, next: log.timestamp, status: '算出済' }
+            : { status: '同時刻の別明細・要確認' });
+        }
+        result.set(log, { status: '取得範囲内に次の別明細なし' });
+        previous = log;
+      }
+    }
+    return result;
+  }
+
+  function csvLeadDuration(seconds) {
+    if (!Number.isFinite(seconds)) return '';
+    const value = Math.floor(seconds);
+    return [Math.floor(value / 3600), Math.floor(value / 60) % 60, value % 60]
+      .map(n => String(n).padStart(2, '0')).join(':');
+  }
+
+  function buildCsvSessionCustomers(logs, sessions) {
+    const result = new Map();
+    const add = (sessionId, id) => {
+      if (!sessionId || !id) return;
+      if (!result.has(sessionId)) result.set(sessionId, new Set());
+      result.get(sessionId).add(id);
+    };
+    sessions.forEach(session => getOrderCustomerIds(session).forEach(id => add(session.sessionId, id)));
+    logs.forEach(log => {
+      if (log.partNumber === 'ORDER_DETAIL' && log.result === 'OK') {
+        add(log.orderDetailSessionId, logCustomerId(log));
+      }
+    });
+    return result;
+  }
+
+  async function exportCSV() {
     if (!activeCompany) { alert('会社を選択してください'); return; }
     if (filteredLogs.length === 0) { alert('出力するデータがありません'); return; }
-
-    const headers = ['日時','作業者','処置者','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
-    const rows = filteredLogs.map(l => {
+    const company = { ...activeCompany };
+    const exportLogs = [...filteredLogs];
+    const sourceLogs = [...allLogs];
+    const sessionCustomers = buildCsvSessionCustomers(sourceLogs, orderSessions);
+    const leadTimes = buildOrderLeadTimes(sourceLogs);
+    let master;
+    try {
+      master = (await database.ref('qr_match_companies/customer_name_master/' + company.id).once('value')).val() || {};
+    } catch (err) {
+      alert('顧客名マスタを取得できないためCSV出力を中止しました。再度お試しください。');
+      return;
+    }
+    const headers = ['日にち','時間','作業者','処置者','顧客ID','顧客名','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細セッション','所要時間','所要時間(秒)','次明細読込日','次明細読込時間','所要時間算出状況','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
+    const rows = exportLogs.map(l => {
       const isDup = l.result === 'DUP' || l.isDuplicate;
       const rule = l.matchedRule ? JSON.stringify(l.matchedRule) : '';
       const detailQrText = l.qr1_raw || l.qr1 || '';
+      const directCustomer = logCustomerId(l);
+      const ids = directCustomer ? [directCustomer] : [...(sessionCustomers.get(l.orderDetailSessionId) || [])];
+      const customerId = ids.length === 1 ? ids[0] : '';
+      const customerName = customerId ? (master[customerId] || 'マスタ未登録')
+        : ids.length > 1 ? '複数顧客のため特定不可' : '顧客不明';
+      const lead = leadTimes.get(l) || {};
       return [
-        new Date(l.timestamp).toLocaleString('ja-JP'),
+        ...csvDateTime(l.timestamp),
         l.workerName || l.operatorName || '',
         l.resolverName || '',
+        customerId, customerName,
         isDup ? 'DUP' : (l.result || ''),
         isDup ? dupLabelOf(l) : '',
         l.partNumber ?? '',
@@ -2298,6 +2381,8 @@
         l.qr1Length ?? '', l.qr2Length ?? '',
         rule, l.extractNote ?? '',
         l.orderDetailSessionId ?? '',
+        csvLeadDuration(lead.seconds), lead.seconds ?? '',
+        ...csvDateTime(lead.next), lead.status || '',
         l.orderDetailResult ?? l.orderDetailReadResult ?? '',
         l.orderDetailNote ?? l.orderDetailAction ?? '',
         l.orderDetailDestinationCode || parseToyotaDestinationCodeFromText(detailQrText) || '',
@@ -2314,8 +2399,9 @@
 
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type:'text/csv' }));
-    a.download = `QR照合ログ_${activeCompany.name}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `QR照合ログ_${company.name}_${getTodayJst()}.csv`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   function escHtml(s) {
