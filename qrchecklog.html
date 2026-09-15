@@ -986,7 +986,7 @@
   };
 
   let database      = null;
-  let allLogs       = [];      // 現在選択中の会社の全ログ
+  let allLogs       = [];      // 現在選択中の会社・取得期間のログ
   let filteredLogs  = [];      // フィルタ後
   let orderSessions = [];
   let activeOrderSessionId = '';
@@ -1001,19 +1001,53 @@
   let perPage       = 100;
   let logsRef       = null;
   let orderSessionsRef = null;
+  let loadedDateRange = '';
   const DEFAULT_PASS_THROUGH_PART_MASTER = {
     '400079164-1': ['72612-X1C24-00', '72611-X1C36-00', '72611-X1C37-00', '72612-X1C25-00']
   };
 
   // ── 初期化 ──
   window.addEventListener('DOMContentLoaded', () => {
-    initFirebase();
-    // 今日の日付をデフォルトセット
-    const today = new Date().toISOString().slice(0,10);
+    const today = getTodayJst();
     document.getElementById('filterDateTo').value = today;
-    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
-    document.getElementById('filterDateFrom').value = weekAgo;
+    document.getElementById('filterDateFrom').value = today;
+    initFirebase();
   });
+
+  function getTodayJst() {
+    return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+  }
+
+  function getLogDateRange() {
+    const from = document.getElementById('filterDateFrom').value;
+    const to = document.getElementById('filterDateTo').value;
+    return {
+      key: `${from}/${to}`,
+      start: from ? new Date(from + 'T00:00:00+09:00').toISOString() : '',
+      end: to ? new Date(to + 'T23:59:59.999+09:00').toISOString() : ''
+    };
+  }
+
+  function queryForDateRange(path, field) {
+    const range = getLogDateRange();
+    let query = database.ref(path).orderByChild(field);
+    if (range.start) query = query.startAt(range.start);
+    if (range.end) query = query.endAt(range.end);
+    return query;
+  }
+
+  function reloadDateRange() {
+    detachRealtimeListeners();
+    loadedDateRange = getLogDateRange().key;
+    allLogs = [];
+    filteredLogs = [];
+    orderSessions = [];
+    currentPage = 1;
+    renderOrderSessions();
+    applyFilter(false);
+    loadLogs(activeCompany.id);
+    loadOrderSessions(activeCompany.id);
+  }
 
   function initFirebase() {
     try {
@@ -1073,8 +1107,7 @@
     renderCompanyList();
     document.getElementById('tableTitle').textContent = company.name + ' ログ';
     renderOrderSessions();
-    loadLogs(company.id);
-    loadOrderSessions(company.id);
+    reloadDateRange();
     loadCustomerNameMaster(company.id);
     loadPassThroughPartMaster(company.id);
   }
@@ -1096,8 +1129,10 @@
       '<tr class="loading-row"><td colspan="8">読み込み中...</td></tr>';
     resetSummary();
 
-    logsRef = database.ref('qr_match_logs/' + companyId).orderByChild('timestamp');
+    logsRef = queryForDateRange('qr_match_logs/' + companyId, 'timestamp');
+    const subscribedRef = logsRef;
     logsRef.on('value', snap => {
+        if (logsRef !== subscribedRef) return;
         const data = snap.val();
         if (!data) {
           allLogs = [];
@@ -1113,6 +1148,7 @@
         rebuildChoiceFilters();
         applyFilter(false);
       }, err => {
+        if (logsRef !== subscribedRef) return;
         console.error(err);
         document.getElementById('logTableBody').innerHTML =
           '<tr class="loading-row"><td colspan="8">読み込みエラー: ' + escHtml(err.message) + '</td></tr>';
@@ -1126,8 +1162,10 @@
       list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">明細進捗を読み込み中...</div></div>';
     }
 
-    orderSessionsRef = database.ref('qr_match_companies/order_detail_sessions/' + companyId).orderByChild('updatedAt');
+    orderSessionsRef = queryForDateRange('qr_match_companies/order_detail_sessions/' + companyId, 'updatedAt');
+    const subscribedRef = orderSessionsRef;
     orderSessionsRef.on('value', snap => {
+        if (orderSessionsRef !== subscribedRef) return;
         const data = snap.val();
         orderSessions = data
           ? Object.entries(data).map(([key, val]) => normalizeOrderSession({ ...val, sessionId: val.sessionId || key }))
@@ -1135,6 +1173,7 @@
         orderSessions.sort((a,b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
         renderOrderSessions();
       }, err => {
+        if (orderSessionsRef !== subscribedRef) return;
         console.error(err);
         if (list) {
           list.innerHTML = '<div class="empty-state" style="padding:24px 12px;"><div class="empty-text">明細進捗の読み込みエラー: ' + escHtml(err.message) + '</div></div>';
@@ -1879,6 +1918,16 @@
   }
 
   function applyFilter(resetPage = true) {
+    const range = getLogDateRange();
+    if (range.start && range.end && range.start > range.end) {
+      document.getElementById('logTableBody').innerHTML =
+        '<tr class="loading-row"><td colspan="8">開始日を終了日以前にしてください</td></tr>';
+      return;
+    }
+    if (database && activeCompany && loadedDateRange !== range.key) {
+      reloadDateRange();
+      return;
+    }
     const result   = document.getElementById('filterResult').value;
     const dateFrom = document.getElementById('filterDateFrom').value;
     const dateTo   = document.getElementById('filterDateTo').value;
@@ -1901,10 +1950,10 @@
         if (result === 'NG_MISMATCH' && (isDup || l.result !== 'NG' || !isPartMismatchLog(l))) return false;
       }
       if (dateFrom) {
-        if (new Date(l.timestamp) < new Date(dateFrom + 'T00:00:00')) return false;
+        if (new Date(l.timestamp) < new Date(range.start)) return false;
       }
       if (dateTo) {
-        if (new Date(l.timestamp) > new Date(dateTo + 'T23:59:59')) return false;
+        if (new Date(l.timestamp) > new Date(range.end)) return false;
       }
       if (part) {
         const pn = (l.partNumber || '').toLowerCase();
@@ -1927,9 +1976,8 @@
     document.getElementById('filterWorker').value   = 'all';
     document.getElementById('filterResolver').value = 'all';
     document.getElementById('filterCustomer').value = 'all';
-    const today   = new Date().toISOString().slice(0,10);
-    const weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
-    document.getElementById('filterDateFrom').value = weekAgo;
+    const today = getTodayJst();
+    document.getElementById('filterDateFrom').value = today;
     document.getElementById('filterDateTo').value   = today;
     applyFilter();
   }
