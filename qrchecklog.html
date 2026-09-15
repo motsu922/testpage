@@ -2367,6 +2367,17 @@
   function applyCombinedDetailLeadTimes(logs, sessions, identities, leadTimes) {
     const sessionMap = new Map(sessions.map(s => [s.sessionId, s]));
     const groupResults = new Map();
+    const lastOrderCompletion = (session, start, latestRead = start) => {
+      const basis = '当日最後・明細完了まで';
+      const lines = (Array.isArray(session.lines) ? session.lines : Object.values(session.lines || {})).filter(l => !l.excluded);
+      const end = Date.parse(session.completedAt);
+      if (!Number.isFinite(start) || !Number.isFinite(latestRead)) return { basis, status: '明細読込日時不足・算出不可' };
+      if (!lines.length || !lines.every(l => Number.isFinite(Number(l.requiredBoxes)) && Number(l.requiredBoxes) > 0 && Number.isFinite(Number(l.scanned)) && Number(l.scanned) >= Number(l.requiredBoxes)) || !Number.isFinite(end)) {
+        return { basis, status: '当日最後・未完了または完了記録なし' };
+      }
+      if (end < latestRead) return { basis, status: '読込・完了日時の不整合' };
+      return { basis, seconds: (end - start) / 1000, start: new Date(start).toISOString(), end: new Date(end).toISOString(), status: '算出済（当日最後・完了時刻まで）' };
+    };
     for (const log of logs) {
       if (log.partNumber !== 'ORDER_DETAIL' || (log.orderDetailReadResult || log.result) !== 'OK') continue;
       const session = sessionMap.get(identities.get(log)?.sessionId);
@@ -2374,7 +2385,14 @@
         leadTimes.set(log, { status: '明細情報不足・まとめ読み判定不可' });
         continue;
       }
-      if (session.details.length <= 1) continue;
+      if (session.details.length <= 1) {
+        const lead = leadTimes.get(log);
+        if (lead && (lead.status === '取得範囲内に次の別明細なし' ||
+          (Number.isFinite(lead.seconds) && lead.next && csvDateTime(lead.next)[0] !== csvDateTime(log.timestamp)[0]))) {
+          leadTimes.set(log, lastOrderCompletion(session, Date.parse(log.timestamp)));
+        }
+        continue;
+      }
       if (!groupResults.has(session.sessionId)) {
         const basis = 'まとめ読込から次明細開始まで';
         const times = session.details.map(d => Date.parse(d.readAt));
@@ -2406,8 +2424,8 @@
           ).sort((a,b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))[0];
           if (!participants.size) {
             result = { basis, status: '取得範囲内で担当作業者を特定不可' };
-          } else if (!next) {
-            result = { basis, status: (completed ? '全体完了' : '未完了または完了記録なし') + '・取得範囲内に次の別明細なし' };
+          } else if (!next || csvDateTime(next.timestamp)[0] !== csvDateTime(Math.max(...times))[0]) {
+            result = lastOrderCompletion(session, start, Math.max(...times));
           } else if (!identities.get(next)?.sessionId) {
             result = { basis, status: '次明細のセッション不明・算出不可' };
           } else {
