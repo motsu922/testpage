@@ -101,6 +101,7 @@ const DICT={
   '進行中の作業':'Pekerjaan berjalan','作業に戻る':'Kembali ke pekerjaan','履歴':'Riwayat','要領書が未登録です':'Lembar kerja belum terdaftar',
   '端数（個）':'Sisa (pcs)','現在時刻':'Waktu sekarang','コメント':'Komentar','記録する':'Catat','完了':'Selesai','品番情報を見る':'Lihat info produk',
   '標準':'Standar','進捗':'Progres','箱':'kotak','作業指示ホーム':'Beranda Instruksi','品番を選択':'Pilih nomor produk',
+  'スキップ':'Lewati','担当者なし':'Tanpa petugas','任意':'opsional',
 };
 const LangCtx=createContext({lang:'ja'});
 function useLang(){return useContext(LangCtx);}
@@ -1432,7 +1433,7 @@ function WorkHome({proc,master,workers,logs,user,onBack,onOpenSheet,onResume,onH
                     <span style={{fontSize:18,fontWeight:800,color:NAVY}}>{l.hinban}</span>
                     <span style={{fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:5,background:l.status==='paused'?'#FDE68A':'#DCFCE7',color:l.status==='paused'?'#7A5A00':'#166534'}}>{l.status==='paused'?t('一時停止中'):'進行中'}</span>
                   </div>
-                  <div style={{fontSize:13,color:'#5A6472',marginTop:4}}>👤 {l.workerName||'—'}　{l.doneBoxes||0} / {l.targetBoxes||0} {t('箱')}</div>
+                  <div style={{fontSize:13,color:'#5A6472',marginTop:4}}>👤 {l.workerName||t('担当者なし')}　{l.doneBoxes||0} / {l.targetBoxes||0} {t('箱')}</div>
                   <div style={{fontSize:13,fontWeight:700,color:NAVY,marginTop:6}}>▶ {t('作業に戻る')}</div>
                 </button>
               ))}
@@ -1441,9 +1442,11 @@ function WorkHome({proc,master,workers,logs,user,onBack,onOpenSheet,onResume,onH
         )}
         <div className="panel" style={{marginBottom:16}}>
           <div style={{padding:16}}>
-            {step(1,b('担当者を選択'),!!worker)}
+            {step(1,b('担当者を選択')+'（'+b('任意')+'）',!!worker)}
             <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
               {wlist.length===0&&<span style={{fontSize:13,color:'#9AA3AF'}}>担当者が未登録です（マスター管理 → 担当者管理）</span>}
+              <button onClick={()=>setWid(null)}
+                style={{padding:'10px 16px',borderRadius:22,fontSize:14,fontWeight:700,border:'1px solid '+(wid===null?'#5A6472':LINE),background:wid===null?'#5A6472':'#fff',color:wid===null?'#fff':'#5A6472'}}>⏭ {t('スキップ')}</button>
               {wlist.map(w=>(
                 <button key={w.id} onClick={()=>setWid(w.id)}
                   style={{padding:'10px 18px',borderRadius:22,fontSize:15,fontWeight:700,border:'1px solid '+(wid===w.id?NAVY:LINE),background:wid===w.id?NAVY:'#fff',color:wid===w.id?'#fff':'#3A4552'}}>👤 {w.name}</button>
@@ -1452,7 +1455,7 @@ function WorkHome({proc,master,workers,logs,user,onBack,onOpenSheet,onResume,onH
             </div>
           </div>
         </div>
-        <div className="panel" style={{opacity:worker?1:.45,pointerEvents:worker?'auto':'none'}}>
+        <div className="panel">
           <div style={{padding:16}}>
             {step(2,b('要領書を呼び出す'),false)}
             <div style={{display:'flex',gap:14,marginBottom:14,flexWrap:'wrap'}}>
@@ -1517,11 +1520,10 @@ function WorkSheetScreen({proc,hinban,worker,master,user,onBack,onStart,onInfo})
   const[starting,setStarting]=useState(false);
   const tgt=parseInt(target,10)||0;
   async function start(){
-    if(!worker){alert(t('担当者を選択'));return;}
     if(tgt<=0){alert(t('目標箱数')+' を入力してください');return;}
     setStarting(true);
     try{
-      const doc={hinban,hinbanName:m.name||'',procId:proc.id,procName:proc.ja,workerId:worker.id,workerName:worker.name,
+      const doc={hinban,hinbanName:m.name||'',procId:proc.id,procName:proc.ja,workerId:worker?worker.id:null,workerName:worker?worker.name:'',
         targetBoxes:tgt,doneBoxes:0,fraction:0,kosu,capacity:cap,
         startAt:Date.now(),endAt:null,status:'running',pauses:[],anomalies:[],date:todayKey(),createdBy:user?.email||''};
       const ref=await db.collection('workLogs').add(doc);
@@ -1545,7 +1547,7 @@ function WorkSheetScreen({proc,hinban,worker,master,user,onBack,onStart,onInfo})
         <div style={{flex:'0 0 360px',borderLeft:'1px solid '+LINE,background:'#fff',padding:'20px',display:'flex',flexDirection:'column',gap:14,overflowY:'auto'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:'#F2F6FD',borderRadius:10}}>
             <span style={{fontSize:22}}>👤</span>
-            <div><div style={{fontSize:11,color:'#6B7480'}}>{b('担当者')}</div><div style={{fontSize:17,fontWeight:700,color:NAVY}}>{worker?worker.name:'—'}</div></div>
+            <div><div style={{fontSize:11,color:'#6B7480'}}>{b('担当者')}</div><div style={{fontSize:17,fontWeight:700,color:worker?NAVY:'#9AA3AF'}}>{worker?worker.name:t('担当者なし')}</div></div>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div style={{padding:'10px 12px',border:'1px solid '+LINE,borderRadius:10}}>
@@ -1567,8 +1569,8 @@ function WorkSheetScreen({proc,hinban,worker,master,user,onBack,onStart,onInfo})
             </div>
             {kosu>0&&tgt>0&&<div style={{fontSize:12.5,color:'#5A6472',marginTop:8,textAlign:'center'}}>{b('標準')}: {Math.round(kosu*tgt)} {t('分')}（{b('終了予定')} {fmtHM(new Date(Date.now()+kosu*tgt*60000))}）</div>}
           </div>
-          <button onClick={start} disabled={starting||!worker||tgt<=0}
-            style={{minHeight:74,borderRadius:12,background:(starting||!worker||tgt<=0)?'#C7CDD6':'#2E7D4F',color:'#fff',fontSize:24,fontWeight:800,marginTop:'auto'}}>
+          <button onClick={start} disabled={starting||tgt<=0}
+            style={{minHeight:74,borderRadius:12,background:(starting||tgt<=0)?'#C7CDD6':'#2E7D4F',color:'#fff',fontSize:24,fontWeight:800,marginTop:'auto'}}>
             ▶ IN　{t('作業開始')}
           </button>
         </div>
@@ -1617,7 +1619,7 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
   return(
     <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
       <TopBar title={log.hinban+'　'+(dv(m,'name',lang)||'')} user={user}
-        left={<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {log.workerName}　｜ {lang==='id'?proc.id_:proc.ja}</div>}/>
+        left={<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {log.workerName||t('担当者なし')}　｜ {lang==='id'?proc.id_:proc.ja}</div>}/>
       {paused&&(
         <div style={{background:'#FDE68A',color:'#7A5A00',padding:'10px 20px',display:'flex',alignItems:'center',gap:14,fontWeight:800,fontSize:17}}>
           ⏸ {t('一時停止中')}（{curType}）　{c.cur&&fmtDur(now-c.cur.from)}
@@ -1759,7 +1761,7 @@ function WorkHistory({proc,logs,user,onBack}){
                 const d=l.diffMin||0;const hasK=Number(l.kosu)>0;
                 return(
                   <tr key={l.id} style={{background:i%2?'#F7F9FC':'#fff'}}>
-                    <td style={td}>{l.date}</td><td style={td}>{l.workerName}</td>{all&&<td style={td}>{l.procName}</td>}
+                    <td style={td}>{l.date}</td><td style={{...td,color:l.workerName?'#1A1A1A':'#9AA3AF'}}>{l.workerName||t('担当者なし')}</td>{all&&<td style={td}>{l.procName}</td>}
                     <td style={{...td,fontWeight:700}}>{l.hinban}</td>
                     <td style={td}>{l.startAt?fmtHM(new Date(l.startAt)):''} → {l.endAt?fmtHM(new Date(l.endAt)):''}</td>
                     <td style={td}>{l.doneBoxes||0} / {l.targetBoxes||0}{l.fraction?`（+${l.fraction}個）`:''}</td>
