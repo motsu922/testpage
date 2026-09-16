@@ -6621,7 +6621,7 @@
     appendScanLog({
       timestamp: new Date().toISOString(), result: 'OK',
       partNumber: 'ORDER_DETAIL_' + action, orderDetailAction: action,
-      orderDetailActive: true, orderDetailSessionId: pause.sessionId,
+      orderDetailActive: !!pause.sessionId, orderDetailSessionId: pause.sessionId,
       workerName: pause.workerName, operatorName: pause.workerName,
       workPauseId: pause.id, workPauseStartedAt: pause.startedAt,
       qr1_raw: '', qr2_raw: '', qr1: '', qr2: '',
@@ -6631,9 +6631,9 @@
 
   function renderOrderWorkPause() {
     const pause = getOrderWorkPause();
-    const active = !!orderDetailSession.sessionId && orderDetailSession.lines.length > 0;
-    document.getElementById('workPauseControls').style.display = active ? 'flex' : 'none';
-    document.getElementById('workPauseBtn').disabled = !!pause || orderDetailAwaiting || isOrderDetailComplete();
+    document.getElementById('workPauseControls').style.display = 'flex';
+    document.getElementById('workPauseBtn').disabled = !!pause ||
+      (orderDetailAwaiting && !!orderDetailSession.sessionId) || isOrderDetailComplete();
     document.getElementById('workResumeBtn').disabled = !pause;
     document.getElementById('workPauseStatus').style.display = pause ? '' : 'none';
     for (const button of document.querySelectorAll('#orderDetailPanel button:not(#workPauseBtn):not(#workResumeBtn)')) {
@@ -6642,9 +6642,9 @@
   }
 
   function pauseOrderWork() {
-    if (operationLocked || getOrderWorkPause() || orderDetailAwaiting || matchInProgress || isNGLocked || acknowledgementOpen ||
-        !orderDetailSession.sessionId || isOrderDetailComplete()) return;
-    if (!ensureWorkerConfirmed()) return;
+    if (operationLocked || getOrderWorkPause() || (orderDetailAwaiting && !!orderDetailSession.sessionId) ||
+        matchInProgress || isNGLocked || acknowledgementOpen || isOrderDetailComplete()) return;
+    if (orderDetailSession.sessionId && !ensureWorkerConfirmed()) return;
     const pause = {
       id: 'pause_' + Date.now().toString(36) + Math.random().toString(36).slice(2),
       sessionId: orderDetailSession.sessionId, workerName: getCurrentWorkerName(),
@@ -6664,7 +6664,7 @@
     if (operationLocked) return;
     const pause = getOrderWorkPause();
     if (!pause) return;
-    if (!ensureWorkerConfirmed()) return;
+    if (pause.sessionId && !ensureWorkerConfirmed()) return;
     writeOrderWorkPauseLog('RESUME', pause);
     localStorage.removeItem(getOrderDetailStorageKey() + '_pause');
     clearScannerBuffer();
