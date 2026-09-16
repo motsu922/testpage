@@ -2461,6 +2461,36 @@
     return result;
   }
 
+  function csvWorkPauseTimes(log, lead, logs, identities) {
+    if (!Number.isFinite(lead.seconds)) return ['', '', ''];
+    const start = Date.parse(lead.start || log.timestamp);
+    const end = Date.parse(lead.end || lead.next);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return ['', '', ''];
+    const worker = log.workerName || log.operatorName || '';
+    const sessionId = identities.get(log)?.sessionId;
+    const pauses = new Map();
+    for (const event of logs) {
+      if (!sessionId || event.orderDetailSessionId !== sessionId ||
+          (event.workerName || event.operatorName || '') !== worker || !event.workPauseId || event.result !== 'OK') continue;
+      if (event.orderDetailAction !== 'PAUSE' && event.orderDetailAction !== 'RESUME') continue;
+      const from = Date.parse(event.workPauseStartedAt);
+      const until = event.orderDetailAction === 'RESUME' ? Date.parse(event.timestamp) : Infinity;
+      if (!Number.isFinite(from) || Number.isNaN(until) || until < from) continue;
+      const old = pauses.get(event.workPauseId);
+      pauses.set(event.workPauseId, { from, until: Math.min(old?.until ?? Infinity, until) });
+    }
+    // 重送・重なった中断区間は一度だけ差し引く。
+    const intervals = [...pauses.values()].map(p => [Math.max(start, p.from), Math.min(end, p.until)])
+      .filter(([a,b]) => b > a).sort((a,b) => a[0] - b[0]);
+    let pausedMs = 0, previousEnd = start;
+    for (const [a,b] of intervals) {
+      pausedMs += Math.max(0, b - Math.max(a, previousEnd));
+      previousEnd = Math.max(previousEnd, b);
+    }
+    return [csvLeadDuration(pausedMs / 1000), csvLeadDuration(Math.max(0, lead.seconds - pausedMs / 1000)),
+      intervals.length ? '当該作業者の中断記録を除外' : '中断記録なし（待機時間を含む）'];
+  }
+
   async function exportCSV() {
     if (!activeCompany) { alert('会社を選択してください'); return; }
     if (filteredLogs.length === 0) { alert('出力するデータがありません'); return; }
@@ -2489,6 +2519,7 @@
     const sessionCustomers = buildCsvSessionCustomers(sourceLogs, sessions);
     const leadTimes = applyCombinedDetailLeadTimes(sourceLogs, sessions, identities, buildOrderLeadTimes(sourceLogs, identities));
     const headers = ['日にち','時間','作業者','処置者','顧客ID','顧客名','結果','重複','抽出品番','1回目QR(raw)','2回目QR(raw)','1回目QR(正規化)','2回目QR(正規化)','QR1文字数','QR2文字数','ルール','note','明細区分','明細セッション','所要時間','所要時間(秒)','次明細読込日','次明細読込時間','所要時間算出状況','所要時間基準','計算開始日','計算開始時間','計算終了日','計算終了時間','明細結果','明細メモ','納入先コード','受入','明細完了','明細必要','明細読込'];
+    headers.push('中断時間', '実作業時間(中断除外)', '実作業時間算出状況');
     const rows = exportLogs.map(l => {
       const isDup = l.result === 'DUP' || l.isDuplicate;
       const rule = l.matchedRule ? JSON.stringify(l.matchedRule) : '';
@@ -2524,7 +2555,8 @@
         l.orderDetailReceivingCode || parseToyotaReceivingCodeFromText(detailQrText) || '',
         l.orderDetailCompleted ?? '',
         l.orderDetailRequiredBoxes ?? '',
-        l.orderDetailScannedBoxes ?? ''
+        l.orderDetailScannedBoxes ?? '',
+        ...csvWorkPauseTimes(l, lead, sourceLogs, identities)
       ];
     });
 

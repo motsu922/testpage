@@ -609,6 +609,11 @@
       font-size: 15px;
       line-height: 1.25;
     }
+    #orderDetailPanel button:disabled {
+      opacity: 0.4;
+      cursor: default;
+      filter: saturate(0.3);
+    }
     .order-detail-btn.danger {
       flex: 0 0 auto;
       min-height: 32px;
@@ -1736,6 +1741,11 @@
             <button class="order-detail-btn order-detail-skip" onclick="skipOrderDetailAndStartKanban()">明細無し</button>
           </div>
           <button class="order-detail-btn order-detail-secondary" id="orderDetailAppendBtn" onclick="startOrderDetailScan(true)" style="display:none;">明細QR追加</button>
+          <div id="workPauseControls" style="display:none;gap:8px;margin:8px 0;">
+            <button class="order-detail-btn" id="workPauseBtn" onclick="pauseOrderWork()" style="flex:1;min-height:44px;font-size:16px;">一時中断</button>
+            <button class="order-detail-btn complete" id="workResumeBtn" onclick="resumeOrderWork()" style="flex:1;min-height:44px;font-size:16px;">再開</button>
+          </div>
+          <div id="workPauseStatus" role="status" style="display:none;padding:10px;color:#ffe28a;font-weight:800;text-align:center;">一時中断中</div>
           <div id="orderDetailContent" class="order-detail-empty"></div>
         </div>
         <!-- 1対N モード QR1 情報パネル -->
@@ -2413,6 +2423,7 @@
   }
 
   function shouldLockScanInputFocus() {
+    if (getOrderWorkPause()) return false;
     if (Date.now() < suppressScanInputRefocusUntil) return false;
     if (currentTab !== 'scan') return false;
     if (isNGLocked) return false;
@@ -2431,6 +2442,7 @@
   }
 
   function dismissKeyboardThenRefocusScanInput() {
+    if (getOrderWorkPause()) return;
     if (terminalInputMode !== 'inputconnection') {
       focusScanInputSoon();
       return;
@@ -2452,6 +2464,7 @@
   }
 
   function restoreScanInputFocusNow() {
+    if (getOrderWorkPause()) return;
     suppressScanInputRefocusUntil = 0;
     const input = document.getElementById('scanInput');
     if (input && terminalInputMode === 'inputconnection') {
@@ -2465,6 +2478,7 @@
   }
 
   function keepScanInputReadyNow() {
+    if (getOrderWorkPause()) return;
     suppressScanInputRefocusUntil = 0;
     const input = document.getElementById('scanInput');
     if (!input || terminalInputMode !== 'inputconnection') {
@@ -2478,6 +2492,7 @@
   }
 
   function forceScanInputFocusAfterAction() {
+    if (getOrderWorkPause()) return;
     const input = document.getElementById('scanInput');
     if (!input) return;
     suppressScanInputRefocusUntil = 0;
@@ -3332,6 +3347,7 @@
   }
 
   function handleGlobalScannerKey(e) {
+    if (getOrderWorkPause() && e.target?.id === 'scanInput') { e.preventDefault(); return; }
     if (terminalInputMode === 'inputconnection') return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
 
@@ -3432,6 +3448,7 @@
   }
 
   function handleBufferedScanKey(e) {
+    if (getOrderWorkPause()) { e.preventDefault(); return; }
     const scanInput = document.getElementById('scanInput');
 
     if (e.key === 'Enter' || e.key === 'Tab') {
@@ -3551,6 +3568,7 @@
   }
 
   function handleScan(decoded) {
+    if (getOrderWorkPause()) { clearScannerBuffer(); updateScanUI(); return; }
     if (document.getElementById('resultOverlay').classList.contains('show')) {
       if (orderDetailCompleteNoticeShowing) {
         const qrKind = classifyScannedQR(decoded);
@@ -6373,6 +6391,7 @@
   }
 
   function startOrderDetailScan(append = false) {
+    if (getOrderWorkPause()) return;
     if (isNGLocked) { showNGOverlay(); return; }
     if (!append && orderDetailSession.lines.length && !confirm('現在の明細セットを破棄して、新しい明細QRを読み込みますか？')) return;
     orderDetailBypassed = false;
@@ -6391,6 +6410,7 @@
   }
 
   function skipOrderDetailAndStartKanban() {
+    if (getOrderWorkPause()) return;
     if (isNGLocked) { showNGOverlay(); return; }
     const hasDetail = orderDetailSession.lines.length > 0;
     orderDetailBypassed = true;
@@ -6409,6 +6429,7 @@
   }
 
   async function handleOrderDetailScan(decoded) {
+    if (getOrderWorkPause()) return;
     const normalized = normalizeQR(decoded);
     const parsed = parseOrderDetailQR(decoded);
     if (!parsed.lines.length) {
@@ -6516,6 +6537,7 @@
   }
 
   function completeOrderDetail() {
+    if (getOrderWorkPause()) return;
     if (!orderDetailSession.lines.length) {
       startOrderDetailScan();
       return;
@@ -6544,6 +6566,7 @@
   }
 
   async function resetOrderDetailResults() {
+    if (getOrderWorkPause()) return;
     if (!orderDetailSession.lines.length) return;
     const required = orderRequiredBoxes();
     const scanned = orderScannedBoxes();
@@ -6585,6 +6608,70 @@
 
   function saveOrderDetailSession() {
     localStorage.setItem(getOrderDetailStorageKey(), JSON.stringify(orderDetailSession));
+  }
+
+  function getOrderWorkPause() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(getOrderDetailStorageKey() + '_pause') || 'null');
+      return saved && saved.sessionId === orderDetailSession.sessionId ? saved : null;
+    } catch (_) { return null; }
+  }
+
+  function writeOrderWorkPauseLog(action, pause) {
+    appendScanLog({
+      timestamp: new Date().toISOString(), result: 'OK',
+      partNumber: 'ORDER_DETAIL_' + action, orderDetailAction: action,
+      orderDetailActive: true, orderDetailSessionId: pause.sessionId,
+      workerName: pause.workerName, operatorName: pause.workerName,
+      workPauseId: pause.id, workPauseStartedAt: pause.startedAt,
+      qr1_raw: '', qr2_raw: '', qr1: '', qr2: '',
+      extractNote: action === 'PAUSE' ? '作業を一時中断' : '作業を再開'
+    });
+  }
+
+  function renderOrderWorkPause() {
+    const pause = getOrderWorkPause();
+    const active = !!orderDetailSession.sessionId && orderDetailSession.lines.length > 0;
+    document.getElementById('workPauseControls').style.display = active ? 'flex' : 'none';
+    document.getElementById('workPauseBtn').disabled = !!pause || orderDetailAwaiting || isOrderDetailComplete();
+    document.getElementById('workResumeBtn').disabled = !pause;
+    document.getElementById('workPauseStatus').style.display = pause ? '' : 'none';
+    for (const button of document.querySelectorAll('#orderDetailPanel button:not(#workPauseBtn):not(#workResumeBtn)')) {
+      button.disabled = !!pause;
+    }
+  }
+
+  function pauseOrderWork() {
+    if (operationLocked || getOrderWorkPause() || orderDetailAwaiting || matchInProgress || isNGLocked || acknowledgementOpen ||
+        !orderDetailSession.sessionId || isOrderDetailComplete()) return;
+    if (!ensureWorkerConfirmed()) return;
+    const pause = {
+      id: 'pause_' + Date.now().toString(36) + Math.random().toString(36).slice(2),
+      sessionId: orderDetailSession.sessionId, workerName: getCurrentWorkerName(),
+      startedAt: new Date().toISOString()
+    };
+    try { localStorage.setItem(getOrderDetailStorageKey() + '_pause', JSON.stringify(pause)); }
+    catch (_) { alert('中断状態を保存できません。空き容量を確認してください。'); return; }
+    writeOrderWorkPauseLog('PAUSE', pause);
+    clearScannerBuffer();
+    pauseScanInputFocus();
+    document.getElementById('scanInput').blur();
+    document.getElementById('resultOverlay').classList.remove('show');
+    updateScanUI();
+  }
+
+  function resumeOrderWork() {
+    if (operationLocked) return;
+    const pause = getOrderWorkPause();
+    if (!pause) return;
+    if (!ensureWorkerConfirmed()) return;
+    writeOrderWorkPauseLog('RESUME', pause);
+    localStorage.removeItem(getOrderDetailStorageKey() + '_pause');
+    clearScannerBuffer();
+    touchOperatorActivity();
+    exitPinUnlockMode();
+    updateScanUI();
+    forceScanInputFocusAfterAction();
   }
 
   function loadOrderDetailSession() {
@@ -6652,6 +6739,7 @@
   }
 
   function showOrderDetailCompleteOverlay() {
+    if (getOrderWorkPause()) return;
     const overlay = document.getElementById('resultOverlay');
     const symbol = document.getElementById('resultSymbol');
     const text = document.getElementById('resultText');
@@ -6704,6 +6792,7 @@
   }
 
   function renderOrderDetailPanel() {
+    renderOrderWorkPause();
     const target = document.getElementById('orderDetailContent');
     const appendBtn = document.getElementById('orderDetailAppendBtn');
     const completeBtn = document.getElementById('orderDetailCompleteBtn');
@@ -6948,6 +7037,7 @@
 
   // ========= 照合 =========
   async function doMatch() {
+    if (getOrderWorkPause()) return;
     if (matchInProgress) return;
     matchInProgress = true;
     const v1 = normalizeQR(value1);
@@ -7317,6 +7407,7 @@
   }
 
   function updateScanUI() {
+    renderOrderWorkPause();
     const isNMode = settings.scanMode === '1toN';
     const step    = document.getElementById('scanStep');
     const message = document.getElementById('scanMessage');
@@ -7324,6 +7415,16 @@
     const panel   = document.getElementById('qr1InfoPanel');
     const changePnBtn = document.getElementById('changePnBtn');
     const detailRequired = !orderDetailSession.lines.length && !orderDetailBypassed;
+    if (getOrderWorkPause()) {
+      updateScanStateBanner('detail', '一時中断中', '再開ボタンで照合を続けます');
+      step.textContent = '一時中断中';
+      message.textContent = '一時中断中';
+      input.placeholder = '再開してください';
+      input.readOnly = true;
+      input.setAttribute('inputmode', 'none');
+      if (document.activeElement === input) input.blur();
+      return;
+    }
     if (orderDetailAwaiting || detailRequired) {
       updateScanStateBanner('detail', '明細QR待ち', '最初に注文の明細QRを読み取ってください');
     } else if (isOrderDetailComplete()) {
