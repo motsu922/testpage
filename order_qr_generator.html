@@ -222,15 +222,18 @@
       const match=normalizeImportToken(part.text).match(/[0-9A-Z]{5}-[0-9A-Z]{5}/);
       if(!match)return;
       const row=words.filter(word=>Math.abs(word.y-part.y)<8).sort((a,b)=>a.x-b.x);
-      // KYB "取入日程明細書" places the order quantity in the column to the
-      // right of the kanban-count column (x approximately 450 in PDF points).
+      // KYB rows provide the kanban count and total quantity in adjacent columns.
+      const count=row.filter(word=>word.x>=400&&word.x<430&&/^\d+$/.test(normalizeImportToken(word.text)))
+        .sort((a,b)=>b.x-a.x)[0];
       const quantity=row.filter(word=>word.x>=430&&word.x<500&&/^\d+(?:,\d{3})*$/.test(normalizeImportToken(word.text)))
         .sort((a,b)=>b.x-a.x)[0];
       if(!quantity)return;
       const partNumber=match[0];const totalQty=Number(normalizeImportToken(quantity.text).replace(/,/g,''));
+      const kanbanCount=count?Number(normalizeImportToken(count.text)):0;
+      const packQty=kanbanCount>0&&totalQty%kanbanCount===0?totalQty/kanbanCount:0;
       const key=`${partNumber}|${totalQty}`;
       if(!totalQty||seen.has(key))return;
-      seen.add(key);found.push({partNumber,totalQty,backNo:'',anchor:part});
+      seen.add(key);found.push({partNumber,totalQty,packQty,kanbanCount,backNo:'',anchor:part});
     });
     return found;
   }
@@ -357,10 +360,10 @@
       if(!found.length){const ocr=await extractOcrData(renderedPages);const ocrWords=ocr.words;ocrText=ocr.text;words.push(...ocrWords);found=findOrderLines(ocrWords);if(!found.length)found=findOrderLinesFromOcrText(ocrText);usedOcr=true;}
       if(!found.length){showNotice('importNotice','warn','品番と注文数を自動取得できませんでした。注文書を見ながら手入力してください。');return;}
       if(found[0].anchor)fillFirstRowMeta(words,found[0].anchor);if(usedKyb)fillKybMeta(words);if(usedOcr){fillOcrMeta(words,found[0].anchor);fillOcrMetaFromText(ocrText);}
-      state.lines=found.map(line=>({partNumber:line.partNumber,totalQty:line.totalQty,backNo:line.backNo,packQty:getPackQty(line.partNumber)||''}));renderLines();
+      state.lines=found.map(line=>({partNumber:line.partNumber,totalQty:line.totalQty,backNo:line.backNo,packQty:usedKyb?(line.packQty||''):(getPackQty(line.partNumber)||'')}));renderLines();
       const missing=state.lines.filter(line=>!line.packQty).length;
       const importType=usedOcr?'OCRで':usedKyb?'KYB明細として':'';
-      if(missing){showNotice('importNotice','warn',`${found.length}品番を${importType}取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}
+      if(missing){showNotice('importNotice','warn',usedKyb?`${found.length}品番をKYB明細として取り込みました。${missing}件はかんばん枚数から入数を計算できません。原本を確認して入力してください。`:`${found.length}品番を${importType}取り込みました。入数未登録が${missing}件あります。入数を登録してから発行してください。`);return;}
       showNotice('importNotice','ok',`${found.length}品番を${importType}取り込みました。明細QRを発行して印刷画面を開きます。`);generateQr();
     }catch(error){console.error(error);showNotice('importNotice','error',`PDFの読み込みに失敗しました。${error.message||''}`);}
   }
