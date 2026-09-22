@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>完納処理待ち</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f2f4f6;color:#233440;font:14px/1.5 system-ui,sans-serif;letter-spacing:0}
+    header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 24px;background:white;border-bottom:1px solid #d3dbe1}h1{font-size:20px;margin:0}a{color:#176895}#connection{margin-left:auto;font-size:12px;color:#8b5412}#connection.online{color:#1a7548}
+    main{max-width:1500px;margin:auto;padding:18px 24px}.toolbar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:12px}label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:#546875}input,select,button{font:inherit}input,select{border:1px solid #acb9c4;border-radius:4px;padding:7px;min-height:38px;background:white;color:#233440}#load{padding:8px 18px;border:0;border-radius:4px;background:#126d9b;color:white;min-height:38px;cursor:pointer}#count{margin-left:auto;padding-bottom:8px;color:#526774}button:disabled{cursor:default;opacity:.5}button:focus-visible,a:focus-visible{outline:3px solid #1686c4;outline-offset:3px}
+    .notice{color:#7f5b1b;font-size:12px;margin:0 0 16px}#message{white-space:pre-wrap;color:#945000;margin:12px 0}#message:empty{display:none}.qr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;align-items:start}.qr-item{min-width:0;background:white;border:1px solid #d1dae2;border-radius:6px;overflow:hidden}.qr-button{display:block;border:0;width:100%;background:white;padding:28px;cursor:pointer;min-height:280px}.qr-button:hover{background:#f6fafc}.qr-button:disabled{opacity:1}.qr-button:disabled .qr-code{visibility:hidden}.qr-code{width:100%;aspect-ratio:1;background:white}.qr-code canvas,.qr-code img{display:block;width:100%;height:100%;image-rendering:pixelated}.meta{border-top:1px solid #e5eaee;padding:10px 14px;font-size:12px;color:#536777;overflow-wrap:anywhere}.meta strong{font-weight:600;color:#2c4352}.empty{text-align:center;padding:48px 0;color:#607481;grid-column:1/-1}#review{margin-top:18px;color:#895715;font-size:12px}#review li{margin-top:6px}
+    @media(max-width:600px){header{padding:12px;gap:10px}main{padding:12px}.toolbar{gap:8px}.toolbar label{flex:1;min-width:125px}input,select{max-width:100%;width:100%}.qr-grid{grid-template-columns:minmax(0,1fr)}.qr-item{max-width:400px;width:100%;justify-self:center}#count{margin-left:0}.qr-button{min-height:0;padding:28px}#connection{margin-left:0}}
+    :root{--qr-size:180px}
+    #grid{display:block;max-width:calc(var(--qr-size) + 58px);margin:24px auto}.qr-button{min-height:0}
+    .qr-button.replay{cursor:default}.qr-button.replay:hover{background:white}
+    #replayBar{text-align:center;color:#855316;font-size:13px;margin-top:16px}#replayBar[hidden]{display:none}
+    #backToPending,.history-qr{border:1px solid #b5c3cd;border-radius:4px;background:white;color:#176895;cursor:pointer;padding:7px 12px;min-height:36px}
+    .history{margin-top:24px;border-top:1px solid #d3dbe1;padding-top:12px}.history h2{font-size:15px;margin:0 0 10px}.history-scroll{overflow:auto;max-height:320px}table{width:100%;border-collapse:collapse;background:white;font-size:12px}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #e0e6eb;overflow-wrap:anywhere}th{color:#576b79;background:#eaf0f4;position:sticky;top:0}.history-qr{white-space:nowrap}
+    @media print{body{display:none}}
+    .toolbar .check{flex-direction:row;align-items:center;gap:6px;min-height:38px;flex:none}.check input{width:18px;min-height:18px;height:18px}.incomplete-qr{border:1px solid #b5c3cd;border-radius:4px;background:white;color:#895715;cursor:pointer;padding:7px 12px;white-space:nowrap;min-height:36px}
+  </style>
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script defer src="order_completion_core.js"></script>
+  <script defer src="order_completion.js"></script>
+</head>
+<body>
+  <header><h1>完納処理待ち</h1><a href="qrchecklog.html">照合ログ</a><span id="connection" role="status">接続確認中</span></header>
+  <main>
+    <div class="toolbar">
+      <label>会社<select id="company" disabled><option>読込中</option></select></label>
+      <label><span id="dateLabel">照合完了日・開始</span><input id="dateFrom" type="date"></label>
+      <label>終了<input id="dateTo" type="date"></label>
+      <button id="load">表示</button><span id="count" role="status">0枚</span>
+      <label>QRサイズ<select id="qrSize"><option value="180">小</option><option value="260">中</option><option value="340">大</option></select></label>
+      <label class="check"><input id="showIncomplete" type="checkbox">未完了を含める</label>
+    </div>
+    <p class="notice">保存データから再生成したQRです。原本との完全一致は未確認のため、専用システムでの読取確認が必要です。</p>
+    <div id="message" role="alert"></div>
+    <div id="replayBar" hidden><span id="replayLabel">処理済みQR・再表示</span> <button id="backToPending">完納処理待ちに戻る</button></div>
+    <section id="grid" class="qr-grid" aria-label="現在の明細QR"></section>
+    <section id="incompleteSection" class="history" hidden><h2 id="incompleteTitle">未完了 0枚</h2><div class="history-scroll"><table><thead><tr><th>納入先</th><th>納入日 / 便</th><th>照合進捗（明細セット）</th><th></th></tr></thead><tbody id="incompleteRows"></tbody></table></div></section>
+    <section class="history"><h2 id="historyTitle">処理済み 0枚</h2><div class="history-scroll"><table><thead><tr><th>納入先</th><th>納入日 / 便</th><th>処理日時</th><th></th></tr></thead><tbody id="historyRows"></tbody></table></div></section>
+    <details id="review" hidden><summary id="reviewCount"></summary><ul id="reviewList"></ul></details>
+  </main>
+</body>
+</html>
