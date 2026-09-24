@@ -2724,7 +2724,18 @@
     const detailMap = new Map();
     [...(remote.details || []), ...(local.details || [])].forEach(detail => {
       const key = detail && (detail.contentHash || detail.qrHash || JSON.stringify(detail));
-      if (key) detailMap.set(key, detail);
+      if (key) {
+        const previous = detailMap.get(key);
+        const raw = [previous, detail].filter(d => d && d.orderQr === detail.orderQr && d.rawQRSource === 'terminal-received-v1' && typeof d.rawQR === 'string')
+          .sort((a,b) => Date.parse(b.rawQRCapturedAt || 0) - Date.parse(a.rawQRCapturedAt || 0))[0];
+        const combined = { ...previous, ...detail };
+        delete combined.rawQR;
+        delete combined.rawQRSource;
+        delete combined.rawQRCapturedAt;
+        detailMap.set(key, { ...combined, ...(raw ? {
+          rawQR: raw.rawQR, rawQRSource: raw.rawQRSource, rawQRCapturedAt: raw.rawQRCapturedAt
+        } : {}) });
+      }
     });
     merged.details = [...detailMap.values()];
     const lineMap = new Map();
@@ -2888,6 +2899,13 @@
   function openWorkerModal() {
     enterPersonSelectMode();
     fillPersonSelect('workerSelect', settings.workerMaster, getCurrentWorkerName());
+    const select = document.getElementById('workerSelect');
+    if (select) {
+      const placeholder = new Option('作業者を選択してください', '', true, true);
+      placeholder.disabled = true;
+      select.prepend(placeholder);
+      select.value = '';
+    }
     const overlay = document.getElementById('workerModalOverlay');
     if (overlay) overlay.classList.add('show');
   }
@@ -2902,7 +2920,9 @@
     const select = document.getElementById('workerSelect');
     const name = select ? select.value.trim() : '';
     if (!name) {
-      alert('作業者マスターを登録してから選択してください');
+      alert(select && Array.from(select.options).some(option => option.value)
+        ? '作業者を選択してください'
+        : '作業者マスターを登録してから選択してください');
       return;
     }
     setCurrentWorkerName(name);
@@ -3046,6 +3066,8 @@
       qr1: normalized,
       qr2: '',
       partNumber: 'ORDER_DETAIL',
+      orderDetailRawQR: parsed.rawQR || '',
+      orderDetailRawQRSource: parsed.rawQRSource || '',
       qr1Length: normalized.length,
       qr2Length: 0,
       scanMode: settings.scanMode || '1to1',
@@ -3190,6 +3212,18 @@
     target.detailHashes = target.detailHashes || {};
     target.details = Array.isArray(target.details) ? target.details : [];
     if (target.sourceHashes[qrHash] || target.detailHashes[detailHash]) {
+      // Older single-detail sessions may only have the top-level normalized QR.
+      if (!target.details.length && Object.keys(target.sourceHashes).length <= 1 && target.orderQr === parsed.orderQr) {
+        target.details.push({ qrHash, contentHash: detailHash, orderQr: parsed.orderQr,
+          meta: parsed.meta || {}, lines: parsed.lines.map(line => ({ ...line })) });
+      }
+      const matchingDetail = target.details.find(detail => detail.orderQr === parsed.orderQr);
+      if (matchingDetail && parsed.rawQRSource === 'terminal-received-v1') {
+        matchingDetail.rawQR = parsed.rawQR;
+        matchingDetail.rawQRSource = parsed.rawQRSource;
+        matchingDetail.rawQRCapturedAt = parsed.rawQRCapturedAt;
+        target.updatedAt = new Date().toISOString();
+      }
       const sourceCount = Object.keys(target.sourceHashes || {}).length;
       if (target.sourceHashes[qrHash] && sourceCount <= 1) {
         // 同じ明細QRの読み直し。行定義は作り直すが、読取済み数は品番ごとの合計を引き継ぐ。
@@ -3220,6 +3254,9 @@
       qrHash,
       contentHash: detailHash,
       orderQr: parsed.orderQr || '',
+      ...(parsed.rawQRSource === 'terminal-received-v1' ? {
+        rawQR: parsed.rawQR, rawQRSource: parsed.rawQRSource, rawQRCapturedAt: parsed.rawQRCapturedAt
+      } : {}),
       lines: parsed.lines.map(line => ({
         partNo: line.partNo || '',
         requiredBoxes: Number(line.requiredBoxes) || 0,
@@ -3426,9 +3463,10 @@
     inputConnectionTimer = null;
     const input = document.getElementById('scanInput');
     if (!input) return;
-    const value = normalizeQR(input.value);
+    const rawValue = input.value;
+    const value = normalizeQR(rawValue);
     input.value = '';
-    if (value) submitScannedValue(value);
+    if (value) submitScannedValue(value, rawValue);
   }
 
   function toggleTerminalInputMode() {
@@ -3481,7 +3519,7 @@
     if (e.key.length !== 1) return;
 
     e.preventDefault();
-    scannerBuffer += e.key.replace(/[\r\n]+/g, ' ');
+    scannerBuffer += e.key;
     if (scanInput) scanInput.value = scannerBuffer;
     scheduleScannerSubmit();
   }
@@ -3499,7 +3537,7 @@
     clearTimeout(scannerIdleTimer);
     scannerIdleTimer = null;
     const value = normalizeQR(scannerBuffer);
-    if (value) submitScannedValue(value);
+    if (value) submitScannedValue(value, scannerBuffer);
     clearScannerBuffer();
   }
 
@@ -3541,11 +3579,11 @@
     return [text];
   }
 
-  function submitScannedValue(value) {
+  function submitScannedValue(value, rawValue) {
     const scans = splitCombinedScannerValue(value);
     scans.forEach((scan, index) => {
       if (!scan) return;
-      if (index === 0) handleScan(scan);
+      if (index === 0) handleScan(scan, scans.length === 1 ? rawValue : undefined);
       else setTimeout(() => handleScan(scan), index * 80);
     });
   }
@@ -3574,7 +3612,7 @@
     updateScanStateBanner('error', title, note);
   }
 
-  function handleScan(decoded) {
+  function handleScan(decoded, rawDetailQR) {
     if (getOrderWorkPause()) { clearScannerBuffer(); updateScanUI(); return; }
     if (document.getElementById('resultOverlay').classList.contains('show')) {
       if (orderDetailCompleteNoticeShowing) {
@@ -3585,7 +3623,7 @@
           leaveOrderDetailSession();
           orderDetailAwaiting = true;
           orderDetailAppendMode = false;
-          handleOrderDetailScan(decoded).catch(err => {
+          handleOrderDetailScan(decoded, rawDetailQR).catch(err => {
             console.error('Order detail scan error:', err);
             orderDetailAwaiting = false;
             currentStep = 1;
@@ -3613,7 +3651,7 @@
     }
     touchOperatorActivity();
     if (orderDetailAwaiting) {
-      handleOrderDetailScan(decoded).catch(err => {
+      handleOrderDetailScan(decoded, rawDetailQR).catch(err => {
         console.error('Order detail scan error:', err);
         orderDetailAwaiting = false;
         currentStep = 1;
@@ -3627,7 +3665,7 @@
       if (qrKind === 'orderDetail') {
         orderDetailAwaiting = true;
         orderDetailAppendMode = false;
-        handleOrderDetailScan(decoded).catch(err => {
+        handleOrderDetailScan(decoded, rawDetailQR).catch(err => {
           console.error('Order detail scan error:', err);
           orderDetailAwaiting = false;
           currentStep = 1;
@@ -3643,7 +3681,7 @@
       if (qrKind === 'orderDetail') {
         orderDetailAwaiting = true;
         orderDetailAppendMode = false;
-        handleOrderDetailScan(decoded).catch(err => {
+        handleOrderDetailScan(decoded, rawDetailQR).catch(err => {
           console.error('Order detail scan error:', err);
           orderDetailAwaiting = false;
           currentStep = 1;
@@ -6435,10 +6473,15 @@
     forceScanInputFocusAfterAction();
   }
 
-  async function handleOrderDetailScan(decoded) {
+  async function handleOrderDetailScan(decoded, rawDetailQR) {
     if (getOrderWorkPause()) return;
     const normalized = normalizeQR(decoded);
     const parsed = parseOrderDetailQR(decoded);
+    if (typeof rawDetailQR === 'string' && rawDetailQR.length && normalizeOrderDetailQR(rawDetailQR) === parsed.orderQr) {
+      parsed.rawQR = rawDetailQR;
+      parsed.rawQRSource = 'terminal-received-v1';
+      parsed.rawQRCapturedAt = new Date().toISOString();
+    }
     if (!parsed.lines.length) {
       orderDetailAwaiting = false;
       orderDetailAppendMode = false;
