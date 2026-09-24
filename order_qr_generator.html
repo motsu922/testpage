@@ -260,7 +260,7 @@
     }
     if(ocrText){
       const customer=ocrText.match(/\b\d{5}\b/);if(customer&&!meta.c)meta.c=customer[0];
-      const order=ocrText.match(/\b[RN]\d{8,}\b/i);if(order&&!meta.o)meta.o=order[0];
+      const order=ocrText.match(/\b[RN][0O]{1,2}\d{7,}\b/i);if(order&&!meta.o)meta.o=order[0].toUpperCase().replace(/O/g,'0');
       const date=ocrText.match(/\b20\d{6}\b/);if(date&&!meta.d)meta.d=date[0];
     }
     return meta;
@@ -373,6 +373,36 @@
     return found;
   }
 
+  async function extractStructuredOrderData(canvas) {
+    if(!window.Tesseract||canvas.width<=canvas.height)return {lines:[],text:''};
+    const rowCount=8;const rowHeight=Math.round(canvas.height*.052);const rowGap=Math.round(canvas.height*.018);
+    const sourceX=Math.round(canvas.width*.024);const sourceWidth=canvas.width-sourceX*2;
+    const sourceY=Math.round(canvas.height*.224);const sourceStep=Math.round(canvas.height*.07);
+    const headerWidth=Math.round(canvas.width*.4);const headerHeight=Math.round(canvas.height*.105);const headerGap=Math.round(canvas.height*.018);
+    const rows=document.createElement('canvas');rows.width=sourceWidth;rows.height=headerHeight+headerGap+(rowHeight+rowGap)*rowCount;
+    const context=rows.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,rows.width,rows.height);
+    context.drawImage(canvas,sourceX,Math.round(canvas.height*.06),headerWidth,headerHeight,0,0,headerWidth,headerHeight);
+    for(let index=0;index<rowCount;index++){
+      context.drawImage(canvas,sourceX,sourceY+sourceStep*index,sourceWidth,rowHeight,0,headerHeight+headerGap+(rowHeight+rowGap)*index,sourceWidth,rowHeight);
+    }
+    const rowResult=await Tesseract.recognize(rows,'eng',{tessedit_pageseg_mode:'6'});
+    const rowText=String(rowResult.data.text||'');const lines=[];const seen=new Set();
+    rowText.split(/\r?\n/).forEach(line=>{
+      const partMatch=normalizeImportToken(line).match(/[0-9A-Z]{5}-[0-9A-Z]{5}/);if(!partMatch)return;
+      const partNumber=partMatch[0];const normalized=line.replace(/,\s+/g,',');
+      const tail=normalized.slice(Math.max(0,normalized.toUpperCase().indexOf(partNumber)+partNumber.length));
+      const numbers=tail.match(/\d{1,3}(?:,\d{3})+|\d+/g)||[];const quantityText=numbers.at(-1)||'';
+      const totalQty=Number(quantityText.replace(/,/g,''));const key=`${partNumber}|${totalQty}`;
+      if(!totalQty||totalQty>100000000||seen.has(key))return;
+      seen.add(key);lines.push({partNumber,totalQty,backNo:'',anchor:null});
+    });
+    if(!lines.length)return {lines,text:rowText};
+    const order=document.createElement('canvas');order.width=Math.round(canvas.width*.13);order.height=Math.round(canvas.height*.07);
+    order.getContext('2d').drawImage(canvas,Math.round(canvas.width*.64),Math.round(canvas.height*.225),order.width,order.height,0,0,order.width,order.height);
+    const orderResult=await Tesseract.recognize(order,'eng',{tessedit_pageseg_mode:'7',tessedit_char_whitelist:'R0123456789'});
+    return {lines,text:`${orderResult.data.text||''}\n${rowText}`};
+  }
+
   async function extractOcrData(renderedPages,pageNumber=1,totalPages=renderedPages.length) {
     if (!window.Tesseract) throw new Error('OCRライブラリを読み込めませんでした');
     const words=[];const text=[];
@@ -414,6 +444,11 @@
         const orientation=originalCanvas.height>originalCanvas.width?'portrait':'landscape';
         let found=findOrderLines(words);let pageKyb=false;let ocrText='';
         if(!found.length){found=findKybOrderLines(words);pageKyb=found.length>0;usedKyb=usedKyb||pageKyb;}
+        if(!found.length&&orientation==='landscape'&&!words.length){
+          showNotice('importNotice','warn',`注文書の明細行を高速解析中… ${p}/${pdf.numPages}ページ`);
+          const structured=await extractStructuredOrderData(originalCanvas);
+          if(structured.lines.length){found=structured.lines;ocrText=structured.text;usedOcr=true;}
+        }
         if(!found.length){
           const ocr=await extractOcrData([{canvas:originalCanvas,scale}],p,pdf.numPages);
           ocrText=ocr.text;words.push(...ocr.words);found=findOrderLines(ocr.words);
