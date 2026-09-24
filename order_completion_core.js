@@ -17,14 +17,15 @@
     }
     if (!details.length) details = [{}];
     return details.map((detail, index) => {
-      const qr = typeof detail.orderQr === 'string' ? detail.orderQr : '';
+      const identityQr = typeof detail.orderQr === 'string' ? detail.orderQr : '';
+      const qr = detail.rawQRSource === 'terminal-received-v1' && typeof detail.rawQR === 'string' ? detail.rawQR : '';
       const meta = detail.meta || (details.length === 1 ? session.meta : {}) || {};
-      const reason = excluded || values(detail.lines).some(l => l.excluded) ? '照合除外あり' :
+      const reason = !qr ? '生の明細QR未保存（v2で再読込が必要）' : excluded || values(detail.lines).some(l => l.excluded) ? '照合除外あり' :
         !allComplete ? '全行の照合完了を確認できません' :
         !Number.isFinite(Date.parse(session.completedAt)) ? '完了日時なし' : !qr ? '明細QRデータなし' : '';
       const customerId = String(meta.customerId || meta.customerCode || '');
       return {
-        sessionId, index, qr, meta, customerId, reason, completedAt: session.completedAt || '',
+        sessionId, index, qr, identityQr, meta, customerId, reason, completedAt: session.completedAt || '',
         incomplete: validCounts && !allComplete && !excluded && !values(detail.lines).some(l => l.excluded) && !!qr,
         progress: `${lines.reduce((n,l) => n + (Number(l.scanned) || 0),0)}/${lines.reduce((n,l) => n + (Number(l.requiredBoxes) || 0),0)}`,
         updatedAt: session.updatedAt || '',
@@ -32,8 +33,7 @@
         orderNo: String(meta.orderNo || ''),
         deliveryDate: String(meta.deliveryDate || meta.instructionDate || ''),
         bin: String(meta.deliveryBin || meta.bin || ''),
-        // Saved orderQr is normalized by v2. Never label it as an original QR.
-        sourceWarning: '保存データから再生成したQRです。原本との完全一致は未確認です。'
+        sourceWarning: '端末が受信した生データを使用しています。端末側で除去された文字は復元できません。'
       };
     });
   }

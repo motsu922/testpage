@@ -52,25 +52,32 @@ function render() {
   if (replayKey && ![...postedItems(),...incompleteItems()].some(item => item.key === replayKey)) replayKey = '';
   const previewLabel = incompleteItems().some(item => item.key === replayKey) ? '未完了QR・確認用（完納処理対象外）' : '処理済みQR・再表示';
   $('replayLabel').textContent = previewLabel;
-  const shown = loading ? [] : replayKey ? items.filter(item => item.key === replayKey) : list.filter(item => item.key === displayedKey);
+  const shown = loading ? [] : replayKey ? items.filter(item => item.key === replayKey) :
+    [...list.filter(item => item.key === displayedKey), ...list.filter(item => item.key !== displayedKey)];
   $('replayBar').hidden = !replayKey;
   const visible = new Set(shown.map(item => item.key));
   $('grid').querySelectorAll('[data-key]').forEach(node => { if (!visible.has(node.dataset.key)) node.remove(); });
   $('grid').querySelector('.empty')?.remove();
   for (const item of shown) {
+    const waiting = !replayKey && item.key !== displayedKey;
+    const mode = replayKey ? 'replay' : waiting ? 'waiting' : 'pending';
     let node = $('grid').querySelector(`[data-key="${item.key}"]`);
-    if (node && node.dataset.mode !== (replayKey ? 'replay' : 'pending')) { node.remove(); node = null; }
+    if (node && node.dataset.mode !== mode) { node.remove(); node = null; }
     if (!node) {
-      node = document.createElement('article'); node.className = 'qr-item'; node.dataset.key = item.key;
-      node.dataset.mode = replayKey ? 'replay' : 'pending';
-      node.innerHTML = `<button class="qr-button ${replayKey ? 'replay' : ''}" aria-label="${html(destination(item))} ${html(item.orderNo)} ${replayKey ? previewLabel : 'を処理済みにする'}" title="${replayKey ? previewLabel : '処理済みにする'}"><div class="qr-code"></div></button>
+      node = document.createElement('article'); node.className = 'qr-item ' + mode; node.dataset.key = item.key;
+      node.dataset.mode = mode;
+      node.innerHTML = `<div class="qr-state">${waiting ? '待機中' : replayKey ? '確認用' : '読み取り対象'}</div><button class="qr-button ${replayKey ? 'replay' : ''}" aria-label="${html(destination(item))} ${html(item.orderNo)} ${waiting ? '待機中' : replayKey ? previewLabel : 'を処理済みにする'}" title="${waiting ? '待機中' : replayKey ? previewLabel : '処理済みにする'}"><div class="qr-code"></div></button>
         <div class="meta"><strong>納入先 ${html(destination(item))}</strong><br>納入日 ${html(ymd(item.deliveryDate))}　便 ${html(item.bin || '-')}</div>`;
       node.querySelector('button').addEventListener('click',event => { if (event.detail > 1 || replayKey) return; post(item.key); });
-      $('grid').append(node);
     }
+    $('grid').append(node);
     const button = node.querySelector('button'), qr = node.querySelector('.qr-code');
-    button.disabled = !online || !!saving.size || Date.now() < clickBlockedUntil;
-    if (!online) { qr.replaceChildren(); delete node.dataset.drawn; }
+    button.disabled = waiting || !online || !!saving.size || Date.now() < clickBlockedUntil;
+    if (waiting) {
+      // Never generate a hidden/blurred QR for queued documents: scanners can still decode it.
+      qr.textContent = '待機中'; delete node.dataset.drawn;
+    }
+    else if (!online) { qr.replaceChildren(); delete node.dataset.drawn; }
     else if (!node.dataset.drawn) {
       try {
         if (typeof QRCode === 'undefined') throw Error('QR描画ライブラリを読み込めません。再読み込みしてください。');
@@ -117,7 +124,7 @@ async function load() {
       const update = ++revision;
       try {
         const docs = Object.entries(snap.val() || {}).flatMap(([key,session]) => CompletionCore.documents(session,key));
-        const keyed = await Promise.all(docs.map(async item => ({...item,key:await digest(item.qr || `${item.sessionId}/${item.index}`)})));
+        const keyed = await Promise.all(docs.map(async item => ({...item,key:await digest(item.identityQr || item.qr || `${item.sessionId}/${item.index}`)})));
         if (serial !== generation || update !== revision) return;
         const unique = new Map();
         keyed.sort((a,b) => Date.parse(b.completedAt)-Date.parse(a.completedAt)).forEach(item => { if (!unique.has(item.key)) unique.set(item.key,item); });
