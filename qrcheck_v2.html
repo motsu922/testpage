@@ -20,6 +20,18 @@
     }
     input, textarea { -webkit-user-select: text; user-select: text; }
     html { background: #0a0a0a !important; }
+    html[data-kanban-mode="internal"],
+    html[data-kanban-mode="internal"] body { background: #12535b !important; }
+    html[data-kanban-mode="internal"] #tab-scan,
+    html[data-kanban-mode="internal"] #scanScreen { background: #12535b; }
+    html[data-kanban-mode="internal"] .scan-box {
+      background: #183b42;
+      border-color: #79d5d8;
+    }
+    html[data-kanban-mode="internal"] #kanbanModeStatus {
+      background: #123038;
+      border-left: 4px solid #ffd166;
+    }
     .tab-nav {
       display: flex;
       background: #1a1a1a;
@@ -1738,6 +1750,11 @@
           <div id="dupBadge" class="dup-badge off">🔁 重複監視 OFF</div>
           <div id="modeBadge" class="mode-badge mode-1to1" onclick="toggleScanMode()" title="タップでモード切替">🔗 1対1</div>
         </div>
+        <div class="kanban-mode-control" role="group" aria-label="かんばん照合モード" style="display:flex;gap:6px;margin:8px 0;">
+          <button type="button" id="customerKanbanMode" class="order-detail-btn" style="flex:1;min-height:40px;font-size:15px;" aria-pressed="true" onclick="setKanbanMatchMode('customer')">客先モード</button>
+          <button type="button" id="internalKanbanMode" class="order-detail-btn" style="flex:1;min-height:40px;font-size:15px;" aria-pressed="false" onclick="setKanbanMatchMode('internal')">社内モード</button>
+        </div>
+        <div id="kanbanModeStatus" role="status" style="text-align:center;font-weight:700;color:#77ceff;">客先モード</div>
         <div id="orderDetailPanel" class="order-detail-box">
           <div class="order-detail-head">
             <div class="order-detail-title">注文明細照合</div>
@@ -2268,6 +2285,39 @@
   const FIREBASE_QUEUE_KEY = 'qrcheck_v2_firebase_write_queue';
   const PASS_THROUGH_MASTER_KEY = 'qrcheck_v2_pass_through_part_master';
   let terminalInputMode = localStorage.getItem(TERMINAL_INPUT_MODE_KEY) || 'hid';
+  let kanbanMatchMode = 'customer';
+
+  function isInternalKanbanMode() { return kanbanMatchMode === 'internal'; }
+
+  function setKanbanMatchMode(mode) {
+    if (!['customer', 'internal'].includes(mode) || operationLocked || matchInProgress || isNGLocked || acknowledgementOpen || getOrderWorkPause()) return;
+    if (document.getElementById('resultOverlay').classList.contains('show')) return;
+    if (mode !== kanbanMatchMode) {
+      kanbanMatchMode = mode;
+      value1 = ''; value2 = ''; currentStep = 1;
+      nModeEx = null; nModePartNumber = ''; nModeQR2Count = 0;
+      clearScannerBuffer();
+      clearTimeout(inputConnectionTimer); inputConnectionTimer = null;
+      document.getElementById('scanInput').value = '';
+      updateScanUI();
+    }
+    forceScanInputFocusAfterAction();
+  }
+
+  function renderKanbanMatchMode() {
+    const internal = isInternalKanbanMode();
+    document.documentElement.dataset.kanbanMode = internal ? 'internal' : 'customer';
+    for (const [id, selected] of [['customerKanbanMode', !internal], ['internalKanbanMode', internal]]) {
+      const button = document.getElementById(id);
+      button.setAttribute('aria-pressed', String(selected));
+      button.style.background = selected ? (internal ? '#815300' : '#08638f') : '#252a2f';
+      button.style.color = '#fff';
+      button.style.borderColor = selected ? (internal ? '#ffd166' : '#56ccff') : '#59636d';
+    }
+    const status = document.getElementById('kanbanModeStatus');
+    status.textContent = internal ? '社内モード・重複判定なし・69文字まで' : '客先モード';
+    status.style.color = internal ? '#ffd166' : '#77ceff';
+  }
   let inputConnectionTimer = null;
   let inputConnectionComposing = false;
   let firebaseQueueFlushing = false;
@@ -3031,6 +3081,7 @@
   }
 
   function appendScanLog(logEntry) {
+    logEntry.kanbanMatchMode = kanbanMatchMode;
     enrichLogEntry(logEntry);
     scanLog.unshift(logEntry);
     if (scanLog.length > 120) scanLog.pop();
@@ -3701,11 +3752,11 @@
       if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
       isOKPending = false;
       document.getElementById('okToast').classList.remove('show');
-      if (looksLikeInternalKanban(decoded)) {
+      if (!isInternalKanbanMode() && looksLikeInternalKanban(decoded)) {
         showWorkflowScanError('1回目QR待ちです', '2回目の社内かんばんが先に読み取られました。1回目の顧客かんばんから読み取ってください。');
         return;
       }
-      const lengthError = getQRLengthGuardError(decoded, 1);
+      const lengthError = getQRLengthGuardError(rawDetailQR === undefined ? decoded : rawDetailQR, 1);
       if (lengthError) { showKanbanTypeError(lengthError); return; }
       const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'extract' : 'search';
       const shortInfo = getShortQRInfo(decoded, scanRole);
@@ -3727,7 +3778,7 @@
       updateScanUI();
       keepScanInputReadyNow();
     } else if (currentStep === 2) {
-      const lengthError = getQRLengthGuardError(decoded, 2);
+      const lengthError = getQRLengthGuardError(rawDetailQR === undefined ? decoded : rawDetailQR, 2);
       if (lengthError) { showKanbanTypeError(lengthError); return; }
       const scanRole = (settings.scanMode === '1toN' || settings.matchDirection === 'qr1_to_qr2') ? 'search' : 'extract';
       const shortInfo = getShortQRInfo(decoded, scanRole);
@@ -3937,6 +3988,7 @@
   }
 
   function isDuplicateToday(v1, v2) {
+    if (isInternalKanbanMode()) return null;
     // 戻り値: null(問題なし) / 'vs'(QR1とQR2が同値)
     // ★ QR1=QR2（同じQRを2回読んだ）は設定に関わらず常にNG
     if (v1 === v2) return 'vs';
@@ -5422,6 +5474,11 @@
   }
 
   function getQRLengthGuardError(qrRaw, stepNo) {
+    if (isInternalKanbanMode()) {
+      const qr = normalizeQR(qrRaw);
+      const actualLen = Math.max(String(qrRaw || '').length, qr.length);
+      return actualLen >= 70 ? { qr, stepNo, actualLen, minLen: 1, maxLen: 69, internalMode: true } : null;
+    }
     normalizeQRLengthGuard();
     if (!settings.qrLengthGuard.enabled) return null;
     const qr = normalizeQR(qrRaw);
@@ -5464,9 +5521,9 @@
   function showKanbanTypeError(info) {
     saveKanbanTypeErrorLog(info);
     showAcknowledgementError({
-      title: 'かんばん種類違い',
+      title: info.internalMode ? '社内モードでは読み取れません' : 'かんばん種類違い',
       detailHtml: `
-      <p class="label">${escapeHtml(info.stepNo)}回目QRの文字数が設定範囲外です</p>
+      <p class="label">${info.internalMode ? '70文字以上のかんばんです。客先モードへの切替を確認してください。' : escapeHtml(info.stepNo) + '回目QRの文字数が設定範囲外です'}</p>
       <p class="label" style="margin-top:10px;">読み取り文字数: ${escapeHtml(info.actualLen)} / 設定範囲: ${escapeHtml(info.minLen)}〜${escapeHtml(info.maxLen)}</p>
       <p style="margin-top:8px; font-size:12px; word-break:break-all;">${escapeHtml(info.qr || '(空)')}</p>
       <p class="label" style="margin-top:12px;">QRの種類、読み取り順、または設定範囲を確認してください。</p>
@@ -6948,10 +7005,12 @@
 
   async function checkOrderDetailMatch(partNumber, qr1, qr2) {
     if (!orderDetailSession.lines.length) return { active: false, ok: true, note: '' };
+    const internalMode = isInternalKanbanMode();
     const key = `${canonicalPart(partNumber)}|${normalizeQR(qr2)}`;
-    const scanKey = 'scan_' + hashString(key);
     const legacyPairKey = 'scan_' + hashString(`${canonicalPart(partNumber)}|${normalizeQR(qr1)}|${normalizeQR(qr2)}`);
     const attemptId = 'attempt_' + hashString(key + '|' + Date.now() + '|' + Math.random());
+    // Internal mode permits repeated QR pairs, but transaction retries must remain idempotent.
+    const scanKey = internalMode ? attemptId : 'scan_' + hashString(key);
     const localCheck = (session) => {
       // 同一品番が複数行に分かれた明細があるため、一致する行をすべて拾い、
       // 先頭行が満杯になったら次の同一品番の行へ繰り越す(先頭行だけ見ると残りが読めなくなる)
@@ -6975,7 +7034,7 @@
         session.updatedAt = new Date().toISOString();
         return { active: true, ok: true, excluded: true, completed: !!session.completedAt, note: `明細対象外: ${line.partNo}` };
       }
-      const existingScan = session.scannedIds && (session.scannedIds[scanKey] || session.scannedIds[legacyPairKey]);
+      const existingScan = session.scannedIds && (session.scannedIds[scanKey] || (!internalMode && session.scannedIds[legacyPairKey]));
       if (existingScan && existingScan.attemptId === attemptId) {
         return { active: true, ok: true, completed: !!session.completedAt, note: `明細OK: ${partNumber}` };
       }
@@ -6990,7 +7049,7 @@
       // 社内かんばんが新しいとここまで素通りしてしまう。使用済みの顧客かんばんで
       // 別の箱を計上すると、箱数は合うのに顧客かんばんが1枚未処理で残る。
       // 1対Nモードは1枚の顧客かんばんを複数の社内かんばんに使うのが正常なので対象外。
-      if (settings.scanMode !== '1toN') {
+      if (!internalMode && settings.scanMode !== '1toN') {
         const qr1Hash = hashString(normalizeQR(qr1));
         const reusedQr1 = Object.values(session.scannedIds || {})
           .find(item => item && item.qr1Hash && item.qr1Hash === qr1Hash);
@@ -7012,6 +7071,7 @@
       session.scannedIds = session.scannedIds || {};
       session.scannedIds[scanKey] = {
         attemptId,
+        kanbanMatchMode: internalMode ? 'internal' : 'customer',
         partNumber,
         linePartNumber: line.partNo,
         qrHash: hashString(normalizeQR(qr1) + '|' + normalizeQR(qr2)),
@@ -7117,7 +7177,7 @@
     }
 
     // ② 重複チェック
-    // QR1=QR2 は常にNG。同じ社内かんばんの重複は、同じ明細セッション内だけNG。
+    // 客先モードではQR1=QR2、および同じ明細内での使い回しを検出する。
     const preDupType = isDuplicateToday(v1, v2); // null / 'vs'
     const orderCheck = (isQROK && !preDupType) ? await checkOrderDetailMatch(partNumber, v1, v2) : { active: false, ok: true, note: '' };
 
@@ -7458,6 +7518,7 @@
   }
 
   function updateScanUI() {
+    renderKanbanMatchMode();
     renderOrderWorkPause();
     const isNMode = settings.scanMode === '1toN';
     const step    = document.getElementById('scanStep');
