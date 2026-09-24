@@ -7,7 +7,7 @@ const $ = id => document.getElementById(id);
 const html = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let db, online = false, generation = 0, query = null, items = [], master = {}, loadedCompany = '';
 let receiptRefs = [];
-let displayedKey = '', clickBlockedUntil = 0;
+let clickBlockedUntil = 0;
 let replayKey = '';
 const receipts = new Map(), known = new Set(), saving = new Set();
 function message(text = '') { $('message').textContent = text; }
@@ -46,38 +46,30 @@ function renderHistory() {
 }
 function render() {
   const list = items.filter(item => !item.reason && pending(item));
-  // Wait for every receipt before selecting the next QR, to keep the order stable.
   const loading = items.some(item => !known.has(item.key));
-  if (!loading && !list.some(item => item.key === displayedKey)) displayedKey = list[0]?.key || '';
   if (replayKey && ![...postedItems(),...incompleteItems()].some(item => item.key === replayKey)) replayKey = '';
   const previewLabel = incompleteItems().some(item => item.key === replayKey) ? '未完了QR・確認用（完納処理対象外）' : '処理済みQR・再表示';
   $('replayLabel').textContent = previewLabel;
-  const shown = loading ? [] : replayKey ? items.filter(item => item.key === replayKey) :
-    [...list.filter(item => item.key === displayedKey), ...list.filter(item => item.key !== displayedKey)];
+  const shown = loading ? [] : replayKey ? items.filter(item => item.key === replayKey) : list;
   $('replayBar').hidden = !replayKey;
   const visible = new Set(shown.map(item => item.key));
   $('grid').querySelectorAll('[data-key]').forEach(node => { if (!visible.has(node.dataset.key)) node.remove(); });
   $('grid').querySelector('.empty')?.remove();
   for (const item of shown) {
-    const waiting = !replayKey && item.key !== displayedKey;
-    const mode = replayKey ? 'replay' : waiting ? 'waiting' : 'pending';
+    const mode = replayKey ? 'replay' : 'pending';
     let node = $('grid').querySelector(`[data-key="${item.key}"]`);
     if (node && node.dataset.mode !== mode) { node.remove(); node = null; }
     if (!node) {
       node = document.createElement('article'); node.className = 'qr-item ' + mode; node.dataset.key = item.key;
       node.dataset.mode = mode;
-      node.innerHTML = `<div class="qr-state">${waiting ? '待機中' : replayKey ? '確認用' : '読み取り対象'}</div><button class="qr-button ${replayKey ? 'replay' : ''}" aria-label="${html(destination(item))} ${html(item.orderNo)} ${waiting ? '待機中' : replayKey ? previewLabel : 'を処理済みにする'}" title="${waiting ? '待機中' : replayKey ? previewLabel : '処理済みにする'}"><div class="qr-code"></div></button>
+      node.innerHTML = `<div class="qr-state">${replayKey ? '確認用' : '読み取り対象'}</div><button class="qr-button ${replayKey ? 'replay' : ''}" aria-label="${html(destination(item))} ${html(item.orderNo)} ${replayKey ? previewLabel : 'を処理済みにする'}" title="${replayKey ? previewLabel : '処理済みにする'}"><div class="qr-code"></div></button>
         <div class="meta"><strong>納入先 ${html(destination(item))}</strong><br>納入日 ${html(ymd(item.deliveryDate))}　便 ${html(item.bin || '-')}</div>`;
       node.querySelector('button').addEventListener('click',event => { if (event.detail > 1 || replayKey) return; post(item.key); });
     }
     $('grid').append(node);
     const button = node.querySelector('button'), qr = node.querySelector('.qr-code');
-    button.disabled = waiting || !online || !!saving.size || Date.now() < clickBlockedUntil;
-    if (waiting) {
-      // Never generate a hidden/blurred QR for queued documents: scanners can still decode it.
-      qr.textContent = '待機中'; delete node.dataset.drawn;
-    }
-    else if (!online) { qr.replaceChildren(); delete node.dataset.drawn; }
+    button.disabled = !online || !!saving.size || Date.now() < clickBlockedUntil;
+    if (!online) { qr.replaceChildren(); delete node.dataset.drawn; }
     else if (!node.dataset.drawn) {
       try {
         if (typeof QRCode === 'undefined') throw Error('QR描画ライブラリを読み込めません。再読み込みしてください。');
@@ -111,7 +103,7 @@ async function load() {
   const serial = ++generation;
   const includeIncomplete = $('showIncomplete').checked;
   $('dateLabel').textContent = includeIncomplete ? '明細更新日・開始' : '照合完了日・開始';
-  query?.off(); detachReceipts(); items = []; receipts.clear(); known.clear(); loadedCompany = company; displayedKey = ''; replayKey = '';
+  query?.off(); detachReceipts(); items = []; receipts.clear(); known.clear(); loadedCompany = company; replayKey = '';
   render(); message('明細を取得しています…');
   try {
     const names = await db.ref(`qr_match_companies/customer_name_master/${company}`).once('value');
@@ -152,7 +144,7 @@ async function load() {
 }
 async function post(key) {
   const item = items.find(item => item.key === key);
-  if (replayKey || !online || !item || item.reason || !pending(item) || saving.size || key !== displayedKey || Date.now() < clickBlockedUntil) return;
+  if (replayKey || !online || !item || item.reason || !pending(item) || saving.size || Date.now() < clickBlockedUntil) return;
   const company = loadedCompany, serial = generation;
   saving.add(key); $('load').disabled = true; $('company').disabled = true; $('showIncomplete').disabled = true; render();
   try {
