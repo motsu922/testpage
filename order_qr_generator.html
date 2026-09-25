@@ -159,7 +159,8 @@
       const source=typeof page==='string'?page:page.src;
       const orientation=typeof page==='string'?'landscape':page.orientation;
       const pageHeight=orientation==='portrait'?'270mm':'188mm';
-      return `<div class="print-original-page ${orientation}" style="position:relative;min-height:${pageHeight}"><h2>注文書原本 ${index + 1} / ${state.originalPages.length}</h2><img class="print-original-source" src="${source}" alt="注文書原本 ${index + 1}"><div class="print-original-qr" style="top:auto!important;right:8mm!important;bottom:32mm!important"><img src="${state.generatedPages[index].image}" alt="${index+1}ページの明細QR"><b>明細QR ${index+1}/${state.originalPages.length}</b></div></div>`;
+      const qr=page.skipQr?'':`<div class="print-original-qr" style="top:auto!important;right:8mm!important;bottom:32mm!important"><img src="${state.generatedPages[index].image}" alt="${index+1}ページの明細QR"><b>明細QR</b></div>`;
+      return `<div class="print-original-page ${orientation}" style="position:relative;min-height:${pageHeight}"><h2>注文書原本 ${index + 1} / ${state.originalPages.length}</h2><img class="print-original-source" src="${source}" alt="注文書原本 ${index + 1}">${qr}</div>`;
     }).join('');
     const fallbackSheet = `
       <div class="print-title"><div><h1>注文書</h1><div style="font-size:11px;margin-top:3px;">明細QR付き</div></div><div class="print-issued">発行日 ${new Date().toLocaleDateString('ja-JP')}</div></div>
@@ -185,7 +186,8 @@
 
   function showGeneratedPage() {
     const index=Number(document.getElementById('qrPageSelect').value)||0;const page=state.generatedPages[index];if(!page)return;
-    document.getElementById('qrSummary').innerHTML=`<b>${state.generatedPages.length>1?`${index+1}/${state.generatedPages.length}ページ / `:''}明細 ${page.lines.length}品番 / ${page.boxes}箱</b><br>顧客: ${esc(page.meta.c||'-')}　納入日: ${esc(page.meta.d||'-')}　便: ${esc(page.meta.b||'-')}`;
+    const targets=state.generatedPages.map((_,pageIndex)=>pageIndex).filter(pageIndex=>!state.originalPages[pageIndex]?.skipQr);const position=targets.indexOf(index);
+    document.getElementById('qrSummary').innerHTML=`<b>${targets.length>1?`${position+1}/${targets.length}ページ / `:''}明細 ${page.lines.length}品番 / ${page.boxes}箱</b><br>顧客: ${esc(page.meta.c||'-')}　納入日: ${esc(page.meta.d||'-')}　便: ${esc(page.meta.b||'-')}`;
     document.getElementById('qrCanvas').innerHTML=`<img src="${page.image}" alt="${index+1}ページの明細QR">`;
     document.getElementById('qrText').textContent=page.code;
   }
@@ -222,11 +224,11 @@
       page.image=rendered.toDataURL('image/png');
     }
     state.generatedPages=prepared;
-    const select=document.getElementById('qrPageSelect');select.style.display=pageCount>1?'':'none';
-    select.innerHTML=prepared.map((_,index)=>`<option value="${index}">${index+1}ページのQR</option>`).join('');
-    select.value='0';showGeneratedPage();document.getElementById('qrResult').classList.add('show');
+    const select=document.getElementById('qrPageSelect');const targetPages=prepared.map((_,index)=>index).filter(index=>!state.originalPages[index]?.skipQr);select.style.display=targetPages.length>1?'':'none';
+    select.innerHTML=targetPages.map(index=>`<option value="${index}">${index+1}ページのQR</option>`).join('');
+    select.value=String(targetPages[0]||0);showGeneratedPage();document.getElementById('qrResult').classList.add('show');
     if(!updatePrintSheet()){showNotice('lineNotice','error','印刷用画像を作成できませんでした。');return;}
-    showNotice('lineNotice','ok',`${pageCount}ページの明細QRを発行しました。印刷画面を開きます。`);printOrderSheet();
+    showNotice('lineNotice','ok',`${targetPages.length}ページに明細QRを発行しました。印刷画面を開きます。`);printOrderSheet();
   }
   function copyQrText() { const text=document.getElementById('qrText').textContent;if(!text)return;navigator.clipboard.writeText(text).then(()=>alert('表示中の明細QR文字列をコピーしました')); }
   function resetOrderForm() { if(!confirm('注文情報と明細を初期化しますか？'))return;['customerId','orderNo','deliveryDate','deliveryBin','destinationCode','receivingCode','pdfFile'].forEach(id=>document.getElementById(id).value='');state.lines=[];state.originalPages=[];state.generatedPages=[];state.importedFormMeta=null;renderLines();document.getElementById('qrResult').classList.remove('show');document.getElementById('printSheet').innerHTML='';clearNotice('lineNotice');clearNotice('importNotice'); }
@@ -491,7 +493,7 @@
         const originalContext=originalCanvas.getContext('2d');originalContext.fillStyle='#ffffff';originalContext.fillRect(0,0,originalCanvas.width,originalCanvas.height);await page.render({canvasContext:originalContext,viewport,background:'#ffffff'}).promise;
         const orientation=originalCanvas.height>originalCanvas.width?'portrait':'landscape';
         if(copiedOrder&&looksLikeMiyamaEastForm(originalCanvas)){
-          state.originalPages.push({src:originalCanvas.toDataURL('image/png'),orientation,meta:{...copiedOrder.meta},copyOf:0,format:'miyamaEast'});continue;
+          state.originalPages.push({src:originalCanvas.toDataURL('image/png'),orientation,meta:{...copiedOrder.meta},copyOf:0,skipQr:true,format:'miyamaEast'});continue;
         }
         let found=findOrderLines(words);let pageKyb=false;let pageMiyamaEast=false;let ocrText='';let specialMeta={};
         if(!found.length){found=findKybOrderLines(words);pageKyb=found.length>0;usedKyb=usedKyb||pageKyb;}
@@ -520,7 +522,7 @@
       if(unreadable.length){showNotice('importNotice','warn',`${unreadable.join('、')}ページの明細を取得できませんでした。該当ページの明細を確認して入力してください。自動印刷は停止しました。`);document.getElementById('newLinePage').value=String(unreadable[0]-1);document.getElementById('editDetailsButton').classList.add('show');return;}
       const missing=state.lines.filter(line=>!line.packQty).length;
       if(missing){showNotice('importNotice','warn',`${pdf.numPages}ページ・${state.lines.length}品番を取り込みました。${missing}件の入数を確定できません。原本を確認して入力してください。自動印刷は停止しました。`);document.getElementById('editDetailsButton').classList.add('show');return;}
-      showNotice('importNotice','ok',`${pdf.numPages}ページ・${state.lines.length}品番を${usedMiyamaEast?'ミヤマ東日本明細として':usedOcr?'OCRを含めて':usedKyb?'KYB明細として':''}取り込みました。ページごとのQRを発行します。`);generateQr();
+      showNotice('importNotice','ok',`${pdf.numPages}ページ・${state.lines.length}品番を${usedMiyamaEast?'ミヤマ東日本明細として':usedOcr?'OCRを含めて':usedKyb?'KYB明細として':''}取り込みました。${usedMiyamaEast?'1ページ目に':'ページごとに'}QRを発行します。`);generateQr();
     }catch(error){console.error(error);showNotice('importNotice','error',`PDFの読み込みに失敗しました。${error.message||''}`);}
   }
 
