@@ -3748,6 +3748,14 @@
       showWorkflowScanError('現在はかんばん照合中です', '明細QRを追加する場合は「明細QR追加」を押してから読み取ってください。');
       return;
     }
+    const internalFields = parseInternalKanban(decoded);
+    if (internalFields && !internalFields.part) {
+      appendScanLog({ timestamp: new Date().toISOString(), result: 'NG', partNumber: 'KANBAN_FORMAT_ERROR',
+        qr1_raw: currentStep === 1 ? decoded : value1, qr2_raw: currentStep === 2 ? decoded : '',
+        extractNote: internalFields.note, isDuplicate: false, dupType: '' });
+      showWorkflowScanError('社内かんばんの品番を特定できません', '品番・枝番・入数の並び、または後方の品番表記が一致していません。QRを確認してください。');
+      return;
+    }
     if (currentStep === 1) {
       if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
       isOKPending = false;
@@ -5414,6 +5422,18 @@
   }
 
   // ========= 抽出ルール =========
+  function parseInternalKanban(qrRaw) {
+    const qr = normalizeQR(qrRaw);
+    const body = qr.replace(/^["'’‘“”\s]+/, '').replace(/^shanai\s+/i, '').replace(/^["'’‘“”\s]+/, '');
+    if (!/^[A-Z]\d{3}\s+/i.test(body) && !/^["'’‘“”\s]*shanai\b/i.test(qr)) return null;
+    const match = body.match(/^([A-Z]\d{3})\s+([0-9A-Z]+-[0-9A-Z]+(?:-[0-9A-Z]+)?)\s+(\d{4})\s+(\d{5})\s+([0-9A-Z]+)["'’‘“”:]*(?:\s+TP-?\d+)?["'’‘“”]*$/i);
+    if (!match || match[2].replace(/-/g, '').toUpperCase() !== match[5].toUpperCase()) {
+      return { part: '', rule: null, totalLen: qr.length, start0: null, note: 'internal_kanban_invalid' };
+    }
+    return { part: match[2].toUpperCase(), rule: null, totalLen: qr.length,
+      start0: qr.toUpperCase().indexOf(match[2].toUpperCase()), note: 'internal_kanban_fields' };
+  }
+
   function pickRule(qrNorm) {
     const totalLen = qrNorm.length;
     const withPrefix = (settings.extractRules || [])
@@ -5425,6 +5445,8 @@
 
   // ★ 切り出し元QR自身の文字数・prefixでルール判定し、そのQRから品番を切り出す
   function extractPartNumberFrom(qrRaw) {
+    const internal = parseInternalKanban(qrRaw);
+    if (internal) return internal;
     const qr = normalizeQR(qrRaw);
     const rule = pickRule(qr);
     if (!rule) return { part: qr, rule: null, totalLen: qr.length, start0: 0, note: 'no_rule_full' };
@@ -5451,6 +5473,7 @@
   }
 
   function getShortQRInfo(qrRaw, scanRole) {
+    if (parseInternalKanban(qrRaw)) return null;
     if (settings.shortQRCheckEnabled === false) return null;
     const qr = normalizeQR(qrRaw);
     if (scanRole === 'extract') {
@@ -5834,6 +5857,9 @@
   }
 
   function extractOrderDetailPartForPair(qrA, qrB) {
+    const internalA = parseInternalKanban(qrA);
+    const internalB = parseInternalKanban(qrB);
+    if (internalA && internalB) return { ex: internalA, isQROK: !!internalA.part && !!internalB.part && qrContainsPart(qrB, internalA.part) };
     const pairHit = findOrderDetailPartPair(qrA, qrB);
     if (pairHit) {
       return {
@@ -5853,6 +5879,8 @@
   }
 
   function extractPartNumberForMatch(qrRaw) {
+    const internal = parseInternalKanban(qrRaw);
+    if (internal) return internal;
     const detailHit = findOrderDetailPartInQR(qrRaw);
     if (detailHit) {
       return {
@@ -5868,6 +5896,9 @@
   }
 
   function qrContainsPart(qrRaw, partNumber) {
+    const internal = parseInternalKanban(qrRaw);
+    if (internal) return !!internal.part && resolveAliases(partNumber).some(alias =>
+      partVariants(alias).some(part => partVariants(internal.part).includes(part)));
     const tokens = partSearchTokens(qrRaw);
     return resolveAliases(partNumber).some(alias =>
       partVariants(alias).some(part => part && tokens.some(token => token.includes(part)))
