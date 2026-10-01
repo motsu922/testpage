@@ -3749,11 +3749,11 @@
       return;
     }
     const internalFields = parseInternalKanban(decoded);
-    if (internalFields && !internalFields.part) {
+    if (isInternalKanbanMode() && (!internalFields || !internalFields.part)) {
       appendScanLog({ timestamp: new Date().toISOString(), result: 'NG', partNumber: 'KANBAN_FORMAT_ERROR',
         qr1_raw: currentStep === 1 ? decoded : value1, qr2_raw: currentStep === 2 ? decoded : '',
-        extractNote: internalFields.note, isDuplicate: false, dupType: '' });
-      showWorkflowScanError('社内かんばんの品番を特定できません', '品番・枝番・入数の並び、または後方の品番表記が一致していません。QRを確認してください。');
+        extractNote: internalFields ? internalFields.note : 'internal_part_not_found', isDuplicate: false, dupType: '' });
+      showWorkflowScanError('社内かんばんの品番を特定できません', '品番の項目を読み取れませんでした。QRを確認してください。');
       return;
     }
     if (currentStep === 1) {
@@ -5425,12 +5425,9 @@
   function parseInternalKanban(qrRaw) {
     const qr = normalizeQR(qrRaw);
     const body = qr.replace(/^["'’‘“”\s]+/, '').replace(/^shanai\s+/i, '').replace(/^["'’‘“”\s]+/, '');
-    if (!/^(?:[A-Z]{1,2}\d{3,4}|\d{4})\s+/i.test(body) && !/^["'’‘“”\s]*shanai\b/i.test(qr)) return null;
-    // The final token is a box-type code, not part of the product number.
-    const match = body.match(/^([A-Z]{1,2}\d{3,4}|\d{4})\s+([0-9A-Z]+-[0-9A-Z]+(?:-[0-9A-Z]+)?)\s+(\d{4})\s+(\d{5})\s+([0-9A-Z]+)["'’‘“”:]*(?:\s+[0-9A-Z]+(?:-[0-9A-Z]+)*)?["'’‘“”]*$/i);
-    if (!match || match[2].replace(/-/g, '').toUpperCase() !== match[5].toUpperCase()) {
-      return { part: '', rule: null, totalLen: qr.length, start0: null, note: 'internal_kanban_invalid' };
-    }
+    // Read the bounded product field. Location and trailing box metadata are not validation rules.
+    const match = body.match(/^(\S+)\s+([0-9A-Z]+-[0-9A-Z]+(?:-[0-9A-Z]+)?)\s+\d{4}\s+\d{5}(?=\s|$)/i);
+    if (!match) return null;
     return { part: match[2].toUpperCase(), rule: null, totalLen: qr.length,
       start0: qr.toUpperCase().indexOf(match[2].toUpperCase()), note: 'internal_kanban_fields' };
   }
@@ -5860,7 +5857,10 @@
   function extractOrderDetailPartForPair(qrA, qrB) {
     const internalA = parseInternalKanban(qrA);
     const internalB = parseInternalKanban(qrB);
-    if (internalA && internalB) return { ex: internalA, isQROK: !!internalA.part && !!internalB.part && qrContainsPart(qrB, internalA.part) };
+    if (isInternalKanbanMode()) return {
+      ex: internalA || { part: '', rule: null, start0: null, note: 'internal_part_not_found' },
+      isQROK: !!internalA && !!internalB && qrContainsPart(qrB, internalA.part)
+    };
     const pairHit = findOrderDetailPartPair(qrA, qrB);
     if (pairHit) {
       return {
@@ -5881,7 +5881,7 @@
 
   function extractPartNumberForMatch(qrRaw) {
     const internal = parseInternalKanban(qrRaw);
-    if (internal) return internal;
+    if (isInternalKanbanMode()) return internal || { part: '', rule: null, start0: null, note: 'internal_part_not_found' };
     const detailHit = findOrderDetailPartInQR(qrRaw);
     if (detailHit) {
       return {
@@ -5900,6 +5900,7 @@
     const internal = parseInternalKanban(qrRaw);
     if (internal) return !!internal.part && resolveAliases(partNumber).some(alias =>
       partVariants(alias).some(part => partVariants(internal.part).includes(part)));
+    if (isInternalKanbanMode()) return false;
     const tokens = partSearchTokens(qrRaw);
     return resolveAliases(partNumber).some(alias =>
       partVariants(alias).some(part => part && tokens.some(token => token.includes(part)))
