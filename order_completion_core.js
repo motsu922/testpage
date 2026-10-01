@@ -17,9 +17,11 @@
     }
     if (!details.length) details = [{}];
     return details.map((detail, index) => {
-      const identityQr = typeof detail.orderQr === 'string' ? detail.orderQr : '';
+      const originalIdentity = typeof detail.orderQr === 'string' ? detail.orderQr : '';
       const qr = detail.rawQRSource === 'terminal-received-v1' && typeof detail.rawQR === 'string' ? detail.rawQR : '';
       const meta = detail.meta || (details.length === 1 ? session.meta : {}) || {};
+      const identityQr = meta.detailType === 'aites_simple_detail' && meta.readDate
+        ? JSON.stringify(['aites_daily', meta.readDate, originalIdentity]) : originalIdentity;
       const reason = !qr ? '生の明細QR未保存（v2で再読込が必要）' : excluded || values(detail.lines).some(l => l.excluded) ? '照合除外あり' :
         !allComplete ? '全行の照合完了を確認できません' :
         !Number.isFinite(Date.parse(session.completedAt)) ? '完了日時なし' : !qr ? '明細QRデータなし' : '';

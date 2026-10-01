@@ -3128,7 +3128,8 @@
       orderDetailActive: true,
       orderDetailRead: true,
       orderDetailSessionId: status === 'OK' ? (orderDetailSession.sessionId || '') : '',
-      orderDetailQrHash: status === 'OK' ? hashString(parsed.orderQr || '') : '',
+      orderDetailQrHash: status === 'OK' ? hashString(orderDetailIdentityQR(parsed)) : '',
+      orderDetailReadDate: parsed.meta ? (parsed.meta.readDate || '') : '',
       orderDetailReadResult: status,
       orderDetailReadLength: normalized.length,
       orderDetailLineCandidates: detailLineCandidates,
@@ -3164,9 +3165,26 @@
     return (hash >>> 0).toString(36);
   }
 
+  function stampAitesReadDate(parsed, now = new Date()) {
+    if (parsed.meta && parsed.meta.detailType === 'aites_simple_detail') {
+      parsed.meta.readDate = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    }
+    return parsed;
+  }
+
+  function orderDetailIdentityQR(parsed) {
+    const qr = parsed.orderQr || '';
+    const meta = parsed.meta || {};
+    return meta.detailType === 'aites_simple_detail' && meta.readDate
+      ? JSON.stringify(['aites_daily', meta.readDate, qr]) : qr;
+  }
+
   function buildOrderDetailSessionId(parsed) {
     const qr = parsed && parsed.orderQr ? parsed.orderQr : '';
     const meta = parsed && parsed.meta ? parsed.meta : {};
+    if (meta.detailType === 'aites_simple_detail' && meta.readDate) {
+      return 'od_' + hashString(orderDetailIdentityQR(parsed));
+    }
     // 同じ注文書を再発行しても同じセッションに集約する。
     // 注文No.が取れない旧式明細だけは、従来どおりQR文字列で区別する。
     const hasOrderIdentity = !!String(meta.orderNo || '').trim();
@@ -3184,11 +3202,13 @@
       Number(line.totalQty) || 0,
       String(line.backNo || '').trim()
     ].join('~')).sort();
-    return hashString([
+    const content = [
       meta.customerId || '', meta.orderNo || '', meta.deliveryDate || '',
       meta.deliveryBin || '', meta.destinationCode || '', meta.receivingCode || '',
       lines.join('|')
-    ].join('||'));
+    ];
+    if (meta.detailType === 'aites_simple_detail' && meta.readDate) content.push('aites_daily', meta.readDate);
+    return hashString(content.join('||'));
   }
 
   function getOrderDetailStorageKey() {
@@ -3257,7 +3277,7 @@
 
   function mergeParsedOrderDetail(session, parsed) {
     const target = normalizeOrderDetailSessionData(session, session && session.sessionId);
-    const qrHash = hashString(parsed.orderQr || '');
+    const qrHash = hashString(orderDetailIdentityQR(parsed));
     const detailHash = buildOrderDetailContentHash(parsed);
     target.sourceHashes = target.sourceHashes || {};
     target.detailHashes = target.detailHashes || {};
@@ -3268,7 +3288,7 @@
         target.details.push({ qrHash, contentHash: detailHash, orderQr: parsed.orderQr,
           meta: parsed.meta || {}, lines: parsed.lines.map(line => ({ ...line })) });
       }
-      const matchingDetail = target.details.find(detail => detail.orderQr === parsed.orderQr);
+      const matchingDetail = target.details.find(detail => orderDetailIdentityQR(detail) === orderDetailIdentityQR(parsed));
       if (matchingDetail && parsed.rawQRSource === 'terminal-received-v1') {
         matchingDetail.rawQR = parsed.rawQR;
         matchingDetail.rawQRSource = parsed.rawQRSource;
@@ -6567,6 +6587,7 @@
     if (getOrderWorkPause()) return;
     const normalized = normalizeQR(decoded);
     const parsed = parseOrderDetailQR(decoded);
+    stampAitesReadDate(parsed);
     if (typeof rawDetailQR === 'string' && rawDetailQR.length && normalizeOrderDetailQR(rawDetailQR) === parsed.orderQr) {
       parsed.rawQR = rawDetailQR;
       parsed.rawQRSource = 'terminal-received-v1';
