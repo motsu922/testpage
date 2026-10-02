@@ -3772,8 +3772,14 @@
     if (isInternalKanbanMode() && (!internalFields || !internalFields.part)) {
       appendScanLog({ timestamp: new Date().toISOString(), result: 'NG', partNumber: 'KANBAN_FORMAT_ERROR',
         qr1_raw: currentStep === 1 ? decoded : value1, qr2_raw: currentStep === 2 ? decoded : '',
+        qr1: normalizeQR(currentStep === 1 ? decoded : value1), qr2: currentStep === 2 ? normalizeQR(decoded) : '',
+        qr1Length: normalizeQR(currentStep === 1 ? decoded : value1).length,
+        qr2Length: currentStep === 2 ? normalizeQR(decoded).length : 0,
+        internalPartCandidates: internalFields ? (internalFields.candidates || []) : [],
         extractNote: internalFields ? internalFields.note : 'internal_part_not_found', isDuplicate: false, dupType: '' });
-      showWorkflowScanError('社内かんばんの品番を特定できません', '品番の項目を読み取れませんでした。QRを確認してください。');
+      showWorkflowScanError('社内かんばんの品番を特定できません', internalFields && internalFields.note === 'internal_part_ambiguous'
+        ? '品番候補が複数あります。QRが連結されていないか確認し、1枚ずつ読み直してください。'
+        : '品番・枝番・入数の項目を特定できませんでした。QRを確認してください。');
       return;
     }
     if (currentStep === 1) {
@@ -5444,12 +5450,16 @@
   // ========= 抽出ルール =========
   function parseInternalKanban(qrRaw) {
     const qr = normalizeQR(qrRaw);
-    const body = qr.replace(/^["'’‘“”\s]+/, '').replace(/^shanai\s+/i, '').replace(/^["'’‘“”\s]+/, '');
-    // Read the bounded product field. Location and trailing box metadata are not validation rules.
-    const match = body.match(/^(\S+)\s+(?:\d+\s+)?([0-9A-Z]+-[0-9A-Z]+(?:-[0-9A-Z]+)?)\s+\d{4}\s+\d{5}(?=\s|$)/i);
-    if (!match) return null;
-    return { part: match[2].toUpperCase(), rule: null, totalLen: qr.length,
-      start0: qr.toUpperCase().indexOf(match[2].toUpperCase()), note: 'internal_kanban_fields' };
+    // Locate whole product fields by their serial/quantity neighbours, not by prefix offsets.
+    const candidates = [...qr.matchAll(/(?:^|[\s"'’‘“”])([0-9A-Z]+-[0-9A-Z]+(?:-[0-9A-Z]+)?)(?=\s+\d{4}\s+\d{5}(?:\s|$))/gi)];
+    if (!candidates.length) return null;
+    if (candidates.length !== 1) return {
+      part: '', rule: null, totalLen: qr.length, start0: null, note: 'internal_part_ambiguous',
+      candidates: candidates.map(match => match[1].toUpperCase())
+    };
+    const match = candidates[0];
+    return { part: match[1].toUpperCase(), rule: null, totalLen: qr.length,
+      start0: match.index + match[0].length - match[1].length, note: 'internal_kanban_fields' };
   }
 
   function pickRule(qrNorm) {
