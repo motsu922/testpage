@@ -3628,10 +3628,16 @@
 
   function findInternalKanbanStart(qr) {
     const text = normalizeQR(qr);
-    const re = /'?\s+[A-Z]\d{3}\s+[0-9A-Z]+-[0-9A-Z-]+\s+\d{4}\s+\d{5}\s+[0-9A-Z]+/ig;
+    // Only split a customer QR followed by an internal QR, never one internal QR.
+    if (!/^(?:\[\)>|@>)/.test(text)) return -1;
+    const re = /(?:'?\s+shanai\s+'?\s*|'?\s+)[A-Z]\d{3}\s+[0-9A-Z]+-[0-9A-Z-]+\s+\d{4}\s+\d{5}\s+[0-9A-Z]+/ig;
     let match;
     while ((match = re.exec(text))) {
-      if (match.index > 0) return match.index + (match[0].startsWith("'") ? 0 : 1);
+      if (match.index <= 0) continue;
+      const start = match.index + (match[0].startsWith("'") ? 0 : 1);
+      const first = text.slice(0, start);
+      const second = parseInternalKanban(text.slice(start));
+      if (/P[0-9A-Z]+-[0-9A-Z-]+[\s\x1d]*Q\d+/i.test(first) && second && second.part) return start;
     }
     return -1;
   }

@@ -15,6 +15,7 @@ function extract(name) {
   return html.slice(start, start + 1 + next.index);
 }
 const context = {
+  currentStep: 1,
   kanbanMatchMode: 'internal',
   settings: { extractRules: [{ minLen: 1, maxLen: 200, startPos: 16, charCount: 12, prefix: '' }] },
   findOrderDetailPartInQR: () => null,
@@ -24,7 +25,8 @@ const context = {
 vm.createContext(context);
 for (const name of ['isInternalKanbanMode', 'normalizeQR', 'parseInternalKanban', 'pickRule',
   'extractPartNumberFrom', 'extractPartNumberForMatch', 'canonicalPart', 'trimPartAfterSecondHyphen',
-  'partVariants', 'partSearchTokens', 'qrContainsPart', 'extractOrderDetailPartForPair']) {
+  'partVariants', 'partSearchTokens', 'qrContainsPart', 'extractOrderDetailPartForPair',
+  'findInternalKanbanStart', 'splitCombinedScannerValue', 'submitScannedValue']) {
   vm.runInContext(extract(name), context);
 }
 
@@ -38,6 +40,7 @@ const cases = [
 ];
 let checks = 0;
 function verify(qr, part) {
+  assert.deepEqual(Array.from(context.splitCombinedScannerValue(qr)), [context.normalizeQR(qr)]);
   const result = context.extractPartNumberForMatch(qr);
   assert.equal(result.part, part, qr);
   assert.equal(context.normalizeQR(qr).slice(result.start0, result.start0 + part.length).toUpperCase(), part);
@@ -90,3 +93,33 @@ context.findOrderDetailPartInQR = () => null;
 const legacy = 'UNRECOGNIZED-CUSTOMER-QR-12345';
 assert.equal(context.extractPartNumberForMatch(legacy).part, legacy.substring(15, 27));
 console.log(`PASS: ${checks} extraction cases; ambiguity, wrong parts, aliases, customer matching and legacy fallback`);
+
+const incidentScans = [
+  "shanai A331 71303-78010 0039 00016 7130378010' C",
+  "shanai A338 71304-78010 0090 00016 7130478010' C"
+];
+for (const mode of ['internal', 'customer']) {
+  context.kanbanMatchMode = mode;
+  for (const step of [1, 2]) {
+    context.currentStep = step;
+    for (const qr of incidentScans) {
+      const calls = [];
+      context.handleScan = (...args) => calls.push(args);
+      context.setTimeout = () => assert.fail('A single QR must not schedule a second scan');
+      context.submitScannedValue(qr, qr);
+      assert.deepEqual(calls, [[qr, qr]]);
+    }
+  }
+}
+context.currentStep = 1;
+for (const first of [qr1, '@>06P71303-78010Q16E']) {
+  for (const second of [incidentScans[0], cases[0][0]]) {
+    assert.deepEqual(Array.from(context.splitCombinedScannerValue(first + ' ' + second)),
+      [context.normalizeQR(first), context.normalizeQR(second)]);
+  }
+}
+for (const first of ['shanai', 'UNKNOWN', '[)>06BAD']) {
+  const joined = first + ' ' + incidentScans[0];
+  assert.deepEqual(Array.from(context.splitCombinedScannerValue(joined)), [joined]);
+}
+console.log('PASS: single scan submission in both modes/steps and validated customer/internal concatenation');
