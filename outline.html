@@ -39,6 +39,13 @@ var stor=firebase.storage();
 var auth=firebase.auth();
 const {useState,useEffect,useRef,useContext,createContext}=React;
 
+/* ══════════ 機能フラグ ══════════ */
+/* QRスキャナー（ハンディスキャナー）を使った「読み取り」機能のON/OFF。
+   現在は担当者・品番とも選択式で運用するため false。
+   スキャナー導入時に true にすれば、担当者QR・ガイドQR読取・製品/かんばん照合が復活します。
+   （QRコードの「表示」はフラグに関係なく常に行われます） */
+const QR_ENABLED=false;
+
 /* ══════════ 配色（モック準拠） ══════════ */
 const NAVY='#12306B', NAVY_D='#0D2450', BLUE='#1B4A9C', LBLUE='#EEF4FC', LINE='#E3E7ED';
 const WARN_BG='#FEF8EC', WARN_LN='#F3E2BC', WARN_TX='#8A6A00';
@@ -108,6 +115,8 @@ const DICT={
   '確認しました':'Sudah diperiksa','作業手順を確認してください':'Silakan periksa prosedur kerja','日付':'Tanggal',
   '割当':'Ditugaskan','未割当':'Belum ditugaskan','今の担当者':'Petugas saat ini','達成':'Tercapai','残り':'Sisa',
   '工程一覧へ':'Daftar Proses','マスター':'Master',
+  '品番を選ぶ':'Pilih nomor produk','変更':'Ubah','選択してください':'Silakan pilih','該当なし':'Tidak ada',
+  'QRスキャナー導入後に利用できます':'Tersedia setelah scanner QR dipasang',
 };
 const LangCtx=createContext({lang:'ja'});
 function useLang(){return useContext(LangCtx);}
@@ -870,7 +879,7 @@ function PageBody({pageKey,m,hinban,onScan}){
         )):none}
       </div>
       <WarnBox items={dva(m,'kanbanNotes',lang)}/>
-      {m.kanbanQr&&(
+      {QR_ENABLED&&m.kanbanQr&&(
         <div style={{marginTop:14,display:'flex',justifyContent:'center'}}>
           <button onClick={()=>onScan({expected:m.kanbanQr,label:hinban+'：かんばんQR照合'})}
             style={{minHeight:52,padding:'0 34px',borderRadius:10,background:'#D97706',color:'#fff',fontSize:16,fontWeight:700}}>▦ かんばんQR照合</button>
@@ -897,15 +906,19 @@ function PageBody({pageKey,m,hinban,onScan}){
         <P><H>製品QR / QR Produk</H><Body>
           <div style={{textAlign:'center'}}>
             {m.qrText?<><QRDisplay value={m.qrText} size={180}/><div style={{fontSize:12,color:'#6B7480',marginTop:10,wordBreak:'break-all'}}>{m.qrText}</div></>:none}
-            <button onClick={()=>onScan({expected:m.qrText||hinban,label:hinban+'：製品QR照合'})}
-              style={{marginTop:14,minHeight:50,padding:'0 30px',borderRadius:10,background:NAVY,color:'#fff',fontSize:16,fontWeight:700}}>▦ {b('QR照合')}</button>
+            {QR_ENABLED
+              ?<button onClick={()=>onScan({expected:m.qrText||hinban,label:hinban+'：製品QR照合'})}
+                 style={{marginTop:14,minHeight:50,padding:'0 30px',borderRadius:10,background:NAVY,color:'#fff',fontSize:16,fontWeight:700}}>▦ {b('QR照合')}</button>
+              :<div style={{marginTop:14,fontSize:12,color:'#9AA3AF'}}>※ {t('QRスキャナー導入後に利用できます')}</div>}
           </div>
         </Body></P>
         <P><H>かんばんQR / QR Kanban</H><Body>
           <div style={{textAlign:'center'}}>
             {m.kanbanQr?<><QRDisplay value={m.kanbanQr} size={180}/><div style={{fontSize:12,color:'#6B7480',marginTop:10,wordBreak:'break-all'}}>{m.kanbanQr}</div></>:none}
-            <button onClick={()=>onScan({expected:m.kanbanQr,label:hinban+'：かんばんQR照合'})} disabled={!m.kanbanQr}
-              style={{marginTop:14,minHeight:50,padding:'0 30px',borderRadius:10,background:m.kanbanQr?'#D97706':'#C7CDD6',color:'#fff',fontSize:16,fontWeight:700}}>▦ かんばん照合</button>
+            {QR_ENABLED
+              ?<button onClick={()=>onScan({expected:m.kanbanQr,label:hinban+'：かんばんQR照合'})} disabled={!m.kanbanQr}
+                 style={{marginTop:14,minHeight:50,padding:'0 30px',borderRadius:10,background:m.kanbanQr?'#D97706':'#C7CDD6',color:'#fff',fontSize:16,fontWeight:700}}>▦ かんばん照合</button>
+              :<div style={{marginTop:14,fontSize:12,color:'#9AA3AF'}}>※ {t('QRスキャナー導入後に利用できます')}</div>}
           </div>
         </Body></P>
       </div>
@@ -1424,6 +1437,50 @@ function calcLog(log,now){
 }
 function useNow(){const[n,setN]=useState(Date.now());useEffect(()=>{const id=setInterval(()=>setN(Date.now()),1000);return()=>clearInterval(id);},[]);return n;}
 
+/* ── 品番ピッカー（選択式） ── */
+function HinbanPicker({master,procId,onPick,onClose}){
+  const{lang,t,b}=useLang();
+  const[q,setQ]=useState('');
+  const kw=q.trim().toLowerCase();
+  const list=Object.keys(master).sort().filter(h=>!kw||h.toLowerCase().includes(kw)||(master[h]?.name||'').toLowerCase().includes(kw));
+  return(
+    <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:900,height:'calc(100vh - 60px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{background:NAVY,padding:'14px 20px',display:'flex',alignItems:'center',gap:14}}>
+          <div style={{fontSize:18,fontWeight:700,color:'#fff',flex:1}}>🔍 {b('品番を選ぶ')}</div>
+          <button onClick={onClose} style={{width:36,height:36,borderRadius:'50%',background:'rgba(255,255,255,.18)',color:'#fff',fontSize:20}}>×</button>
+        </div>
+        <div style={{padding:'14px 18px 10px'}}>
+          <input value={q} onChange={e=>setQ(e.target.value)} autoFocus placeholder={b('品番を入力してください')} style={{fontSize:16}}/>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'0 18px 18px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:10}}>
+            {list.map(h=>{
+              const m=master[h]||{};
+              const sh=m.sheets?.[procId];
+              const has=!!(sh&&((sh.steps||[]).length||sh.kosu));
+              return(
+                <button key={h} onClick={()=>{onPick(h);onClose();}}
+                  style={{padding:0,textAlign:'left',background:'#fff',border:'1px solid '+(has?'#C3D6F0':LINE),borderRadius:10,overflow:'hidden'}}>
+                  <div style={{height:84,background:'#F0F2F5',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    {m.productImg?<img src={m.productImg} style={{width:'100%',height:'100%',objectFit:'contain'}}/>:<span style={{fontSize:11,color:'#B0B7C0'}}>写真なし</span>}
+                  </div>
+                  <div style={{padding:'8px 10px'}}>
+                    <div style={{fontSize:15,fontWeight:700,color:'#111',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h}</div>
+                    <div style={{fontSize:11.5,color:'#6B7480',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dv(m,'name',lang)||'—'}</div>
+                    <div style={{fontSize:10.5,fontWeight:700,marginTop:3,color:has?'#2E7D4F':'#C2410C'}}>{has?'● '+t('要領書'):'要領書・工数 未登録'}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {list.length===0&&<div style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('該当なし')}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── 計画表（作業者）：上から順に作業 ── */
 function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onResume,onHistory,onPlanner,onQR,onSearch,onMaster,onLogout}){
   const{lang,t,b}=useLang();
@@ -1467,7 +1524,7 @@ function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onRe
               <button key={w.id} onClick={()=>setWid(w.id)}
                 style={{padding:'8px 16px',borderRadius:20,fontSize:14,fontWeight:700,border:'1px solid '+(wid===w.id?NAVY:LINE),background:wid===w.id?NAVY:'#fff',color:wid===w.id?'#fff':'#3A4552'}}>👤 {w.name}</button>
             ))}
-            <button onClick={()=>setScanW(true)} style={{padding:'8px 14px',borderRadius:20,fontSize:13,fontWeight:700,border:'1px dashed '+NAVY,background:'#F2F6FD',color:NAVY}}>▦ {t('担当者QR')}</button>
+            {QR_ENABLED&&<button onClick={()=>setScanW(true)} style={{padding:'8px 14px',borderRadius:20,fontSize:13,fontWeight:700,border:'1px dashed '+NAVY,background:'#F2F6FD',color:NAVY}}>▦ {t('担当者QR')}</button>}
           </div>
           <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:168,fontSize:14}}/>
         </div>
@@ -1543,12 +1600,13 @@ function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onRe
           <span style={{display:'flex',alignItems:'center',gap:8,fontSize:14,color:'#5A6472',fontWeight:600,whiteSpace:'nowrap'}}>🕐 {stamp}</span>
         </>}
         right={<div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
-          {[['▦ '+t('QR照合'),onQR],['🔍 '+t('品番検索'),onSearch],['📅 '+t('スケジュール編集'),onPlanner],
+          {[...(QR_ENABLED?[['▦ '+t('QR照合'),onQR]]:[]),
+            ['🔍 '+t('品番検索'),onSearch],['📅 '+t('スケジュール編集'),onPlanner],
             ['📋 '+t('履歴'),onHistory],['⚙ '+t('マスター'),onMaster],['⇥ '+t('ログアウト'),onLogout]].map(([lb,fn])=>(
             <button key={lb} onClick={fn} style={{minHeight:44,padding:'0 14px',borderRadius:8,background:'#fff',border:'1px solid '+LINE,color:NAVY,fontSize:13.5,fontWeight:700,whiteSpace:'nowrap'}}>{lb}</button>
           ))}
         </div>}/>
-      {scanW&&<QRScannerModal expectedValue="" label={t('担当者QR')} onSuccess={resolveWorker} onClose={()=>setScanW(false)}/>}
+      {QR_ENABLED&&scanW&&<QRScannerModal expectedValue="" label={t('担当者QR')} onSuccess={resolveWorker} onClose={()=>setScanW(false)}/>}
     </div>
   );
 }
@@ -1561,6 +1619,7 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
   const[addH,setAddH]=useState('');
   const[addQty,setAddQty]=useState('');
   const[addW,setAddW]=useState('');
+  const[pick,setPick]=useState(false);
   const wlist=Object.values(workers||{}).sort((a,b)=>(a.order||0)-(b.order||0));
   const rows=Object.values(orders||{}).filter(o=>o.procId===proc.id&&o.date===date).sort((a,b)=>(a.order||0)-(b.order||0));
   const hins=Object.keys(master).sort();
@@ -1627,9 +1686,18 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
         <div style={{display:'flex',gap:12,alignItems:'flex-end',flexWrap:'wrap',marginBottom:14}}>
           <div><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('日付')}</div>
             <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:172,fontSize:15}}/></div>
-          <div style={{flex:1,minWidth:200}}><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('品番')}</div>
-            <input list="hinbanList" value={addH} onChange={e=>setAddH(e.target.value)} placeholder="品番を入力/選択"/>
-            <datalist id="hinbanList">{hins.map(h=><option key={h} value={h}>{master[h]?.name||''}</option>)}</datalist></div>
+          <div style={{flex:1,minWidth:240}}><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('品番')}</div>
+            <button onClick={()=>setPick(true)}
+              style={{width:'100%',minHeight:46,padding:'0 14px',borderRadius:8,border:'1px solid '+(addH?NAVY:LINE),background:addH?'#F2F6FD':'#fff',display:'flex',alignItems:'center',gap:10,textAlign:'left'}}>
+              {addH?<>
+                <span style={{fontSize:16,fontWeight:800,color:NAVY,whiteSpace:'nowrap'}}>{addH}</span>
+                <span style={{fontSize:12.5,color:'#5A6472',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dv(master[addH]||{},'name',lang)||''}</span>
+                <span style={{fontSize:12,fontWeight:700,color:NAVY,whiteSpace:'nowrap'}}>{t('変更')}</span>
+              </>:<>
+                <span style={{fontSize:16}}>🔍</span>
+                <span style={{fontSize:14,color:'#9AA3AF',flex:1}}>{t('選択してください')}</span>
+              </>}
+            </button></div>
           <div><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('数量')}（{t('箱')}）</div>
             <input type="number" min="1" value={addQty} onChange={e=>setAddQty(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="例: 20" style={{width:120}}/></div>
           <div><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('担当者')}（{b('任意')}）</div>
@@ -1696,6 +1764,7 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
         </div>
       </div>
       <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>}/>
+      {pick&&<HinbanPicker master={master} procId={proc.id} onPick={h=>setAddH(h)} onClose={()=>setPick(false)}/>}
     </div>
   );
 }
@@ -2091,7 +2160,7 @@ function App(){
   return(
     <LangCtx.Provider value={ctx}>
       {screen}
-      {scanHome&&<QRScannerModal expectedValue="" label="ガイドQRを読み取ってください" onSuccess={resolveScan} onClose={()=>setScanHome(false)}/>}
+      {QR_ENABLED&&scanHome&&<QRScannerModal expectedValue="" label="ガイドQRを読み取ってください" onSuccess={resolveScan} onClose={()=>setScanHome(false)}/>}
     </LangCtx.Provider>
   );
 }
