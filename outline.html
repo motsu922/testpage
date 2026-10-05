@@ -107,6 +107,7 @@ const DICT={
   'スケジュール編集':'Edit Jadwal','行を追加':'Tambah baris','上へ':'Naik','下へ':'Turun','合計':'Total','予定時間':'Waktu rencana',
   '確認しました':'Sudah diperiksa','作業手順を確認してください':'Silakan periksa prosedur kerja','日付':'Tanggal',
   '割当':'Ditugaskan','未割当':'Belum ditugaskan','今の担当者':'Petugas saat ini','達成':'Tercapai','残り':'Sisa',
+  '工程一覧へ':'Daftar Proses','マスター':'Master',
 };
 const LangCtx=createContext({lang:'ja'});
 function useLang(){return useContext(LangCtx);}
@@ -418,59 +419,6 @@ function ProcessSelect({user,onPick,onLogout}){
       <FooterBar right={<FBtn onClick={onLogout}>⇥ {t('ログアウト')}</FBtn>}/>
     </div>
   );
-}
-
-/* ══════════ 各工程スタート画面 ══════════ */
-function StartScreen({proc,user,onQR,onSearch,onWork,onMaster,onBack,onLogout}){
-  const{lang,t,b}=useLang();
-  const[now,setNow]=useState(new Date());
-  useEffect(()=>{const id=setInterval(()=>setNow(new Date()),30000);return ()=>clearInterval(id);},[]);
-  const wd=['日','月','火','水','木','金','土'][now.getDay()];
-  const stamp=`${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} (${wd}) ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-  const tiles=[
-    {k:'qr',    ja:'QR照合',      id_:'Pengecekan QR',        icon:'▦', col:'#1B4A9C', bg:'#F2F6FD', on:onQR},
-    {k:'search',ja:'品番検索',    id_:'Pencarian Nomor Produk',icon:'🔍',col:'#2E7D4F', bg:'#F1F9F4', on:onSearch},
-    {k:'work',  ja:'作業指示',    id_:'Instruksi Pekerjaan',  icon:'📋',col:'#D97706', bg:'#FEF7ED', on:onWork},
-    {k:'master',ja:'マスター管理',id_:'Manajemen Master',     icon:'⚙️',col:'#6D3FBF', bg:'#F6F2FD', on:onMaster},
-  ];
-  return(
-    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
-      <TopBar user={user} onBack={onBack}
-        left={<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏭 {lang==='id'?proc.id_:proc.ja}</div>}
-        title={`【${lang==='id'?proc.id_:proc.ja}】`+t('スタート画面')}/>
-      <div style={{flex:1,overflowY:'auto',padding:'22px 32px'}}>
-        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:16}}>
-          <div>
-            <div style={{fontSize:13,color:'#5A6472',fontWeight:600,marginBottom:6,textAlign:'right'}}>{b('言語')}</div>
-            <LangPick/>
-          </div>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,maxWidth:1300,margin:'0 auto'}}>
-          {tiles.map(x=>(
-            <button key={x.k} onClick={x.on}
-              style={{display:'flex',alignItems:'center',gap:26,padding:'34px 30px',background:x.bg,border:'1px solid '+LINE,borderRadius:14,minHeight:180}}>
-              <span style={{fontSize:64,color:x.col,lineHeight:1}}>{x.icon}</span>
-              <div style={{textAlign:'left'}}>
-                <div style={{fontSize:30,fontWeight:700,color:x.col,lineHeight:1.25}}>{x.ja}</div>
-                <div style={{fontSize:15,color:x.col,opacity:.75,marginTop:4}}>{x.id_}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-      <FooterBar
-        left={<div style={{display:'flex',alignItems:'center',gap:8,fontSize:14,color:'#5A6472',fontWeight:600}}>🕐 {stamp}</div>}
-        right={<><FBtn onClick={()=>window.location.reload()}>⟳ {t('更新')}</FBtn><FBtn onClick={onLogout}>⇥ {t('ログアウト')}</FBtn></>}/>
-    </div>
-  );
-}
-function LangPick(){
-  const{lang,setLang}=useLang();
-  const b=(v,label,active)=>(
-    <button key={v} onClick={()=>setLang(v)}
-      style={{padding:'10px 20px',borderRadius:8,fontSize:15,fontWeight:700,border:'1px solid '+(active?NAVY:LINE),background:active?NAVY:'#fff',color:active?'#fff':NAVY}}>{label}</button>
-  );
-  return <div style={{display:'flex',gap:10}}>{b('ja','JP：日本語',lang==='ja')}{b('id','ID：インドネシア語',lang==='id')}</div>;
 }
 
 /* ══════════ 品番検索 ══════════ */
@@ -1477,11 +1425,15 @@ function calcLog(log,now){
 function useNow(){const[n,setN]=useState(Date.now());useEffect(()=>{const id=setInterval(()=>setN(Date.now()),1000);return()=>clearInterval(id);},[]);return n;}
 
 /* ── 計画表（作業者）：上から順に作業 ── */
-function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onResume,onHistory,onPlanner}){
+function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onResume,onHistory,onPlanner,onQR,onSearch,onMaster,onLogout}){
   const{lang,t,b}=useLang();
   const[wid,setWid]=useState(null);
   const[scanW,setScanW]=useState(false);
   const[date,setDate]=useState(todayKey());
+  const[now,setNow]=useState(new Date());
+  useEffect(()=>{const id=setInterval(()=>setNow(new Date()),30000);return()=>clearInterval(id);},[]);
+  const wd=['日','月','火','水','木','金','土'][now.getDay()];
+  const stamp=`${now.getFullYear()}/${pad2(now.getMonth()+1)}/${pad2(now.getDate())} (${wd}) ${fmtHM(now)}`;
   const wlist=Object.values(workers||{}).sort((a,b)=>(a.order||0)-(b.order||0));
   const worker=wlist.find(w=>w.id===wid)||null;
   const rows=Object.values(orders||{}).filter(o=>o.procId===proc.id&&o.date===date).sort((a,b)=>(a.order||0)-(b.order||0));
@@ -1585,8 +1537,17 @@ function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onRe
           </table>
         </div>
       </div>
-      <FooterBar left={<><FBtn onClick={onBack}>🏠 {b('ホーム')}</FBtn><FBtn onClick={onPlanner}>📅 {b('スケジュール編集')}</FBtn></>}
-        right={<FBtn onClick={onHistory}>📋 {b('履歴')}</FBtn>}/>
+      <FooterBar
+        left={<>
+          <FBtn onClick={onBack}>‹ {t('工程一覧へ')}</FBtn>
+          <span style={{display:'flex',alignItems:'center',gap:8,fontSize:14,color:'#5A6472',fontWeight:600,whiteSpace:'nowrap'}}>🕐 {stamp}</span>
+        </>}
+        right={<div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
+          {[['▦ '+t('QR照合'),onQR],['🔍 '+t('品番検索'),onSearch],['📅 '+t('スケジュール編集'),onPlanner],
+            ['📋 '+t('履歴'),onHistory],['⚙ '+t('マスター'),onMaster],['⇥ '+t('ログアウト'),onLogout]].map(([lb,fn])=>(
+            <button key={lb} onClick={fn} style={{minHeight:44,padding:'0 14px',borderRadius:8,background:'#fff',border:'1px solid '+LINE,color:NAVY,fontSize:13.5,fontWeight:700,whiteSpace:'nowrap'}}>{lb}</button>
+          ))}
+        </div>}/>
       {scanW&&<QRScannerModal expectedValue="" label={t('担当者QR')} onSuccess={resolveWorker} onClose={()=>setScanW(false)}/>}
     </div>
   );
@@ -2091,22 +2052,20 @@ function App(){
 
   let screen;
   if(err)screen=<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
-  else if(view.name==='proc')screen=<ProcessSelect user={user} onPick={p=>setView({name:'start',proc:p})} onLogout={()=>auth.signOut()}/>;
-  else if(view.name==='start')screen=<StartScreen proc={view.proc} user={user}
-    onQR={()=>setScanHome(true)}
-    onSearch={()=>setView({name:'search',proc:view.proc})}
-    onWork={()=>setView({name:'work',proc:view.proc})}
-    onMaster={()=>setView({name:'master',proc:view.proc})}
-    onBack={()=>setView({name:'proc'})} onLogout={()=>auth.signOut()}/>;
+  else if(view.name==='proc')screen=<ProcessSelect user={user} onPick={p=>setView({name:'work',proc:p})} onLogout={()=>auth.signOut()}/>;
   else if(view.name==='search')screen=<SearchScreen master={master} user={user}
     onPick={h=>setView({name:'info',proc:view.proc,hinban:h})}
-    onBack={()=>setView({name:'start',proc:view.proc})} onHome={()=>setView({name:'start',proc:view.proc})}/>;
+    onBack={()=>setView({name:'work',proc:view.proc})} onHome={()=>setView({name:'work',proc:view.proc})}/>;
   else if(view.name==='info')screen=<InfoViewer proc={view.proc} hinban={view.hinban} master={master} user={user}
     onBack={()=>setView(view.backTo||{name:'search',proc:view.proc})}
     onChangeProc={p=>setView({...view,proc:p})}/>;
-  else if(view.name==='master')screen=<MasterAdmin master={master} workers={workers} user={user} onBack={()=>setView({name:'start',proc:view.proc})}/>;
+  else if(view.name==='master')screen=<MasterAdmin master={master} workers={workers} user={user} onBack={()=>setView({name:'work',proc:view.proc})}/>;
   else if(view.name==='work')screen=<WorkPlanScreen proc={view.proc} master={master} workers={workers} orders={orders} user={user}
-    onBack={()=>setView({name:'start',proc:view.proc})}
+    onBack={()=>setView({name:'proc'})}
+    onQR={()=>setScanHome(true)}
+    onSearch={()=>setView({name:'search',proc:view.proc})}
+    onMaster={()=>setView({name:'master',proc:view.proc})}
+    onLogout={()=>auth.signOut()}
     onOpenSheet={(o,w)=>setView({name:'worksheet',proc:view.proc,orderId:o.id,worker:w})}
     onResume={o=>setView({name:'workrun',proc:view.proc,logId:o.id})}
     onHistory={()=>setView({name:'workhist',proc:view.proc})}
