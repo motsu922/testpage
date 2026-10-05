@@ -102,6 +102,11 @@ const DICT={
   '端数（個）':'Sisa (pcs)','現在時刻':'Waktu sekarang','コメント':'Komentar','記録する':'Catat','完了':'Selesai','品番情報を見る':'Lihat info produk',
   '標準':'Standar','進捗':'Progres','箱':'kotak','作業指示ホーム':'Beranda Instruksi','品番を選択':'Pilih nomor produk',
   'スキップ':'Lewati','担当者なし':'Tanpa petugas','任意':'opsional',
+  '計画表':'Jadwal Kerja','本日の計画':'Jadwal hari ini','作業開始':'Mulai','順番':'No','数量':'Jumlah','状態':'Status',
+  '未着手':'Belum mulai','作業中':'Berjalan','完了':'Selesai','次の作業':'Pekerjaan berikutnya','計画がありません':'Belum ada jadwal',
+  'スケジュール編集':'Edit Jadwal','行を追加':'Tambah baris','上へ':'Naik','下へ':'Turun','合計':'Total','予定時間':'Waktu rencana',
+  '確認しました':'Sudah diperiksa','作業手順を確認してください':'Silakan periksa prosedur kerja','日付':'Tanggal',
+  '割当':'Ditugaskan','未割当':'Belum ditugaskan','今の担当者':'Petugas saat ini','達成':'Tercapai','残り':'Sisa',
 };
 const LangCtx=createContext({lang:'ja'});
 function useLang(){return useContext(LangCtx);}
@@ -1471,104 +1476,265 @@ function calcLog(log,now){
 }
 function useNow(){const[n,setN]=useState(Date.now());useEffect(()=>{const id=setInterval(()=>setN(Date.now()),1000);return()=>clearInterval(id);},[]);return n;}
 
-/* ── 作業指示ホーム：担当者選択 → QR/品番 → 要領書 ── */
-function WorkHome({proc,master,workers,logs,user,onBack,onOpenSheet,onResume,onHistory}){
+/* ── 計画表（作業者）：上から順に作業 ── */
+function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onResume,onHistory,onPlanner}){
   const{lang,t,b}=useLang();
   const[wid,setWid]=useState(null);
   const[scanW,setScanW]=useState(false);
-  const[scanH,setScanH]=useState(false);
-  const[q,setQ]=useState('');
+  const[date,setDate]=useState(todayKey());
   const wlist=Object.values(workers||{}).sort((a,b)=>(a.order||0)-(b.order||0));
   const worker=wlist.find(w=>w.id===wid)||null;
-  const running=Object.values(logs||{}).filter(l=>l.procId===proc.id&&(l.status==='running'||l.status==='paused')).sort((a,b)=>(b.startAt||0)-(a.startAt||0));
-  const kw=q.trim().toLowerCase();
-  const hins=Object.keys(master).sort().filter(h=>!kw||h.toLowerCase().includes(kw)||(master[h]?.name||'').toLowerCase().includes(kw));
+  const rows=Object.values(orders||{}).filter(o=>o.procId===proc.id&&o.date===date).sort((a,b)=>(a.order||0)-(b.order||0));
+  const nextRow=rows.find(o=>o.status==='pending'||o.status==='running'||o.status==='paused');
+  const doneCnt=rows.filter(o=>o.status==='done').length;
+  const planMin=rows.reduce((a,o)=>a+(Number(o.kosu)||0)*(Number(o.targetBoxes)||0),0);
+  const diffSum=rows.filter(o=>o.status==='done').reduce((a,o)=>a+(o.diffMin||0),0);
   function resolveWorker(text){
     const v=(text||'').trim();
     const w=wlist.find(x=>x.qr&&(x.qr===v||v.includes(x.qr)))||wlist.find(x=>x.name===v);
     setScanW(false);
     if(w)setWid(w.id);else alert('担当者が見つかりません: '+v.slice(0,30));
   }
-  function resolveHinban(text){
-    const v=(text||'').trim();const keys=Object.keys(master);
-    const hit=keys.find(h=>h===v)||keys.find(h=>{const x=master[h]?.qrText;return x&&(x===v||x.includes(v)||v.includes(x));})||keys.find(h=>v.includes(h));
-    setScanH(false);
-    if(hit)onOpenSheet(hit,worker);else alert(t('該当する品番が見つかりません')+': '+v.slice(0,30));
-  }
-  const step=(n,label,ok)=>(
-    <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-      <NumBadge n={n} size={28} bg={ok?'#2E7D4F':NAVY}/><div style={{fontSize:16,fontWeight:700,color:BLUE}}>{label}</div>
-    </div>
-  );
+  const badge=o=>{
+    const map={pending:[t('未着手'),'#E8EAEE','#5A6472'],running:[t('作業中'),'#DCFCE7','#166534'],paused:[t('一時停止中'),'#FDE68A','#7A5A00'],done:[t('完了'),'#DBEAFE','#1E40AF']};
+    const[txt,bg,col]=map[o.status]||map.pending;
+    return <span style={{fontSize:12,fontWeight:700,padding:'4px 10px',borderRadius:6,background:bg,color:col,whiteSpace:'nowrap'}}>{txt}</span>;
+  };
+  const th={padding:'10px 12px',fontSize:13,fontWeight:700,color:'#fff',textAlign:'left',whiteSpace:'nowrap'};
   return(
     <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
-      <TopBar title={b('作業指示')} onBack={onBack} user={user}
+      <TopBar title={b('計画表')} onBack={onBack} user={user}
         left={<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏭 {lang==='id'?proc.id_:proc.ja}</div>}/>
-      <div style={{flex:1,overflowY:'auto',padding:'20px 28px'}}>
-        {running.length>0&&(
-          <div className="panel" style={{marginBottom:16,borderColor:'#F5D9BC'}}>
-            <div className="panel-h" style={{background:'#FEF3E7',color:'#C2410C'}}>⏱ {b('進行中の作業')}</div>
-            <div style={{padding:12,display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:10}}>
-              {running.map(l=>(
-                <button key={l.id} onClick={()=>onResume(l)} style={{textAlign:'left',padding:'12px 14px',border:'1px solid #F5D9BC',borderRadius:10,background:'#FFFBF5'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                    <span style={{fontSize:18,fontWeight:800,color:NAVY}}>{l.hinban}</span>
-                    <span style={{fontSize:11,fontWeight:700,padding:'3px 8px',borderRadius:5,background:l.status==='paused'?'#FDE68A':'#DCFCE7',color:l.status==='paused'?'#7A5A00':'#166534'}}>{l.status==='paused'?t('一時停止中'):'進行中'}</span>
-                  </div>
-                  <div style={{fontSize:13,color:'#5A6472',marginTop:4}}>👤 {l.workerName||t('担当者なし')}　{l.doneBoxes||0} / {l.targetBoxes||0} {t('箱')}</div>
-                  <div style={{fontSize:13,fontWeight:700,color:NAVY,marginTop:6}}>▶ {t('作業に戻る')}</div>
-                </button>
-              ))}
-            </div>
+      <div style={{flex:1,overflowY:'auto',padding:'16px 24px'}}>
+        {/* 担当者 ＋ サマリ */}
+        <div style={{display:'flex',gap:14,flexWrap:'wrap',alignItems:'center',marginBottom:14}}>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',flex:1,minWidth:300}}>
+            <span style={{fontSize:13,fontWeight:700,color:'#5A6472'}}>{b('今の担当者')}</span>
+            <button onClick={()=>setWid(null)} style={{padding:'8px 14px',borderRadius:20,fontSize:14,fontWeight:700,border:'1px solid '+(wid===null?'#5A6472':LINE),background:wid===null?'#5A6472':'#fff',color:wid===null?'#fff':'#5A6472'}}>⏭ {t('スキップ')}</button>
+            {wlist.map(w=>(
+              <button key={w.id} onClick={()=>setWid(w.id)}
+                style={{padding:'8px 16px',borderRadius:20,fontSize:14,fontWeight:700,border:'1px solid '+(wid===w.id?NAVY:LINE),background:wid===w.id?NAVY:'#fff',color:wid===w.id?'#fff':'#3A4552'}}>👤 {w.name}</button>
+            ))}
+            <button onClick={()=>setScanW(true)} style={{padding:'8px 14px',borderRadius:20,fontSize:13,fontWeight:700,border:'1px dashed '+NAVY,background:'#F2F6FD',color:NAVY}}>▦ {t('担当者QR')}</button>
           </div>
-        )}
-        <div className="panel" style={{marginBottom:16}}>
-          <div style={{padding:16}}>
-            {step(1,b('担当者を選択')+'（'+b('任意')+'）',!!worker)}
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-              {wlist.length===0&&<span style={{fontSize:13,color:'#9AA3AF'}}>担当者が未登録です（マスター管理 → 担当者管理）</span>}
-              <button onClick={()=>setWid(null)}
-                style={{padding:'10px 16px',borderRadius:22,fontSize:14,fontWeight:700,border:'1px solid '+(wid===null?'#5A6472':LINE),background:wid===null?'#5A6472':'#fff',color:wid===null?'#fff':'#5A6472'}}>⏭ {t('スキップ')}</button>
-              {wlist.map(w=>(
-                <button key={w.id} onClick={()=>setWid(w.id)}
-                  style={{padding:'10px 18px',borderRadius:22,fontSize:15,fontWeight:700,border:'1px solid '+(wid===w.id?NAVY:LINE),background:wid===w.id?NAVY:'#fff',color:wid===w.id?'#fff':'#3A4552'}}>👤 {w.name}</button>
-              ))}
-              <button onClick={()=>setScanW(true)} style={{padding:'10px 16px',borderRadius:22,fontSize:14,fontWeight:700,border:'1px dashed '+NAVY,background:'#F2F6FD',color:NAVY}}>▦ {t('担当者QR')}</button>
-            </div>
-          </div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:168,fontSize:14}}/>
         </div>
-        <div className="panel">
-          <div style={{padding:16}}>
-            {step(2,b('要領書を呼び出す'),false)}
-            <div style={{display:'flex',gap:14,marginBottom:14,flexWrap:'wrap'}}>
-              <button onClick={()=>setScanH(true)}
-                style={{flex:'1 1 320px',minHeight:96,borderRadius:12,background:NAVY,color:'#fff',fontSize:22,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',gap:14}}>
-                <span style={{fontSize:40}}>▦</span>{b('QR照合')}
-              </button>
-              <div style={{flex:'1 1 320px',display:'flex',flexDirection:'column',gap:8}}>
-                <div style={{fontSize:13,fontWeight:600,color:'#5A6472'}}>{b('品番を選択')}</div>
-                <input value={q} onChange={e=>setQ(e.target.value)} placeholder={b('品番を入力してください')}/>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10,marginBottom:14}}>
+          {[[b('進捗'),`${doneCnt} / ${rows.length}`,NAVY],
+            [b('予定時間'),Math.round(planMin)+' '+t('分'),'#3A4552'],
+            [b('先行')+'/'+b('遅れ'),(diffSum>=0?'+':'−')+Math.abs(Math.round(diffSum))+' '+t('分'),diffSum>=0?'#1B5E20':'#B71C1C']].map(([k,v,col],i)=>(
+            <div key={i} style={{padding:'10px 14px',background:'#fff',border:'1px solid '+LINE,borderRadius:10}}>
+              <div style={{fontSize:11,color:'#6B7480'}}>{k}</div><div style={{fontSize:22,fontWeight:800,color:col}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        {/* 次の作業（大きく強調） */}
+        {nextRow&&(
+          <div style={{background:'#F2F6FD',border:'2px solid '+NAVY,borderRadius:12,padding:'16px 18px',display:'flex',alignItems:'center',gap:18,marginBottom:14,flexWrap:'wrap'}}>
+            <div style={{display:'flex',alignItems:'center',gap:12,flex:1,minWidth:260}}>
+              <NumBadge n={rows.indexOf(nextRow)+1} size={36}/>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:BLUE}}>▶ {b('次の作業')}</div>
+                <div style={{fontSize:26,fontWeight:800,color:NAVY,lineHeight:1.2}}>{nextRow.hinban}</div>
+                <div style={{fontSize:14,color:'#3A4552'}}>{dv(master[nextRow.hinban]||{},'name',lang)||nextRow.hinbanName||''}　/　{nextRow.targetBoxes} {t('箱')}</div>
               </div>
             </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:8,maxHeight:260,overflowY:'auto'}}>
-              {hins.map(h=>{
-                const sh=master[h]?.sheets?.[proc.id];
-                const has=!!(sh&&((sh.steps||[]).length||sh.kosu));
+            <button onClick={()=>nextRow.status==='pending'?onOpenSheet(nextRow,worker):onResume(nextRow)}
+              style={{minHeight:72,padding:'0 36px',borderRadius:12,background:nextRow.status==='pending'?'#2E7D4F':'#C2410C',color:'#fff',fontSize:22,fontWeight:800}}>
+              {nextRow.status==='pending'?'▶ '+t('作業開始'):'▶ '+t('作業に戻る')}
+            </button>
+          </div>
+        )}
+        {/* 計画表 */}
+        <div style={{border:'1px solid '+LINE,borderRadius:10,overflow:'hidden',background:'#fff'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr style={{background:NAVY}}>
+              <th style={{...th,width:64}}>{b('順番')}</th><th style={th}>{b('品番')}</th><th style={th}>{b('品名')}</th>
+              <th style={{...th,width:110}}>{b('数量')}</th><th style={{...th,width:130}}>{b('割当')}</th>
+              <th style={{...th,width:120}}>{b('状態')}</th><th style={{...th,width:120}}>{b('先行')}/{b('遅れ')}</th><th style={{...th,width:150,textAlign:'center'}}>{b('作業開始')}</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((o,i)=>{
+                const td={padding:'10px 12px',fontSize:14,borderBottom:'1px solid '+LINE,whiteSpace:'nowrap'};
+                const isNext=nextRow&&o.id===nextRow.id;
+                const d=o.diffMin||0;
                 return(
-                  <button key={h} onClick={()=>onOpenSheet(h,worker)} style={{padding:'10px 12px',textAlign:'left',background:'#fff',border:'1px solid '+(has?'#C3D6F0':LINE),borderRadius:10}}>
-                    <div style={{fontSize:15,fontWeight:700,color:'#111'}}>{h}</div>
-                    <div style={{fontSize:11,color:'#6B7480',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dv(master[h],'name',lang)||'—'}</div>
-                    <div style={{fontSize:10.5,fontWeight:700,marginTop:4,color:has?'#2E7D4F':'#C7CDD6'}}>{has?'● '+t('要領書'):t('要領書が未登録です')}</div>
-                  </button>
+                  <tr key={o.id} style={{background:isNext?'#F2F6FD':(o.status==='done'?'#FAFBFC':(i%2?'#F7F9FC':'#fff')),opacity:o.status==='done'?.75:1}}>
+                    <td style={{...td,fontWeight:700,color:'#5A6472'}}>{i+1}</td>
+                    <td style={{...td,fontWeight:700,fontSize:16}}>{o.hinban}</td>
+                    <td style={td}>{dv(master[o.hinban]||{},'name',lang)||o.hinbanName||'—'}</td>
+                    <td style={td}>{o.status==='done'?`${o.doneBoxes||0} / ${o.targetBoxes}`:`${o.targetBoxes} ${t('箱')}`}</td>
+                    <td style={{...td,color:o.assignedWorkerName?'#1A1A1A':'#9AA3AF'}}>{o.workerName||o.assignedWorkerName||t('未割当')}</td>
+                    <td style={td}>{badge(o)}</td>
+                    <td style={{...td,fontWeight:800,color:o.status==='done'?(Number(o.kosu)>0?(d>=0?'#1B5E20':'#B71C1C'):'#9AA3AF'):'#C7CDD6'}}>
+                      {o.status==='done'?(Number(o.kosu)>0?((d>=0?'+':'−')+Math.abs(Math.round(d))):'—'):'—'}
+                    </td>
+                    <td style={{...td,textAlign:'center'}}>
+                      {o.status==='done'
+                        ? <span style={{fontSize:13,color:'#9AA3AF'}}>✓</span>
+                        : <button onClick={()=>o.status==='pending'?onOpenSheet(o,worker):onResume(o)}
+                            style={{minHeight:40,padding:'0 18px',borderRadius:8,background:o.status==='pending'?(isNext?'#2E7D4F':NAVY):'#C2410C',color:'#fff',fontSize:14,fontWeight:700}}>
+                            {o.status==='pending'?t('作業開始'):t('作業に戻る')}
+                          </button>}
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          </div>
+              {rows.length===0&&<tr><td colSpan={8} style={{padding:'44px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('計画がありません')}</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
-      <FooterBar left={<FBtn onClick={onBack}>🏠 {b('ホーム')}</FBtn>} right={<FBtn onClick={onHistory}>📋 {b('履歴')}</FBtn>}/>
+      <FooterBar left={<><FBtn onClick={onBack}>🏠 {b('ホーム')}</FBtn><FBtn onClick={onPlanner}>📅 {b('スケジュール編集')}</FBtn></>}
+        right={<FBtn onClick={onHistory}>📋 {b('履歴')}</FBtn>}/>
       {scanW&&<QRScannerModal expectedValue="" label={t('担当者QR')} onSuccess={resolveWorker} onClose={()=>setScanW(false)}/>}
-      {scanH&&<QRScannerModal expectedValue="" label={t('要領書を呼び出す')} onSuccess={resolveHinban} onClose={()=>setScanH(false)}/>}
+    </div>
+  );
+}
+
+/* ── スケジュール編集（管理者） ── */
+function SchedulePlanner({proc,master,workers,orders,user,onBack}){
+  const{lang,t,b}=useLang();
+  const[date,setDate]=useState(todayKey());
+  const[busy,setBusy]=useState(false);
+  const[addH,setAddH]=useState('');
+  const[addQty,setAddQty]=useState('');
+  const[addW,setAddW]=useState('');
+  const wlist=Object.values(workers||{}).sort((a,b)=>(a.order||0)-(b.order||0));
+  const rows=Object.values(orders||{}).filter(o=>o.procId===proc.id&&o.date===date).sort((a,b)=>(a.order||0)-(b.order||0));
+  const hins=Object.keys(master).sort();
+  const col=db.collection('workOrders');
+  async function run(fn){if(busy)return;setBusy(true);try{await fn();}catch(e){alert('更新に失敗: '+e.message);}finally{setBusy(false);}}
+  async function add(){
+    const h=addH.trim(); const q=parseInt(addQty,10)||0;
+    if(!h||q<=0){alert('品番と数量を入力してください');return;}
+    const m=master[h]||{};
+    const w=wlist.find(x=>x.id===addW)||null;
+    await run(()=>col.add({
+      date,procId:proc.id,procName:proc.ja,order:(rows.length?Math.max(...rows.map(r=>r.order||0)):0)+10,
+      hinban:h,hinbanName:m.name||'',targetBoxes:q,
+      kosu:Number(m.sheets?.[proc.id]?.kosu)||0,capacity:Number(m.packing?.capacity)||0,
+      assignedWorkerId:w?w.id:null,assignedWorkerName:w?w.name:'',
+      workerId:null,workerName:'',status:'pending',
+      startAt:null,endAt:null,doneBoxes:0,fraction:0,pauses:[],anomalies:[],createdBy:user?.email||''
+    }));
+    setAddQty('');
+  }
+  async function move(i,dir){
+    const j=i+dir; if(j<0||j>=rows.length)return;
+    const a=rows[i],bb=rows[j];
+    await run(async()=>{await col.doc(a.id).update({order:bb.order||0});await col.doc(bb.id).update({order:a.order||0});});
+  }
+  async function del(o){
+    if(o.status!=='pending'&&!window.confirm('開始済みの行です。削除すると実績も消えます。よろしいですか？'))return;
+    if(o.status==='pending'&&!window.confirm(`${o.hinban} の行を削除しますか？`))return;
+    await run(()=>col.doc(o.id).delete());
+  }
+  async function setQty(o,v){
+    const q=parseInt(v,10)||0; if(q<=0)return;
+    await run(()=>col.doc(o.id).update({targetBoxes:q}));
+  }
+  async function setAssign(o,id){
+    const w=wlist.find(x=>x.id===id)||null;
+    await run(()=>col.doc(o.id).update({assignedWorkerId:w?w.id:null,assignedWorkerName:w?w.name:''}));
+  }
+  async function copyFrom(){
+    const src=prompt('コピー元の日付（YYYY-MM-DD）',daysAgoKey(1));
+    if(!src)return;
+    const srcRows=Object.values(orders||{}).filter(o=>o.procId===proc.id&&o.date===src).sort((a,b)=>(a.order||0)-(b.order||0));
+    if(!srcRows.length){alert(src+' の計画がありません');return;}
+    if(!window.confirm(`${src} の ${srcRows.length} 行を ${date} に複製しますか？`))return;
+    await run(async()=>{
+      let n=(rows.length?Math.max(...rows.map(r=>r.order||0)):0)+10;
+      for(const o of srcRows){
+        await col.add({date,procId:proc.id,procName:proc.ja,order:n,hinban:o.hinban,hinbanName:o.hinbanName||'',
+          targetBoxes:o.targetBoxes,kosu:o.kosu||0,capacity:o.capacity||0,
+          assignedWorkerId:o.assignedWorkerId||null,assignedWorkerName:o.assignedWorkerName||'',
+          workerId:null,workerName:'',status:'pending',startAt:null,endAt:null,doneBoxes:0,fraction:0,pauses:[],anomalies:[],createdBy:user?.email||''});
+        n+=10;
+      }
+    });
+  }
+  const planMin=rows.reduce((a,o)=>a+(Number(o.kosu)||0)*(Number(o.targetBoxes)||0),0);
+  const th={padding:'10px 12px',fontSize:13,fontWeight:700,color:'#fff',textAlign:'left',whiteSpace:'nowrap'};
+  const td={padding:'8px 12px',fontSize:14,borderBottom:'1px solid '+LINE,whiteSpace:'nowrap'};
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
+      <TopBar title={b('スケジュール編集')} onBack={onBack} user={user}
+        left={<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏭 {lang==='id'?proc.id_:proc.ja}</div>}/>
+      <div style={{flex:1,overflowY:'auto',padding:'16px 24px'}}>
+        <div style={{display:'flex',gap:12,alignItems:'flex-end',flexWrap:'wrap',marginBottom:14}}>
+          <div><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('日付')}</div>
+            <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:172,fontSize:15}}/></div>
+          <div style={{flex:1,minWidth:200}}><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('品番')}</div>
+            <input list="hinbanList" value={addH} onChange={e=>setAddH(e.target.value)} placeholder="品番を入力/選択"/>
+            <datalist id="hinbanList">{hins.map(h=><option key={h} value={h}>{master[h]?.name||''}</option>)}</datalist></div>
+          <div><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('数量')}（{t('箱')}）</div>
+            <input type="number" min="1" value={addQty} onChange={e=>setAddQty(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="例: 20" style={{width:120}}/></div>
+          <div><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('担当者')}（{b('任意')}）</div>
+            <select value={addW} onChange={e=>setAddW(e.target.value)} style={{width:160}}>
+              <option value="">{t('未割当')}</option>
+              {wlist.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
+            </select></div>
+          <button onClick={add} disabled={busy||!addH.trim()||!(parseInt(addQty,10)>0)}
+            style={{minHeight:46,padding:'0 22px',borderRadius:8,background:(busy||!addH.trim()||!(parseInt(addQty,10)>0))?'#C7CDD6':NAVY,color:'#fff',fontSize:15,fontWeight:700,whiteSpace:'nowrap'}}>＋ {t('行を追加')}</button>
+          <button onClick={copyFrom} disabled={busy} style={{minHeight:46,padding:'0 16px',borderRadius:8,border:'1px solid '+LINE,background:'#fff',color:NAVY,fontSize:14,fontWeight:700,whiteSpace:'nowrap'}}>⧉ 前日から複製</button>
+        </div>
+        <div style={{fontSize:13,color:'#5A6472',marginBottom:8}}>
+          {rows.length} 行　/　{b('予定時間')} <b style={{color:NAVY}}>{Math.round(planMin)} {t('分')}</b>
+          {planMin>0&&<>　（8:00開始なら {fmtHM(new Date(new Date(date+'T08:00:00').getTime()+planMin*60000))} 終了見込み）</>}
+        </div>
+        <div style={{border:'1px solid '+LINE,borderRadius:10,overflow:'hidden',background:'#fff'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr style={{background:NAVY}}>
+              <th style={{...th,width:56}}>{b('順番')}</th><th style={th}>{b('品番')}</th><th style={th}>{b('品名')}</th>
+              <th style={{...th,width:110}}>{b('数量')}</th><th style={{...th,width:120}}>{b('1箱工数')}</th>
+              <th style={{...th,width:160}}>{b('担当者')}</th><th style={{...th,width:110}}>{b('状態')}</th><th style={{...th,width:150,textAlign:'center'}}>操作</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((o,i)=>{
+                const m=master[o.hinban]||{};
+                const locked=o.status!=='pending';
+                return(
+                  <tr key={o.id} style={{background:i%2?'#F7F9FC':'#fff'}}>
+                    <td style={{...td,fontWeight:700,color:'#5A6472'}}>{i+1}</td>
+                    <td style={{...td,fontWeight:700}}>{o.hinban}</td>
+                    <td style={td}>{dv(m,'name',lang)||o.hinbanName||'—'}</td>
+                    <td style={td}>
+                      {locked?`${o.targetBoxes} ${t('箱')}`:
+                        <input type="number" min="1" defaultValue={o.targetBoxes} onBlur={e=>setQty(o,e.target.value)} style={{width:84,fontSize:14,padding:'6px 8px'}}/>}
+                    </td>
+                    <td style={{...td,color:Number(o.kosu)>0?'#1A1A1A':'#C2410C'}}>{Number(o.kosu)>0?o.kosu+' '+t('分'):'未登録'}</td>
+                    <td style={td}>
+                      {locked?(o.workerName||o.assignedWorkerName||t('未割当')):
+                        <select value={o.assignedWorkerId||''} onChange={e=>setAssign(o,e.target.value)} style={{width:140,fontSize:13,padding:'6px 8px'}}>
+                          <option value="">{t('未割当')}</option>
+                          {wlist.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}
+                        </select>}
+                    </td>
+                    <td style={td}>
+                      <span style={{fontSize:12,fontWeight:700,padding:'3px 9px',borderRadius:5,
+                        background:o.status==='done'?'#DBEAFE':(o.status==='pending'?'#E8EAEE':'#FDE68A'),
+                        color:o.status==='done'?'#1E40AF':(o.status==='pending'?'#5A6472':'#7A5A00')}}>
+                        {o.status==='done'?t('完了'):(o.status==='pending'?t('未着手'):t('作業中'))}
+                      </span>
+                    </td>
+                    <td style={{...td,textAlign:'center'}}>
+                      <div style={{display:'flex',gap:5,justifyContent:'center'}}>
+                        <button onClick={()=>move(i,-1)} disabled={busy||i===0} style={{width:34,height:34,borderRadius:6,border:'1px solid '+LINE,background:'#fff',color:i===0?'#C7CDD6':NAVY,fontSize:14,fontWeight:700}}>↑</button>
+                        <button onClick={()=>move(i,1)} disabled={busy||i===rows.length-1} style={{width:34,height:34,borderRadius:6,border:'1px solid '+LINE,background:'#fff',color:i===rows.length-1?'#C7CDD6':NAVY,fontSize:14,fontWeight:700}}>↓</button>
+                        <button onClick={()=>del(o)} disabled={busy} style={{width:34,height:34,borderRadius:6,background:'#FDECEA',color:'#B71C1C',fontSize:14,fontWeight:700}}>×</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {rows.length===0&&<tr><td colSpan={8} style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('計画がありません')}　上の欄から行を追加してください。</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>}/>
     </div>
   );
 }
@@ -1591,25 +1757,27 @@ function SheetSteps({sheet,lang,compact}){
   );
 }
 
-/* ── 要領書画面（IN 前） ── */
-function WorkSheetScreen({proc,hinban,worker,master,user,onBack,onStart,onInfo}){
+/* ── 要領書確認画面（作業開始前） ── */
+function WorkSheetScreen({proc,order,worker,master,user,onBack,onStart,onInfo}){
   const{lang,t,b}=useLang();
+  const hinban=order.hinban;
   const m=master[hinban]||{};
   const sheet=m.sheets?.[proc.id]||{};
-  const kosu=Number(sheet.kosu)||0;
-  const cap=Number(m.packing?.capacity)||0;
-  const[target,setTarget]=useState('');
+  const kosu=Number(order.kosu)||Number(sheet.kosu)||0;
+  const cap=Number(order.capacity)||Number(m.packing?.capacity)||0;
+  const tgt=Number(order.targetBoxes)||0;
+  const[ack,setAck]=useState(false);
   const[starting,setStarting]=useState(false);
-  const tgt=parseInt(target,10)||0;
+  const useWorker=worker||(order.assignedWorkerId?{id:order.assignedWorkerId,name:order.assignedWorkerName}:null);
   async function start(){
-    if(tgt<=0){alert(t('目標箱数')+' を入力してください');return;}
     setStarting(true);
     try{
-      const doc={hinban,hinbanName:m.name||'',procId:proc.id,procName:proc.ja,workerId:worker?worker.id:null,workerName:worker?worker.name:'',
-        targetBoxes:tgt,doneBoxes:0,fraction:0,kosu,capacity:cap,
-        startAt:Date.now(),endAt:null,status:'running',pauses:[],anomalies:[],date:todayKey(),createdBy:user?.email||''};
-      const ref=await db.collection('workLogs').add(doc);
-      onStart(ref.id);
+      await db.collection('workOrders').doc(order.id).update({
+        status:'running',startAt:Date.now(),
+        kosu,capacity:cap,
+        workerId:useWorker?useWorker.id:null,workerName:useWorker?useWorker.name:'',
+      });
+      onStart(order.id);
     }catch(e){alert('開始に失敗: '+e.message);setStarting(false);}
   }
   return(
@@ -1623,13 +1791,19 @@ function WorkSheetScreen({proc,hinban,worker,master,user,onBack,onStart,onInfo})
             <div style={{fontSize:16,color:'#3A4552'}}>{dv(m,'name',lang)}</div>
             {m.productImg&&<TapPhoto src={m.productImg} style={{width:70,height:56,objectFit:'contain',borderRadius:6,border:'1px solid '+LINE,marginLeft:'auto'}}/>}
           </div>
+          <div style={{fontSize:14,fontWeight:700,color:BLUE,marginBottom:10}}>📋 {b('作業手順を確認してください')}</div>
           <SheetSteps sheet={sheet} lang={lang}/>
           <WarnBox items={dva(sheet,'notes',lang)}/>
         </div>
         <div style={{flex:'0 0 360px',borderLeft:'1px solid '+LINE,background:'#fff',padding:'20px',display:'flex',flexDirection:'column',gap:14,overflowY:'auto'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',background:'#F2F6FD',borderRadius:10}}>
             <span style={{fontSize:22}}>👤</span>
-            <div><div style={{fontSize:11,color:'#6B7480'}}>{b('担当者')}</div><div style={{fontSize:17,fontWeight:700,color:worker?NAVY:'#9AA3AF'}}>{worker?worker.name:t('担当者なし')}</div></div>
+            <div><div style={{fontSize:11,color:'#6B7480'}}>{b('担当者')}</div>
+              <div style={{fontSize:17,fontWeight:700,color:useWorker?NAVY:'#9AA3AF'}}>{useWorker?useWorker.name:t('担当者なし')}</div></div>
+          </div>
+          <div style={{padding:'16px',background:'#F2F6FD',borderRadius:10,textAlign:'center'}}>
+            <div style={{fontSize:12,color:'#6B7480'}}>{b('目標箱数')}</div>
+            <div style={{fontSize:44,fontWeight:800,color:NAVY,lineHeight:1.15}}>{tgt}<span style={{fontSize:18,marginLeft:4}}>{t('箱')}</span></div>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div style={{padding:'10px 12px',border:'1px solid '+LINE,borderRadius:10}}>
@@ -1641,23 +1815,19 @@ function WorkSheetScreen({proc,hinban,worker,master,user,onBack,onStart,onInfo})
               <div style={{fontSize:22,fontWeight:800,color:cap?NAVY:'#C7CDD6'}}>{cap||'—'}<span style={{fontSize:12,marginLeft:3}}>個</span></div>
             </div>
           </div>
+          {kosu>0&&tgt>0&&<div style={{fontSize:12.5,color:'#5A6472',textAlign:'center'}}>{b('標準')}: {Math.round(kosu*tgt)} {t('分')}（{b('終了予定')} {fmtHM(new Date(Date.now()+kosu*tgt*60000))}）</div>}
           {!kosu&&<div style={{fontSize:12,color:'#B45309',background:'#FEF3E7',padding:'8px 10px',borderRadius:8}}>⚠ 1箱工数が未登録のため先行・遅れは表示されません（マスター管理 → 要領書・工数）</div>}
-          <div>
-            <div style={{fontSize:13,fontWeight:700,color:'#4A5460',marginBottom:6}}>{b('目標箱数')}</div>
-            <input type="number" inputMode="numeric" min="1" value={target} onChange={e=>setTarget(e.target.value)} placeholder="例: 20"
-              style={{fontSize:30,fontWeight:800,textAlign:'center',padding:'12px',color:NAVY}}/>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginTop:8}}>
-              {[5,10,20,30].map(n=><button key={n} onClick={()=>setTarget(String(n))} style={{minHeight:40,borderRadius:8,border:'1px solid '+LINE,background:'#fff',fontSize:14,fontWeight:700,color:NAVY}}>{n}</button>)}
-            </div>
-            {kosu>0&&tgt>0&&<div style={{fontSize:12.5,color:'#5A6472',marginTop:8,textAlign:'center'}}>{b('標準')}: {Math.round(kosu*tgt)} {t('分')}（{b('終了予定')} {fmtHM(new Date(Date.now()+kosu*tgt*60000))}）</div>}
-          </div>
-          <button onClick={start} disabled={starting||tgt<=0}
-            style={{minHeight:74,borderRadius:12,background:(starting||tgt<=0)?'#C7CDD6':'#2E7D4F',color:'#fff',fontSize:24,fontWeight:800,marginTop:'auto'}}>
-            ▶ IN　{t('作業開始')}
+          <label style={{display:'flex',alignItems:'center',gap:10,padding:'14px',border:'2px solid '+(ack?'#2E7D4F':LINE),borderRadius:10,background:ack?'#E8F5E9':'#fff',cursor:'pointer',marginTop:'auto'}}>
+            <input type="checkbox" checked={ack} onChange={e=>setAck(e.target.checked)} style={{width:22,height:22}}/>
+            <span style={{fontSize:15,fontWeight:700,color:ack?'#1B5E20':'#4A5460'}}>{b('確認しました')}</span>
+          </label>
+          <button onClick={start} disabled={starting||!ack}
+            style={{minHeight:74,borderRadius:12,background:(starting||!ack)?'#C7CDD6':'#2E7D4F',color:'#fff',fontSize:24,fontWeight:800}}>
+            ▶ {t('作業開始')}
           </button>
         </div>
       </div>
-      <FooterBar left={<FBtn onClick={onBack}>‹ {t('作業指示ホーム')}</FBtn>} right={<FBtn onClick={()=>onInfo(hinban)}>ℹ {t('品番情報を見る')}</FBtn>}/>
+      <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>} right={<FBtn onClick={()=>onInfo(hinban)}>ℹ {t('品番情報を見る')}</FBtn>}/>
     </div>
   );
 }
@@ -1673,7 +1843,7 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
   const sheet=m.sheets?.[proc.id]||{};
   const c=calcLog(log,now);
   const paused=log.status==='paused';
-  const ref=db.collection('workLogs').doc(log.id);
+  const ref=db.collection('workOrders').doc(log.id);
   async function w(fn){if(busy)return;setBusy(true);try{await fn();}catch(e){alert('更新に失敗: '+e.message);}finally{setBusy(false);}}
   const addBox=()=>w(()=>ref.update({doneBoxes:(log.doneBoxes||0)+1}));
   const undoBox=()=>w(()=>ref.update({doneBoxes:Math.max(0,(log.doneBoxes||0)-1)}));
@@ -1754,7 +1924,7 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
           )}
         </div>
       </div>
-      <FooterBar left={<FBtn onClick={onExit}>‹ {t('作業指示ホーム')}</FBtn>} right={<FBtn onClick={()=>onInfo(log.hinban)}>ℹ {t('品番情報を見る')}</FBtn>}/>
+      <FooterBar left={<FBtn onClick={onExit}>‹ {b('計画表')}</FBtn>} right={<FBtn onClick={()=>onInfo(log.hinban)}>ℹ {t('品番情報を見る')}</FBtn>}/>
       {anom&&<AnomalyModal onClose={()=>setAnom(false)} onSave={async c=>{await addAnom(c);setAnom(false);}}/>}
       {out&&<OutModal log={log} calc={c} onClose={()=>setOut(false)} onFinish={finish}/>}
     </div>
@@ -1859,7 +2029,7 @@ function WorkHistory({proc,logs,user,onBack}){
           </table>
         </div>
       </div>
-      <FooterBar left={<FBtn onClick={onBack}>‹ {t('作業指示ホーム')}</FBtn>}/>
+      <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>}/>
     </div>
   );
 }
@@ -1872,7 +2042,7 @@ function App(){
   const[err,setErr]=useState(null);
   const[master,setMaster]=useState({});
   const[workers,setWorkers]=useState({});
-  const[logs,setLogs]=useState({});
+  const[orders,setOrders]=useState({});
   const[view,setView]=useState({name:'proc'});
   const[scanHome,setScanHome]=useState(false);
 
@@ -1889,17 +2059,17 @@ function App(){
       s=>{const o={};s.forEach(x=>o[x.id]={id:x.id,...x.data()});setWorkers(o);},
       e=>console.warn('workers:',e.message));
   },[user]);
-  /* 作業ログ：直近7日 ＋ 進行中（日付をまたいだ未OUT分も拾う） */
+  /* 作業指示：直近7日以降（未来日の計画も含む） ＋ 進行中（日付をまたいだ未完了分） */
   useEffect(()=>{
     if(!user)return;
-    const merge=(s,tag)=>setLogs(prev=>{
+    const merge=(s,tag)=>setOrders(prev=>{
       const o={...prev};
       Object.keys(o).forEach(k=>{if(o[k].__tag===tag)delete o[k];});
       s.forEach(x=>{o[x.id]={id:x.id,...x.data(),__tag:tag};});
       return o;
     });
-    const u1=db.collection('workLogs').where('date','>=',daysAgoKey(7)).onSnapshot(s=>merge(s,'recent'),e=>console.warn('logs:',e.message));
-    const u2=db.collection('workLogs').where('status','in',['running','paused']).onSnapshot(s=>merge(s,'live'),e=>console.warn('live:',e.message));
+    const u1=db.collection('workOrders').where('date','>=',daysAgoKey(7)).onSnapshot(s=>merge(s,'recent'),e=>console.warn('orders:',e.message));
+    const u2=db.collection('workOrders').where('status','in',['running','paused']).onSnapshot(s=>merge(s,'live'),e=>console.warn('live:',e.message));
     return ()=>{u1();u2();};
   },[user]);
 
@@ -1935,23 +2105,29 @@ function App(){
     onBack={()=>setView(view.backTo||{name:'search',proc:view.proc})}
     onChangeProc={p=>setView({...view,proc:p})}/>;
   else if(view.name==='master')screen=<MasterAdmin master={master} workers={workers} user={user} onBack={()=>setView({name:'start',proc:view.proc})}/>;
-  else if(view.name==='work')screen=<WorkHome proc={view.proc} master={master} workers={workers} logs={logs} user={user}
+  else if(view.name==='work')screen=<WorkPlanScreen proc={view.proc} master={master} workers={workers} orders={orders} user={user}
     onBack={()=>setView({name:'start',proc:view.proc})}
-    onOpenSheet={(h,w)=>setView({name:'worksheet',proc:view.proc,hinban:h,worker:w})}
-    onResume={l=>setView({name:'workrun',proc:view.proc,logId:l.id})}
-    onHistory={()=>setView({name:'workhist',proc:view.proc})}/>;
-  else if(view.name==='worksheet')screen=<WorkSheetScreen proc={view.proc} hinban={view.hinban} worker={view.worker} master={master} user={user}
-    onBack={()=>setView({name:'work',proc:view.proc})}
-    onStart={id=>setView({name:'workrun',proc:view.proc,logId:id})}
-    onInfo={h=>setView({name:'info',proc:view.proc,hinban:h,backTo:view})}/>;
+    onOpenSheet={(o,w)=>setView({name:'worksheet',proc:view.proc,orderId:o.id,worker:w})}
+    onResume={o=>setView({name:'workrun',proc:view.proc,logId:o.id})}
+    onHistory={()=>setView({name:'workhist',proc:view.proc})}
+    onPlanner={()=>setView({name:'planner',proc:view.proc})}/>;
+  else if(view.name==='planner')screen=<SchedulePlanner proc={view.proc} master={master} workers={workers} orders={orders} user={user}
+    onBack={()=>setView({name:'work',proc:view.proc})}/>;
+  else if(view.name==='worksheet'){
+    const o=orders[view.orderId];
+    screen=o?<WorkSheetScreen proc={view.proc} order={o} worker={view.worker} master={master} user={user}
+      onBack={()=>setView({name:'work',proc:view.proc})}
+      onStart={id=>setView({name:'workrun',proc:view.proc,logId:id})}
+      onInfo={h=>setView({name:'info',proc:view.proc,hinban:h,backTo:view})}/>:<LoadingScreen/>;
+  }
   else if(view.name==='workrun'){
-    const log=logs[view.logId];
+    const log=orders[view.logId];
     screen=log?<WorkRunScreen proc={view.proc} log={log} master={master} user={user}
       onExit={()=>setView({name:'work',proc:view.proc})}
       onInfo={h=>setView({name:'info',proc:view.proc,hinban:h,backTo:view})}
-      onDone={()=>setView({name:'workhist',proc:view.proc})}/>:<LoadingScreen/>;
+      onDone={()=>setView({name:'work',proc:view.proc})}/>:<LoadingScreen/>;
   }
-  else if(view.name==='workhist')screen=<WorkHistory proc={view.proc} logs={logs} user={user} onBack={()=>setView({name:'work',proc:view.proc})}/>;
+  else if(view.name==='workhist')screen=<WorkHistory proc={view.proc} logs={orders} user={user} onBack={()=>setView({name:'work',proc:view.proc})}/>;
 
   return(
     <LangCtx.Provider value={ctx}>
