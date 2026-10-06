@@ -64,6 +64,18 @@ const PROCESSES=[
   {id:'p10',no:10, ja:'その他付帯作業',      id_:'Pekerjaan Pendukung',     icon:'🔧'},
 ];
 
+function procById(id){return PROCESSES.find(p=>p.id===id)||null;}
+/* この製品に指定工程が登録されているか（工程名マスター） */
+function hasProc(m,procId){return Array.isArray(m&&m.procIds)&&m.procIds.includes(procId);}
+/* 工程で絞り込んだ呼称一覧 */
+function hinbansOf(master,procId){return Object.keys(master).filter(h=>hasProc(master[h],procId)).sort();}
+/* 呼称・品名・品番の横断検索 */
+function matchHinban(master,h,kw){
+  if(!kw)return true;
+  const m=master[h]||{};
+  return h.toLowerCase().includes(kw)||String(m.name||'').toLowerCase().includes(kw)||String(m.partNo||'').toLowerCase().includes(kw);
+}
+
 /* ══════════ 情報ページ一覧 ══════════ */
 const INFO_PAGES=[
   {key:'product', no:1,  ja:'製品写真',           id_:'Foto Produk',              icon:'📷'},
@@ -84,10 +96,13 @@ const INFO_PAGES=[
 /* ══════════ UI辞書（JP / ID） ══════════ */
 const DICT={
   '戻る':'Kembali','ホーム':'Beranda','クリア':'Hapus','更新':'Perbarui','ログアウト':'Keluar',
-  'QR照合':'Pengecekan QR','品番検索':'Pencarian Nomor Produk','作業指示':'Instruksi Pekerjaan','マスター管理':'Manajemen Master',
+  'QR照合':'Pengecekan QR','作業指示':'Instruksi Pekerjaan','マスター管理':'Manajemen Master',
   '言語':'Bahasa','スタート画面':'Layar Mulai','工程を選択してください':'Silakan pilih proses',
-  'キーワード':'Kata kunci','品番を入力してください':'Masukkan nomor produk','絞り込み':'Filter',
+  'キーワード':'Kata kunci','絞り込み':'Filter',
   '検索結果':'Hasil pencarian','件':'item','品番':'Nomor Produk','品名':'Nama Produk','更新日':'Tanggal Update','選択':'Pilih',
+  '呼称':'Sebutan','工程名':'Nama Proses','製品検索':'Pencarian Produk','製品を選ぶ':'Pilih Produk','製品情報を見る':'Lihat info produk',
+  '呼称・品番で検索':'Cari dengan sebutan / nomor produk','この工程の製品がありません':'Tidak ada produk untuk proses ini',
+  '工程名が未登録です':'Nama proses belum terdaftar','工程名未登録':'Proses belum terdaftar','この製品が通る工程':'Proses yang dilalui produk ini',
   '前へ':'Sebelumnya','次へ':'Selanjutnya','前の項目へ':'Item Sebelumnya','次の項目へ':'Item Selanjutnya',
   '一覧に戻る':'Kembali ke Daftar','作業動画を再生':'Putar Video Kerja','PDFで表示':'Tampilkan PDF','印刷する':'Cetak',
   '注意事項':'Perhatian','未登録':'Belum terdaftar','工程一覧':'Daftar Proses','情報項目':'Item Informasi',
@@ -99,15 +114,15 @@ const DICT={
   '保存する':'Simpan','保存中...':'Menyimpan...','保存しました':'Tersimpan','削除':'Hapus','追加':'Tambah',
   '照合成功':'Cocok','不一致':'Tidak cocok','スキャン待機中...':'Menunggu pemindaian...',
   'ハンディスキャナーでスキャンしてください':'Silakan pindai dengan scanner',
-  '該当する品番が見つかりません':'Nomor produk tidak ditemukan','品番が未登録です':'Nomor produk belum terdaftar',
+  '該当する製品が見つかりません':'Produk tidak ditemukan','製品が未登録です':'Produk belum terdaftar',
   '接続に失敗しました':'Koneksi gagal','再試行':'Coba lagi','閉じる':'Tutup','動画が未登録です':'Video belum terdaftar',
   '担当者':'Petugas','担当者を選択':'Pilih petugas','担当者QR':'QR Petugas','要領書':'Lembar Kerja','要領書を呼び出す':'Buka lembar kerja',
   '目標箱数':'Target kotak','1箱工数':'Waktu per kotak','分':'menit','作業開始':'Mulai Kerja','完了箱数':'Kotak selesai','1箱完了':'1 Kotak Selesai',
   '1つ戻す':'Batal 1','休憩':'Istirahat','ライン応援':'Bantu Lini','再開':'Lanjutkan','異常':'Kelainan','作業終了':'Selesai Kerja',
   '先行':'Lebih cepat','遅れ':'Terlambat','終了予定':'Perkiraan selesai','経過':'Berlalu','実働':'Kerja aktif','一時停止中':'Dijeda',
   '進行中の作業':'Pekerjaan berjalan','作業に戻る':'Kembali ke pekerjaan','履歴':'Riwayat','要領書が未登録です':'Lembar kerja belum terdaftar',
-  '端数（個）':'Sisa (pcs)','現在時刻':'Waktu sekarang','コメント':'Komentar','記録する':'Catat','完了':'Selesai','品番情報を見る':'Lihat info produk',
-  '標準':'Standar','進捗':'Progres','箱':'kotak','作業指示ホーム':'Beranda Instruksi','品番を選択':'Pilih nomor produk',
+  '端数（個）':'Sisa (pcs)','現在時刻':'Waktu sekarang','コメント':'Komentar','記録する':'Catat','完了':'Selesai',
+  '標準':'Standar','進捗':'Progres','箱':'kotak','作業指示ホーム':'Beranda Instruksi',
   'スキップ':'Lewati','担当者なし':'Tanpa petugas','任意':'opsional',
   '計画表':'Jadwal Kerja','本日の計画':'Jadwal hari ini','作業開始':'Mulai','順番':'No','数量':'Jumlah','状態':'Status',
   '未着手':'Belum mulai','作業中':'Berjalan','完了':'Selesai','次の作業':'Pekerjaan berikutnya','計画がありません':'Belum ada jadwal',
@@ -115,7 +130,7 @@ const DICT={
   '確認しました':'Sudah diperiksa','作業手順を確認してください':'Silakan periksa prosedur kerja','日付':'Tanggal',
   '割当':'Ditugaskan','未割当':'Belum ditugaskan','今の担当者':'Petugas saat ini','達成':'Tercapai','残り':'Sisa',
   '工程一覧へ':'Daftar Proses','マスター':'Master',
-  '品番を選ぶ':'Pilih nomor produk','変更':'Ubah','選択してください':'Silakan pilih','該当なし':'Tidak ada',
+  '変更':'Ubah','選択してください':'Silakan pilih','該当なし':'Tidak ada',
   'QRスキャナー導入後に利用できます':'Tersedia setelah scanner QR dipasang',
 };
 const LangCtx=createContext({lang:'ja'});
@@ -431,14 +446,14 @@ function ProcessSelect({user,onPick,onLogout}){
 }
 
 /* ══════════ 品番検索 ══════════ */
-function SearchScreen({master,user,onPick,onBack,onHome}){
+function SearchScreen({master,proc,user,onPick,onBack,onHome}){
   const{lang,t,b}=useLang();
   const[q,setQ]=useState('');
   const[page,setPage]=useState(1);
   const PER=10;
-  const all=Object.keys(master).sort();
+  const all=proc?hinbansOf(master,proc.id):Object.keys(master).sort();
   const kw=q.trim().toLowerCase();
-  const hits=kw?all.filter(h=>h.toLowerCase().includes(kw)||(master[h]?.name||'').toLowerCase().includes(kw)):all;
+  const hits=all.filter(h=>matchHinban(master,h,kw));
   const pages=Math.max(1,Math.ceil(hits.length/PER));
   const cur=Math.min(page,pages);
   const rows=hits.slice((cur-1)*PER,cur*PER);
@@ -446,12 +461,13 @@ function SearchScreen({master,user,onPick,onBack,onHome}){
   const td={padding:'12px 14px',fontSize:15,color:'#1A1A1A',borderBottom:'1px solid '+LINE};
   return(
     <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
-      <TopBar title={b('品番検索')} onBack={onBack} user={user}/>
+      <TopBar title={b('製品検索')} onBack={onBack} user={user}
+        left={proc?<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏭 {lang==='id'?proc.id_:proc.ja}</div>:null}/>
       <div style={{flex:1,overflowY:'auto',padding:'20px 28px'}}>
         <div style={{fontSize:13,fontWeight:600,color:'#5A6472',marginBottom:8}}>{b('キーワード')}</div>
         <div style={{display:'flex',gap:14,marginBottom:18,maxWidth:1100}}>
           <div style={{flex:1,display:'flex'}}>
-            <input value={q} onChange={e=>{setQ(e.target.value);setPage(1);}} placeholder={b('品番を入力してください')}
+            <input value={q} onChange={e=>{setQ(e.target.value);setPage(1);}} placeholder={b('呼称・品番で検索')}
               style={{borderRadius:'8px 0 0 8px',borderRight:'none'}}/>
             <div style={{background:NAVY,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',width:58,borderRadius:'0 8px 8px 0',fontSize:20}}>🔍</div>
           </div>
@@ -463,6 +479,7 @@ function SearchScreen({master,user,onPick,onBack,onHome}){
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr style={{background:NAVY}}>
               <th style={{...th,width:70}}>No.</th>
+              <th style={th}>{b('呼称')}</th>
               <th style={th}>{b('品番')}</th>
               <th style={th}>{b('品名')}</th>
               <th style={{...th,width:190}}>{b('更新日')}</th>
@@ -475,6 +492,7 @@ function SearchScreen({master,user,onPick,onBack,onHome}){
                   <tr key={h} style={{background:i%2?'#F7F9FC':'#fff'}}>
                     <td style={td}>{(cur-1)*PER+i+1}</td>
                     <td style={{...td,fontWeight:700}}>{h}</td>
+                    <td style={td}>{m.partNo||'—'}</td>
                     <td style={td}>{dv(m,'name',lang)||'—'}</td>
                     <td style={td}>{m.updatedAt||'—'}</td>
                     <td style={{...td,textAlign:'center'}}>
@@ -483,7 +501,9 @@ function SearchScreen({master,user,onPick,onBack,onHome}){
                   </tr>
                 );
               })}
-              {rows.length===0&&<tr><td colSpan={5} style={{...td,textAlign:'center',color:'#9AA3AF',padding:'40px'}}>{t('品番が未登録です')}</td></tr>}
+              {rows.length===0&&<tr><td colSpan={6} style={{...td,textAlign:'center',color:'#9AA3AF',padding:'40px',whiteSpace:'normal'}}>
+                {all.length===0&&proc?<>{t('この工程の製品がありません')}<br/><span style={{fontSize:12}}>マスター管理 →「工程名」でこの工程を登録してください。</span></>:t('製品が未登録です')}
+              </td></tr>}
             </tbody>
           </table>
         </div>
@@ -561,7 +581,7 @@ function InfoViewer({proc,hinban,master,user,onBack,onChangeProc}){
                 </div>
               </div>
               <div style={{background:'#fff',border:'1px solid '+LINE,borderRadius:10,padding:'12px 18px',minWidth:270}}>
-                {[[b('品番'),hinban],[b('品名'),dv(m,'name',lang)||'—'],[b('更新日'),m.updatedAt||'—']].map(([k,v])=>(
+                {[[b('呼称'),hinban],[b('品番'),m.partNo||'—'],[b('品名'),dv(m,'name',lang)||'—'],[b('更新日'),m.updatedAt||'—']].map(([k,v])=>(
                   <div key={k} style={{display:'flex',gap:12,fontSize:14,lineHeight:1.9}}>
                     <span style={{color:'#6B7480',minWidth:88}}>{k}</span><span style={{fontWeight:600}}>：{v}</span>
                   </div>
@@ -599,9 +619,13 @@ function PageBody({pageKey,m,hinban,onScan}){
     return(<>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:14}}>
         <P><H>{b('全体写真')}</H><Body><TapPhoto src={m.productImg} style={{width:'100%',maxHeight:420,objectFit:'contain',borderRadius:8,display:'block',margin:'0 auto'}} ratio={280}/></Body></P>
-        <P><H>{b('品番')} / {b('品名')}</H><Body>
-          <div style={{fontSize:34,fontWeight:800,color:NAVY,marginBottom:6}}>{hinban}</div>
-          <div style={{fontSize:18,color:'#3A4552',marginBottom:14}}>{L(m,'name')||'—'}</div>
+        <P><H>{b('呼称')} / {b('品番')} / {b('品名')}</H><Body>
+          <div style={{fontSize:34,fontWeight:800,color:NAVY,marginBottom:4}}>{hinban}</div>
+          {m.partNo&&<div style={{fontSize:16,color:'#5A6472',marginBottom:4}}>{b('品番')}：<b style={{color:'#2A3340'}}>{m.partNo}</b></div>}
+          <div style={{fontSize:18,color:'#3A4552',marginBottom:10}}>{L(m,'name')||'—'}</div>
+          {(m.procIds||[]).length>0&&<div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:12}}>
+            {(m.procIds||[]).map(pid=>{const pp=procById(pid);return pp?<span key={pid} style={{fontSize:11.5,fontWeight:700,padding:'3px 9px',borderRadius:5,background:LBLUE,color:BLUE}}>{pp.no}. {lang==='id'?pp.id_:pp.ja}</span>:null;})}
+          </div>}
           {m.qrText&&<div style={{display:'flex',alignItems:'center',gap:16}}><QRDisplay value={m.qrText} size={120}/><div style={{fontSize:12,color:'#6B7480',wordBreak:'break-all'}}>{m.qrText}</div></div>}
         </Body></P>
       </div>
@@ -934,7 +958,7 @@ function MasterAdmin({master,workers,user,onBack}){
   const[showWorkers,setShowWorkers]=useState(false);
   const[newH,setNewH]=useState('');
   const[q,setQ]=useState('');
-  const list=Object.keys(master).sort().filter(h=>!q.trim()||h.toLowerCase().includes(q.trim().toLowerCase()));
+  const list=Object.keys(master).sort().filter(h=>matchHinban(master,h,q.trim().toLowerCase()));
 
   async function add(){
     const h=newH.trim();if(!h)return;
@@ -947,12 +971,12 @@ function MasterAdmin({master,workers,user,onBack}){
       <TopBar title={b('マスター管理')} onBack={onBack} user={user}/>
       <div style={{flex:1,overflowY:'auto',padding:'20px 28px'}}>
         <div style={{display:'flex',gap:12,marginBottom:16,maxWidth:900}}>
-          <input value={newH} onChange={e=>setNewH(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="新しい品番を追加..."/>
+          <input value={newH} onChange={e=>setNewH(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="新しい呼称を追加..."/>
           <button onClick={add} disabled={!newH.trim()} style={{minHeight:46,padding:'0 24px',borderRadius:8,background:newH.trim()?NAVY:'#C7CDD6',color:'#fff',fontSize:15,fontWeight:700,whiteSpace:'nowrap'}}>{t('追加')}</button>
-          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="品番で絞り込み..." style={{maxWidth:260}}/>
+          <input value={q} onChange={e=>setQ(e.target.value)} placeholder="呼称・品番で絞り込み..." style={{maxWidth:260}}/>
           <button onClick={()=>setShowWorkers(true)} style={{minHeight:46,padding:'0 18px',borderRadius:8,border:'1px solid '+LINE,background:'#fff',color:NAVY,fontSize:14,fontWeight:700,whiteSpace:'nowrap'}}>👤 担当者管理</button>
         </div>
-        {list.length===0&&<div style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>品番が登録されていません。</div>}
+        {list.length===0&&<div style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>呼称が登録されていません。</div>}
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:10}}>
           {list.map(h=>{
             const d=master[h]||{};
@@ -961,8 +985,12 @@ function MasterAdmin({master,workers,user,onBack}){
             return(
               <button key={h} onClick={()=>setSel(h)} style={{padding:'12px 14px',textAlign:'left',background:'#fff',border:'1px solid '+LINE,borderRadius:10}}>
                 <div style={{fontSize:15,fontWeight:700,color:'#111',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h}</div>
-                <div style={{fontSize:12,color:'#6B7480',marginTop:3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name||'（品名未設定）'}</div>
-                <div style={{fontSize:11,fontWeight:700,color:filled?'#2E7D4F':'#C7CDD6',marginTop:5}}>{filled?`${filled}/13 項目`:'未登録'}</div>
+                <div style={{fontSize:11.5,color:'#8A93A0',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.partNo?'品番: '+d.partNo:'品番未設定'}</div>
+                <div style={{fontSize:12,color:'#6B7480',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name||'（品名未設定）'}</div>
+                <div style={{fontSize:11,fontWeight:700,marginTop:5,color:(d.procIds||[]).length?'#1B5E20':'#C2410C'}}>
+                  {(d.procIds||[]).length?`工程 ${(d.procIds||[]).length}件`:'⚠ '+t('工程名未登録')}
+                </div>
+                <div style={{fontSize:11,fontWeight:700,color:filled?'#2E7D4F':'#C7CDD6',marginTop:2}}>{filled?`${filled}/13 項目`:'未登録'}</div>
               </button>
             );
           })}
@@ -1164,10 +1192,30 @@ function EditorBody({tab,d,upd,upImg,busy,hinban}){
   const sub=(k,patch)=>upd({[k]:{...(d[k]||{}),...patch}});
 
   if(tab==='basic')return(<>
+    <div style={{padding:'10px 12px',background:'#F2F6FD',borderRadius:8,fontSize:12.5,color:'#4A5460',marginBottom:4}}>
+      <b style={{color:NAVY}}>{hinban}</b> が「呼称」です（登録後は変更できません）。実際の品番は下の欄に登録してください。
+    </div>
     <Row>
+      <div><FLbl>品番</FLbl><input value={d.partNo||''} onChange={e=>S('partNo',e.target.value)} placeholder="例: 1234-56789"/></div>
       <div><FLbl>品名（日本語）</FLbl><input value={d.name||''} onChange={e=>S('name',e.target.value)} placeholder="例: ブラケット ASSY"/></div>
-      <div><FLbl>品名（インドネシア語）</FLbl><input value={d.name_id||''} onChange={e=>S('name_id',e.target.value)} placeholder="Nama produk"/></div>
     </Row>
+    <FLbl>品名（インドネシア語）</FLbl>
+    <input value={d.name_id||''} onChange={e=>S('name_id',e.target.value)} placeholder="Nama produk"/>
+    <FLbl>工程名（この製品が通る工程・複数選択可）</FLbl>
+    <div style={{display:'flex',gap:6,flexWrap:'wrap',padding:'10px',border:'1px solid '+LINE,borderRadius:8,background:'#FAFBFC'}}>
+      {PROCESSES.map(pp=>{
+        const on=(d.procIds||[]).includes(pp.id);
+        return(
+          <button key={pp.id}
+            onClick={()=>S('procIds', on?(d.procIds||[]).filter(x=>x!==pp.id):[...(d.procIds||[]),pp.id])}
+            style={{padding:'8px 12px',borderRadius:8,fontSize:12.5,fontWeight:on?700:600,textAlign:'left',
+              border:'1px solid '+(on?NAVY:LINE),background:on?'#E8F0FB':'#fff',color:on?NAVY:'#4A5460'}}>
+            {on?'☑':'☐'} {pp.no}. {pp.ja}
+          </button>
+        );
+      })}
+    </div>
+    {!(d.procIds||[]).length&&<div style={{fontSize:12,color:'#C2410C',marginTop:6}}>⚠ 工程を1つ以上選択しないと、各工程の作業画面にこの製品が表示されません。</div>}
     <FLbl>製品写真</FLbl>
     <ImgSlot url={d.productImg} busy={busy==='productImg'} h={150}
       onPick={f=>upImg('productImg',f,u=>S('productImg',u))} onClear={()=>S('productImg','')}/>
@@ -1442,16 +1490,16 @@ function HinbanPicker({master,procId,onPick,onClose}){
   const{lang,t,b}=useLang();
   const[q,setQ]=useState('');
   const kw=q.trim().toLowerCase();
-  const list=Object.keys(master).sort().filter(h=>!kw||h.toLowerCase().includes(kw)||(master[h]?.name||'').toLowerCase().includes(kw));
+  const list=hinbansOf(master,procId).filter(h=>matchHinban(master,h,kw));
   return(
     <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:600,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
       <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:900,height:'calc(100vh - 60px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{background:NAVY,padding:'14px 20px',display:'flex',alignItems:'center',gap:14}}>
-          <div style={{fontSize:18,fontWeight:700,color:'#fff',flex:1}}>🔍 {b('品番を選ぶ')}</div>
+          <div style={{fontSize:18,fontWeight:700,color:'#fff',flex:1}}>🔍 {b('製品を選ぶ')}</div>
           <button onClick={onClose} style={{width:36,height:36,borderRadius:'50%',background:'rgba(255,255,255,.18)',color:'#fff',fontSize:20}}>×</button>
         </div>
         <div style={{padding:'14px 18px 10px'}}>
-          <input value={q} onChange={e=>setQ(e.target.value)} autoFocus placeholder={b('品番を入力してください')} style={{fontSize:16}}/>
+          <input value={q} onChange={e=>setQ(e.target.value)} autoFocus placeholder={b('呼称・品番で検索')} style={{fontSize:16}}/>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'0 18px 18px'}}>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:10}}>
@@ -1467,6 +1515,7 @@ function HinbanPicker({master,procId,onPick,onClose}){
                   </div>
                   <div style={{padding:'8px 10px'}}>
                     <div style={{fontSize:15,fontWeight:700,color:'#111',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{h}</div>
+                    <div style={{fontSize:11,color:'#8A93A0',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.partNo||'—'}</div>
                     <div style={{fontSize:11.5,color:'#6B7480',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dv(m,'name',lang)||'—'}</div>
                     <div style={{fontSize:10.5,fontWeight:700,marginTop:3,color:has?'#2E7D4F':'#C2410C'}}>{has?'● '+t('要領書'):'要領書・工数 未登録'}</div>
                   </div>
@@ -1474,7 +1523,9 @@ function HinbanPicker({master,procId,onPick,onClose}){
               );
             })}
           </div>
-          {list.length===0&&<div style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('該当なし')}</div>}
+          {list.length===0&&<div style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14,lineHeight:1.9}}>
+            {hinbansOf(master,procId).length===0?<>{t('この工程の製品がありません')}<br/><span style={{fontSize:12}}>マスター管理 →「工程名」でこの工程を登録してください。</span></>:t('該当なし')}
+          </div>}
         </div>
       </div>
     </div>
@@ -1558,7 +1609,7 @@ function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onRe
         <div style={{border:'1px solid '+LINE,borderRadius:10,overflow:'hidden',background:'#fff'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr style={{background:NAVY}}>
-              <th style={{...th,width:64}}>{b('順番')}</th><th style={th}>{b('品番')}</th><th style={th}>{b('品名')}</th>
+              <th style={{...th,width:64}}>{b('順番')}</th><th style={th}>{b('呼称')}</th><th style={th}>{b('品番')}</th><th style={th}>{b('品名')}</th>
               <th style={{...th,width:110}}>{b('数量')}</th><th style={{...th,width:130}}>{b('割当')}</th>
               <th style={{...th,width:120}}>{b('状態')}</th><th style={{...th,width:120}}>{b('先行')}/{b('遅れ')}</th><th style={{...th,width:150,textAlign:'center'}}>{b('作業開始')}</th>
             </tr></thead>
@@ -1571,6 +1622,7 @@ function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onRe
                   <tr key={o.id} style={{background:isNext?'#F2F6FD':(o.status==='done'?'#FAFBFC':(i%2?'#F7F9FC':'#fff')),opacity:o.status==='done'?.75:1}}>
                     <td style={{...td,fontWeight:700,color:'#5A6472'}}>{i+1}</td>
                     <td style={{...td,fontWeight:700,fontSize:16}}>{o.hinban}</td>
+                    <td style={td}>{(master[o.hinban]||{}).partNo||o.partNo||'—'}</td>
                     <td style={td}>{dv(master[o.hinban]||{},'name',lang)||o.hinbanName||'—'}</td>
                     <td style={td}>{o.status==='done'?`${o.doneBoxes||0} / ${o.targetBoxes}`:`${o.targetBoxes} ${t('箱')}`}</td>
                     <td style={{...td,color:o.assignedWorkerName?'#1A1A1A':'#9AA3AF'}}>{o.workerName||o.assignedWorkerName||t('未割当')}</td>
@@ -1589,7 +1641,7 @@ function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onRe
                   </tr>
                 );
               })}
-              {rows.length===0&&<tr><td colSpan={8} style={{padding:'44px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('計画がありません')}</td></tr>}
+              {rows.length===0&&<tr><td colSpan={9} style={{padding:'44px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('計画がありません')}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1601,7 +1653,7 @@ function WorkPlanScreen({proc,master,workers,orders,user,onBack,onOpenSheet,onRe
         </>}
         right={<div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
           {[...(QR_ENABLED?[['▦ '+t('QR照合'),onQR]]:[]),
-            ['🔍 '+t('品番検索'),onSearch],['📅 '+t('スケジュール編集'),onPlanner],
+            ['🔍 '+t('製品検索'),onSearch],['📅 '+t('スケジュール編集'),onPlanner],
             ['📋 '+t('履歴'),onHistory],['⚙ '+t('マスター'),onMaster],['⇥ '+t('ログアウト'),onLogout]].map(([lb,fn])=>(
             <button key={lb} onClick={fn} style={{minHeight:44,padding:'0 14px',borderRadius:8,background:'#fff',border:'1px solid '+LINE,color:NAVY,fontSize:13.5,fontWeight:700,whiteSpace:'nowrap'}}>{lb}</button>
           ))}
@@ -1622,7 +1674,6 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
   const[pick,setPick]=useState(false);
   const wlist=Object.values(workers||{}).sort((a,b)=>(a.order||0)-(b.order||0));
   const rows=Object.values(orders||{}).filter(o=>o.procId===proc.id&&o.date===date).sort((a,b)=>(a.order||0)-(b.order||0));
-  const hins=Object.keys(master).sort();
   const col=db.collection('workOrders');
   async function run(fn){if(busy)return;setBusy(true);try{await fn();}catch(e){alert('更新に失敗: '+e.message);}finally{setBusy(false);}}
   async function add(){
@@ -1632,7 +1683,7 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
     const w=wlist.find(x=>x.id===addW)||null;
     await run(()=>col.add({
       date,procId:proc.id,procName:proc.ja,order:(rows.length?Math.max(...rows.map(r=>r.order||0)):0)+10,
-      hinban:h,hinbanName:m.name||'',targetBoxes:q,
+      hinban:h,hinbanName:m.name||'',partNo:m.partNo||'',targetBoxes:q,
       kosu:Number(m.sheets?.[proc.id]?.kosu)||0,capacity:Number(m.packing?.capacity)||0,
       assignedWorkerId:w?w.id:null,assignedWorkerName:w?w.name:'',
       workerId:null,workerName:'',status:'pending',
@@ -1667,7 +1718,7 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
     await run(async()=>{
       let n=(rows.length?Math.max(...rows.map(r=>r.order||0)):0)+10;
       for(const o of srcRows){
-        await col.add({date,procId:proc.id,procName:proc.ja,order:n,hinban:o.hinban,hinbanName:o.hinbanName||'',
+        await col.add({date,procId:proc.id,procName:proc.ja,order:n,hinban:o.hinban,hinbanName:o.hinbanName||'',partNo:o.partNo||'',
           targetBoxes:o.targetBoxes,kosu:o.kosu||0,capacity:o.capacity||0,
           assignedWorkerId:o.assignedWorkerId||null,assignedWorkerName:o.assignedWorkerName||'',
           workerId:null,workerName:'',status:'pending',startAt:null,endAt:null,doneBoxes:0,fraction:0,pauses:[],anomalies:[],createdBy:user?.email||''});
@@ -1686,12 +1737,12 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
         <div style={{display:'flex',gap:12,alignItems:'flex-end',flexWrap:'wrap',marginBottom:14}}>
           <div><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('日付')}</div>
             <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:172,fontSize:15}}/></div>
-          <div style={{flex:1,minWidth:240}}><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('品番')}</div>
+          <div style={{flex:1,minWidth:240}}><div style={{fontSize:12,fontWeight:700,color:'#4A5460',marginBottom:5}}>{b('呼称')}</div>
             <button onClick={()=>setPick(true)}
               style={{width:'100%',minHeight:46,padding:'0 14px',borderRadius:8,border:'1px solid '+(addH?NAVY:LINE),background:addH?'#F2F6FD':'#fff',display:'flex',alignItems:'center',gap:10,textAlign:'left'}}>
               {addH?<>
                 <span style={{fontSize:16,fontWeight:800,color:NAVY,whiteSpace:'nowrap'}}>{addH}</span>
-                <span style={{fontSize:12.5,color:'#5A6472',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dv(master[addH]||{},'name',lang)||''}</span>
+                <span style={{fontSize:12.5,color:'#5A6472',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{[(master[addH]||{}).partNo,dv(master[addH]||{},'name',lang)].filter(Boolean).join('　')}</span>
                 <span style={{fontSize:12,fontWeight:700,color:NAVY,whiteSpace:'nowrap'}}>{t('変更')}</span>
               </>:<>
                 <span style={{fontSize:16}}>🔍</span>
@@ -1716,7 +1767,7 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
         <div style={{border:'1px solid '+LINE,borderRadius:10,overflow:'hidden',background:'#fff'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr style={{background:NAVY}}>
-              <th style={{...th,width:56}}>{b('順番')}</th><th style={th}>{b('品番')}</th><th style={th}>{b('品名')}</th>
+              <th style={{...th,width:56}}>{b('順番')}</th><th style={th}>{b('呼称')}</th><th style={th}>{b('品番')}</th><th style={th}>{b('品名')}</th>
               <th style={{...th,width:110}}>{b('数量')}</th><th style={{...th,width:120}}>{b('1箱工数')}</th>
               <th style={{...th,width:160}}>{b('担当者')}</th><th style={{...th,width:110}}>{b('状態')}</th><th style={{...th,width:150,textAlign:'center'}}>操作</th>
             </tr></thead>
@@ -1728,6 +1779,7 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
                   <tr key={o.id} style={{background:i%2?'#F7F9FC':'#fff'}}>
                     <td style={{...td,fontWeight:700,color:'#5A6472'}}>{i+1}</td>
                     <td style={{...td,fontWeight:700}}>{o.hinban}</td>
+                    <td style={td}>{m.partNo||o.partNo||'—'}</td>
                     <td style={td}>{dv(m,'name',lang)||o.hinbanName||'—'}</td>
                     <td style={td}>
                       {locked?`${o.targetBoxes} ${t('箱')}`:
@@ -1758,7 +1810,7 @@ function SchedulePlanner({proc,master,workers,orders,user,onBack}){
                   </tr>
                 );
               })}
-              {rows.length===0&&<tr><td colSpan={8} style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('計画がありません')}　上の欄から行を追加してください。</td></tr>}
+              {rows.length===0&&<tr><td colSpan={9} style={{padding:'40px',textAlign:'center',color:'#9AA3AF',fontSize:14}}>{t('計画がありません')}　上の欄から行を追加してください。</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1857,7 +1909,7 @@ function WorkSheetScreen({proc,order,worker,master,user,onBack,onStart,onInfo}){
           </button>
         </div>
       </div>
-      <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>} right={<FBtn onClick={()=>onInfo(hinban)}>ℹ {t('品番情報を見る')}</FBtn>}/>
+      <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>} right={<FBtn onClick={()=>onInfo(hinban)}>ℹ {t('製品情報を見る')}</FBtn>}/>
     </div>
   );
 }
@@ -1954,7 +2006,7 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
           )}
         </div>
       </div>
-      <FooterBar left={<FBtn onClick={onExit}>‹ {b('計画表')}</FBtn>} right={<FBtn onClick={()=>onInfo(log.hinban)}>ℹ {t('品番情報を見る')}</FBtn>}/>
+      <FooterBar left={<FBtn onClick={onExit}>‹ {b('計画表')}</FBtn>} right={<FBtn onClick={()=>onInfo(log.hinban)}>ℹ {t('製品情報を見る')}</FBtn>}/>
       {anom&&<AnomalyModal onClose={()=>setAnom(false)} onSave={async c=>{await addAnom(c);setAnom(false);}}/>}
       {out&&<OutModal log={log} calc={c} onClose={()=>setOut(false)} onFinish={finish}/>}
     </div>
@@ -2035,7 +2087,7 @@ function WorkHistory({proc,logs,user,onBack}){
         <div style={{border:'1px solid '+LINE,borderRadius:10,overflow:'auto',background:'#fff'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr style={{background:NAVY}}>
-              <th style={th}>日付</th><th style={th}>{b('担当者')}</th>{all&&<th style={th}>工程</th>}<th style={th}>{b('品番')}</th>
+              <th style={th}>日付</th><th style={th}>{b('担当者')}</th>{all&&<th style={th}>工程</th>}<th style={th}>{b('呼称')}</th>
               <th style={th}>開始 → 終了</th><th style={th}>{b('完了箱数')}</th><th style={th}>{b('実働')}</th><th style={th}>停止</th><th style={th}>{b('先行')}/{b('遅れ')}</th><th style={th}>{b('異常')}</th>
             </tr></thead>
             <tbody>
@@ -2122,7 +2174,7 @@ function App(){
   let screen;
   if(err)screen=<ErrorScreen error={err} onRetry={()=>window.location.reload()}/>;
   else if(view.name==='proc')screen=<ProcessSelect user={user} onPick={p=>setView({name:'work',proc:p})} onLogout={()=>auth.signOut()}/>;
-  else if(view.name==='search')screen=<SearchScreen master={master} user={user}
+  else if(view.name==='search')screen=<SearchScreen master={master} proc={view.proc} user={user}
     onPick={h=>setView({name:'info',proc:view.proc,hinban:h})}
     onBack={()=>setView({name:'work',proc:view.proc})} onHome={()=>setView({name:'work',proc:view.proc})}/>;
   else if(view.name==='info')screen=<InfoViewer proc={view.proc} hinban={view.hinban} master={master} user={user}
