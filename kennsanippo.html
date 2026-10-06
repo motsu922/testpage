@@ -310,6 +310,12 @@
             </select>
           </div>
           <div class="group">
+            <label class="label">工程名（任意）</label>
+            <select class="select" id="processName">
+              <option value="">選択してください</option>
+            </select>
+          </div>
+          <div class="group">
             <label class="label" id="lbl-it2">検査種類</label>
             <select class="select" id="it2">
               <option value="" id="opt-select2">通常検査</option>
@@ -546,6 +552,21 @@
           <div style="padding:24px;text-align:center;color:#6c757d;">検査員が登録されていません</div>
         </div>
       </div>
+      <div class="settings-card">
+        <h2>🏭 工程名マスタ管理</h2>
+        <div id="processAlertContainer"></div>
+        <div class="form-group">
+          <label class="form-label">工程名</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input type="text" class="form-input" id="processMasterName" placeholder="例: 組立" style="flex:1;min-width:200px">
+            <button class="btn btn-success" onclick="addProcessMaster()" style="min-width:100px">➕ 追加</button>
+          </div>
+        </div>
+        <h3 style="margin-top:24px;margin-bottom:12px;color:#2c3e50;font-size:17px;">登録済み工程名</h3>
+        <div class="item-list" id="processMasterList">
+          <div style="padding:24px;text-align:center;color:#6c757d;">工程名が登録されていません</div>
+        </div>
+      </div>
     </div>
   </section>
 </main>
@@ -573,6 +594,7 @@ let db;
 let unsubscribeDaily = null;
 let unsubscribeProducts = null;
 let unsubscribeInspectors = null;
+let unsubscribeProcesses = null;
 
 function getLastNBusinessDays(n) {
   const dates = [];
@@ -836,6 +858,7 @@ let currentDailyLang = 'ja';
 let sel = -1, data = [], items = [], cols = new Map(), inspectorCount = 0, timePeriodCount = 0;
 let master = {};
 let inspectorNames = [];
+let processNames = [];
 let editingProductCode = null;
 let lastVisibleDoc = null;
 let isLoadingMore = false;
@@ -961,6 +984,12 @@ function init(){
       updateAllInspectorSelects();
       updateAndonHandlerSelect();
     });
+    unsubscribeProcesses = db.collection('processMaster').orderBy('order').onSnapshot(snapshot => {
+      processNames = [];
+      snapshot.forEach(doc => { processNames.push(doc.data().name); });
+      updateProcessSelect();
+      updateProcessMasterList();
+    });
     unsubscribeDaily = db.collection('dailyReports')
       .orderBy('timestamp', 'desc')
       .limit(15)
@@ -975,7 +1004,7 @@ function init(){
             pieces: d.pieces || '', boxes: d.boxes || '',
             remainder: d.remainder || '', ic: d.ic || '0',
             totalTime: d.totalTime || '0', ln: d.ln || '',
-            it2: d.it2 || '', inspectors: d.inspectors || [],
+            it2: d.it2 || '', processName: d.processName || '', inspectors: d.inspectors || [],
             ngMap: d.ngMap ? new Map(Object.entries(d.ngMap)) : new Map(),
             rm: d.rm || ''
           });
@@ -1193,7 +1222,7 @@ async function loadMoreData() {
           pieces: d.pieces || '', boxes: d.boxes || '',
           remainder: d.remainder || '', ic: d.ic || '0',
           totalTime: d.totalTime || '0', ln: d.ln || '',
-          it2: d.it2 || '', inspectors: d.inspectors || [],
+          it2: d.it2 || '', processName: d.processName || '', inspectors: d.inspectors || [],
           ngMap: d.ngMap ? new Map(Object.entries(d.ngMap)) : new Map(),
           rm: d.rm || ''
         });
@@ -1334,6 +1363,21 @@ function updateProductSelect() {
   if (currentValue) select.value = currentValue;
 }
 
+function updateProcessSelect() {
+  const select = document.getElementById('processName');
+  const currentValue = select.value;
+  select.replaceChildren(new Option('選択してください', ''));
+  processNames.forEach(name => select.add(new Option(name, name)));
+  if (currentValue && !processNames.includes(currentValue)) select.add(new Option(`${currentValue}（削除済み）`, currentValue));
+  select.value = currentValue;
+}
+
+function setProcessSelection(name) {
+  const select = document.getElementById('processName');
+  if (name && !Array.from(select.options).some(option => option.value === name)) select.add(new Option(`${name}（削除済み）`, name));
+  select.value = name || '';
+}
+
 async function addInspectorMaster() {
   const name = document.getElementById('inspectorName').value.trim();
   if (!name) { showInspectorMasterAlert('error', '検査員名を入力してください'); return; }
@@ -1371,6 +1415,52 @@ function updateInspectorMasterList() {
   list.innerHTML = html;
 }
 
+async function addProcessMaster() {
+  const name = document.getElementById('processMasterName').value.trim();
+  if (!name) { showProcessMasterAlert('error', '工程名を入力してください'); return; }
+  if (processNames.includes(name)) { showProcessMasterAlert('error', '同じ工程名が既に存在します'); return; }
+  try {
+    await db.collection('processMaster').add({
+      name: name, order: processNames.length,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    document.getElementById('processMasterName').value = '';
+    showProcessMasterAlert('success', `工程名「${name}」を追加しました`);
+  } catch(error) { showProcessMasterAlert('error', 'エラー: ' + error.message); }
+}
+
+async function deleteProcessMaster(name) {
+  if (!confirm(`工程名「${name}」を削除しますか?`)) return;
+  try {
+    const snapshot = await db.collection('processMaster').where('name', '==', name).get();
+    await Promise.all(snapshot.docs.map(doc => doc.ref.delete()));
+    showProcessMasterAlert('success', `工程名「${name}」を削除しました`);
+  } catch(error) { showProcessMasterAlert('error', 'エラー: ' + error.message); }
+}
+
+function updateProcessMasterList() {
+  const list = document.getElementById('processMasterList');
+  if (processNames.length === 0) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:#6c757d;">工程名が登録されていません</div>';
+    return;
+  }
+  list.replaceChildren();
+  processNames.forEach(name => {
+    const item = document.createElement('div');
+    item.className = 'item';
+    const nameElement = document.createElement('div');
+    nameElement.className = 'item-name';
+    nameElement.textContent = name;
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.textContent = '削除';
+    deleteButton.style.cssText = 'background:#dc3545;color:white;border:none;border-radius:6px;padding:10px 14px;font-size:13px;cursor:pointer;min-height:44px';
+    deleteButton.onclick = () => deleteProcessMaster(name);
+    item.append(nameElement, deleteButton);
+    list.appendChild(item);
+  });
+}
+
 function showProductAlert(type, message) {
   const container = document.getElementById('productAlertContainer');
   container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
@@ -1379,6 +1469,12 @@ function showProductAlert(type, message) {
 
 function showInspectorMasterAlert(type, message) {
   const container = document.getElementById('inspectorAlertContainer');
+  container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+  setTimeout(() => container.innerHTML = '', 3000);
+}
+
+function showProcessMasterAlert(type, message) {
+  const container = document.getElementById('processAlertContainer');
   container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
   setTimeout(() => container.innerHTML = '', 3000);
 }
@@ -1726,6 +1822,7 @@ function select(i){
   }
   document.getElementById('ln').value = (d.ln || '').toUpperCase();
   document.getElementById('it2').value = d.it2 || '';
+  setProcessSelection(d.processName || '');
   document.getElementById('rm').value = d.rm || '';
   // アンドン整理No連動
   if(d.on) document.getElementById('andonSerialNo').value = d.on;
@@ -1770,7 +1867,7 @@ async function add(){
     on: o, pieces: pieces.toString(), boxes: boxes.toString(),
     remainder: remainder.toString(), ic: totalPieces.toString(),
     totalTime: totalMinutes.toString(), ln: lnValue,
-    it2: document.getElementById('it2').value || '',
+    it2: document.getElementById('it2').value || '', processName: document.getElementById('processName').value || '',
     inspectors, ngMap: Object.fromEntries(m),
     rm: document.getElementById('rm').value || '',
     timestamp: firebase.firestore.FieldValue.serverTimestamp()
@@ -1814,7 +1911,7 @@ async function update(){
     on: o, pieces: pieces.toString(), boxes: boxes.toString(),
     remainder: remainder.toString(), ic: totalPieces.toString(),
     totalTime: totalMinutes.toString(), ln: lnValue,
-    it2: document.getElementById('it2').value || '',
+    it2: document.getElementById('it2').value || '', processName: document.getElementById('processName').value || '',
     inspectors, ngMap: Object.fromEntries(m),
     rm: document.getElementById('rm').value || ''
   };
@@ -1844,6 +1941,7 @@ function clearExceptDate(){
   document.getElementById('ic').value = '';
   document.getElementById('ln').value = '';
   document.getElementById('it2').value = '';
+  document.getElementById('processName').value = '';
   document.getElementById('rm').value = '';
   document.getElementById('inspectors').innerHTML = '';
   inspectorCount = 0; timePeriodCount = 0;
@@ -1875,7 +1973,7 @@ function getCSVInspectionType(item) {
 
 function exp(){
   if(data.length === 0){ status('エクスポートするデータがありません'); return; }
-  const h = ['生産日付','整理No','個数','箱数','検査数','合計検査時間(分)','ロットNo','検査種類','検査員情報'];
+  const h = ['生産日付','整理No','工程名','個数','箱数','検査数','合計検査時間(分)','ロットNo','検査種類','検査員情報'];
   const nc = Array.from(cols.keys()).sort();
   const ah = h.concat(nc).concat(['備考']);
   const r = data.map(row => {
@@ -1886,7 +1984,7 @@ function exp(){
         else if(ins.startTime && ins.endTime) return ins.name + '(' + ins.startTime + '-' + ins.endTime + ')';
         else return ins.name;
       }).join('; ') : '';
-    const bd = [row.pd||'', row.on||'', row.pieces||'', row.boxes||'', row.ic||'0', row.totalTime||'0', row.ln||'', getCSVInspectionType(row), inspectorInfo];
+    const bd = [row.pd||'', row.on||'', row.processName||'', row.pieces||'', row.boxes||'', row.ic||'0', row.totalTime||'0', row.ln||'', getCSVInspectionType(row), inspectorInfo];
     const nd = nc.map(c => row.ngMap && row.ngMap.get(c) || '0');
     return bd.concat(nd).concat([row.rm||'']);
   });
