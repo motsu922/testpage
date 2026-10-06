@@ -507,6 +507,25 @@
   <section id="settings-view" class="view">
     <div class="settings-container">
       <div class="settings-card">
+        <h2>🔐 マスター管理ログイン</h2>
+        <div id="masterAuthSignedOut">
+          <div class="form-group">
+            <label class="form-label">メールアドレス</label>
+            <input type="email" class="form-input" id="masterAuthEmail" autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label class="form-label">パスワード</label>
+            <input type="password" class="form-input" id="masterAuthPassword" autocomplete="current-password">
+          </div>
+          <button class="btn btn-primary" onclick="loginMasterAuth()">ログイン</button>
+          <div id="masterAuthError" style="display:none;color:#b42318;font-size:14px;margin-top:10px"></div>
+        </div>
+        <div id="masterAuthSignedIn" style="display:none">
+          <div id="masterAuthUser" style="font-size:14px;color:#2e7d32;margin-bottom:10px"></div>
+          <button class="btn btn-secondary" onclick="logoutMasterAuth()">ログアウト</button>
+        </div>
+      </div>
+      <div class="settings-card">
         <h2>📦 製品マスタ管理</h2>
         <div id="productAlertContainer"></div>
         <div class="form-group">
@@ -591,6 +610,7 @@ const firebaseConfig = {
 };
 
 let db;
+let masterAuth;
 let unsubscribeDaily = null;
 let unsubscribeProducts = null;
 let unsubscribeInspectors = null;
@@ -620,6 +640,8 @@ function formatDateForFirestore(date) {
 try {
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
+  masterAuth = firebase.auth();
+  masterAuth.onAuthStateChanged(updateMasterAuthDisplay);
   document.getElementById('firebase-status').textContent = '✓ 接続済み';
   document.getElementById('firebase-status').classList.add('connected');
 } catch (error) {
@@ -1072,6 +1094,46 @@ async function ensureAndonUser() {
   }
 }
 
+function updateMasterAuthDisplay(user) {
+  const signedOut = document.getElementById('masterAuthSignedOut');
+  const signedIn = document.getElementById('masterAuthSignedIn');
+  if (!signedOut || !signedIn) return;
+  signedOut.style.display = user ? 'none' : 'block';
+  signedIn.style.display = user ? 'block' : 'none';
+  if (user) document.getElementById('masterAuthUser').textContent = `ログイン中: ${user.email || 'ユーザー'}`;
+}
+
+async function loginMasterAuth() {
+  const email = document.getElementById('masterAuthEmail').value.trim();
+  const password = document.getElementById('masterAuthPassword').value;
+  const error = document.getElementById('masterAuthError');
+  if (!email || !password) {
+    error.textContent = 'メールアドレスとパスワードを入力してください';
+    error.style.display = 'block';
+    return;
+  }
+  try {
+    await masterAuth.signInWithEmailAndPassword(email, password);
+    document.getElementById('masterAuthPassword').value = '';
+    error.style.display = 'none';
+  } catch (loginError) {
+    error.textContent = 'ログインに失敗しました。入力内容を確認してください。';
+    error.style.display = 'block';
+  }
+}
+
+async function logoutMasterAuth() {
+  if (masterAuth) await masterAuth.signOut();
+}
+
+function canManageMasters() {
+  if (masterAuth && masterAuth.currentUser) return true;
+  document.getElementById('masterAuthError').textContent = '工程名を追加・削除するには、先にマスター管理ログインを行ってください。';
+  document.getElementById('masterAuthError').style.display = 'block';
+  document.getElementById('masterAuthSignedOut').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  return false;
+}
+
 function populateAndonDatalist(datalistId, opts) {
   const dl = document.getElementById(datalistId);
   if(!dl) return;
@@ -1416,6 +1478,7 @@ function updateInspectorMasterList() {
 }
 
 async function addProcessMaster() {
+  if (!canManageMasters()) return;
   const name = document.getElementById('processMasterName').value.trim();
   if (!name) { showProcessMasterAlert('error', '工程名を入力してください'); return; }
   if (processNames.includes(name)) { showProcessMasterAlert('error', '同じ工程名が既に存在します'); return; }
@@ -1430,6 +1493,7 @@ async function addProcessMaster() {
 }
 
 async function deleteProcessMaster(name) {
+  if (!canManageMasters()) return;
   if (!confirm(`工程名「${name}」を削除しますか?`)) return;
   try {
     const snapshot = await db.collection('inspectorMaster').where('name', '==', name).get();
