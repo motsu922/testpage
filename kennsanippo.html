@@ -594,7 +594,6 @@ let db;
 let unsubscribeDaily = null;
 let unsubscribeProducts = null;
 let unsubscribeInspectors = null;
-let unsubscribeProcesses = null;
 
 function getLastNBusinessDays(n) {
   const dates = [];
@@ -979,14 +978,15 @@ function init(){
     });
     unsubscribeInspectors = db.collection('inspectorMaster').orderBy('order').onSnapshot(snapshot => {
       inspectorNames = [];
-      snapshot.forEach(doc => { inspectorNames.push(doc.data().name); });
+      processNames = [];
+      snapshot.forEach(doc => {
+        const masterEntry = doc.data();
+        if (masterEntry.masterType === 'process') processNames.push(masterEntry.name);
+        else inspectorNames.push(masterEntry.name);
+      });
       updateInspectorMasterList();
       updateAllInspectorSelects();
       updateAndonHandlerSelect();
-    });
-    unsubscribeProcesses = db.collection('processMaster').orderBy('order').onSnapshot(snapshot => {
-      processNames = [];
-      snapshot.forEach(doc => { processNames.push(doc.data().name); });
       updateProcessSelect();
       updateProcessMasterList();
     });
@@ -1420,8 +1420,8 @@ async function addProcessMaster() {
   if (!name) { showProcessMasterAlert('error', '工程名を入力してください'); return; }
   if (processNames.includes(name)) { showProcessMasterAlert('error', '同じ工程名が既に存在します'); return; }
   try {
-    await db.collection('processMaster').add({
-      name: name, order: processNames.length,
+    await db.collection('inspectorMaster').add({
+      name: name, order: processNames.length, masterType: 'process',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     document.getElementById('processMasterName').value = '';
@@ -1432,8 +1432,8 @@ async function addProcessMaster() {
 async function deleteProcessMaster(name) {
   if (!confirm(`工程名「${name}」を削除しますか?`)) return;
   try {
-    const snapshot = await db.collection('processMaster').where('name', '==', name).get();
-    await Promise.all(snapshot.docs.map(doc => doc.ref.delete()));
+    const snapshot = await db.collection('inspectorMaster').where('name', '==', name).get();
+    await Promise.all(snapshot.docs.filter(doc => doc.data().masterType === 'process').map(doc => doc.ref.delete()));
     showProcessMasterAlert('success', `工程名「${name}」を削除しました`);
   } catch(error) { showProcessMasterAlert('error', 'エラー: ' + error.message); }
 }
