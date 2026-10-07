@@ -196,6 +196,7 @@
     let selectedDateKey = localDayKey(new Date());
     let currentDayKey = selectedDateKey;
     let companyLogs = new Map();
+    let companyStats = new Map();
     let hiddenErrorIds = new Map();
     let logRefs = [];
     let displayedEvents = [];
@@ -207,6 +208,14 @@
 
     const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[c]);
     const canonicalPart = value => String(value || '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z]/g, '');
+    function statsWorkerKey(name) {
+      let hash = 2166136261;
+      for (const char of String(name || '')) {
+        hash ^= char.codePointAt(0);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `w_${(hash >>> 0).toString(36)}`;
+    }
     function partVariants(partNo) {
       const raw = String(partNo || '').normalize('NFKC').toUpperCase();
       const base = canonicalPart(raw);
@@ -304,6 +313,27 @@
         return occurredAt >= since && isComparisonLog(event.log) && (showHidden || !event.hidden);
       });
     }
+    function comparisonStatsSince(startDate) {
+      const startDay = localDayKey(startDate);
+      const source = selectedCompanyId === 'all'
+        ? [...companyStats.entries()]
+        : [[selectedCompanyId, companyStats.get(selectedCompanyId) || {}]];
+      const rows = [];
+      source.forEach(([, days]) => Object.entries(days || {}).forEach(([day, workers]) => {
+        if (day < startDay) return;
+        Object.values(workers || {}).forEach(item => {
+          const hiddenScans = Number(item.hiddenScans) || 0;
+          const hiddenErrors = Number(item.hiddenErrors) || 0;
+          rows.push({
+            day,
+            worker: String(item.workerName || '作業者未選択').trim() || '作業者未選択',
+            scans: Math.max(0, (Number(item.scans) || 0) - (showHidden ? 0 : hiddenScans)),
+            errors: Math.max(0, (Number(item.errors) || 0) - (showHidden ? 0 : hiddenErrors))
+          });
+        });
+      }));
+      return rows.filter(item => item.scans || item.errors);
+    }
     function setText(id, value) { document.getElementById(id).textContent = value === undefined || value === null || value === '' ? '-' : value; }
     function openDetail(index) {
       const event = displayedEvents[index];
@@ -343,12 +373,27 @@
       if (!event || !event.log._dashboardLogId) return;
       const ref = database.ref(`qr_match_companies/dashboard_hidden_errors/${event.companyId}/${event.log._dashboardLogId}`);
       if (event.hidden) {
-        ref.remove();
+        ref.remove().then(() => adjustHiddenStats(event, -1)).catch(console.error);
         closeDetail();
       } else if (window.confirm('この記録をダッシュボードから非表示にしますか？\n照合ログ自体は削除されません。')) {
-        ref.set({ hiddenAt: new Date().toISOString(), reason: 'device_error' });
+        ref.set({ hiddenAt: new Date().toISOString(), reason: 'device_error' }).then(() => adjustHiddenStats(event, 1)).catch(console.error);
         closeDetail();
       }
+    }
+    function adjustHiddenStats(event, delta) {
+      const log = event && event.log;
+      if (!log || !isComparisonLog(log)) return Promise.resolve();
+      const worker = String(log.workerName || log.operatorName || '作業者未選択').trim() || '作業者未選択';
+      const day = localDayKey(log.timestamp);
+      const ref = database.ref(`qr_match_companies/dashboard_stats/${event.companyId}/${day}/${statsWorkerKey(worker)}`);
+      return ref.transaction(current => {
+        const item = current || { workerName: worker, scans: 0, errors: 0, hiddenScans: 0, hiddenErrors: 0 };
+        item.workerName = worker;
+        item.hiddenScans = Math.max(0, (Number(item.hiddenScans) || 0) + delta);
+        if (isPartMismatchLog(log)) item.hiddenErrors = Math.max(0, (Number(item.hiddenErrors) || 0) + delta);
+        item.updatedAt = new Date().toISOString();
+        return item;
+      });
     }
     function render() {
       if (displayMode === 'ranking') {
@@ -388,14 +433,13 @@
       }).join('');
     }
     function renderRanking() {
-      const events = rankingEvents();
+      const rows = comparisonStatsSince(monthAgo());
       const stats = new Map();
-      events.forEach(({ log }) => {
-        const worker = String(log.workerName || log.operatorName || '作業者未選択').trim() || '作業者未選択';
-        const item = stats.get(worker) || { worker, scans: 0, errors: 0, rate: 0 };
-        item.scans += 1;
-        if (isPartMismatchLog(log)) item.errors += 1;
-        stats.set(worker, item);
+      rows.forEach(row => {
+        const item = stats.get(row.worker) || { worker: row.worker, scans: 0, errors: 0, rate: 0 };
+        item.scans += row.scans;
+        item.errors += row.errors;
+        stats.set(row.worker, item);
       });
       const ranking = [...stats.values()].map(item => ({ ...item, rate: item.scans ? item.errors / item.scans * 100 : 0 }))
         .sort((a, b) => b[rankingMetric] - a[rankingMetric] || b.scans - a.scans || a.worker.localeCompare(b.worker, 'ja'));
@@ -427,17 +471,17 @@
     }
     function renderTrend() {
       const firstWeek = trendStart();
-      const events = comparisonEventsSince(firstWeek);
+      const rows = comparisonStatsSince(firstWeek);
       const weeks = [];
       for (let cursor = new Date(firstWeek); cursor <= new Date(); cursor.setDate(cursor.getDate() + 7)) {
         weeks.push({ start: new Date(cursor), scans: 0, errors: 0, rate: 0 });
       }
       const weekMap = new Map(weeks.map(week => [localDayKey(week.start), week]));
-      events.forEach(({ log }) => {
-        const week = weekMap.get(localDayKey(startOfWeek(log.timestamp)));
+      rows.forEach(row => {
+        const week = weekMap.get(localDayKey(startOfWeek(`${row.day}T00:00:00`)));
         if (!week) return;
-        week.scans += 1;
-        if (isPartMismatchLog(log)) week.errors += 1;
+        week.scans += row.scans;
+        week.errors += row.errors;
       });
       weeks.forEach(week => { week.rate = week.scans ? week.errors / week.scans * 100 : 0; });
       const totalScans = weeks.reduce((sum, week) => sum + week.scans, 0);
@@ -482,8 +526,31 @@
     function subscribeLogs() {
       disconnectLogs();
       companyLogs.clear();
+      companyStats.clear();
       const version = ++subscriptionVersion;
       const targets = selectedCompanyId === 'all' ? companies : companies.filter(company => company.id === selectedCompanyId);
+      if (displayMode !== 'daily') {
+        const startDay = localDayKey(displayMode === 'trend' ? trendStart() : monthAgo());
+        const pendingStats = new Set(targets.map(company => company.id));
+        document.getElementById('connection').className = 'connection';
+        document.getElementById('connection').textContent = '集計中...';
+        targets.forEach(company => {
+          const ref = database.ref(`qr_match_companies/dashboard_stats/${company.id}`).orderByKey().startAt(startDay);
+          ref.on('value', snapshot => {
+            if (version !== subscriptionVersion) return;
+            companyStats.set(company.id, snapshot.val() || {});
+            pendingStats.delete(company.id);
+            if (!pendingStats.size) {
+              document.getElementById('connection').className = 'connection live';
+              document.getElementById('connection').textContent = 'リアルタイム接続中';
+              render();
+            }
+          }, error => { console.error(error); document.getElementById('connection').textContent = '集計接続エラー'; });
+          logRefs.push(ref);
+        });
+        render();
+        return;
+      }
       const pending = new Set(targets.flatMap(company => [`logs:${company.id}`, `hidden:${company.id}`]));
       const renderWhenReady = key => {
         if (version !== subscriptionVersion) return;

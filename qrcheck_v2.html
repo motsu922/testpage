@@ -2838,6 +2838,7 @@
           }
           else if (op.type === 'remove') await ref.remove();
           else if (op.type === 'orderSessionMerge') await ref.transaction(current => mergeQueuedOrderDetailSession(current, op.value));
+          else if (op.type === 'dashboardStatsIncrement') await ref.transaction(current => mergeDashboardStatsIncrement(current, op.value));
         } catch (err) {
           remaining.push(op);
         }
@@ -2861,6 +2862,91 @@
       path: 'qr_match_logs/' + (companyId || activeCompanyId || 'default'),
       value: logEntry
     });
+  }
+
+  function queueDashboardStatsIncrement(companyId, logEntry) {
+    const increment = dashboardStatsIncrementOf(logEntry);
+    if (!increment) return;
+    enqueueFirebaseWrite({
+      type: 'dashboardStatsIncrement',
+      path: `qr_match_companies/dashboard_stats/${companyId || activeCompanyId || 'default'}/${increment.day}/${increment.workerKey}`,
+      value: increment
+    });
+  }
+
+  function dashboardStatsWorkerKey(name) {
+    let hash = 2166136261;
+    for (const char of String(name || '')) {
+      hash ^= char.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `w_${(hash >>> 0).toString(36)}`;
+  }
+
+  function dashboardStatsDayKey(timestamp) {
+    const date = new Date(timestamp || Date.now());
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function dashboardStatsPartVariants(partNo) {
+    const raw = String(partNo || '').normalize('NFKC').toUpperCase();
+    const base = canonicalPart(raw);
+    const variants = new Set([base]);
+    if (/-00$/.test(raw)) variants.add(canonicalPart(raw.replace(/-00$/, '')));
+    const secondHyphenBase = raw.match(/^([0-9A-Z]+-[0-9A-Z]+)-[0-9A-Z]+$/);
+    if (secondHyphenBase) variants.add(canonicalPart(secondHyphenBase[1]));
+    if (base.length >= 12 && base.endsWith('00')) variants.add(base.slice(0, -2));
+    return [...variants].filter(Boolean);
+  }
+
+  function isDashboardComparisonLog(log) {
+    const pseudo = new Set(['KANBAN_TYPE_ERROR', 'KANBAN_FORMAT_ERROR', 'ORDER_DETAIL', 'ORDER_DETAIL_COMPLETE', 'ORDER_DETAIL_MANUAL_COMPLETE', 'ERROR_RELEASE']);
+    if (!log || pseudo.has(log.partNumber || '') || !['OK', 'NG', 'DUP'].includes(String(log.result || ''))) return false;
+    const qr1 = String(log.qr1_raw || log.qr1 || '').trim();
+    const qr2 = String(log.qr2_raw || log.qr2 || '').trim();
+    return qr1.length > 2 && qr2.length > 2;
+  }
+
+  function isDashboardPartMismatch(log) {
+    if (!isDashboardComparisonLog(log) || log.result !== 'NG' || log.isDuplicate) return false;
+    if (/[\x00-\x1F\x7F]/.test(String(log.partNumber || ''))) return false;
+    const note = String(log.extractNote || '');
+    if (note.startsWith('kanban_type_error') || ['order_detail_parse_error', 'order_detail_too_short', 'order_detail_read_ok'].includes(note.split(':')[0])) return false;
+    if (/^(数量超過|注文明細外)/.test(String(log.orderDetailNote || ''))) return false;
+    const hit = log.orderDetailSearchHit || log.partNumber || '';
+    const qr1 = canonicalPart(log.qr1 || '');
+    return !!hit && dashboardStatsPartVariants(hit).some(part => part && qr1.includes(part));
+  }
+
+  function dashboardStatsIncrementOf(logEntry) {
+    if (!isDashboardComparisonLog(logEntry)) return null;
+    const workerName = String(logEntry.workerName || logEntry.operatorName || '作業者未選択').trim() || '作業者未選択';
+    return {
+      day: dashboardStatsDayKey(logEntry.timestamp),
+      workerKey: dashboardStatsWorkerKey(workerName),
+      workerName,
+      scans: 1,
+      errors: isDashboardPartMismatch(logEntry) ? 1 : 0,
+      timestamp: logEntry.timestamp || new Date().toISOString()
+    };
+  }
+
+  function mergeDashboardStatsIncrement(current, increment) {
+    const item = current || { workerName: increment.workerName, scans: 0, errors: 0, hiddenScans: 0, hiddenErrors: 0 };
+    item.workerName = increment.workerName;
+    item.scans = (Number(item.scans) || 0) + (Number(increment.scans) || 0);
+    item.errors = (Number(item.errors) || 0) + (Number(increment.errors) || 0);
+    item.hiddenScans = Number(item.hiddenScans) || 0;
+    item.hiddenErrors = Number(item.hiddenErrors) || 0;
+    item.updatedAt = increment.timestamp || new Date().toISOString();
+    return item;
+  }
+
+  function saveDashboardStatsIncrement(companyId, logEntry) {
+    const increment = dashboardStatsIncrementOf(logEntry);
+    if (!increment || !database) return Promise.resolve();
+    const path = `qr_match_companies/dashboard_stats/${companyId}/${increment.day}/${increment.workerKey}`;
+    return database.ref(path).transaction(current => mergeDashboardStatsIncrement(current, increment));
   }
 
   function queueOrderDetailSessionWrite(session, type = 'orderSessionMerge') {
@@ -3095,13 +3181,18 @@
     const companyId = activeCompanyId || 'default';
     if (!logsRef) {
       queueLogWrite(companyId, logEntry);
+      queueDashboardStatsIncrement(companyId, logEntry);
       return;
     }
     const entryRef = logsRef.push();
     logEntry.firebaseKey = entryRef.key;
-    entryRef.set(logEntry).catch(err => {
+    entryRef.set(logEntry).then(() => saveDashboardStatsIncrement(companyId, logEntry).catch(err => {
+      console.error('集計保存エラー:', err);
+      queueDashboardStatsIncrement(companyId, logEntry);
+    })).catch(err => {
       console.error('Firebase保存エラー:', err);
       queueLogWrite(companyId, logEntry);
+      queueDashboardStatsIncrement(companyId, logEntry);
     });
   }
 

@@ -1507,7 +1507,67 @@
 
   function saveLogToFirebase(logEntry) {
     if (!logsRef) return;
-    logsRef.push(logEntry).catch(err => console.error('Firebase保存エラー:', err));
+    logsRef.push(logEntry).then(() => saveDashboardStatsIncrement(logEntry)).catch(err => console.error('Firebase保存エラー:', err));
+  }
+
+  function dashboardStatsWorkerKey(name) {
+    let hash = 2166136261;
+    for (const char of String(name || '')) {
+      hash ^= char.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `w_${(hash >>> 0).toString(36)}`;
+  }
+
+  function dashboardStatsDayKey(timestamp) {
+    const date = new Date(timestamp || Date.now());
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function dashboardCanonicalPart(value) {
+    return String(value || '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  }
+
+  function dashboardStatsPartVariants(partNo) {
+    const raw = String(partNo || '').normalize('NFKC').toUpperCase();
+    const base = dashboardCanonicalPart(raw);
+    const variants = new Set([base]);
+    if (/-00$/.test(raw)) variants.add(dashboardCanonicalPart(raw.replace(/-00$/, '')));
+    const secondHyphenBase = raw.match(/^([0-9A-Z]+-[0-9A-Z]+)-[0-9A-Z]+$/);
+    if (secondHyphenBase) variants.add(dashboardCanonicalPart(secondHyphenBase[1]));
+    if (base.length >= 12 && base.endsWith('00')) variants.add(base.slice(0, -2));
+    return [...variants].filter(Boolean);
+  }
+
+  function dashboardStatsIncrementOf(log) {
+    const pseudo = new Set(['KANBAN_TYPE_ERROR', 'KANBAN_FORMAT_ERROR', 'ORDER_DETAIL', 'ORDER_DETAIL_COMPLETE', 'ORDER_DETAIL_MANUAL_COMPLETE', 'ERROR_RELEASE']);
+    const qr1 = String(log.qr1_raw || log.qr1 || '').trim();
+    const qr2 = String(log.qr2_raw || log.qr2 || '').trim();
+    if (pseudo.has(log.partNumber || '') || !['OK', 'NG', 'DUP'].includes(String(log.result || '')) || qr1.length <= 2 || qr2.length <= 2) return null;
+    const workerName = String(log.workerName || log.operatorName || '作業者未選択').trim() || '作業者未選択';
+    const hit = log.orderDetailSearchHit || log.partNumber || '';
+    const normalizedQr1 = dashboardCanonicalPart(log.qr1 || '');
+    const mismatch = log.result === 'NG' && !log.isDuplicate && !/[\x00-\x1F\x7F]/.test(String(log.partNumber || '')) &&
+      !String(log.extractNote || '').startsWith('kanban_type_error') && dashboardStatsPartVariants(hit).some(part => part && normalizedQr1.includes(part));
+    return { workerName, scans: 1, errors: mismatch ? 1 : 0, timestamp: log.timestamp || new Date().toISOString() };
+  }
+
+  function saveDashboardStatsIncrement(logEntry) {
+    const increment = dashboardStatsIncrementOf(logEntry);
+    if (!increment || !database) return Promise.resolve();
+    const companyId = activeCompanyId || 'default';
+    const day = dashboardStatsDayKey(increment.timestamp);
+    const path = `qr_match_companies/dashboard_stats/${companyId}/${day}/${dashboardStatsWorkerKey(increment.workerName)}`;
+    return database.ref(path).transaction(current => {
+      const item = current || { workerName: increment.workerName, scans: 0, errors: 0, hiddenScans: 0, hiddenErrors: 0 };
+      item.workerName = increment.workerName;
+      item.scans = (Number(item.scans) || 0) + 1;
+      item.errors = (Number(item.errors) || 0) + increment.errors;
+      item.hiddenScans = Number(item.hiddenScans) || 0;
+      item.hiddenErrors = Number(item.hiddenErrors) || 0;
+      item.updatedAt = increment.timestamp;
+      return item;
+    }).catch(err => console.error('集計保存エラー:', err));
   }
 
   function clearFirebaseLogs() {
