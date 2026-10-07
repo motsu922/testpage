@@ -80,18 +80,22 @@
     .ranking-head h2 { margin:0; font-size:24px; }
     .ranking-period { margin-top:5px; color:var(--muted); font-size:14px; font-weight:700; }
     .ranking-total { color:var(--red); font-size:20px; font-weight:900; white-space:nowrap; }
+    .ranking-metrics { display:flex; width:min(620px,100%); margin:0 0 18px; padding:3px; border:1px solid var(--line); border-radius:7px; background:#eef2f5; }
+    .ranking-metric { flex:1; min-height:42px; padding:0 12px; border:0; border-radius:4px; background:transparent; color:var(--muted); cursor:pointer; font:inherit; font-size:14px; font-weight:900; }
+    .ranking-metric.active { background:#ffffff; color:var(--blue); box-shadow:0 1px 4px rgba(23,33,43,.16); }
     .ranking-list { display:flex; flex-direction:column; gap:8px; }
     .ranking-row { display:grid; grid-template-columns:64px minmax(170px,1fr) minmax(120px,3fr) 100px; align-items:center; gap:14px; min-height:64px; padding:10px 16px; border:1px solid #d9e1e6; border-radius:6px; background:#f7fafc; }
     .ranking-row.top { border-color:#e9c66b; background:#fff9e8; }
     .ranking-rank { color:var(--muted); font-size:20px; font-weight:900; text-align:center; }
     .ranking-row.top .ranking-rank { color:#9a6800; }
     .ranking-worker { overflow:hidden; font-size:20px; font-weight:900; text-overflow:ellipsis; white-space:nowrap; }
+    .ranking-detail { margin-top:3px; color:var(--muted); font-size:13px; font-weight:800; }
     .ranking-bar-track { height:16px; overflow:hidden; border-radius:3px; background:#e2e9ed; }
     .ranking-bar { height:100%; min-width:3px; background:var(--red); }
     .ranking-count { color:var(--red); font-size:23px; font-weight:900; text-align:right; white-space:nowrap; }
     .is-hidden { display:none !important; }
     @media (max-width:900px) { header { min-height:auto; flex-wrap:wrap; padding:12px 14px; gap:8px 14px; } h1 { font-size:22px; } .today { font-size:15px; } .header-right { width:100%; margin-left:0; justify-content:space-between; flex-wrap:wrap; } .clock { font-size:23px; } main { grid-template-columns:1fr; padding:12px; gap:12px; } .count-panel { min-height:255px; } .count { font-size:160px; } .content { display:block; } .summary { margin-bottom:12px; } .event-list { max-height:none; } .event { grid-template-columns:82px 1fr; gap:5px 10px; } .event-type, .event-worker { grid-column:2; } .ranking-main { padding:12px; } .ranking-panel { min-height:0; } }
-    @media (max-width:650px) { .mode-switch { order:-1; width:100%; } .mode-button { flex:1; } .ranking-row { grid-template-columns:44px minmax(0,1fr) 72px; gap:8px; padding:9px 8px; } .ranking-bar-track { grid-column:2 / 4; grid-row:2; } .ranking-worker { font-size:17px; } .ranking-count { font-size:19px; } }
+    @media (max-width:650px) { .mode-switch { order:-1; width:100%; } .mode-button { flex:1; } .ranking-head { align-items:flex-start; flex-direction:column; gap:8px; } .ranking-total { white-space:normal; } .ranking-metric { padding:0 6px; font-size:12px; } .ranking-row { grid-template-columns:44px minmax(0,1fr) 82px; gap:8px; padding:9px 8px; } .ranking-bar-track { grid-column:2 / 4; grid-row:2; } .ranking-worker { font-size:17px; } .ranking-count { font-size:19px; } }
     @media (max-width:560px) { .summary { grid-template-columns:1fr; gap:7px; } .summary-item { min-height:82px; padding:12px; } .connection { display:none; } .event-panel { padding:12px; } }
   </style>
 </head>
@@ -132,8 +136,13 @@
   <section id="rankingMain" class="ranking-main">
     <div class="ranking-panel">
       <div class="ranking-head">
-        <div><h2>担当者別 品違い発生回数</h2><div id="rankingPeriod" class="ranking-period"></div></div>
+        <div><h2 id="rankingTitle">担当者別 品違い発生回数</h2><div id="rankingPeriod" class="ranking-period"></div></div>
         <div id="rankingTotal" class="ranking-total">合計 0件</div>
+      </div>
+      <div class="ranking-metrics" role="group" aria-label="ランキング集計軸">
+        <button class="ranking-metric active" type="button" data-ranking-metric="errors" aria-pressed="true">品違い回数</button>
+        <button class="ranking-metric" type="button" data-ranking-metric="scans" aria-pressed="false">QR照合回数</button>
+        <button class="ranking-metric" type="button" data-ranking-metric="rate" aria-pressed="false">エラー発生率</button>
       </div>
       <div id="rankingList" class="ranking-list"></div>
     </div>
@@ -151,7 +160,7 @@
       databaseURL: 'https://miyamaunitec-fb87a-default-rtdb.asia-southeast1.firebasedatabase.app',
       projectId: 'miyamaunitec-fb87a'
     };
-    const PSEUDO_PARTS = new Set(['KANBAN_TYPE_ERROR', 'ORDER_DETAIL', 'ORDER_DETAIL_COMPLETE', 'ORDER_DETAIL_MANUAL_COMPLETE', 'ERROR_RELEASE']);
+    const PSEUDO_PARTS = new Set(['KANBAN_TYPE_ERROR', 'KANBAN_FORMAT_ERROR', 'ORDER_DETAIL', 'ORDER_DETAIL_COMPLETE', 'ORDER_DETAIL_MANUAL_COMPLETE', 'ERROR_RELEASE']);
     const NON_MISMATCH_NOTES = new Set(['order_detail_parse_error', 'order_detail_too_short', 'order_detail_read_ok']);
     let database;
     let companies = [];
@@ -165,6 +174,7 @@
     let detailEventIndex = -1;
     let showHidden = false;
     let displayMode = 'daily';
+    let rankingMetric = 'errors';
 
     const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' })[c]);
     const canonicalPart = value => String(value || '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z]/g, '');
@@ -192,6 +202,13 @@
       if (/^(数量超過|注文明細外)/.test(String(log.orderDetailNote || ''))) return false;
       if (String(log.qr2 || '').trim().length <= 2) return false;
       return log.result === 'NG' && !log.isDuplicate && qr1MatchesDetail(log);
+    }
+    function isComparisonLog(log) {
+      if (PSEUDO_PARTS.has(log.partNumber || '')) return false;
+      if (!['OK', 'NG', 'DUP'].includes(String(log.result || ''))) return false;
+      const qr1 = String(log.qr1_raw || log.qr1 || '').trim();
+      const qr2 = String(log.qr2_raw || log.qr2 || '').trim();
+      return qr1.length > 2 && qr2.length > 2;
     }
     function localDayKey(date) {
       const d = new Date(date);
@@ -240,7 +257,7 @@
         return { log, companyId, hidden };
       })).filter(event => {
         const occurredAt = new Date(event.log.timestamp).getTime();
-        return occurredAt >= since && isPartMismatchLog(event.log) && (showHidden || !event.hidden);
+        return occurredAt >= since && isComparisonLog(event.log) && (showHidden || !event.hidden);
       });
     }
     function setText(id, value) { document.getElementById(id).textContent = value === undefined || value === null || value === '' ? '-' : value; }
@@ -324,22 +341,41 @@
     }
     function renderRanking() {
       const events = rankingEvents();
-      const counts = new Map();
+      const stats = new Map();
       events.forEach(({ log }) => {
         const worker = String(log.workerName || log.operatorName || '作業者未選択').trim() || '作業者未選択';
-        counts.set(worker, (counts.get(worker) || 0) + 1);
+        const item = stats.get(worker) || { worker, scans: 0, errors: 0, rate: 0 };
+        item.scans += 1;
+        if (isPartMismatchLog(log)) item.errors += 1;
+        stats.set(worker, item);
       });
-      const ranking = [...counts.entries()].map(([worker, count]) => ({ worker, count }))
-        .sort((a, b) => b.count - a.count || a.worker.localeCompare(b.worker, 'ja'));
-      const maxCount = ranking[0]?.count || 0;
+      const ranking = [...stats.values()].map(item => ({ ...item, rate: item.scans ? item.errors / item.scans * 100 : 0 }))
+        .sort((a, b) => b[rankingMetric] - a[rankingMetric] || b.scans - a.scans || a.worker.localeCompare(b.worker, 'ja'));
+      const maxValue = ranking[0]?.[rankingMetric] || 0;
+      const totalErrors = ranking.reduce((sum, item) => sum + item.errors, 0);
+      const totalScans = ranking.reduce((sum, item) => sum + item.scans, 0);
+      const totalRate = totalScans ? totalErrors / totalScans * 100 : 0;
+      const metricLabels = { errors: '品違い発生回数', scans: 'QR照合回数', rate: 'エラー発生率' };
       const from = monthAgo().toLocaleDateString('ja-JP', { year:'numeric', month:'numeric', day:'numeric' });
       const to = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'numeric', day:'numeric' });
+      setText('rankingTitle', `担当者別 ${metricLabels[rankingMetric]}`);
       setText('rankingPeriod', `${from} ～ ${to}（直近1か月）`);
-      setText('rankingTotal', `合計 ${events.length}件 / ${ranking.length}名`);
+      setText('rankingTotal', `品違い ${totalErrors}件 / 照合 ${totalScans}回 / 全体 ${totalRate.toFixed(2)}%`);
       document.getElementById('rankingList').innerHTML = ranking.length ? ranking.map((item, index) => {
-        const width = maxCount ? Math.max(3, item.count / maxCount * 100) : 0;
-        return `<div class="ranking-row${index < 3 ? ' top' : ''}"><div class="ranking-rank">${index + 1}位</div><div class="ranking-worker">${esc(item.worker)}</div><div class="ranking-bar-track" aria-hidden="true"><div class="ranking-bar" style="width:${width}%"></div></div><div class="ranking-count">${item.count}件</div></div>`;
-      }).join('') : '<div class="empty">直近1か月の品違いはありません</div>';
+        const width = maxValue ? Math.max(3, item[rankingMetric] / maxValue * 100) : 0;
+        const value = rankingMetric === 'errors' ? `${item.errors}件` : rankingMetric === 'scans' ? `${item.scans}回` : `${item.rate.toFixed(2)}%`;
+        const detail = rankingMetric === 'errors' ? `照合 ${item.scans}回 / 発生率 ${item.rate.toFixed(2)}%` : rankingMetric === 'scans' ? `品違い ${item.errors}件 / 発生率 ${item.rate.toFixed(2)}%` : `品違い ${item.errors}件 / 照合 ${item.scans}回`;
+        return `<div class="ranking-row${index < 3 ? ' top' : ''}"><div class="ranking-rank">${index + 1}位</div><div><div class="ranking-worker">${esc(item.worker)}</div><div class="ranking-detail">${detail}</div></div><div class="ranking-bar-track" aria-hidden="true"><div class="ranking-bar" style="width:${width}%"></div></div><div class="ranking-count">${value}</div></div>`;
+      }).join('') : '<div class="empty">直近1か月のQR照合はありません</div>';
+    }
+    function setRankingMetric(metric) {
+      rankingMetric = ['errors', 'scans', 'rate'].includes(metric) ? metric : 'errors';
+      document.querySelectorAll('[data-ranking-metric]').forEach(button => {
+        const active = button.dataset.rankingMetric === rankingMetric;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      renderRanking();
     }
     function setDisplayMode(mode) {
       displayMode = mode === 'ranking' ? 'ranking' : 'daily';
@@ -389,6 +425,7 @@
       document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => {
         if (button.dataset.mode !== displayMode) setDisplayMode(button.dataset.mode);
       }));
+      document.querySelectorAll('[data-ranking-metric]').forEach(button => button.addEventListener('click', () => setRankingMetric(button.dataset.rankingMetric)));
       document.getElementById('eventList').addEventListener('click', event => {
         const target = event.target.closest('[data-event-index]');
         if (target) openDetail(Number(target.dataset.eventIndex));
