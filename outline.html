@@ -100,7 +100,8 @@ const DICT={
   '言語':'Bahasa','スタート画面':'Layar Mulai','工程を選択してください':'Silakan pilih proses',
   'キーワード':'Kata kunci','絞り込み':'Filter',
   '検索結果':'Hasil pencarian','件':'item','品番':'Nomor Produk','品名':'Nama Produk','更新日':'Tanggal Update','選択':'Pilih',
-  '呼称':'Sebutan','工程名':'Nama Proses','製品検索':'Pencarian Produk','製品を選ぶ':'Pilih Produk','製品情報を見る':'Lihat info produk',
+  '呼称':'Sebutan','工程名':'Nama Proses','呼称を変更':'Ubah Sebutan','新しい呼称':'Sebutan baru','変更する':'Ubah','変更中...':'Mengubah...',
+  'この呼称はすでに使われています':'Sebutan ini sudah dipakai','製品検索':'Pencarian Produk','製品を選ぶ':'Pilih Produk','製品情報を見る':'Lihat info produk',
   '呼称・品番で検索':'Cari dengan sebutan / nomor produk','この工程の製品がありません':'Tidak ada produk untuk proses ini',
   '工程名が未登録です':'Nama proses belum terdaftar','工程名未登録':'Proses belum terdaftar','この製品が通る工程':'Proses yang dilalui produk ini',
   '前へ':'Sebelumnya','次へ':'Selanjutnya','前の項目へ':'Item Sebelumnya','次の項目へ':'Item Selanjutnya',
@@ -996,7 +997,8 @@ function MasterAdmin({master,workers,user,onBack}){
           })}
         </div>
       </div>
-      {sel&&<MasterEditor hinban={sel} data={master[sel]||{}} onClose={()=>setSel(null)}/>}
+      {sel&&<MasterEditor key={sel} hinban={sel} data={master[sel]||{}} taken={Object.keys(master)}
+        onClose={()=>setSel(null)} onRenamed={()=>setSel(null)}/>}
       {showWorkers&&<WorkersPanel workers={workers} onClose={()=>setShowWorkers(false)}/>}
     </div>
   );
@@ -1049,13 +1051,50 @@ function WorkersPanel({workers,onClose}){
   );
 }
 
+/* ── 呼称の変更（ドキュメントIDの付け替え） ── */
+function RenameModal({current,taken,busy,progress,onSubmit,onClose}){
+  const{t,b}=useLang();
+  const[v,setV]=useState(current);
+  const nn=v.trim();
+  const dup=nn&&nn!==current&&taken.includes(nn);
+  const ok=nn&&nn!==current&&!dup;
+  return(
+    <div onClick={e=>e.target===e.currentTarget&&!busy&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:520,overflow:'hidden'}}>
+        <div style={{background:NAVY,padding:'14px 20px',color:'#fff',fontSize:17,fontWeight:800}}>✎ {b('呼称を変更')}</div>
+        <div style={{padding:20}}>
+          <div style={{fontSize:13,color:'#5A6472',marginBottom:10,lineHeight:1.8}}>
+            現在の呼称：<b style={{color:NAVY,fontSize:16}}>{current}</b><br/>
+            登録済みのスケジュール・実績の呼称も自動で付け替わります。
+          </div>
+          <div style={{fontSize:12.5,fontWeight:700,color:'#4A5460',marginBottom:6}}>{b('新しい呼称')}</div>
+          <input value={v} onChange={e=>setV(e.target.value)} autoFocus disabled={busy}
+            onKeyDown={e=>e.key==='Enter'&&ok&&onSubmit(nn)}
+            style={{fontSize:20,fontWeight:700,textAlign:'center',color:NAVY}}/>
+          {dup&&<div style={{marginTop:8,fontSize:13,color:'#B71C1C',fontWeight:700}}>⚠ {t('この呼称はすでに使われています')}</div>}
+          {progress&&<div style={{marginTop:10,fontSize:13,color:NAVY,fontWeight:700}}>{progress}</div>}
+        </div>
+        <div style={{padding:'0 20px 20px',display:'flex',gap:10}}>
+          <button onClick={onClose} disabled={busy} style={{flex:1,minHeight:48,borderRadius:10,border:'1px solid '+LINE,background:'#fff',fontSize:14,color:'#555'}}>{t('閉じる')}</button>
+          <button onClick={()=>ok&&onSubmit(nn)} disabled={!ok||busy}
+            style={{flex:1,minHeight:48,borderRadius:10,background:(!ok||busy)?'#C7CDD6':NAVY,color:'#fff',fontSize:16,fontWeight:800}}>{busy?t('変更中...'):t('変更する')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── マスター編集（ポップアップ） ── */
-function MasterEditor({hinban,data,onClose}){
+function MasterEditor({hinban,data,taken,onClose,onRenamed}){
+  const{t,b}=useLang();
   const[d,setD]=useState(data);
   const[tab,setTab]=useState('basic');
   const[saving,setSaving]=useState(false);
   const[saved,setSaved]=useState(false);
   const[busy,setBusy]=useState(null);
+  const[renaming,setRenaming]=useState(false);
+  const[rnBusy,setRnBusy]=useState(false);
+  const[rnProg,setRnProg]=useState('');
   useEffect(()=>{setD(data);},[hinban]);
 
   const ref=db.collection('outlineMaster').doc(hinban);
@@ -1082,8 +1121,37 @@ function MasterEditor({hinban,data,onClose}){
     finally{setSaving(false);setTrProg(null);}
   }
   async function del(){
-    if(!window.confirm(`品番「${hinban}」を削除しますか？`))return;
+    if(!window.confirm(`呼称「${hinban}」を削除しますか？`))return;
     try{await ref.delete();onClose();}catch(e){alert('削除に失敗: '+e.message);}
+  }
+  /* 呼称（ドキュメントID）の変更：新IDで複製 → workOrders の参照を付け替え → 旧IDを削除 */
+  async function doRename(nn){
+    setRnBusy(true);
+    try{
+      setRnProg('① マスターを複製中...');
+      const stamp=new Date().toISOString().slice(0,10);
+      await db.collection('outlineMaster').doc(nn).set({...d,updatedAt:stamp},{merge:true});
+
+      setRnProg('② スケジュール・実績を更新中...');
+      let n=0;
+      try{
+        const snap=await db.collection('workOrders').where('hinban','==',hinban).get();
+        const docs=snap.docs||[];
+        for(const doc of docs){await doc.ref.update({hinban:nn});n++;}
+      }catch(e){
+        await db.collection('outlineMaster').doc(nn).delete().catch(()=>{});
+        throw new Error('スケジュールの更新に失敗したため中止しました: '+e.message);
+      }
+
+      setRnProg('③ 旧データを削除中...');
+      await db.collection('outlineMaster').doc(hinban).delete();
+
+      setRenaming(false);setRnProg('');
+      alert(`呼称を「${hinban}」→「${nn}」に変更しました。\nスケジュール・実績 ${n} 件も更新しました。`);
+      onRenamed?onRenamed(nn):onClose();
+    }catch(e){
+      alert('呼称の変更に失敗: '+e.message);
+    }finally{setRnBusy(false);setRnProg('');}
   }
   /* 画像アップロード：path は任意の識別子 */
   async function upImg(path,file,apply){
@@ -1109,6 +1177,7 @@ function MasterEditor({hinban,data,onClose}){
       <div style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:1000,height:'calc(100vh - 40px)',display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{background:NAVY,padding:'14px 20px',display:'flex',alignItems:'center',gap:14}}>
           <div style={{fontSize:20,fontWeight:700,color:'#fff',flex:1}}>{hinban}</div>
+          <button onClick={()=>setRenaming(true)} style={{padding:'7px 16px',borderRadius:7,background:'rgba(255,255,255,.18)',color:'#fff',fontSize:13,fontWeight:700}}>✎ {t('呼称を変更')}</button>
           <button onClick={del} style={{padding:'7px 16px',borderRadius:7,background:'rgba(255,255,255,.15)',color:'#FFD9D9',fontSize:13,fontWeight:700}}>削除</button>
           <button onClick={onClose} style={{width:36,height:36,borderRadius:'50%',background:'rgba(255,255,255,.18)',color:'#fff',fontSize:20}}>×</button>
         </div>
@@ -1130,6 +1199,8 @@ function MasterEditor({hinban,data,onClose}){
           {saved&&<span style={{color:'#2E7D4F',fontWeight:700,fontSize:14,whiteSpace:'nowrap'}}>✓ 保存しました</span>}
         </div>
       </div>
+      {renaming&&<RenameModal current={hinban} taken={taken||[]} busy={rnBusy} progress={rnProg}
+        onSubmit={doRename} onClose={()=>!rnBusy&&setRenaming(false)}/>}
     </div>
   );
 }
@@ -1193,7 +1264,7 @@ function EditorBody({tab,d,upd,upImg,busy,hinban}){
 
   if(tab==='basic')return(<>
     <div style={{padding:'10px 12px',background:'#F2F6FD',borderRadius:8,fontSize:12.5,color:'#4A5460',marginBottom:4}}>
-      <b style={{color:NAVY}}>{hinban}</b> が「呼称」です（登録後は変更できません）。実際の品番は下の欄に登録してください。
+      <b style={{color:NAVY}}>{hinban}</b> が「呼称」です（上の「✎ 呼称を変更」で変更できます）。実際の品番は下の欄に登録してください。
     </div>
     <Row>
       <div><FLbl>品番</FLbl><input value={d.partNo||''} onChange={e=>S('partNo',e.target.value)} placeholder="例: 1234-56789"/></div>
