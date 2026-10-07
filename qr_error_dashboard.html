@@ -190,6 +190,7 @@
     };
     const PSEUDO_PARTS = new Set(['KANBAN_TYPE_ERROR', 'KANBAN_FORMAT_ERROR', 'ORDER_DETAIL', 'ORDER_DETAIL_COMPLETE', 'ORDER_DETAIL_MANUAL_COMPLETE', 'ERROR_RELEASE']);
     const NON_MISMATCH_NOTES = new Set(['order_detail_parse_error', 'order_detail_too_short', 'order_detail_read_ok']);
+    const TREND_START_DAY = '2026-09-01';
     let database;
     let companies = [];
     let selectedCompanyId = 'all';
@@ -271,7 +272,7 @@
       date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
       return date;
     }
-    function trendStart() { return startOfWeek(monthsAgo(3)); }
+    function trendStart() { return new Date(`${TREND_START_DAY}T00:00:00`); }
     function queryStartIso() {
       if (displayMode === 'ranking') return monthAgo().toISOString();
       if (displayMode === 'trend') return trendStart().toISOString();
@@ -470,15 +471,19 @@
       renderRanking();
     }
     function renderTrend() {
-      const firstWeek = trendStart();
-      const rows = comparisonStatsSince(firstWeek);
-      const weeks = [];
-      for (let cursor = new Date(firstWeek); cursor <= new Date(); cursor.setDate(cursor.getDate() + 7)) {
+      const firstDate = trendStart();
+      const firstMonday = startOfWeek(firstDate);
+      if (firstMonday < firstDate) firstMonday.setDate(firstMonday.getDate() + 7);
+      const rows = comparisonStatsSince(firstDate);
+      const weeks = [{ start: new Date(firstDate), scans: 0, errors: 0, rate: 0 }];
+      for (let cursor = new Date(firstMonday); cursor <= new Date(); cursor.setDate(cursor.getDate() + 7)) {
         weeks.push({ start: new Date(cursor), scans: 0, errors: 0, rate: 0 });
       }
       const weekMap = new Map(weeks.map(week => [localDayKey(week.start), week]));
       rows.forEach(row => {
-        const week = weekMap.get(localDayKey(startOfWeek(`${row.day}T00:00:00`)));
+        const rowDate = new Date(`${row.day}T00:00:00`);
+        const weekKey = rowDate < firstMonday ? localDayKey(firstDate) : localDayKey(startOfWeek(rowDate));
+        const week = weekMap.get(weekKey);
         if (!week) return;
         week.scans += row.scans;
         week.errors += row.errors;
@@ -488,9 +493,9 @@
       const totalErrors = weeks.reduce((sum, week) => sum + week.errors, 0);
       const totalRate = totalScans ? totalErrors / totalScans * 100 : 0;
       const maxErrors = Math.max(...weeks.map(week => week.errors), 0);
-      const from = firstWeek.toLocaleDateString('ja-JP', { year:'numeric', month:'numeric', day:'numeric' });
+      const from = firstDate.toLocaleDateString('ja-JP', { year:'numeric', month:'numeric', day:'numeric' });
       const to = new Date().toLocaleDateString('ja-JP', { year:'numeric', month:'numeric', day:'numeric' });
-      setText('trendPeriod', `${from} ～ ${to}（直近約3か月・月曜始まり）`);
+      setText('trendPeriod', `${from} ～ ${to}（9月1日以降・週単位）`);
       setText('trendSummary', `品違い ${totalErrors}件 / 照合 ${totalScans}回 / 全体 ${totalRate.toFixed(2)}%`);
       document.getElementById('trendChart').innerHTML = weeks.map(week => {
         const barHeight = maxErrors && week.errors ? Math.max(8, week.errors / maxErrors * 180) : 0;
