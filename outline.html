@@ -104,7 +104,11 @@ const DICT={
   '1箱':'per kotak','開始予定':'Rencana mulai','終了予定':'Rencana selesai','始業・休憩設定':'Pengaturan Jam Kerja',
   '始業時刻':'Jam mulai','休憩':'Istirahat','昼休憩':'Istirahat siang','作業を追加':'Tambah pekerjaan',
   '製品の行':'Baris produk','作業の行':'Baris pekerjaan','作業名':'Nama pekerjaan','所要時間':'Durasi',
-  '終業見込み':'Perkiraan selesai kerja','設定':'Pengaturan','追加する':'Tambah','呼称を変更':'Ubah Sebutan','新しい呼称':'Sebutan baru','変更する':'Ubah','変更中...':'Mengubah...',
+  '終業見込み':'Perkiraan selesai kerja','設定':'Pengaturan','追加する':'Tambah',
+  '評価':'Evaluasi','日':'Harian','月':'Bulanan','年':'Tahunan','推移':'Grafik','達成率':'Tingkat capaian',
+  '担当者別':'Per petugas','製品別':'Per produk','件':'item','調整':'Penyesuaian','評価を調整':'Sesuaikan evaluasi',
+  '調整時間':'Waktu penyesuaian','理由':'Alasan','調整後':'Setelah penyesuaian','調整前':'Sebelum penyesuaian',
+  'データがありません':'Tidak ada data','読込中...':'Memuat...','全工程':'Semua proses','呼称を変更':'Ubah Sebutan','新しい呼称':'Sebutan baru','変更する':'Ubah','変更中...':'Mengubah...',
   'この呼称はすでに使われています':'Sebutan ini sudah dipakai','製品検索':'Pencarian Produk','製品を選ぶ':'Pilih Produk','製品情報を見る':'Lihat info produk',
   '呼称・品番で検索':'Cari dengan sebutan / nomor produk','この工程の製品がありません':'Tidak ada produk untuk proses ini',
   '工程名が未登録です':'Nama proses belum terdaftar','工程名未登録':'Proses belum terdaftar','この製品が通る工程':'Proses yang dilalui produk ini',
@@ -1594,6 +1598,62 @@ function buildTimeline(rows,settings){
   });
 }
 
+/* ── 評価・集計 ── */
+/* 調整後の先行遅れ（分）。管理者が異常などで補正した分を加算 */
+function effDiff(o){return (Number(o&&o.diffMin)||0)+(Number(o&&o.adjustMin)||0);}
+function ymKey(d){return String(d||'').slice(0,7);}
+function yKey(d){return String(d||'').slice(0,4);}
+function shiftDate(n){const d=new Date();d.setDate(d.getDate()+n);return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());}
+function shiftMonth(n){const d=new Date();d.setDate(1);d.setMonth(d.getMonth()+n);return d.getFullYear()+'-'+pad2(d.getMonth()+1);}
+/* 期間モードごとのバケット（新しい順→古い順に並べ替えて返す） */
+function buildBuckets(mode){
+  const out=[];
+  if(mode==='day'){for(let i=13;i>=0;i--)out.push({key:shiftDate(-i),label:shiftDate(-i).slice(5)});}
+  else if(mode==='month'){for(let i=11;i>=0;i--){const k=shiftMonth(-i);out.push({key:k,label:k.slice(2)});}}
+  else{const y=new Date().getFullYear();for(let i=4;i>=0;i--)out.push({key:String(y-i),label:String(y-i)});}
+  return out;
+}
+function bucketOf(o,mode){return mode==='day'?String(o.date||''):(mode==='month'?ymKey(o.date):yKey(o.date));}
+function summarize(list){
+  return list.reduce((a,o)=>{
+    a.n++;a.boxes+=Number(o.doneBoxes)||0;a.target+=Number(o.targetBoxes)||0;
+    a.std+=Number(o.stdMin)||0;a.act+=Number(o.actMin)||0;a.diff+=effDiff(o);
+    a.anom+=((o.anomalies||[]).length);a.adj+=Number(o.adjustMin)||0;
+    return a;
+  },{n:0,boxes:0,target:0,std:0,act:0,diff:0,anom:0,adj:0});
+}
+
+/* ── 棒グラフ（先行+は緑／遅れ−は赤） ── */
+function DiffBarChart({buckets,values,unit}){
+  const W=Math.max(360,buckets.length*62), H=200, pad=26;
+  const max=Math.max(1,...values.map(v=>Math.abs(v)));
+  const zero=H/2;
+  const bw=(W-pad*2)/Math.max(1,buckets.length);
+  return(
+    <div style={{overflowX:'auto'}}>
+      <svg width={W} height={H+28} style={{display:'block'}}>
+        <line x1={pad} y1={zero} x2={W-pad} y2={zero} stroke="#C7CDD6" strokeWidth="1"/>
+        {buckets.map((b,i)=>{
+          const v=values[i]||0;
+          const h=Math.abs(v)/max*(H/2-16);
+          const x=pad+i*bw+bw*0.2, w=bw*0.6;
+          const y=v>=0?zero-h:zero;
+          return(
+            <g key={b.key}>
+              <rect x={x} y={y} width={w} height={Math.max(h,v===0?0:1)} rx="3" fill={v>=0?'#2E7D4F':'#C2410C'}/>
+              {v!==0&&<text x={x+w/2} y={v>=0?y-4:y+h+13} textAnchor="middle" fontSize="11" fontWeight="700" fill={v>=0?'#1B5E20':'#B71C1C'}>
+                {(v>0?'+':'')+Math.round(v)}
+              </text>}
+              <text x={x+w/2} y={H+16} textAnchor="middle" fontSize="11" fill="#6B7480">{b.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{fontSize:11,color:'#8A93A0',marginTop:2}}>↑ 先行（{unit}）　↓ 遅れ（{unit}）</div>
+    </div>
+  );
+}
+
 /* 先行・遅れ計算 */
 function calcLog(log,now){
   const start=log.startAt||now, end=log.endAt||now;
@@ -1710,7 +1770,7 @@ function ShiftSettingsModal({proc,settings,onClose}){
 }
 
 /* ── 計画表（作業者）：上から順に作業 ── */
-function WorkPlanScreen({proc,master,workers,orders,settings,user,onBack,onOpenSheet,onResume,onHistory,onPlanner,onQR,onSearch,onMaster,onLogout}){
+function WorkPlanScreen({proc,master,workers,orders,settings,user,onBack,onOpenSheet,onResume,onHistory,onPlanner,onAnalytics,onQR,onSearch,onMaster,onLogout}){
   const{lang,t,b}=useLang();
   const[wid,setWid]=useState(null);
   const[scanW,setScanW]=useState(false);
@@ -1727,7 +1787,7 @@ function WorkPlanScreen({proc,master,workers,orders,settings,user,onBack,onOpenS
   const doneCnt=rows.filter(o=>o.status==='done').length;
   const planMin=rows.reduce((a,o)=>a+o._planMin,0);
   const endEta=rows.length?rows[rows.length-1]._planEnd:hm2min((settings||DEFAULT_SETTINGS).startTime);
-  const diffSum=rows.filter(o=>o.status==='done').reduce((a,o)=>a+(o.diffMin||0),0);
+  const diffSum=rows.filter(o=>o.status==='done').reduce((a,o)=>a+effDiff(o),0);
   function resolveWorker(text){
     const v=(text||'').trim();
     const w=wlist.find(x=>x.qr&&(x.qr===v||v.includes(x.qr)))||wlist.find(x=>x.name===v);
@@ -1876,7 +1936,7 @@ function WorkPlanScreen({proc,master,workers,orders,settings,user,onBack,onOpenS
         right={<div style={{display:'flex',gap:8,flexWrap:'wrap',justifyContent:'flex-end'}}>
           {[...(QR_ENABLED?[['▦ '+t('QR照合'),onQR]]:[]),
             ['🔍 '+t('製品検索'),onSearch],['📅 '+t('スケジュール編集'),onPlanner],
-            ['📋 '+t('履歴'),onHistory],['⚙ '+t('マスター'),onMaster],['⇥ '+t('ログアウト'),onLogout]].map(([lb,fn])=>(
+            ['📋 '+t('履歴'),onHistory],['📊 '+t('評価'),onAnalytics],['⚙ '+t('マスター'),onMaster],['⇥ '+t('ログアウト'),onLogout]].map(([lb,fn])=>(
             <button key={lb} onClick={fn} style={{minHeight:44,padding:'0 14px',borderRadius:8,background:'#fff',border:'1px solid '+LINE,color:NAVY,fontSize:13.5,fontWeight:700,whiteSpace:'nowrap'}}>{lb}</button>
           ))}
         </div>}/>
@@ -2355,14 +2415,205 @@ function OutModal({log,calc,onClose,onFinish}){
   );
 }
 
+/* ── 評価（日／月／年） ── */
+function AnalyticsScreen({proc,master,workers,user,onBack}){
+  const{lang,t,b}=useLang();
+  const[mode,setMode]=useState('day');
+  const[allProc,setAllProc]=useState(false);
+  const[rows,setRows]=useState(null);
+  const[err,setErr]=useState('');
+  const buckets=buildBuckets(mode);
+  const from=buckets[0].key+(mode==='day'?'':(mode==='month'?'-01':'-01-01'));
+  const to=buckets[buckets.length-1].key+(mode==='day'?'':(mode==='month'?'-31':'-12-31'));
+
+  useEffect(()=>{
+    let dead=false;setRows(null);setErr('');
+    (async()=>{
+      try{
+        const snap=await db.collection('workOrders').where('date','>=',from).where('date','<=',to).get();
+        const list=[];(snap.docs||[]).forEach(d=>list.push({id:d.id,...d.data()}));
+        if(!dead)setRows(list);
+      }catch(e){if(!dead)setErr(e.message);}
+    })();
+    return()=>{dead=true;};
+  },[from,to]);
+
+  const done=(rows||[]).filter(o=>o.status==='done'&&(allProc||o.procId===proc.id));
+  const sum=summarize(done);
+  const values=buckets.map(bk=>summarize(done.filter(o=>bucketOf(o,mode)===bk.key)).diff);
+  const boxesPer=buckets.map(bk=>summarize(done.filter(o=>bucketOf(o,mode)===bk.key)).boxes);
+  const rate=sum.target?Math.round(sum.boxes/sum.target*100):0;
+
+  function groupBy(keyFn,labelFn){
+    const m={};
+    done.forEach(o=>{const k=keyFn(o)||'—';(m[k]=m[k]||[]).push(o);});
+    return Object.entries(m).map(([k,v])=>({key:k,label:labelFn?labelFn(k,v):k,...summarize(v)}))
+      .sort((a,b)=>b.boxes-a.boxes);
+  }
+  const byWorker=groupBy(o=>o.workerName||t('担当者なし'));
+  const byItem=groupBy(o=>o.kind==='task'?('🔧 '+(o.taskName||'作業')):o.hinban);
+
+  const card=(k,v,col)=>(
+    <div key={k} style={{padding:'12px 14px',background:'#fff',border:'1px solid '+LINE,borderRadius:10}}>
+      <div style={{fontSize:11,color:'#6B7480'}}>{k}</div>
+      <div style={{fontSize:24,fontWeight:800,color:col||NAVY}}>{v}</div>
+    </div>
+  );
+  const th={padding:'9px 12px',fontSize:12.5,fontWeight:700,color:'#fff',textAlign:'left',whiteSpace:'nowrap'};
+  const td={padding:'9px 12px',fontSize:13.5,borderBottom:'1px solid '+LINE,whiteSpace:'nowrap'};
+  const tbl=(title,list)=>(
+    <div style={{flex:'1 1 360px',minWidth:320}}>
+      <div style={{fontSize:13,fontWeight:700,color:BLUE,marginBottom:6}}>{title}</div>
+      <div style={{border:'1px solid '+LINE,borderRadius:10,overflow:'hidden',background:'#fff'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr style={{background:NAVY}}>
+            <th style={th}>　</th><th style={{...th,width:70}}>{b('件')}</th><th style={{...th,width:90}}>{b('箱')}</th>
+            <th style={{...th,width:100}}>{b('先行')}/{b('遅れ')}</th><th style={{...th,width:70}}>⚠</th>
+          </tr></thead>
+          <tbody>
+            {list.map((r,i)=>(
+              <tr key={r.key} style={{background:i%2?'#F7F9FC':'#fff'}}>
+                <td style={{...td,fontWeight:700}}>{r.label}</td>
+                <td style={td}>{r.n}</td>
+                <td style={td}>{r.boxes}</td>
+                <td style={{...td,fontWeight:800,color:r.diff>=0?'#1B5E20':'#B71C1C'}}>{(r.diff>=0?'+':'−')+Math.abs(Math.round(r.diff))}</td>
+                <td style={{...td,color:r.anom?'#B71C1C':'#C7CDD6'}}>{r.anom||'—'}</td>
+              </tr>
+            ))}
+            {list.length===0&&<tr><td colSpan={5} style={{...td,textAlign:'center',color:'#9AA3AF',padding:'24px'}}>{t('データがありません')}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
+      <TopBar title={b('評価')} onBack={onBack} user={user}
+        left={<div style={{color:'#fff',fontSize:14,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🏭 {lang==='id'?proc.id_:proc.ja}</div>}/>
+      <div style={{flex:1,overflowY:'auto',padding:'16px 24px'}}>
+        <div style={{display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',marginBottom:14}}>
+          <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid '+LINE}}>
+            {[['day',b('日')],['month',b('月')],['year',b('年')]].map(([k,lb])=>(
+              <button key={k} onClick={()=>setMode(k)} style={{minHeight:44,padding:'0 20px',fontSize:14,fontWeight:700,background:mode===k?NAVY:'#fff',color:mode===k?'#fff':'#4A5460',whiteSpace:'nowrap'}}>{lb}</button>
+            ))}
+          </div>
+          <button onClick={()=>setAllProc(a=>!a)}
+            style={{minHeight:44,padding:'0 16px',borderRadius:8,border:'1px solid '+(allProc?NAVY:LINE),background:allProc?NAVY:'#fff',color:allProc?'#fff':'#4A5460',fontSize:13.5,fontWeight:700,whiteSpace:'nowrap'}}>
+            {allProc?'✓ ':''}{t('全工程')}
+          </button>
+          <div style={{fontSize:12.5,color:'#6B7480'}}>{from} 〜 {to}</div>
+        </div>
+
+        {err&&<div style={{padding:'12px 16px',background:'#FDECEA',color:'#B71C1C',borderRadius:10,fontSize:13,marginBottom:14}}>{err}</div>}
+        {rows===null&&!err&&<div style={{padding:'40px',textAlign:'center',color:'#9AA3AF'}}>{t('読込中...')}</div>}
+
+        {rows!==null&&<>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(135px,1fr))',gap:10,marginBottom:16}}>
+            {card(b('完了')+' '+b('件'),sum.n)}
+            {card(b('完了箱数'),sum.boxes+' / '+sum.target)}
+            {card(b('達成率'),rate+'%',rate>=100?'#1B5E20':NAVY)}
+            {card(b('標準'),Math.round(sum.std)+t('分'),'#3A4552')}
+            {card(b('実働'),Math.round(sum.act)+t('分'),'#3A4552')}
+            {card(b('先行')+'/'+b('遅れ'),(sum.diff>=0?'+':'−')+Math.abs(Math.round(sum.diff))+t('分'),sum.diff>=0?'#1B5E20':'#B71C1C')}
+            {card(b('異常'),sum.anom,sum.anom?'#B71C1C':'#C7CDD6')}
+          </div>
+
+          <div className="panel" style={{marginBottom:16}}>
+            <div className="panel-h">📊 {b('先行')}/{b('遅れ')} {b('推移')}（{t('分')}）</div>
+            <div style={{padding:14}}><DiffBarChart buckets={buckets} values={values} unit={t('分')}/></div>
+          </div>
+          <div className="panel" style={{marginBottom:16}}>
+            <div className="panel-h">📦 {b('完了箱数')} {b('推移')}</div>
+            <div style={{padding:14,display:'flex',alignItems:'flex-end',gap:6,overflowX:'auto',minHeight:140}}>
+              {buckets.map((bk,i)=>{
+                const mx=Math.max(1,...boxesPer);
+                return(
+                  <div key={bk.key} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,minWidth:48}}>
+                    <div style={{fontSize:11,fontWeight:700,color:NAVY}}>{boxesPer[i]||''}</div>
+                    <div style={{width:26,height:Math.round((boxesPer[i]||0)/mx*90),background:NAVY,borderRadius:'4px 4px 0 0',minHeight:boxesPer[i]?2:0}}/>
+                    <div style={{fontSize:11,color:'#6B7480'}}>{bk.label}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+            {tbl('👤 '+b('担当者別'),byWorker)}
+            {tbl('📦 '+b('製品別'),byItem)}
+          </div>
+        </>}
+      </div>
+      <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>}/>
+    </div>
+  );
+}
+
+/* ── 評価の調整（管理者） ── */
+function AdjustModal({order,onClose}){
+  const{t,b}=useLang();
+  const[v,setV]=useState(String(order.adjustMin||''));
+  const[note,setNote]=useState(order.adjustNote||'');
+  const[busy,setBusy]=useState(false);
+  const n=Number(v)||0;
+  const base=Number(order.diffMin)||0;
+  async function save(){
+    setBusy(true);
+    try{
+      await db.collection('workOrders').doc(order.id).update({adjustMin:n,adjustNote:note.trim(),adjustedAt:Date.now()});
+      onClose();
+    }catch(e){alert('保存に失敗: '+e.message);}
+    finally{setBusy(false);}
+  }
+  return(
+    <div onClick={e=>e.target===e.currentTarget&&!busy&&onClose()} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:650,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:520,overflow:'hidden'}}>
+        <div style={{background:NAVY,padding:'14px 20px',color:'#fff',fontSize:17,fontWeight:800}}>⚖ {b('評価を調整')}</div>
+        <div style={{padding:20}}>
+          <div style={{fontSize:13,color:'#5A6472',lineHeight:1.9,marginBottom:12}}>
+            {order.kind==='task'?('🔧 '+(order.taskName||'作業')):order.hinban}　/　{order.date}　/　{order.workerName||t('担当者なし')}<br/>
+            {(order.anomalies||[]).length>0&&<span style={{color:'#B71C1C'}}>⚠ {(order.anomalies||[]).map(a=>a.comment).join('／')}</span>}
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+            <div style={{padding:'10px 12px',background:'#F7F9FC',borderRadius:8}}>
+              <div style={{fontSize:11,color:'#6B7480'}}>{b('調整前')}</div>
+              <div style={{fontSize:20,fontWeight:800,color:base>=0?'#1B5E20':'#B71C1C'}}>{(base>=0?'+':'−')+Math.abs(Math.round(base))} {t('分')}</div>
+            </div>
+            <div style={{padding:'10px 12px',background:'#F2F6FD',borderRadius:8}}>
+              <div style={{fontSize:11,color:'#6B7480'}}>{b('調整後')}</div>
+              <div style={{fontSize:20,fontWeight:800,color:(base+n)>=0?'#1B5E20':'#B71C1C'}}>{((base+n)>=0?'+':'−')+Math.abs(Math.round(base+n))} {t('分')}</div>
+            </div>
+          </div>
+          <div style={{fontSize:12.5,fontWeight:700,color:'#4A5460',marginBottom:6}}>{b('調整時間')}（{t('分')}・遅れを取り消すなら＋）</div>
+          <input type="number" value={v} onChange={e=>setV(e.target.value)} placeholder="例: 15"
+            style={{fontSize:22,fontWeight:700,textAlign:'center',color:NAVY}}/>
+          <div style={{display:'flex',gap:6,marginTop:8,flexWrap:'wrap'}}>
+            {[5,10,15,30,-5,-10].map(x=>(
+              <button key={x} onClick={()=>setV(String((Number(v)||0)+x))} style={{minHeight:38,padding:'0 12px',borderRadius:8,border:'1px solid '+LINE,background:'#fff',color:NAVY,fontSize:13,fontWeight:700}}>{x>0?'+':''}{x}</button>
+            ))}
+            <button onClick={()=>setV('')} style={{minHeight:38,padding:'0 12px',borderRadius:8,border:'1px solid '+LINE,background:'#fff',color:'#B71C1C',fontSize:13,fontWeight:700}}>クリア</button>
+          </div>
+          <div style={{fontSize:12.5,fontWeight:700,color:'#4A5460',margin:'14px 0 6px'}}>{b('理由')}</div>
+          <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="例: 設備故障で15分停止したため" style={{height:80,resize:'vertical'}}/>
+        </div>
+        <div style={{padding:'0 20px 20px',display:'flex',gap:10}}>
+          <button onClick={onClose} disabled={busy} style={{flex:1,minHeight:48,borderRadius:10,border:'1px solid '+LINE,background:'#fff',fontSize:14,color:'#555'}}>{t('閉じる')}</button>
+          <button onClick={save} disabled={busy} style={{flex:1,minHeight:48,borderRadius:10,background:busy?'#C7CDD6':NAVY,color:'#fff',fontSize:16,fontWeight:800}}>{busy?t('保存中...'):t('保存する')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── 履歴（直近7日） ── */
 function WorkHistory({proc,logs,user,onBack}){
   const{lang,t,b}=useLang();
   const[all,setAll]=useState(false);
+  const[adj,setAdj]=useState(null);
   const list=Object.values(logs||{}).filter(l=>l.status==='done'&&(all||l.procId===proc.id)).sort((a,b)=>(b.endAt||0)-(a.endAt||0));
   const th={padding:'10px 12px',fontSize:13,fontWeight:700,color:'#fff',textAlign:'left',whiteSpace:'nowrap'};
   const td={padding:'10px 12px',fontSize:14,borderBottom:'1px solid '+LINE,whiteSpace:'nowrap'};
-  const sum=list.reduce((a,l)=>({boxes:a.boxes+(l.doneBoxes||0),diff:a.diff+(l.diffMin||0),anom:a.anom+((l.anomalies||[]).length)}),{boxes:0,diff:0,anom:0});
+  const sum=list.reduce((a,l)=>({boxes:a.boxes+(l.doneBoxes||0),diff:a.diff+effDiff(l),anom:a.anom+((l.anomalies||[]).length)}),{boxes:0,diff:0,anom:0});
   return(
     <div style={{height:'100vh',display:'flex',flexDirection:'column'}}>
       <TopBar title={b('履歴')+'（直近7日）'} onBack={onBack} user={user}/>
@@ -2380,11 +2631,11 @@ function WorkHistory({proc,logs,user,onBack}){
           <table style={{width:'100%',borderCollapse:'collapse'}}>
             <thead><tr style={{background:NAVY}}>
               <th style={th}>日付</th><th style={th}>{b('担当者')}</th>{all&&<th style={th}>工程</th>}<th style={th}>{b('呼称')}</th>
-              <th style={th}>開始 → 終了</th><th style={th}>{b('完了箱数')}</th><th style={th}>{b('実働')}</th><th style={th}>停止</th><th style={th}>{b('先行')}/{b('遅れ')}</th><th style={th}>{b('異常')}</th>
+              <th style={th}>開始 → 終了</th><th style={th}>{b('完了箱数')}</th><th style={th}>{b('実働')}</th><th style={th}>停止</th><th style={th}>{b('先行')}/{b('遅れ')}</th><th style={th}>{b('異常')}</th><th style={{...th,width:110,textAlign:'center'}}>{b('調整')}</th>
             </tr></thead>
             <tbody>
               {list.map((l,i)=>{
-                const d=l.diffMin||0;const hasK=Number(l.kosu)>0;
+                const d=effDiff(l);const hasK=Number(l.kosu)>0||l.kind==='task';const hasAdj=Number(l.adjustMin)||0;
                 return(
                   <tr key={l.id} style={{background:i%2?'#F7F9FC':'#fff'}}>
                     <td style={td}>{l.date}</td><td style={{...td,color:l.workerName?'#1A1A1A':'#9AA3AF'}}>{l.workerName||t('担当者なし')}</td>{all&&<td style={td}>{l.procName}</td>}
@@ -2393,17 +2644,24 @@ function WorkHistory({proc,logs,user,onBack}){
                     <td style={td}>{l.doneBoxes||0} / {l.targetBoxes||0}{l.fraction?`（+${l.fraction}個）`:''}</td>
                     <td style={td}>{Math.round(l.actMin||0)} {t('分')}</td>
                     <td style={td}>{Math.round(l.pausedMin||0)} {t('分')}</td>
-                    <td style={{...td,fontWeight:800,color:hasK?(d>=0?'#1B5E20':'#B71C1C'):'#9AA3AF'}}>{hasK?((d>=0?'+':'−')+Math.abs(Math.round(d))):'—'}</td>
-                    <td style={{...td,color:'#B71C1C',whiteSpace:'normal',maxWidth:260,fontSize:12}}>{(l.anomalies||[]).map(a=>a.comment).join('／')||''}</td>
+                    <td style={{...td,fontWeight:800,color:hasK?(d>=0?'#1B5E20':'#B71C1C'):'#9AA3AF'}}>
+                      {hasK?((d>=0?'+':'−')+Math.abs(Math.round(d))):'—'}
+                      {hasAdj?<div style={{fontSize:10.5,fontWeight:600,color:'#6D3FBF'}}>（調整 {hasAdj>0?'+':''}{hasAdj}）</div>:null}
+                    </td>
+                    <td style={{...td,color:'#B71C1C',whiteSpace:'normal',maxWidth:240,fontSize:12}}>{(l.anomalies||[]).map(a=>a.comment).join('／')||''}</td>
+                    <td style={{...td,textAlign:'center'}}>
+                      <button onClick={()=>setAdj(l)} style={{minHeight:36,padding:'0 14px',borderRadius:7,border:'1px solid '+(hasAdj?'#6D3FBF':LINE),background:hasAdj?'#F6F2FD':'#fff',color:hasAdj?'#6D3FBF':NAVY,fontSize:12.5,fontWeight:700}}>⚖ {t('調整')}</button>
+                    </td>
                   </tr>
                 );
               })}
-              {list.length===0&&<tr><td colSpan={all?10:9} style={{...td,textAlign:'center',color:'#9AA3AF',padding:'36px'}}>履歴がありません</td></tr>}
+              {list.length===0&&<tr><td colSpan={all?11:10} style={{...td,textAlign:'center',color:'#9AA3AF',padding:'36px'}}>履歴がありません</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
       <FooterBar left={<FBtn onClick={onBack}>‹ {b('計画表')}</FBtn>}/>
+      {adj&&<AdjustModal order={adj} onClose={()=>setAdj(null)}/>}
     </div>
   );
 }
@@ -2496,7 +2754,8 @@ function App(){
     }}
     onResume={o=>setView({name:'workrun',proc:view.proc,logId:o.id})}
     onHistory={()=>setView({name:'workhist',proc:view.proc})}
-    onPlanner={()=>setView({name:'planner',proc:view.proc})}/>;
+    onPlanner={()=>setView({name:'planner',proc:view.proc})}
+    onAnalytics={()=>setView({name:'analytics',proc:view.proc})}/>;
   else if(view.name==='planner')screen=<SchedulePlanner proc={view.proc} master={master} workers={workers} orders={orders} settings={procSettings[view.proc.id]} user={user}
     onBack={()=>setView({name:'work',proc:view.proc})}/>;
   else if(view.name==='worksheet'){
@@ -2514,6 +2773,7 @@ function App(){
       onDone={()=>setView({name:'work',proc:view.proc})}/>:<LoadingScreen/>;
   }
   else if(view.name==='workhist')screen=<WorkHistory proc={view.proc} logs={orders} user={user} onBack={()=>setView({name:'work',proc:view.proc})}/>;
+  else if(view.name==='analytics')screen=<AnalyticsScreen proc={view.proc} master={master} workers={workers} user={user} onBack={()=>setView({name:'work',proc:view.proc})}/>;
 
   return(
     <LangCtx.Provider value={ctx}>
