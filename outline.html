@@ -108,7 +108,9 @@ const DICT={
   '評価':'Evaluasi','日':'Harian','月':'Bulanan','年':'Tahunan','推移':'Grafik','達成率':'Tingkat capaian',
   '担当者別':'Per petugas','製品別':'Per produk','件':'item','調整':'Penyesuaian','評価を調整':'Sesuaikan evaluasi',
   '調整時間':'Waktu penyesuaian','理由':'Alasan','調整後':'Setelah penyesuaian','調整前':'Sebelum penyesuaian',
-  'データがありません':'Tidak ada data','読込中...':'Memuat...','全工程':'Semua proses','呼称を変更':'Ubah Sebutan','新しい呼称':'Sebutan baru','変更する':'Ubah','変更中...':'Mengubah...',
+  'データがありません':'Tidak ada data','読込中...':'Memuat...','全工程':'Semua proses',
+  '作業完了':'Pekerjaan Selesai','予定より':'Dibanding rencana','早く終わりました':'lebih cepat','かかりました':'lebih lambat',
+  '予定どおりです':'Tepat sesuai rencana','次の作業へ':'Ke pekerjaan berikutnya','中断':'Jeda','今日の累計':'Total hari ini','呼称を変更':'Ubah Sebutan','新しい呼称':'Sebutan baru','変更する':'Ubah','変更中...':'Mengubah...',
   'この呼称はすでに使われています':'Sebutan ini sudah dipakai','製品検索':'Pencarian Produk','製品を選ぶ':'Pilih Produk','製品情報を見る':'Lihat info produk',
   '呼称・品番で検索':'Cari dengan sebutan / nomor produk','この工程の製品がありません':'Tidak ada produk untuk proses ini',
   '工程名が未登録です':'Nama proses belum terdaftar','工程名未登録':'Proses belum terdaftar','この製品が通る工程':'Proses yang dilalui produk ini',
@@ -2245,11 +2247,12 @@ function WorkSheetScreen({proc,order,worker,master,user,onBack,onStart,onInfo}){
 }
 
 /* ── 実行画面（作業中） ── */
-function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
+function WorkRunScreen({proc,log,master,orders,user,onExit,onInfo,onDone}){
   const{lang,t,b}=useLang();
   const now=useNow();
   const[anom,setAnom]=useState(false);
   const[out,setOut]=useState(false);
+  const[result,setResult]=useState(null);
   const[busy,setBusy]=useState(false);
   const isTask=log.kind==='task';
   const m=master[log.hinban]||{};
@@ -2257,6 +2260,8 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
   const c=calcLog(log,now);
   const taskPlanMin=Number(log.durMin)||0;
   const taskDiff=taskPlanMin-(c.active/60000);
+  /* 今日・同一工程の完了分の累計（リザルトに表示） */
+  const todaySum=summarize(Object.values(orders||{}).filter(o=>o.status==='done'&&o.procId===proc.id&&o.date===log.date));
   const paused=log.status==='paused';
   const ref=db.collection('workOrders').doc(log.id);
   async function w(fn){if(busy)return;setBusy(true);try{await fn();}catch(e){alert('更新に失敗: '+e.message);}finally{setBusy(false);}}
@@ -2266,14 +2271,25 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
   const resume=()=>w(()=>{const ps=[...(log.pauses||[])];const last=ps[ps.length-1];if(last&&!last.to)ps[ps.length-1]={...last,to:Date.now()};return ref.update({status:'running',pauses:ps});});
   const addAnom=comment=>w(()=>ref.update({anomalies:[...(log.anomalies||[]),{at:Date.now(),comment}]}));
   async function finish(fraction){
+    let res=null;
     await w(async()=>{
       const ps=[...(log.pauses||[])];const last=ps[ps.length-1];const end=Date.now();
       if(last&&!last.to)ps[ps.length-1]={...last,to:end};
       const snap=calcLog({...log,pauses:ps,fraction,endAt:end},end);
       const std=isTask?taskPlanMin:snap.stdMin;
-      await ref.update({status:'done',endAt:end,pauses:ps,fraction,stdMin:Math.round(std*10)/10,actMin:Math.round(snap.actMin*10)/10,diffMin:Math.round((std-snap.actMin)*10)/10,pausedMin:Math.round(snap.paused/600)/100});
+      const payload={status:'done',endAt:end,pauses:ps,fraction,
+        stdMin:Math.round(std*10)/10,actMin:Math.round(snap.actMin*10)/10,
+        diffMin:Math.round((std-snap.actMin)*10)/10,pausedMin:Math.round(snap.paused/600)/100};
+      await ref.update(payload);
+      res={
+        title:isTask?('🔧 '+(log.taskName||'作業')):(log.hinban+'　'+(dv(m,'name',lang)||'')),
+        isTask,doneBoxes:log.doneBoxes||0,targetBoxes:log.targetBoxes||0,fraction:Number(fraction)||0,
+        stdMin:payload.stdMin,actMin:payload.actMin,diffMin:payload.diffMin,pausedMin:payload.pausedMin,
+        startAt:log.startAt||end,endAt:end,anomCount:(log.anomalies||[]).length
+      };
     });
-    setOut(false);onDone();
+    setOut(false);
+    if(res)setResult(res); else onDone();
   }
   const done=log.doneBoxes||0, target=log.targetBoxes||0;
   const pct=target?Math.min(100,Math.round(done/target*100)):0;
@@ -2361,6 +2377,7 @@ function WorkRunScreen({proc,log,master,user,onExit,onInfo,onDone}){
       <FooterBar left={<FBtn onClick={onExit}>‹ {b('計画表')}</FBtn>} right={<FBtn onClick={()=>onInfo(log.hinban)}>ℹ {t('製品情報を見る')}</FBtn>}/>
       {anom&&<AnomalyModal onClose={()=>setAnom(false)} onSave={async c=>{await addAnom(c);setAnom(false);}}/>}
       {out&&<OutModal log={log} calc={c} onClose={()=>setOut(false)} onFinish={finish}/>}
+      {result&&<ResultModal result={result} todaySum={todaySum} onClose={()=>{setResult(null);onDone();}}/>}
     </div>
   );
 }
@@ -2605,6 +2622,67 @@ function AdjustModal({order,onClose}){
   );
 }
 
+/* ── 作業完了リザルト（1品番終えた時点で作業者本人が確認） ── */
+function ResultModal({result,todaySum,onClose}){
+  const{t,b}=useLang();
+  const r=result;
+  const d=r.diffMin;                       /* ＋＝先行（早い） −＝遅れ */
+  const ahead=d>0.5, behind=d<-0.5;
+  const col=ahead?'#1B5E20':(behind?'#B71C1C':NAVY);
+  const bg =ahead?'#E8F5E9':(behind?'#FDECEA':'#F2F6FD');
+  const bd =ahead?'#A5D6A7':(behind?'#F5B7B1':'#C3D6F0');
+  const row=(k,v,strong)=>(
+    <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',padding:'9px 0',borderBottom:'1px solid '+LINE}}>
+      <span style={{fontSize:13.5,color:'#6B7480'}}>{k}</span>
+      <span style={{fontSize:strong?19:15.5,fontWeight:strong?800:700,color:strong?NAVY:'#2A3340',fontVariantNumeric:'tabular-nums'}}>{v}</span>
+    </div>
+  );
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:700,display:'flex',alignItems:'center',justifyContent:'center',padding:24}}>
+      <div style={{background:'#fff',borderRadius:18,width:'100%',maxWidth:560,overflow:'hidden',boxShadow:'0 20px 60px rgba(0,0,0,.4)'}}>
+        <div style={{background:'#2E7D4F',padding:'16px 22px',display:'flex',alignItems:'center',gap:12}}>
+          <span style={{fontSize:26}}>✅</span>
+          <div>
+            <div style={{fontSize:19,fontWeight:800,color:'#fff'}}>{b('作業完了')}</div>
+            <div style={{fontSize:13,color:'rgba(255,255,255,.85)'}}>{r.title}</div>
+          </div>
+        </div>
+        {/* 主役：予定差 */}
+        <div style={{margin:'18px 22px 0',padding:'20px',background:bg,border:'2px solid '+bd,borderRadius:14,textAlign:'center'}}>
+          <div style={{fontSize:14,fontWeight:700,color:'#5A6472'}}>{b('予定より')}</div>
+          <div style={{fontSize:56,fontWeight:800,color:col,lineHeight:1.15,fontVariantNumeric:'tabular-nums'}}>
+            {(ahead||behind)?(Math.abs(Math.round(d*10)/10)+' '+t('分')):'±0'}
+          </div>
+          <div style={{fontSize:19,fontWeight:800,color:col}}>
+            {ahead?'▲ '+t('早く終わりました'):(behind?'▼ '+t('かかりました'):t('予定どおりです'))}
+          </div>
+        </div>
+        <div style={{padding:'14px 22px 4px'}}>
+          {!r.isTask&&row(b('完了箱数'),`${r.doneBoxes} / ${r.targetBoxes} ${t('箱')}`+(r.fraction?`（+${r.fraction}個）`:''),true)}
+          {row(b('予定時間'),Math.round(r.stdMin*10)/10+' '+t('分'))}
+          {row(b('実働'),Math.round(r.actMin*10)/10+' '+t('分'))}
+          {row(b('開始')+' → '+b('終了'),`${fmtHM(new Date(r.startAt))} → ${fmtHM(new Date(r.endAt))}`)}
+          {r.pausedMin>0.1&&row(b('休憩')+'・'+t('中断'),Math.round(r.pausedMin*10)/10+' '+t('分'))}
+          {r.anomCount>0&&row(b('異常'),r.anomCount+' '+t('件'))}
+        </div>
+        {todaySum&&todaySum.n>0&&(
+          <div style={{margin:'10px 22px 0',padding:'10px 14px',background:'#F7F9FC',borderRadius:10,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:12.5,color:'#6B7480'}}>{b('今日の累計')}（{todaySum.n} {t('件')}）</span>
+            <span style={{fontSize:16,fontWeight:800,color:todaySum.diff>=0?'#1B5E20':'#B71C1C'}}>
+              {(todaySum.diff>=0?'+':'−')+Math.abs(Math.round(todaySum.diff))} {t('分')}
+            </span>
+          </div>
+        )}
+        <div style={{padding:'16px 22px 22px'}}>
+          <button onClick={onClose} style={{width:'100%',minHeight:62,borderRadius:12,background:NAVY,color:'#fff',fontSize:19,fontWeight:800}}>
+            {t('次の作業へ')} ▶
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── 履歴（直近7日） ── */
 function WorkHistory({proc,logs,user,onBack}){
   const{lang,t,b}=useLang();
@@ -2767,7 +2845,7 @@ function App(){
   }
   else if(view.name==='workrun'){
     const log=orders[view.logId];
-    screen=log?<WorkRunScreen proc={view.proc} log={log} master={master} user={user}
+    screen=log?<WorkRunScreen proc={view.proc} log={log} master={master} orders={orders} user={user}
       onExit={()=>setView({name:'work',proc:view.proc})}
       onInfo={h=>setView({name:'info',proc:view.proc,hinban:h,backTo:view})}
       onDone={()=>setView({name:'work',proc:view.proc})}/>:<LoadingScreen/>;
