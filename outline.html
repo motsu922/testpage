@@ -120,7 +120,7 @@ const DICT={
   '全体写真':'Foto Keseluruhan','拡大写真':'Foto Perbesaran','主な特徴':'Ciri Utama','仕様':'Spesifikasi',
   '使用時の注意':'Perhatian Penggunaan','類似品との違い':'Perbedaan dengan Produk Serupa','本品の特徴':'Ciri Produk Ini',
   '収容数':'Jumlah Isi','1箱あたりの収容数':'Jumlah per kotak','製品イメージ':'Gambar Produk','梱包荷姿':'Bentuk Kemasan',
-  '仕切り':'Sekat','向き':'Arah','使用中':'Digunakan','未使用':'Tidak digunakan','外寸':'Ukuran Luar','仕切数':'Jumlah Sekat','材質':'Material',
+  '仕切り':'Sekat','向き':'Arah','荷姿により異なります':'Berbeda menurut kemasan','代表の収容数':'Jumlah isi standar','使用中':'Digunakan','未使用':'Tidak digunakan','外寸':'Ukuran Luar','仕切数':'Jumlah Sekat','材質':'Material',
   '用途':'Kegunaan','使用工程':'Proses','発行先':'Penerbit','色':'Warna','サイズ':'Ukuran','備考':'Catatan','種類':'Jenis',
   '保存する':'Simpan','保存中...':'Menyimpan...','保存しました':'Tersimpan','削除':'Hapus','追加':'Tambah',
   '照合成功':'Cocok','不一致':'Tidak cocok','スキャン待機中...':'Menunggu pemindaian...',
@@ -803,10 +803,29 @@ function PageBody({pageKey,m,hinban,onScan}){
       <div style={{fontSize:14,color:'#5A6472',marginBottom:12}}>この品番の収容数と梱包荷姿は以下の通りです。作業時に確認してください。</div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
         <P><H>{b('収容数')}</H><Body>
-          <div style={{background:'#F2F6FD',borderRadius:10,padding:'26px',textAlign:'center'}}>
-            <div style={{fontSize:14,color:'#5A6472',marginBottom:8}}>{b('1箱あたりの収容数')}</div>
-            <div style={{fontSize:44,fontWeight:800,color:NAVY}}>{pk.capacity||'—'}<span style={{fontSize:20,marginLeft:4}}>個</span></div>
-          </div>
+          {(()=>{
+            const caps=pats.map(x=>String(x.capacity||pk.capacity||'').trim()).filter(Boolean);
+            const uniq=[...new Set(caps)];
+            const varies=uniq.length>1;
+            if(!varies)return(
+              <div style={{background:'#F2F6FD',borderRadius:10,padding:'26px',textAlign:'center'}}>
+                <div style={{fontSize:14,color:'#5A6472',marginBottom:8}}>{b('1箱あたりの収容数')}</div>
+                <div style={{fontSize:44,fontWeight:800,color:NAVY}}>{uniq[0]||pk.capacity||'—'}<span style={{fontSize:20,marginLeft:4}}>個</span></div>
+              </div>);
+            return(
+              <div style={{background:'#F2F6FD',borderRadius:10,padding:'16px'}}>
+                <div style={{fontSize:14,fontWeight:700,color:'#C2410C',textAlign:'center',marginBottom:12}}>⚠ {b('荷姿により異なります')}</div>
+                <div style={{display:'flex',flexDirection:'column',gap:7}}>
+                  {pats.map((x,i)=>(
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:10,background:'#fff',borderRadius:8,padding:'8px 12px'}}>
+                      <NumBadge n={i+1} size={22}/>
+                      <span style={{fontSize:12.5,color:'#5A6472',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{L(x,'divider')||b('梱包荷姿')+(i+1)}</span>
+                      <span style={{fontSize:22,fontWeight:800,color:NAVY,fontVariantNumeric:'tabular-nums'}}>{x.capacity||pk.capacity||'—'}<span style={{fontSize:12,marginLeft:2,color:'#6B7480'}}>個</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>);
+          })()}
         </Body></P>
         <P><H>{b('製品イメージ')}</H><Body><TapPhoto src={pk.productImg||m.productImg} style={{width:'100%',maxHeight:190,objectFit:'contain',borderRadius:8,display:'block'}} ratio={170}/></Body></P>
       </div>
@@ -821,7 +840,10 @@ function PageBody({pageKey,m,hinban,onScan}){
               <div style={{padding:'10px'}}>
                 <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('仕切り')}：{L(p,'divider')||'—'}</div>
                 <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('向き')}：{L(p,'direction')||'—'}</div>
-                <div style={{fontSize:13,fontWeight:700,color:NAVY,marginTop:6,textAlign:'center'}}>{b('収容数')}：{p.capacity||pk.capacity||'—'}個</div>
+                <div style={{marginTop:8,textAlign:'center',background:'#F2F6FD',borderRadius:8,padding:'7px 4px'}}>
+                  <div style={{fontSize:10.5,color:'#6B7480'}}>{b('収容数')}</div>
+                  <div style={{fontSize:24,fontWeight:800,color:NAVY,lineHeight:1.15,fontVariantNumeric:'tabular-nums'}}>{p.capacity||pk.capacity||'—'}<span style={{fontSize:12,marginLeft:2,color:'#6B7480'}}>個</span></div>
+                </div>
               </div>
             </div>
           )):none}
@@ -1431,21 +1453,35 @@ function EditorBody({tab,d,upd,upImg,busy,hinban}){
     const pk=d.packing||{};
     return(<>
       <Row>
-        <div><FLbl>1箱あたりの収容数</FLbl><input value={pk.capacity||''} onChange={e=>sub('packing',{capacity:e.target.value})} placeholder="例: 42"/></div>
+        <div><FLbl>代表の収容数（1箱あたり）</FLbl>
+          <input type="number" min="0" value={pk.capacity||''} onChange={e=>sub('packing',{capacity:e.target.value})} placeholder="例: 42"/>
+          <div style={{fontSize:11,color:'#6B7480',marginTop:5,lineHeight:1.6}}>荷姿ごとに収容数を入れなかった場合は、この値が使われます。<br/>作業指示の端数計算にもこの値を使います。</div>
+        </div>
         <div><FLbl>製品イメージ（未設定なら製品写真を使用）</FLbl>
           <ImgSlot url={pk.productImg} busy={busy==='packing/img'} h={90} onPick={f=>upImg('packing/img',f,u=>sub('packing',{productImg:u}))} onClear={()=>sub('packing',{productImg:''})}/>
         </div>
       </Row>
-      <FLbl>梱包荷姿（最大4種類）</FLbl>
+      <FLbl>梱包荷姿（最大4種類）― 荷姿ごとに収容数を設定できます</FLbl>
       <RepList items={pk.patterns} onChange={v=>sub('packing',{patterns:v})} max={4} addLabel="荷姿を追加" blank={{img:'',divider:'',direction:'',capacity:''}}
-        render={(it,set,i)=>(<Row cols="170px 1fr">
-          <ImgSlot url={it.img} busy={busy==='packing/p'+i} h={100} onPick={f=>upImg('packing/p'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
-          <div>
-            <input value={it.divider||''} onChange={e=>set({...it,divider:e.target.value})} placeholder="仕切り 例: 縦 × 横"/>
-            <input value={it.direction||''} onChange={e=>set({...it,direction:e.target.value})} placeholder="向き 例: 縦向き" style={{marginTop:6}}/>
-            <input value={it.capacity||''} onChange={e=>set({...it,capacity:e.target.value})} placeholder="収容数 例: 42" style={{marginTop:6}}/>
-          </div>
-        </Row>)}/>
+        render={(it,set,i)=>{
+          const sl={fontSize:11,fontWeight:700,color:'#6B7480',marginBottom:3};
+          return(
+          <Row cols="170px 1fr">
+            <ImgSlot url={it.img} busy={busy==='packing/p'+i} h={100} onPick={f=>upImg('packing/p'+i,f,u=>set({...it,img:u}))} onClear={()=>set({...it,img:''})}/>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+              <div><div style={sl}>仕切り</div>
+                <input value={it.divider||''} onChange={e=>set({...it,divider:e.target.value})} placeholder="例: 縦 × 横"/></div>
+              <div><div style={sl}>向き</div>
+                <input value={it.direction||''} onChange={e=>set({...it,direction:e.target.value})} placeholder="例: 縦向き"/></div>
+              <div style={{gridColumn:'1 / -1'}}>
+                <div style={{...sl,color:NAVY}}>収容数（この荷姿のとき）</div>
+                <input type="number" min="0" value={it.capacity||''} onChange={e=>set({...it,capacity:e.target.value})}
+                  placeholder={pk.capacity?`未入力なら代表の ${pk.capacity} 個`:'例: 42'}
+                  style={{fontWeight:700,color:NAVY}}/>
+              </div>
+            </div>
+          </Row>);
+        }}/>
       <FLbl>注意事項（1行1項目）</FLbl>
       <LinesArea value={pk.notes} onChange={v=>sub('packing',{notes:v})}/>
     </>);
