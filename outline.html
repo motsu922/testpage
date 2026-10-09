@@ -69,6 +69,22 @@ function procById(id){return PROCESSES.find(p=>p.id===id)||null;}
 function hasProc(m,procId){return Array.isArray(m&&m.procIds)&&m.procIds.includes(procId);}
 /* 工程で絞り込んだ呼称一覧 */
 function hinbansOf(master,procId){return Object.keys(master).filter(h=>hasProc(master[h],procId)).sort();}
+/* 工程ごとの収容数：工程別の設定 → 代表の収容数 の順で解決 */
+function capacityOf(m,procId){
+  const perProc=Number(m&&m.sheets&&m.sheets[procId]&&m.sheets[procId].capacity)||0;
+  if(perProc>0)return perProc;
+  return Number(m&&m.packing&&m.packing.capacity)||0;
+}
+/* 工程別に収容数が登録されている一覧（表示用） */
+function capacityByProc(m){
+  const out=[];
+  PROCESSES.forEach(p=>{
+    const v=Number(m&&m.sheets&&m.sheets[p.id]&&m.sheets[p.id].capacity)||0;
+    if(v>0)out.push({proc:p,capacity:v});
+  });
+  return out;
+}
+
 /* 呼称・品名・品番の横断検索 */
 function matchHinban(master,h,kw){
   if(!kw)return true;
@@ -120,7 +136,8 @@ const DICT={
   '全体写真':'Foto Keseluruhan','拡大写真':'Foto Perbesaran','主な特徴':'Ciri Utama','仕様':'Spesifikasi',
   '使用時の注意':'Perhatian Penggunaan','類似品との違い':'Perbedaan dengan Produk Serupa','本品の特徴':'Ciri Produk Ini',
   '収容数':'Jumlah Isi','1箱あたりの収容数':'Jumlah per kotak','製品イメージ':'Gambar Produk','梱包荷姿':'Bentuk Kemasan',
-  '仕切り':'Sekat','向き':'Arah','荷姿により異なります':'Berbeda menurut kemasan','代表の収容数':'Jumlah isi standar','使用中':'Digunakan','未使用':'Tidak digunakan','外寸':'Ukuran Luar','仕切数':'Jumlah Sekat','材質':'Material',
+  '仕切り':'Sekat','向き':'Arah','荷姿により異なります':'Berbeda menurut kemasan','代表の収容数':'Jumlah isi standar',
+  '工程により異なります':'Berbeda menurut proses','この工程の収容数':'Jumlah isi proses ini','工程別の収容数':'Jumlah isi per proses','使用中':'Digunakan','未使用':'Tidak digunakan','外寸':'Ukuran Luar','仕切数':'Jumlah Sekat','材質':'Material',
   '用途':'Kegunaan','使用工程':'Proses','発行先':'Penerbit','色':'Warna','サイズ':'Ukuran','備考':'Catatan','種類':'Jenis',
   '保存する':'Simpan','保存中...':'Menyimpan...','保存しました':'Tersimpan','削除':'Hapus','追加':'Tambah',
   '照合成功':'Cocok','不一致':'Tidak cocok','スキャン待機中...':'Menunggu pemindaian...',
@@ -611,7 +628,7 @@ function InfoViewer({proc,hinban,master,user,onBack,onChangeProc}){
                 ▶ {t('作業動画を再生')}
               </button>
             </div>
-            <PageBody pageKey={pageKey} m={m} hinban={hinban} onScan={setScan}/>
+            <PageBody pageKey={pageKey} m={m} hinban={hinban} proc={proc} onScan={setScan}/>
           </div>
           <FooterBar
             left={<><FBtn onClick={()=>go(-1)} disabled={idx===0}>◀ {t('前の項目へ')}</FBtn><FBtn onClick={()=>go(1)} disabled={idx===INFO_PAGES.length-1}>{t('次の項目へ')} ▶</FBtn><FBtn onClick={onBack}>☰ {t('一覧に戻る')}</FBtn></>}
@@ -625,7 +642,7 @@ function InfoViewer({proc,hinban,master,user,onBack,onChangeProc}){
 }
 
 /* ── 各情報ページの中身 ── */
-function PageBody({pageKey,m,hinban,onScan}){
+function PageBody({pageKey,m,hinban,proc,onScan}){
   const{lang,t,b}=useLang();
   const P=({children})=><div className="panel" style={{marginBottom:14}}>{children}</div>;
   const H=({children})=><div className="panel-h">{children}</div>;
@@ -804,27 +821,58 @@ function PageBody({pageKey,m,hinban,onScan}){
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
         <P><H>{b('収容数')}</H><Body>
           {(()=>{
-            const caps=pats.map(x=>String(x.capacity||pk.capacity||'').trim()).filter(Boolean);
-            const uniq=[...new Set(caps)];
-            const varies=uniq.length>1;
-            if(!varies)return(
-              <div style={{background:'#F2F6FD',borderRadius:10,padding:'26px',textAlign:'center'}}>
-                <div style={{fontSize:14,color:'#5A6472',marginBottom:8}}>{b('1箱あたりの収容数')}</div>
-                <div style={{fontSize:44,fontWeight:800,color:NAVY}}>{uniq[0]||pk.capacity||'—'}<span style={{fontSize:20,marginLeft:4}}>個</span></div>
-              </div>);
-            return(
-              <div style={{background:'#F2F6FD',borderRadius:10,padding:'16px'}}>
-                <div style={{fontSize:14,fontWeight:700,color:'#C2410C',textAlign:'center',marginBottom:12}}>⚠ {b('荷姿により異なります')}</div>
-                <div style={{display:'flex',flexDirection:'column',gap:7}}>
-                  {pats.map((x,i)=>(
-                    <div key={i} style={{display:'flex',alignItems:'center',gap:10,background:'#fff',borderRadius:8,padding:'8px 12px'}}>
-                      <NumBadge n={i+1} size={22}/>
-                      <span style={{fontSize:12.5,color:'#5A6472',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{L(x,'divider')||b('梱包荷姿')+(i+1)}</span>
-                      <span style={{fontSize:22,fontWeight:800,color:NAVY,fontVariantNumeric:'tabular-nums'}}>{x.capacity||pk.capacity||'—'}<span style={{fontSize:12,marginLeft:2,color:'#6B7480'}}>個</span></span>
-                    </div>
-                  ))}
+            const procCap=proc?capacityOf(m,proc.id):0;
+            const byProc=capacityByProc(m);
+            const procVaries=byProc.length>0&&new Set(byProc.map(x=>x.capacity)).size+(Number(pk.capacity)&&byProc.length<PROCESSES.length?1:0)>1;
+            const caps=pats.map(x=>String(x.capacity||'').trim()).filter(Boolean);
+            const patVaries=new Set(caps).size>1;
+            return(<>
+              <div style={{background:'#F2F6FD',borderRadius:10,padding:'20px',textAlign:'center'}}>
+                <div style={{fontSize:13,color:'#5A6472',marginBottom:6}}>
+                  {proc?<>{b('この工程の収容数')}<br/><span style={{fontSize:12,color:BLUE,fontWeight:700}}>（{lang==='id'?proc.id_:proc.ja}）</span></>:b('1箱あたりの収容数')}
                 </div>
-              </div>);
+                <div style={{fontSize:44,fontWeight:800,color:NAVY,lineHeight:1.2}}>{procCap||pk.capacity||'—'}<span style={{fontSize:20,marginLeft:4}}>個</span></div>
+              </div>
+              {byProc.length>0&&(
+                <div style={{marginTop:12}}>
+                  <div style={{fontSize:12.5,fontWeight:700,color:procVaries?'#C2410C':BLUE,marginBottom:7}}>
+                    {procVaries?'⚠ '+b('工程により異なります'):b('工程別の収容数')}
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {byProc.map(x=>{
+                      const on=proc&&x.proc.id===proc.id;
+                      return(
+                        <div key={x.proc.id} style={{display:'flex',alignItems:'center',gap:10,background:on?'#E8F0FB':'#fff',border:'1px solid '+(on?'#C3D6F0':LINE),borderRadius:8,padding:'7px 12px'}}>
+                          <NumBadge n={x.proc.no} size={21} bg={on?NAVY:'#5A6472'}/>
+                          <span style={{fontSize:12.5,color:on?NAVY:'#5A6472',fontWeight:on?700:500,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lang==='id'?x.proc.id_:x.proc.ja}</span>
+                          <span style={{fontSize:19,fontWeight:800,color:NAVY,fontVariantNumeric:'tabular-nums'}}>{x.capacity}<span style={{fontSize:11,marginLeft:2,color:'#6B7480'}}>個</span></span>
+                        </div>
+                      );
+                    })}
+                    {Number(pk.capacity)>0&&(
+                      <div style={{display:'flex',alignItems:'center',gap:10,background:'#FAFBFC',border:'1px dashed '+LINE,borderRadius:8,padding:'7px 12px'}}>
+                        <span style={{fontSize:12.5,color:'#6B7480',flex:1}}>上記以外の工程（{b('代表の収容数')}）</span>
+                        <span style={{fontSize:17,fontWeight:700,color:'#5A6472'}}>{pk.capacity}<span style={{fontSize:11,marginLeft:2}}>個</span></span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {patVaries&&(
+                <div style={{marginTop:12}}>
+                  <div style={{fontSize:12.5,fontWeight:700,color:'#C2410C',marginBottom:7}}>⚠ {b('荷姿により異なります')}</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {pats.map((x,i)=>(
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:10,background:'#fff',border:'1px solid '+LINE,borderRadius:8,padding:'7px 12px'}}>
+                        <NumBadge n={i+1} size={21}/>
+                        <span style={{fontSize:12.5,color:'#5A6472',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{L(x,'divider')||b('梱包荷姿')+(i+1)}</span>
+                        <span style={{fontSize:19,fontWeight:800,color:NAVY,fontVariantNumeric:'tabular-nums'}}>{x.capacity||'—'}<span style={{fontSize:11,marginLeft:2,color:'#6B7480'}}>個</span></span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>);
           })()}
         </Body></P>
         <P><H>{b('製品イメージ')}</H><Body><TapPhoto src={pk.productImg||m.productImg} style={{width:'100%',maxHeight:190,objectFit:'contain',borderRadius:8,display:'block'}} ratio={170}/></Body></P>
@@ -842,7 +890,7 @@ function PageBody({pageKey,m,hinban,onScan}){
                 <div style={{fontSize:12.5,color:'#2A3340',lineHeight:1.8}}>{b('向き')}：{L(p,'direction')||'—'}</div>
                 <div style={{marginTop:8,textAlign:'center',background:'#F2F6FD',borderRadius:8,padding:'7px 4px'}}>
                   <div style={{fontSize:10.5,color:'#6B7480'}}>{b('収容数')}</div>
-                  <div style={{fontSize:24,fontWeight:800,color:NAVY,lineHeight:1.15,fontVariantNumeric:'tabular-nums'}}>{p.capacity||pk.capacity||'—'}<span style={{fontSize:12,marginLeft:2,color:'#6B7480'}}>個</span></div>
+                  <div style={{fontSize:24,fontWeight:800,color:NAVY,lineHeight:1.15,fontVariantNumeric:'tabular-nums'}}>{p.capacity||(proc?capacityOf(m,proc.id):0)||pk.capacity||'—'}<span style={{fontSize:12,marginLeft:2,color:'#6B7480'}}>個</span></div>
                 </div>
               </div>
             </div>
@@ -1564,20 +1612,34 @@ function EditorBody({tab,d,upd,upImg,busy,hinban}){
     const sheets=d.sheets||{};
     const sh=sheets[sheetProc]||{};
     const setSh=patch=>upd({sheets:{...sheets,[sheetProc]:{...sh,...patch}}});
-    const cap=(d.packing&&d.packing.capacity)||'';
+    const baseCap=(d.packing&&d.packing.capacity)||'';
     return(<>
-      <FLbl>工程を選択（工程ごとに要領書・1箱工数を登録します）</FLbl>
+      <FLbl>工程を選択（工程ごとに要領書・1箱工数・収容数を登録します）</FLbl>
       <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:4}}>
         {PROCESSES.map(p=>{
           const on=p.id===sheetProc;
-          const has=!!(sheets[p.id]&&((sheets[p.id].steps||[]).length||sheets[p.id].kosu));
+          const has=!!(sheets[p.id]&&((sheets[p.id].steps||[]).length||sheets[p.id].kosu||sheets[p.id].capacity));
           return <button key={p.id} onClick={()=>setSheetProc(p.id)}
             style={{padding:'7px 12px',borderRadius:16,fontSize:12.5,fontWeight:on?700:600,background:on?NAVY:(has?'#E8F0FB':'#F2F4F7'),color:on?'#fff':(has?NAVY:'#4A5460'),border:'1px solid '+(on?NAVY:(has?'#C3D6F0':LINE))}}>{p.no}. {p.ja}{has&&!on?' ●':''}</button>;
         })}
       </div>
+      {capacityByProc(d).length>0&&(
+        <div style={{marginTop:10,padding:'10px 12px',background:'#F2F6FD',borderRadius:8,fontSize:12,color:'#2A3340'}}>
+          <b style={{color:BLUE}}>工程別の収容数</b>
+          {capacityByProc(d).map(x=>`${x.proc.no}.${x.proc.ja} ${x.capacity}個`).join('　/　')}
+        </div>
+      )}
       <Row>
         <div><FLbl>1箱あたり工数（分）</FLbl><input type="number" min="0" step="0.1" value={sh.kosu||''} onChange={e=>setSh({kosu:e.target.value})} placeholder="例: 12.5"/></div>
-        <div><FLbl>収容数（参考：収容数・荷姿タブの値）</FLbl><input value={cap} readOnly style={{background:'#F7F8FA',color:'#6B7480'}}/></div>
+        <div>
+          <FLbl>この工程の収容数（1箱あたり）</FLbl>
+          <input type="number" min="0" value={sh.capacity||''} onChange={e=>setSh({capacity:e.target.value})}
+            placeholder={baseCap?`未入力なら代表の ${baseCap} 個`:'例: 70'} style={{fontWeight:700,color:NAVY}}/>
+          <div style={{fontSize:11,color:'#6B7480',marginTop:5,lineHeight:1.6}}>
+            工程によって収容数が変わる場合に入力します（例：材料70個入り／出荷96個入り）。<br/>
+            未入力なら「収容数・荷姿」タブの代表の収容数{baseCap?`（${baseCap}個）`:''}を使います。
+          </div>
+        </div>
       </Row>
       <FLbl>要領書：手順（写真＋コメント）</FLbl>
       <RepList items={sh.steps} onChange={v=>setSh({steps:v})} addLabel="手順を追加" blank={{img:'',text:'',text_id:''}}
@@ -2017,7 +2079,7 @@ function SchedulePlanner({proc,master,workers,orders,settings,user,onBack}){
     await run(()=>col.add({
       date,procId:proc.id,procName:proc.ja,order:(rows.length?Math.max(...rows.map(r=>r.order||0)):0)+10,
       hinban:h,hinbanName:m.name||'',partNo:m.partNo||'',targetBoxes:q,
-      kosu:Number(m.sheets?.[proc.id]?.kosu)||0,capacity:Number(m.packing?.capacity)||0,
+      kosu:Number(m.sheets?.[proc.id]?.kosu)||0,capacity:capacityOf(m,proc.id),
       assignedWorkerId:w?w.id:null,assignedWorkerName:w?w.name:'',
       workerId:null,workerName:'',status:'pending',
       startAt:null,endAt:null,doneBoxes:0,fraction:0,pauses:[],anomalies:[],createdBy:user?.email||''
@@ -2222,7 +2284,7 @@ function WorkSheetScreen({proc,order,worker,master,user,onBack,onStart,onInfo}){
   const m=master[hinban]||{};
   const sheet=m.sheets?.[proc.id]||{};
   const kosu=Number(order.kosu)||Number(sheet.kosu)||0;
-  const cap=Number(order.capacity)||Number(m.packing?.capacity)||0;
+  const cap=Number(order.capacity)||capacityOf(m,proc.id);
   const tgt=Number(order.targetBoxes)||0;
   const[ack,setAck]=useState(false);
   const[starting,setStarting]=useState(false);
