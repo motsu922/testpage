@@ -7226,7 +7226,7 @@
         const active = candidates.filter(item => !item.excluded);
         const requiredTotal = active.reduce((sum, item) => sum + (Number(item.requiredBoxes) || 0), 0);
         const scannedTotal = active.reduce((sum, item) => sum + (Number(item.scanned) || 0), 0);
-        return { active: true, ok: false, note: `数量超過: ${line.partNo} ${scannedTotal + 1}/${requiredTotal}` };
+        return { active: true, ok: false, errorCode: 'quantity_exceeded', note: `数量超過: ${line.partNo} ${scannedTotal + 1}/${requiredTotal}` };
       }
       line.scanned += 1;
       session.scannedIds = session.scannedIds || {};
@@ -7387,6 +7387,7 @@
       orderDetailSessionId: orderCheck.active ? (orderDetailSession.sessionId || '') : '',
       orderDetailResult: orderCheck.active ? (orderCheck.ok ? 'OK' : 'NG') : '',
       orderDetailNote: orderCheck.note || '',
+      orderDetailErrorCode: orderCheck.errorCode || '',
       orderDetailCompleted: orderJustCompleted,
       orderDetailRequiredBoxes: orderCheck.active ? orderRequiredBoxes() : 0,
       orderDetailScannedBoxes: orderCheck.active ? orderScannedBoxes() : 0,
@@ -7417,7 +7418,32 @@
   }
 
   // ========= 結果表示 =========
+  function showOrderQuantityExceeded(logEntry) {
+    isOKPending = false;
+    if (okAutoTimer) { clearTimeout(okAutoTimer); okAutoTimer = null; }
+    document.getElementById('okToast')?.classList.remove('show');
+    showAcknowledgementError({
+      title: '明細の数量を超えています',
+      detailHtml: `<p class="label">${escapeHtml(logEntry.orderDetailNote)}</p>
+        <p class="label">この読み取りはカウントしていません。明細と現物を確認してください。</p>`,
+      onConfirm: () => {
+        if (settings.scanMode === '1toN') {
+          clearScannerBuffer();
+          value2 = '';
+          currentStep = 2;
+          updateScanUI();
+        } else {
+          startScanning(true);
+        }
+      }
+    });
+  }
+
   function showResult(isOK, isDup, dupType, partNumber, logEntry) {
+    if (!isOK && !isDup && logEntry.orderDetailErrorCode === 'quantity_exceeded') {
+      showOrderQuantityExceeded(logEntry);
+      return;
+    }
     const overlay   = document.getElementById('resultOverlay');
     const symbol    = document.getElementById('resultSymbol');
     const text      = document.getElementById('resultText');
