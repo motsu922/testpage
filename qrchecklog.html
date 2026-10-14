@@ -2055,15 +2055,18 @@
   ]);
 
   function isPartMismatchLog(l) {
+    if (l.result !== 'NG' || l.isDuplicate) return false;
     if (PSEUDO_PARTS.has(l.partNumber || '')) return false;
     const note = String(l.extractNote || '');
     if (note.startsWith('kanban_type_error')) return false;
     if (NON_MISMATCH_NOTES.has(note.split(':')[0])) return false;
     // 数量超過は品番が一致したうえで箱数が超えたもの。品番違いではないので外す。
-    if (/^(数量超過|注文明細外)/.test(String(l.orderDetailNote || ''))) return false;
+    if (l.orderDetailErrorCode === 'quantity_exceeded' || /^(数量超過|注文明細外)/.test(String(l.orderDetailNote || ''))) return false;
     // '+' のような1〜2文字のQR2はスキャナの誤入力。かんばんとして成立しない。
     const qr2 = String(l.qr2 || '').trim();
     if (qr2 && qr2.length <= 2) return false;
+    // QR2-derived parts need not occur in QR1 when the comparison failed.
+    if (note === 'internal_kanban_fields' && String(l.partNumber || '').trim()) return qr2.length > 2;
     // 明細に一致した品番がQR1側に見当たらないものは、客先かんばん自体が明細と違うケース。
     // 社内かんばんの品番違いとは別問題なので外す。
     if (!qr1MatchesDetail(l)) return false;
