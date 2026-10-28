@@ -2773,7 +2773,9 @@
     };
     const detailMap = new Map();
     [...(remote.details || []), ...(local.details || [])].forEach(detail => {
-      const key = detail && (detail.contentHash || detail.qrHash || JSON.stringify(detail));
+      const key = detail && (detail.meta && String(detail.meta.orderNo || '').trim() && detail.contentHash
+        ? 'order:' + detail.contentHash
+        : (detail.orderQr ? 'qr:' + orderDetailIdentityQR(detail) : (detail.qrHash || JSON.stringify(detail))));
       if (key) {
         const previous = detailMap.get(key);
         const raw = [previous, detail].filter(d => d && d.orderQr === detail.orderQr && d.rawQRSource === 'terminal-received-v1' && typeof d.rawQR === 'string')
@@ -3373,7 +3375,11 @@
     target.sourceHashes = target.sourceHashes || {};
     target.detailHashes = target.detailHashes || {};
     target.details = Array.isArray(target.details) ? target.details : [];
-    if (target.sourceHashes[qrHash] || target.detailHashes[detailHash]) {
+    // Equal items/quantities do not identify an order when its order number is absent.
+    const hasOrderNumber = !!String(parsed.meta && parsed.meta.orderNo || '').trim();
+    const sameQR = target.sourceHashes[qrHash] || target.details.some(detail =>
+      orderDetailIdentityQR(detail) === orderDetailIdentityQR(parsed));
+    if (sameQR || (hasOrderNumber && target.detailHashes[detailHash])) {
       // Older single-detail sessions may only have the top-level normalized QR.
       if (!target.details.length && Object.keys(target.sourceHashes).length <= 1 && target.orderQr === parsed.orderQr) {
         target.details.push({ qrHash, contentHash: detailHash, orderQr: parsed.orderQr,
