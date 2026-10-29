@@ -4,6 +4,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#667eea">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="./andon-monitor.webmanifest">
   <title>品質呼び出しモニター</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -205,6 +209,39 @@
     .btn-test-sound:hover {
       background: #f3e5f5;
       transform: translateY(-1px);
+    }
+
+    .push-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn-push {
+      background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+      color: #1b5e20;
+      border: 1px solid #81c784;
+    }
+
+    .btn-push.registered {
+      background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+      color: #0d47a1;
+      border-color: #64b5f6;
+    }
+
+    .btn-push:disabled {
+      cursor: wait;
+      opacity: 0.65;
+      transform: none;
+    }
+
+    .push-status {
+      max-width: 280px;
+      color: #495057;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.4;
     }
 
     /* ボタン共通 */
@@ -964,6 +1001,11 @@
           </div>
         </div>
 
+        <div class="push-controls">
+          <button class="btn btn-push" id="btnPushRegister" type="button">🔔 プッシュ通知を登録</button>
+          <span class="push-status" id="pushStatus" role="status" aria-live="polite"></span>
+        </div>
+
         <button class="btn btn-secondary" id="qcMembersBtn">👥 QCメンバー</button>
         <button class="btn btn-secondary" id="openChartBtn">📊 日別集計</button>
         <button class="btn btn-logout" id="logoutBtn">ログアウト</button>
@@ -1119,8 +1161,12 @@
     import {
       getFirestore,
       collection, onSnapshot, query, orderBy,
-      addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc, runTransaction, arrayUnion
+      addDoc, updateDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc, getDocs, where,
+      runTransaction, arrayUnion
     } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js';
+    import {
+      getMessaging, getToken, onMessage, isSupported as isMessagingSupported
+    } from 'https://www.gstatic.com/firebasejs/10.12.4/firebase-messaging.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyA0YUIpIDh4WB4p1ewiNB0XfwHve0ByljU",
@@ -1167,6 +1213,7 @@
           authHandled = true;
           setupQcMembersListener();
           setupRealtimeListener();
+          updatePushRegistrationUi();
         }
       } else {
         showLogin();
@@ -1681,6 +1728,127 @@
       const fn = PATTERNS[soundPattern] || PATTERNS[1];
       try { fn(audioCtx, audioCtx.currentTime, false); } catch (e) { console.warn(e); }
     });
+
+    // ===== スマホ向けプッシュ通知 =====
+    const VAPID_KEY = 'BMpSoxSeXqGkIkft_CnmXNANamny68cyWVRuq2Ki8uzKL4oscEmY37DJbOrRVMYxoRtSLyJYGg7JKeQcm0RzGXA';
+    const pushRegisterBtn = document.getElementById('btnPushRegister');
+    const pushStatus = document.getElementById('pushStatus');
+    let messaging = null;
+
+    function isIosDevice() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent);
+    }
+
+    function isStandaloneApp() {
+      return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    }
+
+    function setPushUi(message, state = 'idle') {
+      if (pushStatus) pushStatus.textContent = message;
+      if (!pushRegisterBtn) return;
+      pushRegisterBtn.disabled = state === 'busy' || state === 'unsupported';
+      pushRegisterBtn.classList.toggle('registered', state === 'registered');
+      pushRegisterBtn.textContent = state === 'registered'
+        ? '🔔 プッシュ通知を再登録'
+        : state === 'busy'
+          ? '登録中…'
+          : '🔔 プッシュ通知を登録';
+    }
+
+    async function prepareMessaging() {
+      if (messaging) return messaging;
+      if (!('serviceWorker' in navigator) || !('Notification' in window)) return null;
+      if (!(await isMessagingSupported())) return null;
+      messaging = getMessaging(app);
+      onMessage(messaging, () => {
+        // 画面表示中は一覧がリアルタイム更新されるため、OS通知は重ねて表示しない。
+      });
+      return messaging;
+    }
+
+    async function updatePushRegistrationUi() {
+      if (!pushRegisterBtn) return;
+      try {
+        if (isIosDevice() && !isStandaloneApp()) {
+          setPushUi('iPhoneはSafariの共有メニューから「ホーム画面に追加」し、追加したアプリで登録してください。');
+          return;
+        }
+        if (!(await prepareMessaging())) {
+          setPushUi('このブラウザーはプッシュ通知に対応していません。', 'unsupported');
+          return;
+        }
+        if (Notification.permission === 'denied') {
+          setPushUi('通知が拒否されています。端末の設定から通知を許可してください。');
+          return;
+        }
+        if (Notification.permission === 'granted') {
+          setPushUi('通知は許可済みです。端末を再登録できます。', 'registered');
+        } else {
+          setPushUi('この端末で通知を受け取るには登録してください。');
+        }
+      } catch (error) {
+        console.warn('push support check failed', error);
+        setPushUi('プッシュ通知の対応状況を確認できませんでした。');
+      }
+    }
+
+    async function registerPushNotifications() {
+      if (!auth.currentUser) {
+        setPushUi('先にログインしてください。');
+        return;
+      }
+      if (isIosDevice() && !isStandaloneApp()) {
+        setPushUi('iPhoneはSafariの共有メニューから「ホーム画面に追加」し、追加したアプリで登録してください。');
+        return;
+      }
+
+      setPushUi('通知の許可を確認しています…', 'busy');
+      try {
+        const messagingInstance = await prepareMessaging();
+        if (!messagingInstance) {
+          setPushUi('このブラウザーはプッシュ通知に対応していません。', 'unsupported');
+          return;
+        }
+
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          setPushUi('通知が許可されませんでした。端末の設定を確認してください。');
+          return;
+        }
+
+        const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' });
+        await navigator.serviceWorker.ready;
+        const token = await getToken(messagingInstance, {
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: registration
+        });
+        if (!token) throw new Error('端末トークンを取得できませんでした');
+
+        const memberName = localStorage.getItem('chat_sender') || '';
+        const existing = await getDocs(query(collection(db, 'fcm_tokens'), where('token', '==', token)));
+        if (existing.empty) {
+          await addDoc(collection(db, 'fcm_tokens'), {
+            token,
+            memberName,
+            ua: navigator.userAgent.substring(0, 100),
+            createdAt: serverTimestamp()
+          });
+        } else {
+          const tokenDoc = existing.docs[0];
+          if ((tokenDoc.data().memberName || '') !== memberName) {
+            await updateDoc(doc(db, 'fcm_tokens', tokenDoc.id), { memberName });
+          }
+        }
+
+        setPushUi('登録しました。この端末で通知を受信できます。', 'registered');
+      } catch (error) {
+        console.error('push registration failed', error);
+        setPushUi(`登録に失敗しました: ${error?.message || error}`);
+      }
+    }
+
+    pushRegisterBtn?.addEventListener('click', registerPushNotifications);
+    updatePushRegistrationUi();
 
     // ===== QCメンバー =====
     let qcMembers = [];
@@ -2724,3 +2892,4 @@
   </script>
 </body>
 </html>
+

@@ -24,8 +24,23 @@ messaging.onBackgroundMessage((payload) => {
 
   self.registration.showNotification(title, {
     body,
-    icon:     '/icon.png',  // アイコンがない場合は削除してOK
     tag:      'andon-call', // 同じタグは上書き（通知が積まれない）
-    renotify: true
+    renotify: true,
+    data: {
+      url: '/testpage/andon-monitor.html'
+    }
   });
 });
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = new URL(event.notification.data?.url || '/testpage/andon-monitor.html', self.location.origin).href;
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      const existing = windows.find((client) => client.url.startsWith(targetUrl));
+      if (existing) return existing.focus();
+      return clients.openWindow(targetUrl);
+    })
+  );
+});
+
