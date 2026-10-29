@@ -20,4 +20,3 @@ assert.match(worker, /notificationclick/);
 assert.doesNotMatch(worker, /icon:\s*['"]\/icon\.png/);
 
 console.log('PASS: Andon push registration, PWA manifest, and background notification worker');
-
