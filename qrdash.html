@@ -152,6 +152,7 @@
   let companies = [];
   let companyId = store.get(COMPANY_KEY) || 'cmp_mn4ei4sttmc5';
   let sessionsRef = null, namesRef = null;
+  let subscribedDay = '';
   let cardPage = 0, chipPage = 0;
   let unknownDest = 0;
 
@@ -349,8 +350,17 @@
     namesRef = database.ref('qr_match_companies/customer_name_master/' + companyId);
     namesRef.on('value', snap => { customerNames = snap.val() || {}; render(); });
 
-    sessionsRef = database.ref('qr_match_companies/order_detail_sessions/' + companyId);
+    const day = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+    subscribedDay = day;
+    sessions = [];
+    render();
+    sessionsRef = database.ref('qr_match_companies/order_detail_sessions/' + companyId)
+      .orderByChild('updatedAt')
+      .startAt(new Date(day + 'T00:00:00+09:00').toISOString())
+      .endAt(new Date(day + 'T23:59:59.999+09:00').toISOString());
+    const subscribedRef = sessionsRef;
     sessionsRef.on('value', snap => {
+      if (sessionsRef !== subscribedRef) return;
       const data = snap.val() || {};
       sessions = Object.entries(data).map(([key, val]) => ({ ...val, sessionId: (val && val.sessionId) || key }));
       setConn(true, '接続中');
@@ -388,7 +398,11 @@
 
     tickClock();
     setInterval(tickClock, 10000);
-    setInterval(render, 60000);           // 日付が変わっても自動で切り替わるように
+    setInterval(() => {
+      const day = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+      if (subscribedDay !== day) subscribe();
+      else render();
+    }, 60000);
     setInterval(() => { cardPage += 1; chipPage += 1; render(); }, PAGE_MS);
   }
 
